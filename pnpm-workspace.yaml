@@ -1,0 +1,4 @@
+allowBuilds:
+  better-sqlite3: true
+minimumReleaseAgeExclude:
+  - lucide-react@1.34.0
