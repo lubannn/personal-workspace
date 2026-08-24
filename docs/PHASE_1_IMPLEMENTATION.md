@@ -1,0 +1,99 @@
+# Phase 1 实施基线
+
+> 状态：SQLite 本地基线完成；Phase 1B GitHub-backed PWA 迁移进行中  
+> 开始日期：2026-08-24
+> 本地基线完成日期：2026-08-25
+
+## 2026-08-25 架构调整
+
+用户明确接受日记、健康及所有业务文件以未加密明文保存到 GitHub 私有仓库，并要求 Mac 关机后仍可使用。目标架构因此切换为 GitHub Pages 静态 PWA + 独立 Private 数据仓库；本文件后续章节记录的 SQLite 成果保留为回退与迁移来源，不再代表最终跨设备拓扑。
+
+Phase 1B 已完成：
+
+- GitHub 文件协议 v1 与稳定记录路径。
+- Private repository 强制校验、UTF-8/base64 Contents API adapter。
+- blob SHA 乐观并发和显式冲突错误。
+- 独立 Next.js static export PWA 原型，无 API、Cookie、Server Action 或 Node.js runtime。
+- GitHub Pages workflow；只上传 `apps/github-pwa/out`，不接触 `.data`。
+- Public `personal-workspace` 代码仓库、Private `personal-workspace-data` 数据仓库与上线的 GitHub Pages。
+- 仅保存在当前页面内存的 fine-grained token 连接、Private 可见性强制校验和 `workspace.json` owner 校验。
+- Quick Capture 真实文件写入、最近记录读取与手工跨设备刷新。
+- 桌面与 390px 手机布局、无横向溢出和控制台检查。
+
+Phase 1B 尚待：
+
+- 用户创建只授权数据仓库的 fine-grained token，并完成第一条真实 Capture 写入验收。
+- 在 Mac、Windows、iPhone、iPad 中分别完成连接、捕捉和刷新验收。
+- 设计最小 auth broker 后注册 GitHub App，替换需要手工输入的 Phase 1B token 方案。
+
+## 已确认技术基线
+
+- Web：Next.js 16 App Router + React 19 + TypeScript。
+- 样式：原生 CSS design tokens，不绑定组件 SaaS 或重型 UI 框架。
+- 数据库：SQLite 单文件数据库，启用 WAL、外键和显式 SQL migrations。
+- 数据访问：server-only DAL/repository，所有业务读取都带 owner 边界。
+- 认证：首位 owner 初始化、scrypt 密码哈希、数据库 session、浏览器仅保存 HttpOnly 随机 session cookie。
+- 文件：本地文件系统 adapter 为首个实现，附件元数据与文件内容分离。
+- PWA：manifest、应用图标、有限 service worker；不缓存私人页面响应。
+- 部署：标准 Node.js server，可容器化但不依赖特定云平台。
+
+SQLite 适合 single-user-first 的首发拓扑，也便于备份和自托管。数据访问和 migration 不向客户端暴露 SQLite 细节；当并发、远程部署或多用户需求证明需要时，再迁移 PostgreSQL。
+
+## 本轮垂直切片
+
+- 应用壳和响应式导航。
+- 首次 owner 初始化、登录、退出和受保护页面。
+- Dashboard Widget Registry、默认布局和状态卡片。
+- Quick Capture Inbox，核心内容落服务端数据库。
+- Capture 归档、软删除、回收站恢复，不提供不可逆删除入口。
+- 登录设备列表、当前设备识别、单会话撤销和其他会话批量撤销。
+- JSON 导出与 manifest。
+- 审计事件、后台任务和附件的基础数据表。
+- PWA manifest、离线说明和安全响应头。
+- SQLite 一致性备份、SHA-256 manifest、只恢复到新路径的恢复工具。
+- scrypt + AES-256-GCM 加密备份、无回显口令输入和认证失败保护。
+- Next.js standalone、Dockerfile、Compose 和跨设备部署说明。
+- Obsidian 本地 Vault 单向写入 adapter 隔离 spike：原子创建、SHA-256 并发控制、路径/符号链接防护。
+- 自动测试、类型检查、代码检查和生产构建。
+
+## 已完成验证
+
+- ESLint、TypeScript、Vitest（4 个测试文件、8 项测试）全部通过。
+- Next.js production build 通过，打包后的 standalone server 可独立启动。
+- 真实 owner 登录态可在生产包中读取；Inbox、设置和设备会话页面通过浏览器检查。
+- 最新备份恢复到独立临时数据库后，SQLite `integrity_check` 为 `ok`，2 项 migration 和 1 个 owner 均可读取。
+- 加密包往返、错误口令、密文修改和禁止覆盖验证通过。
+- owner 对象边界、导出凭据排除、未登录导出 401 和基础安全响应头验证通过。
+- Obsidian 隔离 Vault 的外部编辑冲突、路径穿越和符号链接逃逸验证通过；未读取真实 Vault。
+- Restricted 数据未写入客户端 LocalStorage；密码、密码哈希和 session token 未进入页面或导出。
+
+## 尚未满足的 Phase 1 退出项
+
+- 尚未选择实际跨设备入口，因此 Mac、Windows、iPhone、iPad 的 HTTPS/PWA 实机验收未进行。
+- 加密备份能力已就绪，但异机备份目标和用户保管的正式加密口令尚未配置。
+- Obsidian adapter 隔离 spike 已通过；真实 Vault 路径、云盘语义和 iOS PWA 限制仍待实机验证。
+- Docker 配置已生成；当前开发机未安装 Docker，因此以 standalone production server 完成运行验证。
+
+## 明确延后
+
+- Tasks、Projects、Calendar、Journal 等完整业务 CRUD。
+- Obsidian 实际写入及双向同步。
+- Legacy Word Importer 实现。
+- COROS、外部 Calendar 和 AI provider。
+- 完整离线编辑、推送通知和 Share Layer。
+
+## 开发运行要求
+
+- Node.js 24（最低兼容线将在安装依赖后由 lockfile 和 CI 固定）。
+- pnpm 11。
+- 数据默认保存在项目根目录 `.data/`，该目录不进入版本控制。
+- 首次访问 `/setup` 创建唯一 owner；之后 setup 自动关闭。
+
+## 安全限制
+
+- 不提供默认密码或演示账号。
+- 密码不得进入日志或数据库明文。
+- session cookie 使用 HttpOnly、SameSite=Lax；生产 HTTPS 下启用 Secure。
+- 导出要求已登录，响应禁止缓存，并记录审计事件。
+- LocalStorage 仅允许保存未提交的 Quick Capture 草稿，不是数据真源。
+- service worker 不缓存 Dashboard、API、导出或其他私人响应。

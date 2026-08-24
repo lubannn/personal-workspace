@@ -74,4 +74,22 @@ describe("GitHub contents adapter", () => {
       expectedBlobSha: "old-blob",
     })).rejects.toBeInstanceOf(GitHubConflictError);
   });
+
+  it("lists files in a data directory without caching the request", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse([
+      { type: "file", name: "one.json", path: "data/captures/one.json", sha: "blob-one", size: 120 },
+      { type: "dir", name: "archive", path: "data/captures/archive", sha: "tree-one", size: 0 },
+    ]));
+    const adapter = new GitHubContentsAdapter(
+      { owner: "owner", repository: "personal-workspace-data", branch: "main", token: "test-token" },
+      fetcher,
+    );
+
+    await expect(adapter.listDirectory("data/captures")).resolves.toEqual([
+      { type: "file", name: "one.json", path: "data/captures/one.json", blobSha: "blob-one", sizeBytes: 120 },
+      { type: "directory", name: "archive", path: "data/captures/archive", blobSha: "tree-one", sizeBytes: 0 },
+    ]);
+    expect(fetcher.mock.calls[0]?.[0]).toContain("data/captures?ref=main");
+    expect(fetcher.mock.calls[0]?.[1]).toMatchObject({ cache: "no-store" });
+  });
 });

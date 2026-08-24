@@ -8,7 +8,7 @@ Personal-first、single-user-first 的长期个人工作台。原有 Node.js + S
 pnpm build:github-pwa
 ```
 
-构建产物位于 `apps/github-pwa/out/`，只包含静态应用代码，不包含 `.data/`、SQLite、日记、健康数据或认证凭据。当前原型可以预览 Quick Capture 的开放文件格式，但在 GitHub App 授权完成前不会写入真实数据。
+构建产物位于 `apps/github-pwa/out/`，只包含静态应用代码，不包含 `.data/`、SQLite、日记、健康数据或认证凭据。当前版本可通过仅授权数据仓库的 fine-grained token 读写真实 Quick Capture；token 只保留在当前页面内存中，刷新或关闭后必须重新输入。
 
 目标仓库：
 

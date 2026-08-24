@@ -33,11 +33,27 @@ type GitHubWriteResponse = {
   commit: { sha: string };
 };
 
+type GitHubDirectoryResponse = Array<{
+  type: "file" | "dir" | "symlink" | "submodule";
+  name: string;
+  path: string;
+  sha: string;
+  size: number;
+}>;
+
 export type GitHubStoredFile = {
   path: string;
   blobSha: string;
   sizeBytes: number;
   text: string;
+};
+
+export type GitHubDirectoryItem = {
+  type: "file" | "directory";
+  name: string;
+  path: string;
+  blobSha: string;
+  sizeBytes: number;
 };
 
 export type GitHubRepositoryStatus = {
@@ -98,6 +114,7 @@ export class GitHubContentsAdapter {
   private async request<T>(pathname: string, init?: RequestInit): Promise<T> {
     const response = await this.fetcher(`${API_ROOT}${pathname}`, {
       ...init,
+      cache: "no-store",
       headers: {
         Accept: "application/vnd.github+json",
         Authorization: `Bearer ${this.config.token}`,
@@ -143,6 +160,26 @@ export class GitHubContentsAdapter {
       throw new GitHubDataError("Expected a base64 encoded GitHub file.", 500, "GITHUB_UNSUPPORTED_CONTENT");
     }
     return { path: result.path, blobSha: result.sha, sizeBytes: result.size, text: decodeBase64(result.content) };
+  }
+
+  async listDirectory(pathname: string): Promise<GitHubDirectoryItem[]> {
+    assertFilePath(pathname);
+    const branch = this.config.branch ? `?ref=${encodeURIComponent(this.config.branch)}` : "";
+    const result = await this.request<GitHubDirectoryResponse>(
+      `/repos/${encodeURIComponent(this.config.owner)}/${encodeURIComponent(this.config.repository)}/contents/${encodeRepositoryPath(pathname)}${branch}`,
+    );
+    if (!Array.isArray(result)) {
+      throw new GitHubDataError("Expected a GitHub directory listing.", 500, "GITHUB_UNSUPPORTED_CONTENT");
+    }
+    return result
+      .filter((item) => item.type === "file" || item.type === "dir")
+      .map((item) => ({
+        type: item.type === "dir" ? "directory" : "file",
+        name: item.name,
+        path: item.path,
+        blobSha: item.sha,
+        sizeBytes: item.size,
+      }));
   }
 
   async writeText(input: {
