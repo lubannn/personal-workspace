@@ -12,7 +12,7 @@ pnpm build:github-pwa
 
 目标仓库：
 
-- `personal-workspace`：代码与 GitHub Pages workflow。
+- `personal-workspace`：Public，保存代码与 GitHub Pages workflow，不保存个人业务数据。
 - `personal-workspace-data`：Private、未加密明文的业务数据。
 
 完整决策见 [GitHub-backed PWA 迁移规格](./docs/GITHUB_BACKED_PWA.md)。
