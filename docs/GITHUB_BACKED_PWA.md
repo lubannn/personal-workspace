@@ -11,7 +11,7 @@
 
 ## 2. 仓库划分
 
-- `personal-workspace`：应用源码、文档、测试和 GitHub Pages workflow。
+- `personal-workspace`：Public；仅保存应用源码、文档、测试和 GitHub Pages workflow，不保存个人业务数据。
 - `personal-workspace-data`：仅限私人数据文件与数据格式说明，必须保持 Private。
 
 代码仓库和数据仓库分离，防止 Pages 发布步骤误把数据目录打进公开站点。
@@ -69,7 +69,7 @@ JSON 采用 UTF-8、稳定字段名和显式 `schema_version`。Markdown 使用�
 
 1. 冻结并保留当前 SQLite 本地基线和加密备份。
 2. 完成 GitHub 文件 adapter、冲突测试和静态构建。
-3. 创建两个 Private 仓库并配置最小权限。
+3. 创建 Public 代码仓库与 Private 数据仓库，并为数据仓库配置最小权限。
 4. 将 owner 配置和 Quick Capture 转换为 v1 文件，先写入测试分支。
 5. 核对数量、哈希、Pages 不含私人数据后切换 canonical source。
 6. 在四类设备验证登录、读取、写入、冲突和退出。
