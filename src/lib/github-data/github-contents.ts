@@ -107,26 +107,34 @@ export class GitHubContentsAdapter {
   ) {
     assertRepositoryPart(config.owner);
     assertRepositoryPart(config.repository);
-    if (!config.token) throw new Error("GITHUB_TOKEN_REQUIRED");
+    if (!config.token.trim()) throw new Error("GITHUB_TOKEN_REQUIRED");
     this.fetcher = fetcher;
   }
 
   private async request<T>(pathname: string, init?: RequestInit): Promise<T> {
-    const response = await this.fetcher(`${API_ROOT}${pathname}`, {
-      ...init,
-      cache: "no-store",
-      headers: {
-        Accept: "application/vnd.github+json",
-        Authorization: `Bearer ${this.config.token}`,
-        "X-GitHub-Api-Version": API_VERSION,
-        ...init?.headers,
-      },
-    });
+    let response: Response;
+    try {
+      response = await this.fetcher(`${API_ROOT}${pathname}`, {
+        ...init,
+        cache: "no-store",
+        headers: {
+          Accept: "application/vnd.github+json",
+          Authorization: `Bearer ${this.config.token.trim()}`,
+          "X-GitHub-Api-Version": API_VERSION,
+          ...init?.headers,
+        },
+      });
+    } catch {
+      throw new GitHubDataError("The browser could not reach the GitHub API.", 0, "GITHUB_NETWORK_ERROR");
+    }
     if (!response.ok) {
       if (response.status === 409 || response.status === 422) throw new GitHubConflictError();
       const code = response.status === 401 ? "GITHUB_UNAUTHORIZED"
-        : response.status === 403 ? "GITHUB_FORBIDDEN"
-          : response.status === 404 ? "GITHUB_NOT_FOUND" : "GITHUB_API_ERROR";
+        : response.status === 403 && response.headers.get("X-RateLimit-Remaining") === "0" ? "GITHUB_RATE_LIMITED"
+          : response.status === 403 ? "GITHUB_FORBIDDEN"
+            : response.status === 404 ? "GITHUB_NOT_FOUND"
+              : response.status === 400 ? "GITHUB_BAD_REQUEST"
+                : response.status >= 500 ? "GITHUB_UNAVAILABLE" : "GITHUB_API_ERROR";
       throw new GitHubDataError(`GitHub request failed with status ${response.status}.`, response.status, code);
     }
     return response.json() as Promise<T>;
