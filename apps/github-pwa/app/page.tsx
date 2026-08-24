@@ -31,8 +31,16 @@ function friendlyError(error: unknown) {
     if (error.code === "GITHUB_NOT_FOUND") return "找不到数据仓库或 workspace.json，请检查仓库名称与令牌授权范围。";
     if (error.code === "GITHUB_REPOSITORY_NOT_PRIVATE") return "安全检查未通过：数据仓库必须保持 Private。";
     if (error.code === "GITHUB_SYNC_CONFLICT") return "文件已在另一台设备更新，请刷新后重试。";
+    if (error.code === "GITHUB_NETWORK_ERROR") return "浏览器无法访问 GitHub API。请确认当前网络能打开 api.github.com，然后重试。";
+    if (error.code === "GITHUB_RATE_LIMITED") return "GitHub API 请求次数已达上限，请稍后再试。";
+    if (error.code === "GITHUB_BAD_REQUEST") return "GitHub 拒绝了连接请求（HTTP 400）。请使用 fine-grained token，并只授权 personal-workspace-data。";
+    if (error.code === "GITHUB_UNAVAILABLE") return `GitHub 服务暂时不可用（HTTP ${error.status}），请稍后重试。`;
+    if (error.code === "GITHUB_API_ERROR") return `GitHub 返回了异常响应（HTTP ${error.status}），请截图此提示给我。`;
   }
   if (error instanceof SyntaxError) return "数据仓库中的 JSON 格式无效。";
+  if (error instanceof Error && error.message === "INVALID_WORKSPACE_DESCRIPTOR") {
+    return "数据仓库中的 workspace.json 结构不符合当前版本，请让我修复初始化文件。";
+  }
   return "连接 GitHub 时发生错误，请稍后重试。";
 }
 
@@ -126,7 +134,7 @@ export default function GitHubWorkspacePage() {
         owner: owner.trim(),
         repository: repository.trim(),
         branch: "main",
-        token,
+        token: token.trim(),
       });
       const repositoryStatus = await adapter.verifyPrivateRepository();
       const descriptor = parseWorkspaceDescriptor((await adapter.readText("workspace.json")).text);
