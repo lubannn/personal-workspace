@@ -31,12 +31,13 @@ describe("auth edge worker", () => {
   });
 
   it("streams the complete app shell from the public fallback", async () => {
-    const upstreamFetch = vi.fn(async () =>
-      new Response("static shell", {
+    const upstreamFetch = vi.fn(async (request: Request) => {
+      void request;
+      return new Response("static shell", {
         status: 200,
         headers: { "content-type": "text/html; charset=utf-8" },
-      }),
-    );
+      });
+    });
     vi.stubGlobal("fetch", upstreamFetch);
 
     const response = await handleRequest(new Request("https://workspace.example/"));
@@ -50,7 +51,10 @@ describe("auth edge worker", () => {
   });
 
   it("maps the legacy app base path to the Cloudflare static origin", async () => {
-    const upstreamFetch = vi.fn(async () => new Response("asset"));
+    const upstreamFetch = vi.fn(async (request: Request) => {
+      void request;
+      return new Response("asset");
+    });
     vi.stubGlobal("fetch", upstreamFetch);
 
     await handleRequest(
