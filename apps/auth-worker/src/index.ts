@@ -31,7 +31,7 @@ function methodNotAllowed(allowed: string): Response {
   );
 }
 
-export async function handleRequest(request: Request, env: Env): Promise<Response> {
+async function routeRequest(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
 
   if (url.pathname === "/health") {
@@ -77,6 +77,29 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
   }
 
   return env.ASSETS.fetch(request);
+}
+
+export async function handleRequest(request: Request, env: Env): Promise<Response> {
+  try {
+    return await routeRequest(request, env);
+  } catch (error) {
+    console.error(
+      JSON.stringify({
+        event: "worker_request_failed",
+        method: request.method,
+        path: new URL(request.url).pathname,
+        error: error instanceof Error ? error.name : "UnknownError",
+      }),
+    );
+
+    return jsonResponse(
+      {
+        error: "INTERNAL_ERROR",
+        message: "The workspace edge service could not complete this request.",
+      },
+      500,
+    );
+  }
 }
 
 const worker = {

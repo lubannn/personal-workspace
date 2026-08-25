@@ -43,4 +43,27 @@ describe("auth edge worker", () => {
     expect(await response.text()).toBe("static shell");
     expect(env.ASSETS.fetch).toHaveBeenCalledWith(request);
   });
+
+  it("returns a private error response if an asset request fails", async () => {
+    const env: Env = {
+      ASSETS: {
+        fetch: vi.fn(async () => {
+          throw new Error("origin detail must stay private");
+        }),
+      },
+    };
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    const response = await handleRequest(new Request("https://workspace.example/missing"), env);
+
+    expect(response.status).toBe(500);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(await response.json()).toEqual({
+      error: "INTERNAL_ERROR",
+      message: "The workspace edge service could not complete this request.",
+    });
+    expect(consoleError).toHaveBeenCalledOnce();
+    expect(consoleError.mock.calls[0]?.[0]).not.toContain("origin detail must stay private");
+    consoleError.mockRestore();
+  });
 });
