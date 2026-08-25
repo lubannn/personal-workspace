@@ -6,6 +6,9 @@ storage/
 exports/
 .env
 .env.local
+.dev.vars
+.dev.vars.*
+.wrangler/
 .DS_Store
 *.log
 coverage/

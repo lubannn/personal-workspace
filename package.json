@@ -11,6 +11,9 @@
     "dev": "next dev",
     "build": "next build",
     "build:github-pwa": "next build apps/github-pwa",
+    "build:cloudflare-pwa": "next build apps/github-pwa",
+    "dev:cloudflare": "wrangler dev --config apps/auth-worker/wrangler.jsonc",
+    "deploy:cloudflare:preview": "pnpm build:cloudflare-pwa && wrangler deploy --config apps/auth-worker/wrangler.jsonc",
     "backup": "node scripts/backup.mjs",
     "backup:encrypt": "node scripts/encrypt-backup.ts",
     "backup:decrypt": "node scripts/decrypt-backup.ts",
@@ -37,6 +40,7 @@
     "eslint": "^9.39.0",
     "eslint-config-next": "16.3.2",
     "typescript": "^5.9.0",
-    "vitest": "4.1.11"
+    "vitest": "4.1.11",
+    "wrangler": "^4.125.0"
   }
 }
