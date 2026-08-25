@@ -93,7 +93,7 @@ describe("GitHub contents adapter", () => {
     expect(fetcher.mock.calls[0]?.[1]).toMatchObject({ cache: "no-store" });
   });
 
-  it("normalizes pasted tokens and reports browser network failures", async () => {
+  it("normalizes pasted tokens and classifies cross-origin browser failures", async () => {
     const fetcher = vi.fn<typeof fetch>().mockRejectedValue(new TypeError("Failed to fetch"));
     const adapter = new GitHubContentsAdapter(
       { owner: "owner", repository: "personal-workspace-data", token: "  test-token  " },
@@ -102,11 +102,48 @@ describe("GitHub contents adapter", () => {
 
     await expect(adapter.verifyPrivateRepository()).rejects.toMatchObject({
       status: 0,
-      code: "GITHUB_NETWORK_ERROR",
+      code: "GITHUB_CROSS_ORIGIN_BLOCKED",
     } satisfies Partial<GitHubDataError>);
     expect(fetcher.mock.calls[0]?.[1]?.headers).toMatchObject({
       Authorization: "Bearer test-token",
     });
+    expect(fetcher.mock.calls[1]?.[0]).toBe("https://api.github.com/rate_limit");
+    expect(fetcher.mock.calls[1]?.[1]?.headers).not.toHaveProperty("Authorization");
+  });
+
+  it("separates authorization blocking from general cross-origin blocking", async () => {
+    const fetcher = vi.fn<typeof fetch>()
+      .mockRejectedValueOnce(new TypeError("Failed to fetch"))
+      .mockResolvedValueOnce(jsonResponse({ rate: {} }));
+    const adapter = new GitHubContentsAdapter(
+      { owner: "owner", repository: "personal-workspace-data", token: "test-token" },
+      fetcher,
+    );
+
+    await expect(adapter.verifyPrivateRepository()).rejects.toMatchObject({
+      status: 0,
+      code: "GITHUB_AUTH_REQUEST_BLOCKED",
+    } satisfies Partial<GitHubDataError>);
+  });
+
+  it("does not call a custom fetch transport with the adapter as its receiver", async () => {
+    const observeReceiver = vi.fn<(value: unknown) => void>();
+    const fetcher = (function (this: unknown) {
+      observeReceiver(this);
+      return Promise.resolve(jsonResponse({
+        full_name: "owner/personal-workspace-data",
+        private: true,
+        visibility: "private",
+        default_branch: "main",
+      }));
+    }) as typeof fetch;
+    const adapter = new GitHubContentsAdapter(
+      { owner: "owner", repository: "personal-workspace-data", token: "test-token" },
+      fetcher,
+    );
+
+    await adapter.verifyPrivateRepository();
+    expect(observeReceiver).toHaveBeenCalledWith(undefined);
   });
 
   it("separates malformed requests and GitHub outages from permission errors", async () => {

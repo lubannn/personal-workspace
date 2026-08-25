@@ -103,12 +103,40 @@ export class GitHubContentsAdapter {
       branch?: string;
       token: string;
     },
-    fetcher: typeof fetch = fetch,
+    fetcher?: typeof fetch,
   ) {
     assertRepositoryPart(config.owner);
     assertRepositoryPart(config.repository);
     if (!config.token.trim()) throw new Error("GITHUB_TOKEN_REQUIRED");
-    this.fetcher = fetcher;
+    const transport = fetcher ?? globalThis.fetch.bind(globalThis);
+    this.fetcher = (input, init) => transport(input, init);
+  }
+
+  private async throwTransportError(error: unknown): Promise<never> {
+    let publicApiReached = false;
+    try {
+      const probe = await this.fetcher(`${API_ROOT}/rate_limit`, {
+        cache: "no-store",
+        headers: { Accept: "application/vnd.github+json" },
+      });
+      publicApiReached = probe.status > 0;
+    } catch {
+      // The public probe deliberately has no token and is only used to classify the failure.
+    }
+
+    const reason = error instanceof Error ? `${error.name}: ${error.message}` : "Unknown browser error";
+    if (publicApiReached) {
+      throw new GitHubDataError(
+        `The browser blocked the authenticated GitHub request (${reason}).`,
+        0,
+        "GITHUB_AUTH_REQUEST_BLOCKED",
+      );
+    }
+    throw new GitHubDataError(
+      `The browser blocked cross-origin GitHub API requests (${reason}).`,
+      0,
+      "GITHUB_CROSS_ORIGIN_BLOCKED",
+    );
   }
 
   private async request<T>(pathname: string, init?: RequestInit): Promise<T> {
@@ -124,8 +152,8 @@ export class GitHubContentsAdapter {
           ...init?.headers,
         },
       });
-    } catch {
-      throw new GitHubDataError("The browser could not reach the GitHub API.", 0, "GITHUB_NETWORK_ERROR");
+    } catch (error) {
+      return this.throwTransportError(error);
     }
     if (!response.ok) {
       if (response.status === 409 || response.status === 422) throw new GitHubConflictError();
