@@ -1,10 +1,5 @@
-interface AssetsBinding {
-  fetch(request: Request): Promise<Response>;
-}
-
-export interface Env {
-  ASSETS: AssetsBinding;
-}
+const PUBLIC_APP_ORIGIN = "https://lubannn.github.io";
+const PUBLIC_APP_BASE_PATH = "/personal-workspace";
 
 const PRIVATE_RESPONSE_HEADERS = {
   "cache-control": "no-store",
@@ -31,7 +26,55 @@ function methodNotAllowed(allowed: string): Response {
   );
 }
 
-async function routeRequest(request: Request, env: Env): Promise<Response> {
+function publicAppUrl(requestUrl: string): URL {
+  const incoming = new URL(requestUrl);
+  const isBasePath =
+    incoming.pathname === PUBLIC_APP_BASE_PATH ||
+    incoming.pathname.startsWith(`${PUBLIC_APP_BASE_PATH}/`);
+  const upstreamPath =
+    incoming.pathname === "/"
+      ? `${PUBLIC_APP_BASE_PATH}/`
+      : isBasePath
+        ? incoming.pathname
+        : `${PUBLIC_APP_BASE_PATH}${incoming.pathname}`;
+
+  const upstream = new URL(upstreamPath, PUBLIC_APP_ORIGIN);
+  upstream.search = incoming.search;
+  return upstream;
+}
+
+async function proxyPublicApp(request: Request): Promise<Response> {
+  if (request.method !== "GET" && request.method !== "HEAD") {
+    return methodNotAllowed("GET and HEAD");
+  }
+
+  const upstreamHeaders = new Headers();
+  for (const name of ["accept", "accept-language", "if-modified-since", "if-none-match", "range"]) {
+    const value = request.headers.get(name);
+    if (value) upstreamHeaders.set(name, value);
+  }
+
+  const upstreamResponse = await fetch(
+    new Request(publicAppUrl(request.url), {
+      method: request.method,
+      headers: upstreamHeaders,
+      redirect: "follow",
+    }),
+  );
+  const responseHeaders = new Headers(upstreamResponse.headers);
+  responseHeaders.delete("set-cookie");
+  responseHeaders.set("referrer-policy", "no-referrer");
+  responseHeaders.set("x-content-type-options", "nosniff");
+  responseHeaders.set("x-frame-options", "DENY");
+
+  return new Response(request.method === "HEAD" ? null : upstreamResponse.body, {
+    status: upstreamResponse.status,
+    statusText: upstreamResponse.statusText,
+    headers: responseHeaders,
+  });
+}
+
+async function routeRequest(request: Request): Promise<Response> {
   const url = new URL(request.url);
 
   if (url.pathname === "/health") {
@@ -76,12 +119,12 @@ async function routeRequest(request: Request, env: Env): Promise<Response> {
     );
   }
 
-  return env.ASSETS.fetch(request);
+  return proxyPublicApp(request);
 }
 
-export async function handleRequest(request: Request, env: Env): Promise<Response> {
+export async function handleRequest(request: Request): Promise<Response> {
   try {
-    return await routeRequest(request, env);
+    return await routeRequest(request);
   } catch (error) {
     console.error(
       JSON.stringify({
@@ -103,8 +146,8 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
 }
 
 const worker = {
-  fetch(request: Request, env: Env): Promise<Response> {
-    return handleRequest(request, env);
+  fetch(request: Request): Promise<Response> {
+    return handleRequest(request);
   },
 };
 
