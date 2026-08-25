@@ -31,7 +31,7 @@ describe("auth edge worker", () => {
   });
 
   it("streams the complete app shell from the public fallback", async () => {
-    const upstreamFetch = vi.fn(async (_request: Request) =>
+    const upstreamFetch = vi.fn(async () =>
       new Response("static shell", {
         status: 200,
         headers: { "content-type": "text/html; charset=utf-8" },
@@ -45,12 +45,12 @@ describe("auth edge worker", () => {
     expect(await response.text()).toBe("static shell");
     const upstreamRequest = upstreamFetch.mock.calls[0]?.[0];
     expect(upstreamRequest).toBeInstanceOf(Request);
-    expect((upstreamRequest as Request).url).toBe("https://lubannn.github.io/personal-workspace/");
+    expect((upstreamRequest as Request).url).toBe("https://personal-workspace-static.pages.dev/");
     expect((upstreamRequest as Request).headers.has("authorization")).toBe(false);
   });
 
-  it("preserves the app base path when proxying static assets", async () => {
-    const upstreamFetch = vi.fn(async (_request: Request) => new Response("asset"));
+  it("maps the legacy app base path to the Cloudflare static origin", async () => {
+    const upstreamFetch = vi.fn(async () => new Response("asset"));
     vi.stubGlobal("fetch", upstreamFetch);
 
     await handleRequest(
@@ -59,14 +59,14 @@ describe("auth edge worker", () => {
 
     const upstreamRequest = upstreamFetch.mock.calls[0]?.[0] as Request;
     expect(upstreamRequest.url).toBe(
-      "https://lubannn.github.io/personal-workspace/_next/static/app.js?v=1",
+      "https://personal-workspace-static.pages.dev/_next/static/app.js?v=1",
     );
   });
 
   it("returns a private error response if the public fallback fails", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn(async (_request: Request) => {
+      vi.fn(async () => {
         throw new Error("origin detail must stay private");
       }),
     );

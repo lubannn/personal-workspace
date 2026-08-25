@@ -1,5 +1,5 @@
-const PUBLIC_APP_ORIGIN = "https://lubannn.github.io";
-const PUBLIC_APP_BASE_PATH = "/personal-workspace";
+const PUBLIC_APP_ORIGIN = "https://personal-workspace-static.pages.dev";
+const LEGACY_PUBLIC_APP_BASE_PATH = "/personal-workspace";
 
 const PRIVATE_RESPONSE_HEADERS = {
   "cache-control": "no-store",
@@ -28,15 +28,12 @@ function methodNotAllowed(allowed: string): Response {
 
 function publicAppUrl(requestUrl: string): URL {
   const incoming = new URL(requestUrl);
-  const isBasePath =
-    incoming.pathname === PUBLIC_APP_BASE_PATH ||
-    incoming.pathname.startsWith(`${PUBLIC_APP_BASE_PATH}/`);
   const upstreamPath =
-    incoming.pathname === "/"
-      ? `${PUBLIC_APP_BASE_PATH}/`
-      : isBasePath
-        ? incoming.pathname
-        : `${PUBLIC_APP_BASE_PATH}${incoming.pathname}`;
+    incoming.pathname === LEGACY_PUBLIC_APP_BASE_PATH
+      ? "/"
+      : incoming.pathname.startsWith(`${LEGACY_PUBLIC_APP_BASE_PATH}/`)
+        ? incoming.pathname.slice(LEGACY_PUBLIC_APP_BASE_PATH.length)
+        : incoming.pathname;
 
   const upstream = new URL(upstreamPath, PUBLIC_APP_ORIGIN);
   upstream.search = incoming.search;
