@@ -1,6 +1,6 @@
 # Phase 1 实施基线
 
-> 状态：SQLite 本地基线完成；Phase 1B GitHub-backed PWA 迁移进行中  
+> 状态：SQLite 本地基线完成；Phase 1B GitHub-backed PWA 核心验收通过，认证体验升级待办  
 > 开始日期：2026-08-24
 > 本地基线完成日期：2026-08-25
 
@@ -20,10 +20,17 @@ Phase 1B 已完成：
 - Quick Capture 真实文件写入、最近记录读取与手工跨设备刷新。
 - 桌面与 390px 手机布局、无横向溢出和控制台检查。
 
+## 2026-08-25 跨设备实机验收
+
+- Mac 浏览器：Private 仓库连接、首条 Capture 写入、整页刷新、重新输入令牌和回读通过。
+- iPhone Safari：读取 Mac Capture、写入 iPhone Capture 通过；Mac 端从 GitHub 刷新后可见。
+- iPad Safari：读取既有 Capture、写入 iPad Capture 通过；Mac 端从 GitHub 刷新后可见。
+- Mac 完全关机：iPhone 仍可重新连接、读取既有 Capture 并写入新 Capture，独立运行验收通过。
+- Windows 工作电脑：经用户确认公司合规与安全策略允许后，连接、读取和跨设备写入通过。
+- Mac、Windows、iPhone、iPad 四类目标设备读取的数据均来自 `personal-workspace-data`，未依赖 Mac 本地存储或 Mac 上运行的服务。
+
 Phase 1B 尚待：
 
-- 用户创建只授权数据仓库的 fine-grained token，并完成第一条真实 Capture 写入验收。
-- 在 Mac、Windows、iPhone、iPad 中分别完成连接、捕捉和刷新验收。
 - 设计最小 auth broker 后注册 GitHub App，替换需要手工输入的 Phase 1B token 方案。
 
 ## 已确认技术基线
@@ -69,7 +76,6 @@ SQLite 适合 single-user-first 的首发拓扑，也便于备份和自托管。
 
 ## 尚未满足的 Phase 1 退出项
 
-- 尚未选择实际跨设备入口，因此 Mac、Windows、iPhone、iPad 的 HTTPS/PWA 实机验收未进行。
 - 加密备份能力已就绪，但异机备份目标和用户保管的正式加密口令尚未配置。
 - Obsidian adapter 隔离 spike 已通过；真实 Vault 路径、云盘语义和 iOS PWA 限制仍待实机验证。
 - Docker 配置已生成；当前开发机未安装 Docker，因此以 standalone production server 完成运行验证。
