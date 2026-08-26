@@ -1,10 +1,23 @@
 {
   "$schema": "../../node_modules/wrangler/config-schema.json",
-  "name": "personal-workspace",
+  "name": "nexus",
   "main": "./src/index.ts",
-  "compatibility_date": "2026-08-25",
+  "compatibility_date": "2026-08-26",
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": true,
+  "vars": {
+    "ALLOWED_GITHUB_LOGIN": "lubannn",
+    "ALLOWED_REPO_OWNER": "lubannn",
+    "ALLOWED_REPO_NAME": "personal-workspace-data"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "personal-workspace-auth",
+      "database_id": "53bcc3d8-77c4-47ed-83d5-bb911c1dff9c",
+      "migrations_dir": "./migrations"
+    }
+  ],
   "observability": {
     "enabled": true,
     "logs": {
