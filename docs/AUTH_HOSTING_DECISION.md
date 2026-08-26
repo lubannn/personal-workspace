@@ -1,7 +1,7 @@
 # Auth Broker 托管选择
 
-> 状态：已批准，静态托管可行性验证完成  
-> 日期：2026-08-25  
+> 状态：已批准；Cloudflare 四设备验收通过；正式 Workers 地址已确定；D1 认证基础已创建
+> 日期：2026-08-26
 > 关联规格：`AUTHENTICATION_UPGRADE.md`
 
 ## 1. 建议结论
@@ -17,7 +17,7 @@
 - 静态资源、函数和会话数据库均有免费层，个人单用户流量远低于当前免费额度。
 - Worker 使用标准 Fetch API，D1 使用 SQLite 语义；保留迁移到标准 Node.js + SQLite/PostgreSQL 的路径。
 
-独立静态产物已通过 Cloudflare Pages Direct Upload 发布到 `personal-workspace-static.pages.dev`，边缘 Worker 以该地址作为公开应用外壳上游。现有 `lubannn.github.io/personal-workspace/` 保持在线，继续作为手工 PAT 回退入口。
+Git 集成的静态产物已发布到 `personal-workspace-app.pages.dev`，边缘 Worker 以该地址作为公开应用外壳上游；`personal-workspace-static.pages.dev` 暂时保留为静态回退。正式边缘入口为 `https://nexus.lubannn.workers.dev/`。现有 `lubannn.github.io/personal-workspace/` 保持在线，继续作为手工 PAT 回退入口。
 
 重要限制：Cloudflare Free 使用全球网络，不等于 Cloudflare 中国大陆网络。Cloudflare 官方说明，跨越中国大陆网络边界的流量可能出现延迟和可靠性问题，而其中国大陆网络是 Enterprise 的单独订阅。因此首步只部署不含任何 secret 的健康检查和静态壳，在用户的 Mac、Windows、iPhone、iPad 实网测试通过前，不迁移正式入口、不创建真实认证会话。
 
@@ -34,14 +34,15 @@
 
 只创建以下资源：
 
-1. 一个边缘 Worker：`personal-workspace-preview`
-2. 一个只保存公开 PWA 静态产物的 Pages 项目：`personal-workspace-static`
-3. 一个 D1 数据库：`personal-workspace-auth`
-4. 三个 Worker Secrets：
+1. 正式边缘 Worker：`nexus`，入口为 `nexus.lubannn.workers.dev`
+2. 旧边缘 Worker：`personal-workspace-preview`，迁移期保留且不再作为新配置的部署目标
+3. 一个 Git 集成的公开 PWA Pages 项目：`personal-workspace-app`；另保留 `personal-workspace-static` 作为回退
+4. 一个 D1 数据库：`personal-workspace-auth`（已创建，APAC，首个 migration 已应用）
+5. 三个 Worker Secrets：
    - `GITHUB_CLIENT_SECRET`
    - `TOKEN_ENCRYPTION_KEY`
    - `SESSION_HMAC_KEY`
-5. 非敏感配置：
+6. 非敏感配置：
    - GitHub App Client ID
    - GitHub App slug
    - 允许的数据仓库 owner/name
@@ -112,11 +113,12 @@ Cloudflare 官方当前说明：
 1. 在本地创建 Worker、D1 migration、认证核心和测试，不接触真实 secret。
 2. 完成本地 mock GitHub OAuth、加密、会话、CSRF、撤销和日志边界测试。
 3. 用户连接或创建 Cloudflare 账户。
-4. 已部署不含 secret、不连接 D1 的静态壳与 `/health`，并在 Mac、Windows、iPhone、iPad 和 Mac 关机场景下验证跨设备可用性。
-5. 只有健康检查通过后，才创建 Free plan D1 数据库。
-6. 注册 GitHub App；仅安装到 `personal-workspace-data`。
-7. 用户亲自输入 GitHub client secret 和随机生成的加密密钥到 Workers Secrets。
-8. 部署认证测试入口并完成四设备验收。
+4. 已部署不含 secret 的静态壳与 `/health`，并在 Mac、Windows、iPhone、iPad 和 Mac 关机场景下验证跨设备可用性。
+5. 健康检查通过后，已创建 Free plan D1 数据库并应用 `0001_auth_sessions.sql`；会话表保持空白，尚未写入任何 secret 或真实认证会话。
+6. 已创建 `nexus` Worker，并将账户子域名从 `huangyzh2d.workers.dev` 更新为 `lubannn.workers.dev`；旧 Worker 资源暂时保留。
+7. 已部署无 Secret、默认 fail-closed 的认证路由基础；注册 GitHub App 时仅安装到 `personal-workspace-data`，Homepage URL 使用 `https://nexus.lubannn.workers.dev/`，callback 使用 `https://nexus.lubannn.workers.dev/auth/callback`。
+8. 用户亲自输入 GitHub client secret 和随机生成的加密密钥到 Workers Secrets。
+9. 部署认证测试入口并完成四设备验收。
 
 ## 9. 待用户批准
 

@@ -1,8 +1,8 @@
 # Personal Workspace 认证体验升级规格
 
-> 状态：提案，等待用户审核  
-> 版本：0.1  
-> 日期：2026-08-25
+> 状态：已批准；无 Secret 的认证基础已部署，等待创建 GitHub App
+> 版本：0.2
+> 日期：2026-08-27
 
 ## 1. 目标
 
@@ -156,8 +156,14 @@ GitHub Pages 不能运行 auth broker。正式免手输入口需要支持同源�
 7. 在 Mac、Windows、iPhone、iPad 重新完成登录、刷新、写入、读取和退出验收。
 8. 验收完成后将 GitHub App 登录设为默认，PAT 入口降级为高级回退。
 
-## 12. 待用户决策
+当前进度：步骤 1、2 和认证服务的无 Secret 实现已完成；`nexus` Worker
+已部署 fail-closed 版本。GitHub App 表单已按最小权限准备，但尚未执行最终创建，
+因此没有生成 Client ID、Client Secret 或任何真实会话。
 
-- 是否批准增加一个不接触业务正文的最小 auth broker。
-- 是否接受正式免手输入口暂时迁出 GitHub Pages，保留 Pages 作为 PAT 回退入口。
-- 托管环境选择留到下一步单独评审，不在本规格中默认绑定 Cloudflare、Vercel 或其他平台。
+## 12. 已确认决策
+
+- 批准增加一个不接触业务正文的最小 auth broker。
+- 正式免手输入口使用 Cloudflare Workers；GitHub Pages 继续作为 PAT 回退入口。
+- 正式入口为 `https://nexus.lubannn.workers.dev/`。
+- GitHub App 只允许当前账户安装，只授权 `personal-workspace-data`，仅申请
+  Metadata 读取和 Contents 读写权限。
