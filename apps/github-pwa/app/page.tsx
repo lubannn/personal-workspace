@@ -24,6 +24,48 @@ type SavedCapture = {
   text: string;
 };
 
+type AuthAvailability = "checking" | "unavailable" | "configured";
+type ConnectionMethod = "github-app" | "personal-token";
+
+type AuthStatus = {
+  configured?: boolean;
+  authenticated?: boolean;
+  login?: string | null;
+};
+
+type SessionToken = {
+  accessToken?: string;
+};
+
+const DEFAULT_OWNER = "lubannn";
+const DEFAULT_REPOSITORY = "personal-workspace-data";
+
+function readCookie(name: string): string | null {
+  const prefix = `${name}=`;
+  const entry = document.cookie.split(";").map((part) => part.trim()).find((part) => part.startsWith(prefix));
+  return entry ? decodeURIComponent(entry.slice(prefix.length)) : null;
+}
+
+async function openPrivateRepository(rawToken: string, owner: string, repository: string) {
+  const adapter = new GitHubContentsAdapter({
+    owner: owner.trim(),
+    repository: repository.trim(),
+    branch: "main",
+    token: rawToken.trim(),
+  });
+  const repositoryStatus = await adapter.verifyPrivateRepository();
+  const descriptor = parseWorkspaceDescriptor((await adapter.readText("workspace.json")).text);
+  return {
+    adapter,
+    connection: {
+      repository: repositoryStatus.fullName,
+      ownerId: descriptor.owner_id,
+      ownerLogin: descriptor.owner_login,
+      timezone: descriptor.timezone,
+    } satisfies Connection,
+  };
+}
+
 function friendlyError(error: unknown) {
   if (error instanceof GitHubDataError) {
     if (error.code === "GITHUB_UNAUTHORIZED") return "令牌无效或已过期，请重新创建后再连接。";
@@ -57,11 +99,14 @@ function formatCaptureTime(value: string) {
 
 export default function GitHubWorkspacePage() {
   const adapterRef = useRef<GitHubContentsAdapter | null>(null);
+  const authBootstrapStarted = useRef(false);
   const [online, setOnline] = useState<boolean | null>(null);
-  const [owner, setOwner] = useState("lubannn");
-  const [repository, setRepository] = useState("personal-workspace-data");
+  const [owner, setOwner] = useState(DEFAULT_OWNER);
+  const [repository, setRepository] = useState(DEFAULT_REPOSITORY);
   const [token, setToken] = useState("");
   const [connection, setConnection] = useState<Connection | null>(null);
+  const [connectionMethod, setConnectionMethod] = useState<ConnectionMethod | null>(null);
+  const [authAvailability, setAuthAvailability] = useState<AuthAvailability>("checking");
   const [connecting, setConnecting] = useState(false);
   const [loadingCaptures, setLoadingCaptures] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -83,12 +128,88 @@ export default function GitHubWorkspacePage() {
     };
   }, []);
 
+  useEffect(() => {
+    if (authBootstrapStarted.current) return;
+    authBootstrapStarted.current = true;
+
+    const authResult = new URLSearchParams(window.location.search).get("auth");
+
+    async function bootstrapGitHubAppSession() {
+      try {
+        await Promise.resolve();
+        if (authResult === "denied") setErrorMessage("GitHub 登录已取消，私人数据没有被授权。");
+        if (authResult === "failed") setErrorMessage("GitHub 登录没有完成，请稍后重试。");
+
+        const statusResponse = await fetch("/auth/status", {
+          credentials: "same-origin",
+          headers: { accept: "application/json" },
+        });
+        if (!statusResponse.ok) {
+          setAuthAvailability("unavailable");
+          return;
+        }
+        const status = (await statusResponse.json()) as AuthStatus;
+        if (!status.configured) {
+          setAuthAvailability("unavailable");
+          return;
+        }
+        setAuthAvailability("configured");
+        if (!status.authenticated) return;
+
+        const csrf = readCookie("__Host-pw_csrf");
+        if (!csrf) {
+          setErrorMessage("登录会话缺少安全校验信息，请重新使用 GitHub 登录。");
+          return;
+        }
+
+        setConnecting(true);
+        const tokenResponse = await fetch("/auth/token", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: {
+            accept: "application/json",
+            "x-pw-csrf": csrf,
+          },
+        });
+        if (!tokenResponse.ok) {
+          setErrorMessage("GitHub 登录会话已失效，请重新登录。");
+          return;
+        }
+        const sessionToken = (await tokenResponse.json()) as SessionToken;
+        if (!sessionToken.accessToken) throw new Error("MissingSessionAccessToken");
+
+        const opened = await openPrivateRepository(
+          sessionToken.accessToken,
+          DEFAULT_OWNER,
+          DEFAULT_REPOSITORY,
+        );
+        adapterRef.current = opened.adapter;
+        setConnection(opened.connection);
+        setConnectionMethod("github-app");
+        setStatusMessage(`已通过 GitHub App 登录${status.login ? `（${status.login}）` : ""}，访问令牌仅保留在当前页面内存中。`);
+        await loadRecentCaptures(opened.adapter);
+      } catch (error) {
+        adapterRef.current = null;
+        setConnection(null);
+        setConnectionMethod(null);
+        setErrorMessage(error instanceof GitHubDataError ? friendlyError(error) : "GitHub 登录会话连接失败，请重新登录。");
+      } finally {
+        setConnecting(false);
+        if (authResult) {
+          window.history.replaceState({}, "", `${window.location.pathname}${window.location.hash}`);
+        }
+      }
+    }
+
+    void bootstrapGitHubAppSession();
+  }, []);
+
   const readiness = useMemo(() => [
     { label: "Static PWA", detail: "Mac 关机时仍可打开", done: true },
     { label: "Private data repo", detail: "可见性连接时强制检查", done: true },
-    { label: "GitHub authorization", detail: connection ? "当前页面已授权" : "等待最小权限令牌", done: Boolean(connection) },
+    { label: "GitHub authorization", detail: connection ? (connectionMethod === "github-app" ? "GitHub App 会话已授权" : "当前页面已授权") : authAvailability === "configured" ? "等待 GitHub 登录" : "等待最小权限令牌", done: Boolean(connection) },
     { label: "Real sync", detail: connection ? "Quick Capture 已启用" : "连接后写入真实文件", done: Boolean(connection) },
-  ], [connection]);
+  ], [authAvailability, connection, connectionMethod]);
 
   async function loadRecentCaptures(adapter = adapterRef.current) {
     if (!adapter) return;
@@ -132,36 +253,41 @@ export default function GitHubWorkspacePage() {
     setStatusMessage("");
     setSavedCapture(null);
     try {
-      const adapter = new GitHubContentsAdapter({
-        owner: owner.trim(),
-        repository: repository.trim(),
-        branch: "main",
-        token: token.trim(),
-      });
-      const repositoryStatus = await adapter.verifyPrivateRepository();
-      const descriptor = parseWorkspaceDescriptor((await adapter.readText("workspace.json")).text);
-      adapterRef.current = adapter;
-      setConnection({
-        repository: repositoryStatus.fullName,
-        ownerId: descriptor.owner_id,
-        ownerLogin: descriptor.owner_login,
-        timezone: descriptor.timezone,
-      });
+      const opened = await openPrivateRepository(token, owner, repository);
+      adapterRef.current = opened.adapter;
+      setConnection(opened.connection);
+      setConnectionMethod("personal-token");
       setToken("");
       setStatusMessage("已通过 Private 仓库检查。令牌仅保留在当前页面内存中。");
-      await loadRecentCaptures(adapter);
+      await loadRecentCaptures(opened.adapter);
     } catch (error) {
       adapterRef.current = null;
       setConnection(null);
+      setConnectionMethod(null);
       setErrorMessage(friendlyError(error));
     } finally {
       setConnecting(false);
     }
   }
 
-  function disconnect() {
+  async function disconnect() {
+    if (connectionMethod === "github-app") {
+      const csrf = readCookie("__Host-pw_csrf");
+      if (csrf) {
+        try {
+          await fetch("/auth/logout", {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "x-pw-csrf": csrf },
+          });
+        } catch {
+          // Local credentials are still cleared even if the network logout cannot complete.
+        }
+      }
+    }
     adapterRef.current = null;
     setConnection(null);
+    setConnectionMethod(null);
     setToken("");
     setCapture("");
     setRecentCaptures([]);
@@ -232,7 +358,9 @@ export default function GitHubWorkspacePage() {
           <h2 id="connection-title">{connection ? "私人数据已连接" : "连接你的数据仓库"}</h2>
           <p>{connection
             ? `${connection.repository} · Private · ${connection.timezone}`
-            : "使用只授权 personal-workspace-data 的 fine-grained token；需要 Metadata 读取和 Contents 读写权限。"}</p>
+            : authAvailability === "configured"
+              ? "使用 GitHub App 登录；访问令牌只进入当前页面内存。也可继续使用 fine-grained token 作为备用方式。"
+              : "使用只授权 personal-workspace-data 的 fine-grained token；需要 Metadata 读取和 Contents 读写权限。"}</p>
         </div>
         {connection ? (
           <div className="connection-actions">
@@ -241,11 +369,16 @@ export default function GitHubWorkspacePage() {
           </div>
         ) : (
           <form className="connection-form" onSubmit={connect}>
+            {authAvailability === "configured" ? (
+              <a className="github-login-button" href="/auth/login">使用 GitHub 登录</a>
+            ) : authAvailability === "checking" ? (
+              <span className="auth-checking">正在检查 GitHub App 登录…</span>
+            ) : null}
             <label>Owner<input value={owner} onChange={(event) => setOwner(event.target.value)} autoCapitalize="none" spellCheck={false} /></label>
             <label>Repository<input value={repository} onChange={(event) => setRepository(event.target.value)} autoCapitalize="none" spellCheck={false} /></label>
             <label className="token-field">Fine-grained token<input type="password" value={token} onChange={(event) => setToken(event.target.value)} autoComplete="new-password" spellCheck={false} placeholder="github_pat_…" /></label>
-            <button type="submit" disabled={connecting || online === false || !token}>{connecting ? "正在安全检查…" : "连接 Private 仓库"}</button>
-            <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noreferrer">在 GitHub 创建最小权限令牌 ↗</a>
+            <button type="submit" disabled={connecting || online === false || !token}>{connecting ? "正在安全检查…" : "使用 Token 连接"}</button>
+            <a className="token-help" href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noreferrer">在 GitHub 创建备用最小权限令牌 ↗</a>
           </form>
         )}
       </section>
@@ -295,7 +428,9 @@ export default function GitHubWorkspacePage() {
           </ol>
           <div className="boundary-note">
             <strong>凭据边界</strong>
-            <p>刷新或关闭页面后需要重新输入令牌。断开连接会立即清除当前页面内的令牌和已读取内容。</p>
+            <p>{connectionMethod === "github-app"
+              ? "页面刷新时会由服务端登录会话换取新的短期访问令牌；令牌只进入当前页面内存。断开连接会撤销本设备会话并清除已读取内容。"
+              : "手动 Token 在刷新或关闭页面后需要重新输入。断开连接会立即清除当前页面内的令牌和已读取内容。"}</p>
           </div>
         </aside>
       </section>
