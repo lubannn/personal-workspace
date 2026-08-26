@@ -38,6 +38,18 @@ export async function sha256Base64Url(value: string): Promise<string> {
   return bytesToBase64Url(new Uint8Array(digest));
 }
 
+export async function hmacSha256Base64Url(value: string, keyBase64Url: string): Promise<string> {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    base64UrlToBytes(keyBase64Url),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const signature = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(value));
+  return bytesToBase64Url(new Uint8Array(signature));
+}
+
 export async function encryptRefreshToken(token: string, keyBase64Url: string): Promise<string> {
   const key = await crypto.subtle.importKey(
     "raw",

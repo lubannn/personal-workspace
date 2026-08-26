@@ -1,4 +1,6 @@
-const PUBLIC_APP_ORIGIN = "https://personal-workspace-static.pages.dev";
+import { handleAuthRequest, type AuthEnv } from "./auth";
+
+const PUBLIC_APP_ORIGIN = "https://personal-workspace-app.pages.dev";
 const LEGACY_PUBLIC_APP_BASE_PATH = "/personal-workspace";
 
 const PRIVATE_RESPONSE_HEADERS = {
@@ -71,7 +73,7 @@ async function proxyPublicApp(request: Request): Promise<Response> {
   });
 }
 
-async function routeRequest(request: Request): Promise<Response> {
+async function routeRequest(request: Request, env: AuthEnv): Promise<Response> {
   const url = new URL(request.url);
 
   if (url.pathname === "/health") {
@@ -89,39 +91,30 @@ async function routeRequest(request: Request): Promise<Response> {
     return jsonResponse({
       status: "ok",
       service: "personal-workspace-auth-edge",
-      phase: "no-secret-feasibility",
-      authConfigured: false,
-    });
-  }
-
-  if (url.pathname === "/auth/status") {
-    if (request.method !== "GET") {
-      return methodNotAllowed("GET");
-    }
-
-    return jsonResponse({
-      configured: false,
-      phase: "no-secret-feasibility",
-      message: "The authentication broker has not been enabled yet.",
+      phase: "auth-foundation-ready",
+      authConfigured: Boolean(
+        env.DB &&
+          env.GITHUB_CLIENT_ID &&
+          env.GITHUB_CLIENT_SECRET &&
+          env.TOKEN_ENCRYPTION_KEY &&
+          env.SESSION_HMAC_KEY &&
+          env.ALLOWED_GITHUB_LOGIN &&
+          env.ALLOWED_REPO_OWNER &&
+          env.ALLOWED_REPO_NAME,
+      ),
     });
   }
 
   if (url.pathname.startsWith("/auth/")) {
-    return jsonResponse(
-      {
-        error: "AUTH_NOT_CONFIGURED",
-        message: "Authentication remains on the existing GitHub token fallback during feasibility testing.",
-      },
-      503,
-    );
+    return handleAuthRequest(request, env);
   }
 
   return proxyPublicApp(request);
 }
 
-export async function handleRequest(request: Request): Promise<Response> {
+export async function handleRequest(request: Request, env: AuthEnv = {}): Promise<Response> {
   try {
-    return await routeRequest(request);
+    return await routeRequest(request, env);
   } catch (error) {
     console.error(
       JSON.stringify({
@@ -143,8 +136,8 @@ export async function handleRequest(request: Request): Promise<Response> {
 }
 
 const worker = {
-  fetch(request: Request): Promise<Response> {
-    return handleRequest(request);
+  fetch(request: Request, env: AuthEnv): Promise<Response> {
+    return handleRequest(request, env);
   },
 };
 

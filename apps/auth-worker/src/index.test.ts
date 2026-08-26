@@ -8,7 +8,7 @@ afterEach(() => {
 });
 
 describe("auth edge worker", () => {
-  it("reports a no-secret healthy state", async () => {
+  it("reports an auth foundation that is not yet configured", async () => {
     const response = await handleRequest(new Request("https://workspace.example/health"));
 
     expect(response.status).toBe(200);
@@ -16,8 +16,19 @@ describe("auth edge worker", () => {
     expect(await response.json()).toEqual({
       status: "ok",
       service: "personal-workspace-auth-edge",
-      phase: "no-secret-feasibility",
+      phase: "auth-foundation-ready",
       authConfigured: false,
+    });
+  });
+
+  it("reports the explicit pre-secret authentication state", async () => {
+    const response = await handleRequest(new Request("https://workspace.example/auth/status"));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      configured: false,
+      authenticated: false,
+      phase: "awaiting-github-app-secrets",
     });
   });
 
@@ -46,7 +57,7 @@ describe("auth edge worker", () => {
     expect(await response.text()).toBe("static shell");
     const upstreamRequest = upstreamFetch.mock.calls[0]?.[0];
     expect(upstreamRequest).toBeInstanceOf(Request);
-    expect((upstreamRequest as Request).url).toBe("https://personal-workspace-static.pages.dev/");
+    expect((upstreamRequest as Request).url).toBe("https://personal-workspace-app.pages.dev/");
     expect((upstreamRequest as Request).headers.has("authorization")).toBe(false);
   });
 
@@ -63,7 +74,7 @@ describe("auth edge worker", () => {
 
     const upstreamRequest = upstreamFetch.mock.calls[0]?.[0] as Request;
     expect(upstreamRequest.url).toBe(
-      "https://personal-workspace-static.pages.dev/_next/static/app.js?v=1",
+      "https://personal-workspace-app.pages.dev/_next/static/app.js?v=1",
     );
   });
 

@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { decryptRefreshToken, encryptRefreshToken, randomToken, sha256Base64Url } from "./security";
+import {
+  decryptRefreshToken,
+  encryptRefreshToken,
+  hmacSha256Base64Url,
+  randomToken,
+  sha256Base64Url,
+} from "./security";
 
 describe("auth security primitives", () => {
   it("generates independent high-entropy tokens", () => {
@@ -13,6 +19,13 @@ describe("auth security primitives", () => {
 
   it("hashes session identifiers before persistence", async () => {
     const digest = await sha256Base64Url("session-secret");
+
+    expect(digest).toMatch(/^[A-Za-z0-9_-]{43}$/u);
+    expect(digest).not.toContain("session-secret");
+  });
+
+  it("keys persisted session identifiers with HMAC", async () => {
+    const digest = await hmacSha256Base64Url("session-secret", randomToken(32));
 
     expect(digest).toMatch(/^[A-Za-z0-9_-]{43}$/u);
     expect(digest).not.toContain("session-secret");
