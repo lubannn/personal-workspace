@@ -36,14 +36,13 @@ rollback resource. New deployments use the `nexus` name from `wrangler.jsonc`.
 
 ## GitHub App authentication
 
-The Cloudflare entry has passed Mac, Windows, iPhone, and iPad availability
-testing. The GitHub App is now created and installed only on
-`personal-workspace-data`; desktop OAuth, refresh recovery, D1 session creation,
-and private repository reading have passed. The remaining acceptance work is:
+The Cloudflare entry has passed Mac, Windows, iPhone, and iPad GitHub App login,
+refresh, write, and cross-device read acceptance. The App is installed only on
+`personal-workspace-data`. D1 reported five active sessions for the single
+allowed GitHub account after testing, including the initial desktop acceptance
+session. The remaining acceptance work is:
 
-1. Complete login, refresh, write, and read acceptance on Mac, Windows, iPhone,
-   and iPad.
-2. Verify current-device logout and all-device revocation paths.
+1. Verify current-device logout and all-device revocation paths.
 
 The implemented flow uses OAuth state plus PKCE, a `__Host-` HttpOnly session
 cookie, a same-origin CSRF token, HMAC-hashed session identifiers, encrypted and
