@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { createWorkspaceRecord, serializeRecord } from "./protocol";
-import { newestCaptures, parseCaptureRecord, parseWorkspaceDescriptor } from "./workspace";
+import { newestCaptures, newestTrashedCaptures, parseCaptureRecord, parseWorkspaceDescriptor } from "./workspace";
 
 describe("GitHub workspace helpers", () => {
   it("parses the data repository descriptor", () => {
@@ -44,5 +44,25 @@ describe("GitHub workspace helpers", () => {
       data: { title: "not a capture" },
     });
     expect(() => parseCaptureRecord(serializeRecord(task))).toThrow("INVALID_CAPTURE_RECORD");
+  });
+
+  it("keeps deleted records out of the inbox and orders the recycle bin by deletion time", () => {
+    const first = {
+      ...createWorkspaceRecord({
+        entityType: "capture",
+        id: "capture_deleted_first",
+        ownerId: "github_lubannn",
+        data: { raw_text: "first", status: "inbox" as const },
+        timestamp: "2026-08-27T01:00:00.000Z",
+      }),
+      deleted_at: "2026-08-27T03:00:00.000Z",
+    };
+    const second = { ...first, id: "capture_deleted_second", deleted_at: "2026-08-27T04:00:00.000Z" };
+
+    expect(newestCaptures([first, second])).toEqual([]);
+    expect(newestTrashedCaptures([first, second]).map((record) => record.id)).toEqual([
+      "capture_deleted_second",
+      "capture_deleted_first",
+    ]);
   });
 });

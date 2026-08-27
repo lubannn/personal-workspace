@@ -9,9 +9,15 @@ import {
   serializePortableWorkspaceExport,
   type ExportInspectionIssue,
 } from "../../../src/lib/github-data/portable-export";
-import { createWorkspaceRecord, recordPath, serializeRecord } from "../../../src/lib/github-data/protocol";
+import {
+  createWorkspaceRecord,
+  recordPath,
+  serializeRecord,
+  setWorkspaceRecordDeleted,
+} from "../../../src/lib/github-data/protocol";
 import {
   newestCaptures,
+  newestTrashedCaptures,
   parseCaptureRecord,
   parseWorkspaceDescriptor,
   type CaptureRecord,
@@ -28,6 +34,12 @@ type SavedCapture = {
   path: string;
   commitSha: string;
   text: string;
+};
+
+type SyncedCapture = {
+  record: CaptureRecord;
+  path: string;
+  blobSha: string;
 };
 
 type AuthAvailability = "checking" | "unavailable" | "configured";
@@ -125,13 +137,15 @@ export default function GitHubWorkspacePage() {
   const [connecting, setConnecting] = useState(false);
   const [loadingCaptures, setLoadingCaptures] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [savingCaptureId, setSavingCaptureId] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState("");
   const [checkingRestore, setCheckingRestore] = useState(false);
   const [confirmingRevokeAll, setConfirmingRevokeAll] = useState(false);
   const [revokingAll, setRevokingAll] = useState(false);
   const [capture, setCapture] = useState("");
-  const [recentCaptures, setRecentCaptures] = useState<CaptureRecord[]>([]);
+  const [captureFiles, setCaptureFiles] = useState<SyncedCapture[]>([]);
+  const [captureView, setCaptureView] = useState<"inbox" | "trash">("inbox");
   const [savedCapture, setSavedCapture] = useState<SavedCapture | null>(null);
   const [exportResult, setExportResult] = useState<PortabilityResult | null>(null);
   const [restoreResult, setRestoreResult] = useState<PortabilityResult | null>(null);
@@ -233,6 +247,22 @@ export default function GitHubWorkspacePage() {
     { label: "Real sync", detail: connection ? "Quick Capture 已启用" : "连接后写入真实文件", done: Boolean(connection) },
   ], [authAvailability, connection, connectionMethod]);
 
+  const inboxCaptures = useMemo(() => {
+    const byId = new Map(captureFiles.map((item) => [item.record.id, item]));
+    return newestCaptures(captureFiles.map((item) => item.record), 20)
+      .map((record) => byId.get(record.id))
+      .filter((item): item is SyncedCapture => Boolean(item));
+  }, [captureFiles]);
+
+  const trashedCaptures = useMemo(() => {
+    const byId = new Map(captureFiles.map((item) => [item.record.id, item]));
+    return newestTrashedCaptures(captureFiles.map((item) => item.record), 20)
+      .map((record) => byId.get(record.id))
+      .filter((item): item is SyncedCapture => Boolean(item));
+  }, [captureFiles]);
+
+  const visibleCaptures = captureView === "inbox" ? inboxCaptures : trashedCaptures;
+
   async function loadRecentCaptures(adapter = adapterRef.current) {
     if (!adapter) return;
     setLoadingCaptures(true);
@@ -243,23 +273,27 @@ export default function GitHubWorkspacePage() {
         items = await adapter.listDirectory("data/captures");
       } catch (error) {
         if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") {
-          setRecentCaptures([]);
+          setCaptureFiles([]);
           return;
         }
         throw error;
       }
       const candidates = items
         .filter((item) => item.type === "file" && item.name.endsWith(".json"))
-        .sort((left, right) => right.name.localeCompare(left.name))
-        .slice(0, 20);
-      const records = await Promise.all(candidates.map(async (item) => {
-        try {
-          return parseCaptureRecord((await adapter.readText(item.path)).text);
-        } catch {
-          return null;
-        }
-      }));
-      setRecentCaptures(newestCaptures(records.filter((record): record is CaptureRecord => record !== null)));
+        .sort((left, right) => right.name.localeCompare(left.name));
+      const records: SyncedCapture[] = [];
+      const batchSize = 6;
+      for (let index = 0; index < candidates.length; index += batchSize) {
+        records.push(...(await Promise.all(candidates.slice(index, index + batchSize).map(async (item) => {
+          try {
+            const file = await adapter.readText(item.path);
+            return { record: parseCaptureRecord(file.text), path: file.path, blobSha: file.blobSha };
+          } catch {
+            return null;
+          }
+        }))).filter((item): item is SyncedCapture => item !== null));
+      }
+      setCaptureFiles(records);
     } catch (error) {
       setErrorMessage(friendlyError(error));
     } finally {
@@ -298,7 +332,8 @@ export default function GitHubWorkspacePage() {
     setConnectionMethod(null);
     setToken("");
     setCapture("");
-    setRecentCaptures([]);
+    setCaptureFiles([]);
+    setCaptureView("inbox");
     setSavedCapture(null);
     setExportResult(null);
     setRestoreResult(null);
@@ -378,12 +413,44 @@ export default function GitHubWorkspacePage() {
       });
       setCapture("");
       setSavedCapture({ path: result.path, commitSha: result.commitSha, text });
-      setRecentCaptures((current) => newestCaptures([record, ...current]));
+      setCaptureFiles((current) => [{ record, path: result.path, blobSha: result.blobSha }, ...current]);
       setStatusMessage("已保存到 Private 数据仓库，可在其他设备刷新后读取。");
     } catch (error) {
       setErrorMessage(friendlyError(error));
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function updateCaptureLifecycle(item: SyncedCapture, operation: "trash" | "restore") {
+    const adapter = adapterRef.current;
+    if (!adapter || !connection || savingCaptureId || online === false) return;
+    setSavingCaptureId(item.record.id);
+    setErrorMessage("");
+    setStatusMessage("");
+    const timestamp = new Date().toISOString();
+    const updated = setWorkspaceRecordDeleted(
+      item.record,
+      operation === "trash" ? timestamp : null,
+      timestamp,
+    );
+    try {
+      const result = await adapter.writeText({
+        path: item.path,
+        text: serializeRecord(updated),
+        message: `capture: ${operation} ${item.record.id}`,
+        expectedBlobSha: item.blobSha,
+      });
+      setCaptureFiles((current) => current.map((candidate) => candidate.record.id === item.record.id
+        ? { record: updated, path: result.path, blobSha: result.blobSha }
+        : candidate));
+      setStatusMessage(operation === "trash"
+        ? "Capture 已移到回收站；可随时恢复，Git 历史仍保留原版本。"
+        : "Capture 已恢复到 Inbox。请在其他设备刷新后查看最新状态。");
+    } catch (error) {
+      setErrorMessage(friendlyError(error));
+    } finally {
+      setSavingCaptureId(null);
     }
   }
 
@@ -638,16 +705,46 @@ export default function GitHubWorkspacePage() {
 
       <section className="recent-card" aria-labelledby="recent-title">
         <div className="card-heading">
-          <div><p className="eyebrow">Cross-device inbox</p><h2 id="recent-title">最近 Capture</h2></div>
-          <button className="secondary-button" type="button" onClick={() => loadRecentCaptures()} disabled={!connection || loadingCaptures}>{loadingCaptures ? "刷新中…" : "从 GitHub 刷新"}</button>
+          <div><p className="eyebrow">Cross-device inbox</p><h2 id="recent-title">Capture Inbox</h2></div>
+          <div className="recent-actions" aria-label="Capture 视图与同步">
+            <button
+              className={`view-button ${captureView === "inbox" ? "active" : ""}`}
+              type="button"
+              aria-pressed={captureView === "inbox"}
+              onClick={() => setCaptureView("inbox")}
+            >
+              Inbox {inboxCaptures.length}
+            </button>
+            <button
+              className={`view-button ${captureView === "trash" ? "active" : ""}`}
+              type="button"
+              aria-pressed={captureView === "trash"}
+              onClick={() => setCaptureView("trash")}
+            >
+              回收站 {trashedCaptures.length}
+            </button>
+            <button className="secondary-button" type="button" onClick={() => loadRecentCaptures()} disabled={!connection || loadingCaptures}>{loadingCaptures ? "刷新中…" : "从 GitHub 刷新"}</button>
+          </div>
         </div>
         {!connection ? <p className="empty-note">连接后显示 Private 仓库中的最近记录。</p>
-          : recentCaptures.length === 0 ? <p className="empty-note">Inbox 还是空的，可以保存第一条记录。</p>
-            : <ul className="recent-list">{recentCaptures.map((item) => (
-              <li key={item.id}>
-                <time dateTime={item.created_at}>{formatCaptureTime(item.created_at)}</time>
-                <p>{item.data.raw_text}</p>
-                <span>{item.data.status}</span>
+          : visibleCaptures.length === 0 ? <p className="empty-note">{captureView === "trash" ? "回收站是空的。" : "Inbox 还是空的，可以保存第一条记录。"}</p>
+            : <ul className="recent-list">{visibleCaptures.map((item) => (
+              <li key={item.record.id}>
+                <time dateTime={item.record.deleted_at ?? item.record.created_at}>
+                  {formatCaptureTime(item.record.deleted_at ?? item.record.created_at)}
+                </time>
+                <p>{item.record.data.raw_text}</p>
+                <div className="capture-row-actions">
+                  <span>{captureView === "trash" ? "trash" : item.record.data.status}</span>
+                  <button
+                    className={captureView === "trash" ? "restore-button" : "trash-button"}
+                    type="button"
+                    onClick={() => updateCaptureLifecycle(item, captureView === "trash" ? "restore" : "trash")}
+                    disabled={Boolean(savingCaptureId) || online === false}
+                  >
+                    {savingCaptureId === item.record.id ? "保存中…" : captureView === "trash" ? "恢复" : "移到回收站"}
+                  </button>
+                </div>
               </li>
             ))}</ul>}
       </section>

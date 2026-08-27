@@ -1,6 +1,6 @@
 # Phase 1C：数据可迁移与恢复基础
 
-> 状态：首个垂直切片已实现，待正式环境验收  
+> 状态：首个垂直切片已通过 Windows 与 iPad 正式环境验收；Capture 生命周期切片实现中  
 > 开始日期：2026-08-27  
 > 范围：GitHub-backed canonical data
 
@@ -74,8 +74,8 @@ Phase 1C 在继续增加业务模块前，先证明私人仓库中的开放文�
 - [x] 生成后的导出包在下载前自动通过相同恢复预检。
 - [x] 用户可重新选择本地 JSON，独立执行只读预检。
 - [x] 篡改正文、错误 owner、错误路径、版本不兼容和缺失 workspace 可被测试捕获。
-- [ ] 正式 Cloudflare 环境下载并回选同一文件通过。
-- [ ] 至少在一台移动设备完成导出下载或文件预检。
+- [x] 正式 Cloudflare 环境下载并回选同一文件通过（Windows：15 个文件、14 条 Capture）。
+- [x] 至少在一台移动设备完成导出下载或文件预检（iPad 通过）。
 
 ## 5. 安全边界
 
@@ -84,10 +84,20 @@ Phase 1C 在继续增加业务模块前，先证明私人仓库中的开放文�
 - 本阶段不开放“恢复写入”，避免在空仓库判断、owner 判断、并发保护完成前造成覆盖。
 - GitHub 历史仍是当前在线版本恢复来源；开放导出提供厂商迁移能力，但不替代独立备份。
 
-## 6. 后续切片
+## 6. Capture 生命周期切片
+
+Capture 回收站采用同路径软删除，不移动或物理删除 Private 仓库文件：
+
+- 移到回收站：保留 `data/captures/<id>.json`，设置 `deleted_at`，并递增 `version`；
+- 恢复：清空同一文件的 `deleted_at`，再次递增 `version`；
+- Inbox 默认只显示 `deleted_at: null` 的记录，回收站按删除时间倒序显示；
+- 每次变更都携带页面最后读取到的 Git blob SHA；另一设备已修改时 GitHub 拒绝旧 SHA，页面显示冲突并要求刷新；
+- 不提供永久删除入口，旧版本仍保留在 Git 历史中；
+- 开放导出包含 Inbox 与回收站中的全部 Capture，保证迁移不遗漏软删除记录。
+
+## 7. 后续切片
 
 1. 只允许恢复到新建空仓库或隔离分支，并在写入前再次显示文件数量与目标仓库。
 2. 为所有文件写入使用 blob SHA / 空目标约束，禁止静默覆盖。
-3. 增加 Capture 软删除、`trash/captures/` 与恢复流程。
-4. 增加 workspace schema migration registry 和迁移 dry run。
-5. 扩展 manifest 到 Dashboard layout、Tasks、Projects、Journal、附件索引等后续模块。
+3. 增加 workspace schema migration registry 和迁移 dry run。
+4. 扩展 manifest 到 Dashboard layout、Tasks、Projects、Journal、附件索引等后续模块。

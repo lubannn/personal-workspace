@@ -1,6 +1,6 @@
 # Phase 1 实施基线
 
-> 状态：SQLite 本地基线完成；Phase 1B GitHub-backed PWA 验收通过；Phase 1C 数据可迁移基础进行中
+> 状态：SQLite 本地基线完成；Phase 1B GitHub-backed PWA 验收通过；Phase 1C 导出预检已验收、Capture 生命周期实现中
 > 开始日期：2026-08-24
 > 本地基线完成日期：2026-08-25
 
@@ -48,7 +48,14 @@ Phase 1B 认证升级已完成：
 - 预检覆盖格式/版本、manifest 集合、数量、哈希、workspace、owner、Capture schema、ID 与路径一致性。
 - 导出和预检不保存或包含 GitHub/Cloudflare 凭据；预检不会上传或写回数据。
 
-正式环境与移动设备验收完成前，不开放恢复写入。详细协议见 `PHASE_1C_DATA_PORTABILITY.md`。
+Windows 正式环境导出回选（15 个文件、14 条 Capture）和 iPad 预检均已通过。真正的批量恢复写入仍需空目标约束与独立确认，详细协议见 `PHASE_1C_DATA_PORTABILITY.md`。
+
+Phase 1C 第二个垂直切片已进入实现：
+
+- Capture 使用同路径 `deleted_at` 软删除，不执行物理删除，也不提供永久删除入口。
+- Inbox 与回收站分离展示；恢复会清空 `deleted_at`，两种操作都递增记录版本。
+- 更新携带读取时的 Git blob SHA；跨设备陈旧写入会显式冲突，不静默覆盖。
+- 导出继续读取全部 Capture，因此回收站记录也包含在开放数据包中。
 
 ## 已确认技术基线
 

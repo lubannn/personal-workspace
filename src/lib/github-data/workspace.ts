@@ -50,3 +50,10 @@ export function newestCaptures(records: CaptureRecord[], limit = 6) {
     .sort((left, right) => right.created_at.localeCompare(left.created_at))
     .slice(0, Math.max(0, limit));
 }
+
+export function newestTrashedCaptures(records: CaptureRecord[], limit = 20) {
+  return [...records]
+    .filter((record) => record.deleted_at !== null)
+    .sort((left, right) => String(right.deleted_at).localeCompare(String(left.deleted_at)))
+    .slice(0, Math.max(0, limit));
+}

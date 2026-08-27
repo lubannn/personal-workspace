@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { createWorkspaceRecord, parseRecord, recordPath, serializeRecord, updateWorkspaceRecord } from "./protocol";
+import {
+  createWorkspaceRecord,
+  parseRecord,
+  recordPath,
+  serializeRecord,
+  setWorkspaceRecordDeleted,
+  updateWorkspaceRecord,
+} from "./protocol";
 
 describe("GitHub data protocol", () => {
   it("creates versioned portable records and stable paths", () => {
@@ -22,5 +29,26 @@ describe("GitHub data protocol", () => {
   it("requires a valid date for journal file placement", () => {
     expect(recordPath("journal", "journal_01", "2026-08-25")).toBe("journal/2026/journal_01.md");
     expect(() => recordPath("journal", "journal_01", "25-08-2026")).toThrow("INVALID_JOURNAL_DATE");
+  });
+
+  it("soft deletes and restores without changing record identity or business data", () => {
+    const record = createWorkspaceRecord({
+      entityType: "capture",
+      id: "capture_lifecycle",
+      ownerId: "owner_01",
+      data: { raw_text: "可恢复内容", status: "inbox" as const },
+      timestamp: "2026-08-27T01:00:00.000Z",
+    });
+    const deleted = setWorkspaceRecordDeleted(
+      record,
+      "2026-08-27T02:00:00.000Z",
+      "2026-08-27T02:00:00.000Z",
+    );
+    const restored = setWorkspaceRecordDeleted(deleted, null, "2026-08-27T03:00:00.000Z");
+
+    expect(deleted).toMatchObject({ id: record.id, version: 2, deleted_at: "2026-08-27T02:00:00.000Z" });
+    expect(restored).toMatchObject({ id: record.id, version: 3, deleted_at: null, data: record.data });
+    expect(restored.created_at).toBe(record.created_at);
+    expect(() => setWorkspaceRecordDeleted(record, "not-a-date")).toThrow("INVALID_DELETED_AT");
   });
 });

@@ -76,6 +76,21 @@ export function updateWorkspaceRecord<TData extends Record<string, unknown>>(
   return { ...current, version: current.version + 1, updated_at: timestamp, data };
 }
 
+export function setWorkspaceRecordDeleted<TData extends Record<string, unknown>>(
+  current: WorkspaceRecord<TData>,
+  deletedAt: string | null,
+  timestamp = new Date().toISOString(),
+): WorkspaceRecord<TData> {
+  if (deletedAt !== null && Number.isNaN(Date.parse(deletedAt))) throw new Error("INVALID_DELETED_AT");
+  if (Number.isNaN(Date.parse(timestamp))) throw new Error("INVALID_UPDATED_AT");
+  return {
+    ...current,
+    version: current.version + 1,
+    updated_at: timestamp,
+    deleted_at: deletedAt,
+  };
+}
+
 export function serializeRecord(record: WorkspaceRecord) {
   if (record.schema_version !== GITHUB_DATA_SCHEMA_VERSION || record.version < 1) throw new Error("INVALID_RECORD");
   return `${JSON.stringify(record, null, 2)}\n`;

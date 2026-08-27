@@ -45,11 +45,12 @@ data/health/<uuid>.json
 attachments/<owner-id>/<attachment-id>/<filename>
 imports/<batch-id>/source.docx
 imports/<batch-id>/import-log.json
-trash/<entity-type>/<uuid>.json
 indexes/*.json
 ```
 
 JSON 采用 UTF-8、稳定字段名和显式 `schema_version`。Markdown 使用版本化 frontmatter。附件索引记录原文件名、MIME、大小和 SHA-256。
+
+Capture 回收站在 v1 中不移动文件：原路径保持为 `data/captures/<uuid>.json`，以 `deleted_at` 区分 Inbox 与回收站。移入和恢复都递增 `version`，并以读取时的 blob SHA 作为写入前置条件。这样可以避免路径搬移产生的非原子多文件提交，也能保留稳定 ID、导出完整性和清晰 Git 历史。
 
 ## 5. 明文与 Git 历史边界
 
@@ -83,3 +84,7 @@ Phase 1B 首个可用版本使用只授权 `personal-workspace-data` 的 fine-gr
 工作台提供 `personal-workspace-export` v1 JSON：首个 scope 包含 `workspace.json` 和全部 Capture。manifest 为每个文件保存 Git blob SHA、UTF-8 字节数和 SHA-256；正文以原始开放文本保存在同一导出文件中。
 
 浏览器恢复预检只读取用户选择的本地 JSON，检查版本、数量、哈希、owner、schema、ID 与路径，不上传也不执行 GitHub 写入。实际恢复必须晚于空目标判断、逐文件冲突保护和单独人工确认。
+
+## 9. Capture 回收站与冲突保护
+
+Inbox 只读取 `deleted_at: null` 的 Capture；回收站读取 `deleted_at` 非空的记录并允许恢复。界面不提供永久删除。每次生命周期写入使用 GitHub Contents API 的 `sha` 前置条件；如果另一设备已经更新相同文件，陈旧写入被转换为 `GITHUB_SYNC_CONFLICT`，用户刷新后再决定，不发生最后写入者静默覆盖。

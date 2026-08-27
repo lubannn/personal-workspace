@@ -94,10 +94,18 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, a:focus-visib
 .boundary-note p { margin: 7px 0 0; color: #aaa9a1; font-size: 10px; line-height: 1.7; }
 .recent-card { margin-bottom: 18px; padding: clamp(24px, 4vw, 40px); }
 .recent-card .card-heading h2 { font-size: 25px; }
+.recent-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.view-button { min-height: 34px; border: 1px solid var(--line); border-radius: 999px; padding: 8px 12px; background: transparent; color: var(--muted); cursor: pointer; font-size: 9px; font-weight: 700; }
+.view-button.active { border-color: var(--ink); background: var(--ink); color: white; }
 .recent-list { margin: 28px 0 0; padding: 0; list-style: none; }
 .recent-list li { display: grid; grid-template-columns: 110px minmax(0, 1fr) auto; align-items: start; gap: 20px; padding: 17px 0; border-top: 1px solid var(--line); }
-.recent-list time, .recent-list > li > span { color: var(--muted); font-size: 9px; letter-spacing: .04em; text-transform: uppercase; }
+.recent-list time, .capture-row-actions > span { color: var(--muted); font-size: 9px; letter-spacing: .04em; text-transform: uppercase; }
 .recent-list p { margin: 0; color: var(--soft); font: 15px/1.65 ui-serif, Georgia, "Songti SC", serif; white-space: pre-wrap; overflow-wrap: anywhere; }
+.capture-row-actions { display: grid; min-width: 92px; justify-items: end; gap: 8px; }
+.trash-button, .restore-button { border: 1px solid var(--line); border-radius: 9px; padding: 8px 10px; background: rgba(255,255,255,.3); cursor: pointer; font-size: 9px; font-weight: 700; white-space: nowrap; }
+.trash-button { border-color: #d5aaa2; color: #7a4138; }
+.restore-button { border-color: #b9c9b4; color: var(--accent); }
+.trash-button:disabled, .restore-button:disabled { opacity: .4; cursor: default; }
 .portability-card { margin-bottom: 72px; padding: clamp(24px, 4vw, 40px); }
 .portability-card .card-heading h2 { font-size: 25px; }
 .portability-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 30px; }
@@ -138,8 +146,10 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, a:focus-visib
   .portability-grid { grid-template-columns: 1fr; }
   .card-heading { display: grid; }
   .memory-pill { width: fit-content; }
+  .recent-actions { justify-content: flex-start; }
   .recent-list li { grid-template-columns: 1fr auto; gap: 9px 15px; }
   .recent-list p { grid-column: 1 / -1; grid-row: 2; }
+  .capture-row-actions { grid-column: 2; grid-row: 1 / 3; align-self: start; }
   .portability-grid article > p { min-height: 0; }
   .primary-button, .file-picker { width: 100%; }
   .page-footer { align-items: flex-start; justify-content: center; flex-direction: column; gap: 8px; }
