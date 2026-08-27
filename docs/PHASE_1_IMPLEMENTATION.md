@@ -1,6 +1,6 @@
 # Phase 1 实施基线
 
-> 状态：SQLite 本地基线完成；Phase 1B GitHub-backed PWA 四设备登录、刷新与读写验收通过，退出与撤销复验待完成
+> 状态：SQLite 本地基线完成；Phase 1B GitHub-backed PWA 四设备与完整会话生命周期验收通过
 > 开始日期：2026-08-24
 > 本地基线完成日期：2026-08-25
 
@@ -35,10 +35,8 @@ Phase 1B 认证升级已完成：
 - GitHub App 仅安装到 `personal-workspace-data`，权限限定为 Metadata 读取与 Contents 读写。
 - OAuth state + PKCE、HttpOnly 会话 Cookie、HMAC session ID、加密 refresh token、同源 CSRF 与显式用户/仓库 allowlist 已实现。
 - 2026-08-27 Mac、Windows、iPhone、iPad 的 GitHub App 登录、刷新、写入与跨设备读取均已通过；D1 核对到 5 个同账号有效会话，其中一个为初始桌面验收会话；手工 PAT 入口保留为回退。
-
-Phase 1B 尚待：
-
-- 完成当前设备退出与全部设备撤销的实机复验。
+- 当前设备退出使有效会话从 5 降至 4；重新登录恢复为 5；全部设备撤销后有效会话为 0、已撤销记录为 8，页面与 D1 状态一致。
+- GitHub App 登录为正式默认入口，手工 PAT 仅作为高级回退；Phase 1B 认证升级验收完成。
 
 ## 已确认技术基线
 
