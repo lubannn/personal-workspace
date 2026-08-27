@@ -1,6 +1,6 @@
 # Personal Workspace 认证体验升级规格
 
-> 状态：GitHub App OAuth 已上线并完成桌面浏览器端到端验收；四设备 OAuth 复验待完成
+> 状态：GitHub App OAuth 已上线；Mac、Windows、iPhone、iPad 登录、刷新与读写验收通过；退出与撤销复验待完成
 > 版本：0.2
 > 日期：2026-08-27
 
@@ -159,8 +159,10 @@ GitHub Pages 不能运行 auth broker。正式免手输入口需要支持同源�
 当前进度：步骤 1 至 6 已完成。GitHub App `Personal Workspace Auth` 已创建并且
 只安装到 `lubannn/personal-workspace-data`；`nexus` Worker 已配置 Client ID、
 Workers Secrets 和 D1。2026-08-27 已完成桌面浏览器授权、callback、短期 token、
-Private 仓库读取和刷新后会话恢复验证，D1 中生成了首个有效会话。步骤 7 的
-Mac、Windows、iPhone、iPad OAuth 登录、写入、退出和撤销复验仍待用户实机完成。
+Private 仓库读取和刷新后会话恢复验证，D1 中生成了首个有效会话。随后用户在
+Mac、Windows、iPhone、iPad 上完成 GitHub App 登录、刷新、写入与跨设备读取，
+四设备核心流程均通过；当前 D1 中有 5 个同账号有效会话，其中一个为初始桌面
+验收会话。步骤 7 仅余当前设备退出与全部设备撤销的实机复验。
 
 ## 12. 已确认决策
 
