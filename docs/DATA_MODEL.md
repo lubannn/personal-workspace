@@ -122,6 +122,8 @@ trash/<entity-type>/<id>.json
 
 ### Task
 
+GitHub-backed canonical 路径为 `data/tasks/<task_id>.json`。每个任务是独立开放 JSON 文件，使用通用记录 envelope；浏览器只保存当前页面状态，不使用 LocalStorage 持久化任务正文。
+
 - `id`, `owner_id`, `title`
 - `category_id`：工作、生活、人生是初始配置
 - `project_id`，可为空
@@ -141,6 +143,7 @@ trash/<entity-type>/<id>.json
 - 完成状态应有 `completed_at`；离开完成状态时保留事件历史，但当前字段清空或重置需有明确规则。
 - MVP UI 仅创建一层子任务，数据库禁止自引用和循环。
 - `actual_duration_minutes` 可由 TimeEntry 汇总，同时允许记录人工覆盖值及覆盖原因。
+- Phase 2A 首个切片只开放创建、今日/逾期聚合、完成和恢复；其余已定义字段保持可导出结构，后续按切片开放 UI。
 
 ### TaskCategory
 

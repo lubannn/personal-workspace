@@ -142,5 +142,5 @@ Capture 回收站采用同路径软删除，不移动或物理删除 Private 仓
 
 ## 10. 后续切片
 
-1. 扩展 manifest 到 Tasks、Projects、Journal、附件索引等后续模块。
+1. Task 已进入 manifest；继续扩展到 Projects、Journal、附件索引等后续模块。
 2. 在第一个真实 schema 升级出现时，追加不可变迁移步骤与独立恢复仓库演练。

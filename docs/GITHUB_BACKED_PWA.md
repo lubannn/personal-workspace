@@ -114,3 +114,9 @@ Dashboard 布局保存在 `config/dashboard-layout.json`，不进入 LocalStorag
 布局文件纳入开放导出、SHA-256 manifest、schema dry run 和隔离恢复。旧版没有布局文件的 export v1 保持兼容。
 
 2026-08-28 正式环境验收通过：创建并保存 `config/dashboard-layout.json` 后，页面刷新仍从 Private 仓库恢复 `Private layout v3`，8 个默认模块完整；开放导出预检通过，共 17 个文件、15 条 Capture 和 1 个 Dashboard layout；跨设备布局读写与持久化确认通过。
+
+## 13. Task foundation
+
+Task 使用 `data/tasks/<task_id>.json` 独立文件并沿用通用 envelope。首个 Phase 2A 切片开放创建、Today 聚合、完成与恢复；工作、生活、人生分类以及完整的状态、优先级、DDL、时区、耗时、标签和 notes 字段保留在 canonical 结构中。
+
+任务更新携带读取时的 Git blob SHA，跨设备陈旧写入会明确冲突。Task 文件已进入开放导出、SHA-256 manifest、schema dry run 和隔离恢复；旧版没有 Task 的 export v1 仍保持兼容。

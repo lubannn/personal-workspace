@@ -63,7 +63,7 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .message-bar.error { border-color: #d5aaa2; background: #f3e2df; color: #773e35; }
 
 .dashboard-card { margin-bottom: 18px; padding: clamp(24px, 4vw, 40px); }
-.dashboard-card, .capture-card, .status-card, .recent-card, .portability-card { border: 1px solid var(--line); border-radius: 24px; background: rgba(250,249,245,.72); }
+.dashboard-card, .capture-card, .status-card, .recent-card, .tasks-card, .portability-card { border: 1px solid var(--line); border-radius: 24px; background: rgba(250,249,245,.72); }
 .dashboard-heading { align-items: center; }
 .dashboard-heading h2 { margin: 0; font: 500 32px/1.15 ui-serif, Georgia, "Songti SC", serif; letter-spacing: -.035em; }
 .dashboard-subtitle { margin: 10px 0 0; color: var(--muted); font-size: 10px; }
@@ -87,6 +87,15 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .widget-capture textarea:focus { border-color: var(--accent); background: white; }
 .widget-capture > footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 10px; color: var(--muted); font-size: 9px; }
 .widget-capture > footer button:disabled { opacity: .35; cursor: default; }
+.today-task-widget { margin-top: 24px; }
+.today-task-widget .widget-empty { margin-top: 38px; }
+.today-task-widget ul { display: grid; gap: 1px; margin: 0; padding: 0; list-style: none; background: var(--line); }
+.today-task-widget li { min-width: 0; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 9px; padding: 10px 0; background: #f9f8f4; }
+.today-task-widget li button { width: 23px; height: 23px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 50%; background: transparent; color: var(--accent); cursor: pointer; }
+.today-task-widget li button:disabled { opacity: .4; cursor: default; }
+.today-task-widget li span { min-width: 0; overflow: hidden; color: var(--soft); font: 12px/1.4 ui-serif, Georgia, "Songti SC", serif; text-overflow: ellipsis; white-space: nowrap; }
+.today-task-widget li small { color: var(--muted); font-size: 8px; white-space: nowrap; }
+.task-overflow-note { margin: 10px 0 0; color: var(--muted); font-size: 9px; }
 .dashboard-editor-footer { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-top: 16px; padding: 16px; border: 1px dashed var(--line); border-radius: 14px; }
 .dashboard-editor-footer > div { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .dashboard-editor-footer strong, .dashboard-editor-footer span { color: var(--muted); font-size: 9px; }
@@ -135,6 +144,24 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .trash-button { border-color: #d5aaa2; color: #7a4138; }
 .restore-button { border-color: #b9c9b4; color: var(--accent); }
 .trash-button:disabled, .restore-button:disabled { opacity: .4; cursor: default; }
+.tasks-card { margin-bottom: 18px; padding: clamp(24px, 4vw, 40px); }
+.tasks-card .card-heading h2 { font-size: 25px; }
+.tasks-subtitle { margin: 9px 0 0; color: var(--muted); font-size: 10px; line-height: 1.6; }
+.task-view-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.task-create-form { display: grid; grid-template-columns: minmax(240px, 1.7fr) repeat(3, minmax(100px, .55fr)) auto; align-items: end; gap: 10px; margin-top: 28px; padding: 18px; border: 1px solid var(--line); border-radius: 16px; background: rgba(255,255,255,.38); }
+.task-create-form label { display: grid; gap: 7px; color: var(--muted); font-size: 9px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.task-create-form input, .task-create-form select { min-width: 0; width: 100%; height: 42px; border: 1px solid var(--line); border-radius: 10px; padding: 0 11px; background: rgba(255,255,255,.72); color: var(--ink); outline: none; }
+.task-create-form input:focus, .task-create-form select:focus { border-color: var(--accent); background: white; }
+.task-create-form input:disabled, .task-create-form select:disabled { opacity: .52; cursor: default; }
+.task-list { margin: 24px 0 0; padding: 0; list-style: none; }
+.task-list li { min-width: 0; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 14px; padding: 15px 0; border-top: 1px solid var(--line); }
+.task-toggle { width: 30px; height: 30px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 50%; background: rgba(255,255,255,.4); color: var(--accent); cursor: pointer; font-weight: 700; }
+.task-toggle:disabled { opacity: .4; cursor: default; }
+.task-list li > div { min-width: 0; display: grid; gap: 5px; }
+.task-list strong { overflow-wrap: anywhere; font: 500 15px/1.45 ui-serif, Georgia, "Songti SC", serif; }
+.task-list span { color: var(--muted); font-size: 9px; }
+.task-list code { color: var(--muted); font-size: 9px; }
+.task-list li.completed strong { color: var(--muted); text-decoration: line-through; text-decoration-thickness: 1px; }
 .portability-card { margin-bottom: 72px; padding: clamp(24px, 4vw, 40px); }
 .portability-card .card-heading h2 { font-size: 25px; }
 .portability-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 30px; }
@@ -197,6 +224,10 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
   .card-heading { display: grid; }
   .memory-pill { width: fit-content; }
   .recent-actions { justify-content: flex-start; }
+  .task-view-actions { justify-content: flex-start; }
+  .task-create-form { grid-template-columns: 1fr 1fr; }
+  .task-create-form .task-title-field { grid-column: 1 / -1; }
+  .task-create-form button { width: 100%; }
   .recent-list li { grid-template-columns: 1fr auto; gap: 9px 15px; }
   .recent-list p { grid-column: 1 / -1; grid-row: 2; }
   .capture-row-actions { grid-column: 2; grid-row: 1 / 3; align-self: start; }
@@ -208,4 +239,6 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 @media (max-width: 480px) {
   .connection-form { grid-template-columns: 1fr; }
   .connection-form label, .connection-form .token-field, .connection-form button { grid-column: 1; }
+  .task-create-form { grid-template-columns: 1fr; }
+  .task-create-form .task-title-field { grid-column: 1; }
 }

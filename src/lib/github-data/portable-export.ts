@@ -1,6 +1,7 @@
 import type { GitHubStoredFile } from "./github-contents";
 import { DASHBOARD_LAYOUT_PATH, parseDashboardLayout } from "./dashboard-layout";
 import { recordPath } from "./protocol";
+import { parseTaskRecord } from "./tasks";
 import { parseCaptureRecord, parseWorkspaceDescriptor, type WorkspaceDescriptor } from "./workspace";
 
 export const PORTABLE_EXPORT_FORMAT = "personal-workspace-export" as const;
@@ -29,13 +30,14 @@ export type PortableWorkspaceExport = {
   manifest: {
     schema_version: 1;
     scope: {
-      modules: Array<"workspace" | "captures" | "dashboard_layout">;
+      modules: Array<"workspace" | "captures" | "dashboard_layout" | "tasks">;
       complete: true;
     };
     counts: {
       files: number;
       captures: number;
       dashboard_layouts: number;
+      tasks: number;
     };
     files: PortableExportManifestFile[];
   };
@@ -57,6 +59,7 @@ export type ExportInspection = {
     files: number;
     captures: number;
     dashboardLayouts: number;
+    tasks: number;
   };
   errors: ExportInspectionIssue[];
   warnings: ExportInspectionIssue[];
@@ -81,10 +84,12 @@ export async function buildPortableWorkspaceExport(input: {
   workspaceFile: GitHubStoredFile;
   captureFiles: GitHubStoredFile[];
   dashboardLayoutFile?: GitHubStoredFile | null;
+  taskFiles?: GitHubStoredFile[];
   generatedAt?: string;
 }): Promise<PortableWorkspaceExport> {
   const dashboardLayoutFiles = input.dashboardLayoutFile ? [input.dashboardLayoutFile] : [];
-  const files = [input.workspaceFile, ...input.captureFiles, ...dashboardLayoutFiles]
+  const taskFiles = input.taskFiles ?? [];
+  const files = [input.workspaceFile, ...input.captureFiles, ...dashboardLayoutFiles, ...taskFiles]
     .map((file) => ({ ...file }))
     .sort((left, right) => left.path.localeCompare(right.path));
   const manifestFiles = await Promise.all(files.map(async (file) => ({
@@ -101,11 +106,12 @@ export async function buildPortableWorkspaceExport(input: {
     source: { repository: input.repository, branch: input.branch },
     manifest: {
       schema_version: 1,
-      scope: { modules: ["workspace", "captures", "dashboard_layout"], complete: true },
+      scope: { modules: ["workspace", "captures", "dashboard_layout", "tasks"], complete: true },
       counts: {
         files: files.length,
         captures: input.captureFiles.length,
         dashboard_layouts: dashboardLayoutFiles.length,
+        tasks: taskFiles.length,
       },
       files: manifestFiles,
     },
@@ -139,7 +145,7 @@ export async function inspectPortableWorkspaceExport(value: unknown): Promise<Ex
     generatedAt: null,
     repository: null,
     workspace: null,
-    counts: { files: 0, captures: 0, dashboardLayouts: 0 },
+    counts: { files: 0, captures: 0, dashboardLayouts: 0, tasks: 0 },
     errors,
     warnings,
   };
@@ -287,9 +293,36 @@ export async function inspectPortableWorkspaceExport(value: unknown): Promise<Ex
     errors.push({ code: "DASHBOARD_LAYOUT_COUNT_MISMATCH", message: "Dashboard 布局数量与 manifest 不一致。" });
   }
 
+  const taskIds = new Set<string>();
+  const taskFiles = validPayloadFiles.filter((file) => file.path.startsWith("data/tasks/"));
+  result.counts.tasks = taskFiles.length;
+  for (const file of taskFiles) {
+    try {
+      const record = parseTaskRecord(file.content);
+      if (result.workspace && record.owner_id !== result.workspace.owner_id) {
+        errors.push({ code: "OWNER_MISMATCH", message: "Task 的 owner_id 与 workspace 不一致。", path: file.path });
+      }
+      if (recordPath("task", record.id) !== file.path) {
+        errors.push({ code: "TASK_PATH_MISMATCH", message: "Task 的 ID 与文件路径不一致。", path: file.path });
+      }
+      if (taskIds.has(record.id)) {
+        errors.push({ code: "DUPLICATE_TASK_ID", message: "导出包中存在重复 Task ID。", path: file.path });
+      }
+      taskIds.add(record.id);
+    } catch {
+      errors.push({ code: "INVALID_TASK_RECORD", message: "Task 文件无法通过结构校验。", path: file.path });
+    }
+  }
+  const rawTaskCount = manifestCounts?.tasks;
+  if ((rawTaskCount !== undefined || taskFiles.length > 0) && rawTaskCount !== taskFiles.length) {
+    errors.push({ code: "TASK_COUNT_MISMATCH", message: "Task 数量与 manifest 不一致。" });
+  }
+
   const supportedPaths = new Set(["workspace.json", DASHBOARD_LAYOUT_PATH]);
   const unexpectedFiles = validPayloadFiles.filter((file) => (
-    !supportedPaths.has(file.path) && !file.path.startsWith("data/captures/")
+    !supportedPaths.has(file.path)
+    && !file.path.startsWith("data/captures/")
+    && !file.path.startsWith("data/tasks/")
   ));
   for (const file of unexpectedFiles) {
     errors.push({ code: "UNEXPECTED_FILE", message: "当前版本不支持此导出路径。", path: file.path });

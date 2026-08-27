@@ -30,6 +30,31 @@ async function sampleExport() {
     data: { raw_text: "可迁移的数据", status: "inbox" as const },
   });
   const captureText = serializeRecord(capture);
+  const taskText = serializeRecord(createWorkspaceRecord({
+    entityType: "task",
+    id: "task_20260827013000000_abcd1234",
+    ownerId: "github_lubannn",
+    timestamp: "2026-08-27T01:30:00.000Z",
+    data: {
+      title: "测试开放任务",
+      category: "work",
+      project_id: null,
+      parent_task_id: null,
+      status: "todo",
+      priority: "medium",
+      planned_start_at: null,
+      planned_end_at: null,
+      due_at: "2026-08-27",
+      due_timezone: "Asia/Shanghai",
+      is_due_date_only: true,
+      estimated_duration_minutes: null,
+      actual_duration_minutes: null,
+      tags: [],
+      notes_markdown: "",
+      completed_at: null,
+      cancelled_at: null,
+    },
+  }));
   const dashboardText = serializeDashboardLayout(createDefaultDashboardLayout(
     "github_lubannn",
     "2026-08-27T01:30:00.000Z",
@@ -41,16 +66,18 @@ async function sampleExport() {
     workspaceFile: storedFile("workspace.json", workspaceText, "workspace-blob"),
     captureFiles: [storedFile("data/captures/capture_20260827010000000_abcd1234.json", captureText, "capture-blob")],
     dashboardLayoutFile: storedFile("config/dashboard-layout.json", dashboardText, "dashboard-blob"),
+    taskFiles: [storedFile("data/tasks/task_20260827013000000_abcd1234.json", taskText, "task-blob")],
   });
 }
 
 describe("portable GitHub workspace export", () => {
   it("builds a deterministic manifest and passes restore preflight", async () => {
     const exported = await sampleExport();
-    expect(exported.manifest.counts).toEqual({ files: 3, captures: 1, dashboard_layouts: 1 });
+    expect(exported.manifest.counts).toEqual({ files: 4, captures: 1, dashboard_layouts: 1, tasks: 1 });
     expect(exported.manifest.files.map((file) => file.path)).toEqual([
       "config/dashboard-layout.json",
       "data/captures/capture_20260827010000000_abcd1234.json",
+      "data/tasks/task_20260827013000000_abcd1234.json",
       "workspace.json",
     ]);
     expect(serializePortableWorkspaceExport(exported)).not.toContain("test-token");
@@ -58,7 +85,7 @@ describe("portable GitHub workspace export", () => {
     await expect(inspectPortableWorkspaceExport(exported)).resolves.toMatchObject({
       valid: true,
       repository: "lubannn/personal-workspace-data",
-      counts: { files: 3, captures: 1, dashboardLayouts: 1 },
+      counts: { files: 4, captures: 1, dashboardLayouts: 1, tasks: 1 },
       errors: [],
       workspace: { owner_id: "github_lubannn" },
     });
@@ -114,12 +141,14 @@ describe("portable GitHub workspace export", () => {
   it("continues to accept version 1 exports created before dashboard layouts existed", async () => {
     const exported = await sampleExport();
     exported.files = exported.files.filter((file) => file.path !== "config/dashboard-layout.json");
+    exported.files = exported.files.filter((file) => !file.path.startsWith("data/tasks/"));
     exported.manifest.files = exported.manifest.files.filter((file) => file.path !== "config/dashboard-layout.json");
+    exported.manifest.files = exported.manifest.files.filter((file) => !file.path.startsWith("data/tasks/"));
     exported.manifest.scope.modules = ["workspace", "captures"];
     exported.manifest.counts = { files: 2, captures: 1 } as typeof exported.manifest.counts;
     await expect(inspectPortableWorkspaceExport(exported)).resolves.toMatchObject({
       valid: true,
-      counts: { files: 2, captures: 1, dashboardLayouts: 0 },
+      counts: { files: 2, captures: 1, dashboardLayouts: 0, tasks: 0 },
     });
   });
 });

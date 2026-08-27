@@ -43,6 +43,17 @@ import {
   parseWorkspaceDescriptor,
   type CaptureRecord,
 } from "../../../src/lib/github-data/workspace";
+import {
+  completedTasks,
+  openTasks,
+  parseTaskRecord,
+  setTaskStatus,
+  tasksForToday,
+  type TaskCategory,
+  type TaskData,
+  type TaskPriority,
+  type TaskRecord,
+} from "../../../src/lib/github-data/tasks";
 
 type Connection = {
   repository: string;
@@ -59,6 +70,12 @@ type SavedCapture = {
 
 type SyncedCapture = {
   record: CaptureRecord;
+  path: string;
+  blobSha: string;
+};
+
+type SyncedTask = {
+  record: TaskRecord;
   path: string;
   blobSha: string;
 };
@@ -82,6 +99,7 @@ type PortabilityResult = {
   files: number;
   captures: number;
   dashboardLayouts: number;
+  tasks: number;
   errors: ExportInspectionIssue[];
   warnings: ExportInspectionIssue[];
 };
@@ -110,6 +128,20 @@ const DASHBOARD_SIZE_LABELS: Record<DashboardWidgetSize, string> = {
   compact: "紧凑",
   standard: "标准",
   wide: "通栏",
+};
+
+const TASK_CATEGORY_LABELS: Record<TaskCategory, string> = {
+  work: "工作",
+  life: "生活",
+  life_goal: "人生",
+};
+
+const TASK_PRIORITY_LABELS: Record<TaskPriority, string> = {
+  none: "无",
+  low: "低",
+  medium: "中",
+  high: "高",
+  urgent: "紧急",
 };
 
 function readCookie(name: string): string | null {
@@ -169,6 +201,25 @@ function formatCaptureTime(value: string) {
   }).format(new Date(value));
 }
 
+function localDateInTimezone(timezone: string, value = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(value);
+  const byType = new Map(parts.map((part) => [part.type, part.value]));
+  return `${byType.get("year")}-${byType.get("month")}-${byType.get("day")}`;
+}
+
+function formatTaskDue(value: string | null, today: string) {
+  if (!value) return "无 DDL";
+  const date = value.slice(0, 10);
+  if (date < today) return `已逾期 · ${date.slice(5).replace("-", "/")}`;
+  if (date === today) return "今天";
+  return date.slice(5).replace("-", "/");
+}
+
 export default function GitHubWorkspacePage() {
   const adapterRef = useRef<GitHubContentsAdapter | null>(null);
   const restoreAdapterRef = useRef<GitHubContentsAdapter | null>(null);
@@ -194,6 +245,15 @@ export default function GitHubWorkspacePage() {
   const [capture, setCapture] = useState("");
   const [captureFiles, setCaptureFiles] = useState<SyncedCapture[]>([]);
   const [captureView, setCaptureView] = useState<"inbox" | "trash">("inbox");
+  const [taskTitle, setTaskTitle] = useState("");
+  const [taskCategory, setTaskCategory] = useState<TaskCategory>("work");
+  const [taskPriority, setTaskPriority] = useState<TaskPriority>("medium");
+  const [taskDueDate, setTaskDueDate] = useState(() => localDateInTimezone("Asia/Shanghai"));
+  const [taskFiles, setTaskFiles] = useState<SyncedTask[]>([]);
+  const [taskView, setTaskView] = useState<"open" | "done">("open");
+  const [loadingTasks, setLoadingTasks] = useState(false);
+  const [savingTask, setSavingTask] = useState(false);
+  const [savingTaskId, setSavingTaskId] = useState<string | null>(null);
   const [dashboardLayout, setDashboardLayout] = useState<DashboardLayout | null>(null);
   const [dashboardBlobSha, setDashboardBlobSha] = useState<string | null>(null);
   const [dashboardDirty, setDashboardDirty] = useState(false);
@@ -288,6 +348,7 @@ export default function GitHubWorkspacePage() {
         await Promise.all([
           loadRecentCaptures(opened.adapter),
           loadDashboardLayout(opened.adapter, opened.connection.ownerId),
+          loadTasks(opened.adapter),
         ]);
       } catch (error) {
         adapterRef.current = null;
@@ -309,7 +370,7 @@ export default function GitHubWorkspacePage() {
     { label: "Static PWA", detail: "Mac 关机时仍可打开", done: true },
     { label: "Private data repo", detail: "可见性连接时强制检查", done: true },
     { label: "GitHub authorization", detail: connection ? (connectionMethod === "github-app" ? "GitHub App 会话已授权" : "当前页面已授权") : authAvailability === "configured" ? "等待 GitHub 登录" : "等待最小权限令牌", done: Boolean(connection) },
-    { label: "Real sync", detail: connection ? "Quick Capture 已启用" : "连接后写入真实文件", done: Boolean(connection) },
+    { label: "Real sync", detail: connection ? "Capture 与 Tasks 已启用" : "连接后写入真实文件", done: Boolean(connection) },
   ], [authAvailability, connection, connectionMethod]);
 
   const inboxCaptures = useMemo(() => {
@@ -327,6 +388,26 @@ export default function GitHubWorkspacePage() {
   }, [captureFiles]);
 
   const visibleCaptures = captureView === "inbox" ? inboxCaptures : trashedCaptures;
+  const currentTaskDate = localDateInTimezone(connection?.timezone ?? "Asia/Shanghai");
+  const openTaskFiles = useMemo(() => {
+    const byId = new Map(taskFiles.map((item) => [item.record.id, item]));
+    return openTasks(taskFiles.map((item) => item.record))
+      .map((record) => byId.get(record.id))
+      .filter((item): item is SyncedTask => Boolean(item));
+  }, [taskFiles]);
+  const completedTaskFiles = useMemo(() => {
+    const byId = new Map(taskFiles.map((item) => [item.record.id, item]));
+    return completedTasks(taskFiles.map((item) => item.record))
+      .map((record) => byId.get(record.id))
+      .filter((item): item is SyncedTask => Boolean(item));
+  }, [taskFiles]);
+  const todayTaskFiles = useMemo(() => {
+    const byId = new Map(taskFiles.map((item) => [item.record.id, item]));
+    return tasksForToday(taskFiles.map((item) => item.record), currentTaskDate)
+      .map((record) => byId.get(record.id))
+      .filter((item): item is SyncedTask => Boolean(item));
+  }, [currentTaskDate, taskFiles]);
+  const visibleTaskFiles = taskView === "open" ? openTaskFiles : completedTaskFiles;
   const displayedDashboardLayout = useMemo(
     () => dashboardLayout ?? createDefaultDashboardLayout("preview", "1970-01-01T00:00:00.000Z"),
     [dashboardLayout],
@@ -375,6 +456,44 @@ export default function GitHubWorkspacePage() {
       setErrorMessage(friendlyError(error));
     } finally {
       setLoadingCaptures(false);
+    }
+  }
+
+  async function loadTasks(adapter = adapterRef.current) {
+    if (!adapter) return;
+    setLoadingTasks(true);
+    setErrorMessage("");
+    try {
+      let items;
+      try {
+        items = await adapter.listDirectory("data/tasks");
+      } catch (error) {
+        if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") {
+          setTaskFiles([]);
+          return;
+        }
+        throw error;
+      }
+      const candidates = items
+        .filter((item) => item.type === "file" && item.name.endsWith(".json"))
+        .sort((left, right) => right.name.localeCompare(left.name));
+      const records: SyncedTask[] = [];
+      const batchSize = 6;
+      for (let index = 0; index < candidates.length; index += batchSize) {
+        records.push(...(await Promise.all(candidates.slice(index, index + batchSize).map(async (item) => {
+          try {
+            const file = await adapter.readText(item.path);
+            return { record: parseTaskRecord(file.text), path: file.path, blobSha: file.blobSha };
+          } catch {
+            return null;
+          }
+        }))).filter((item): item is SyncedTask => item !== null));
+      }
+      setTaskFiles(records);
+    } catch (error) {
+      setErrorMessage(friendlyError(error));
+    } finally {
+      setLoadingTasks(false);
     }
   }
 
@@ -477,6 +596,7 @@ export default function GitHubWorkspacePage() {
       await Promise.all([
         loadRecentCaptures(opened.adapter),
         loadDashboardLayout(opened.adapter, opened.connection.ownerId),
+        loadTasks(opened.adapter),
       ]);
     } catch (error) {
       adapterRef.current = null;
@@ -495,6 +615,9 @@ export default function GitHubWorkspacePage() {
     setToken("");
     setCapture("");
     setCaptureFiles([]);
+    setTaskFiles([]);
+    setTaskTitle("");
+    setTaskView("open");
     setCaptureView("inbox");
     setDashboardLayout(null);
     setDashboardBlobSha(null);
@@ -626,9 +749,102 @@ export default function GitHubWorkspacePage() {
     }
   }
 
+  async function saveTask(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const adapter = adapterRef.current;
+    const title = taskTitle.trim();
+    if (!adapter || !connection || !title || savingTask || online === false) return;
+    setSavingTask(true);
+    setErrorMessage("");
+    setStatusMessage("");
+    const timestamp = new Date().toISOString();
+    const timePart = timestamp.replaceAll(/\D/g, "").slice(0, 17);
+    const id = `task_${timePart}_${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`;
+    const data: TaskData = {
+      title,
+      category: taskCategory,
+      project_id: null,
+      parent_task_id: null,
+      status: "todo",
+      priority: taskPriority,
+      planned_start_at: null,
+      planned_end_at: null,
+      due_at: taskDueDate || null,
+      due_timezone: connection.timezone,
+      is_due_date_only: true,
+      estimated_duration_minutes: null,
+      actual_duration_minutes: null,
+      tags: [],
+      notes_markdown: "",
+      completed_at: null,
+      cancelled_at: null,
+    };
+    const record = createWorkspaceRecord({
+      entityType: "task",
+      id,
+      ownerId: connection.ownerId,
+      timestamp,
+      data,
+    });
+    const path = recordPath("task", id);
+    try {
+      const result = await adapter.writeText({
+        path,
+        text: serializeRecord(record),
+        message: `task: create ${id}`,
+      });
+      setTaskTitle("");
+      setTaskFiles((current) => [{ record, path: result.path, blobSha: result.blobSha }, ...current]);
+      setTaskView("open");
+      setStatusMessage("任务已保存到 Private 数据仓库；今日或逾期任务会立即进入 Dashboard。");
+    } catch (error) {
+      setErrorMessage(friendlyError(error));
+    } finally {
+      setSavingTask(false);
+    }
+  }
+
+  async function updateTaskCompletion(item: SyncedTask, operation: "complete" | "reopen") {
+    const adapter = adapterRef.current;
+    if (!adapter || !connection || savingTaskId || online === false) return;
+    setSavingTaskId(item.record.id);
+    setErrorMessage("");
+    setStatusMessage("");
+    const updated = setTaskStatus(item.record, operation === "complete" ? "done" : "todo");
+    try {
+      const result = await adapter.writeText({
+        path: item.path,
+        text: serializeRecord(updated),
+        message: `task: ${operation} ${item.record.id}`,
+        expectedBlobSha: item.blobSha,
+      });
+      setTaskFiles((current) => current.map((candidate) => candidate.record.id === item.record.id
+        ? { record: updated, path: result.path, blobSha: result.blobSha }
+        : candidate));
+      setStatusMessage(operation === "complete"
+        ? "任务已完成；完成时间和 Git 历史已保留。"
+        : "任务已恢复为待办；请在其他设备刷新后查看最新状态。");
+    } catch (error) {
+      setErrorMessage(friendlyError(error));
+    } finally {
+      setSavingTaskId(null);
+    }
+  }
+
   async function listCaptureFiles(adapter: GitHubContentsAdapter) {
     try {
       return (await adapter.listDirectory("data/captures"))
+        .filter((item) => item.type === "file" && item.name.endsWith(".json"))
+        .sort((left, right) => left.path.localeCompare(right.path));
+    } catch (error) {
+      if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") return [];
+      throw error;
+    }
+  }
+
+  async function listTaskFiles(adapter: GitHubContentsAdapter) {
+    try {
+      return (await adapter.listDirectory("data/tasks"))
         .filter((item) => item.type === "file" && item.name.endsWith(".json"))
         .sort((left, right) => left.path.localeCompare(right.path));
     } catch (error) {
@@ -662,6 +878,14 @@ export default function GitHubWorkspacePage() {
           candidates.slice(index, index + batchSize).map((item) => adapter.readText(item.path)),
         ));
       }
+      const taskCandidates = await listTaskFiles(adapter);
+      const taskFiles = [];
+      for (let index = 0; index < taskCandidates.length; index += batchSize) {
+        setExportProgress(`正在读取 Task ${Math.min(index + batchSize, taskCandidates.length)} / ${taskCandidates.length}…`);
+        taskFiles.push(...await Promise.all(
+          taskCandidates.slice(index, index + batchSize).map((item) => adapter.readText(item.path)),
+        ));
+      }
 
       setExportProgress("正在生成 SHA-256 manifest…");
       const generatedAt = new Date().toISOString();
@@ -671,6 +895,7 @@ export default function GitHubWorkspacePage() {
         workspaceFile,
         captureFiles,
         dashboardLayoutFile,
+        taskFiles,
         generatedAt,
       });
       const inspection = await inspectPortableWorkspaceExport(portableExport);
@@ -694,6 +919,7 @@ export default function GitHubWorkspacePage() {
         files: inspection.counts.files,
         captures: inspection.counts.captures,
         dashboardLayouts: inspection.counts.dashboardLayouts,
+        tasks: inspection.counts.tasks,
         errors: inspection.errors,
         warnings: inspection.warnings,
       });
@@ -703,6 +929,7 @@ export default function GitHubWorkspacePage() {
         files: inspection.counts.files,
         captures: inspection.counts.captures,
         dashboardLayouts: inspection.counts.dashboardLayouts,
+        tasks: inspection.counts.tasks,
         errors: inspection.errors,
         warnings: inspection.warnings,
       });
@@ -740,6 +967,7 @@ export default function GitHubWorkspacePage() {
           files: 0,
           captures: 0,
           dashboardLayouts: 0,
+          tasks: 0,
           errors: [{ code: "EXPORT_TOO_LARGE", message: "当前预检仅接受 50 MB 以内的 JSON 文件。" }],
           warnings: [],
         });
@@ -753,6 +981,7 @@ export default function GitHubWorkspacePage() {
         files: inspection.counts.files,
         captures: inspection.counts.captures,
         dashboardLayouts: inspection.counts.dashboardLayouts,
+        tasks: inspection.counts.tasks,
         errors: inspection.errors,
         warnings: inspection.warnings,
       });
@@ -767,6 +996,7 @@ export default function GitHubWorkspacePage() {
         files: 0,
         captures: 0,
         dashboardLayouts: 0,
+        tasks: 0,
         errors: [{ code: "INVALID_JSON", message: "文件不是有效的 JSON，未执行任何恢复操作。" }],
         warnings: [],
       });
@@ -894,7 +1124,7 @@ export default function GitHubWorkspacePage() {
       <div className={`portability-result ${result.valid ? "valid" : "invalid"}`} role="status">
         <strong>{result.valid ? "预检通过" : "预检未通过"}</strong>
         <span>{result.fileName}</span>
-        <p>{result.files} 个文件 · {result.captures} 条 Capture · {result.dashboardLayouts} 个 Dashboard 布局</p>
+        <p>{result.files} 个文件 · {result.captures} 条 Capture · {result.tasks} 条 Task · {result.dashboardLayouts} 个 Dashboard 布局</p>
         {result.errors.length > 0 ? (
           <ul>{result.errors.slice(0, 5).map((issue, index) => (
             <li key={`${issue.code}-${issue.path ?? index}`}>{issue.path ? `${issue.path}：` : ""}{issue.message}</li>
@@ -1064,6 +1294,25 @@ export default function GitHubWorkspacePage() {
                           </div>
                         ) : <p className="widget-empty">每次保存生成开放 JSON 文件和一条 Git 历史记录。</p>}
                       </div>
+                    ) : widget.widget_type === "today_tasks" ? (
+                      <div className="today-task-widget">
+                        {!connection ? <p className="widget-empty">连接 Private 数据仓库后显示今日任务。</p>
+                          : loadingTasks ? <p className="widget-empty">正在读取今日任务…</p>
+                            : todayTaskFiles.length === 0 ? <p className="widget-empty">今天没有到期或逾期任务。</p>
+                              : <ul>{todayTaskFiles.slice(0, 4).map((item) => (
+                                <li key={item.record.id}>
+                                  <button
+                                    type="button"
+                                    aria-label={`完成任务：${item.record.data.title}`}
+                                    onClick={() => updateTaskCompletion(item, "complete")}
+                                    disabled={Boolean(savingTaskId) || online === false}
+                                  >○</button>
+                                  <span>{item.record.data.title}</span>
+                                  <small>{formatTaskDue(item.record.data.due_at, currentTaskDate)}</small>
+                                </li>
+                              ))}</ul>}
+                        {todayTaskFiles.length > 4 ? <p className="task-overflow-note">另有 {todayTaskFiles.length - 4} 项，请在任务清单查看。</p> : null}
+                      </div>
                     ) : <p className="widget-empty">{definition.empty}</p>}
                   </article>
                 );
@@ -1082,6 +1331,67 @@ export default function GitHubWorkspacePage() {
                 <button className="secondary-button" type="button" onClick={resetDashboardToDefault}>恢复默认布局</button>
               </div>
             ) : null}
+      </section>
+
+      <section className="tasks-card" aria-labelledby="tasks-title">
+        <div className="card-heading">
+          <div>
+            <p className="eyebrow">Phase 2 · Task foundation</p>
+            <h2 id="tasks-title">任务清单</h2>
+            <p className="tasks-subtitle">创建、今日聚合、完成与恢复均直接同步到 Private GitHub。</p>
+          </div>
+          <div className="task-view-actions" aria-label="任务视图与同步">
+            <button className={`view-button ${taskView === "open" ? "active" : ""}`} type="button" aria-pressed={taskView === "open"} onClick={() => setTaskView("open")}>待办 {openTaskFiles.length}</button>
+            <button className={`view-button ${taskView === "done" ? "active" : ""}`} type="button" aria-pressed={taskView === "done"} onClick={() => setTaskView("done")}>已完成 {completedTaskFiles.length}</button>
+            <button className="secondary-button" type="button" onClick={() => loadTasks()} disabled={!connection || loadingTasks}>{loadingTasks ? "刷新中…" : "从 GitHub 刷新"}</button>
+          </div>
+        </div>
+
+        <form className="task-create-form" onSubmit={saveTask}>
+          <label className="task-title-field">任务标题
+            <input
+              value={taskTitle}
+              onChange={(event) => setTaskTitle(event.target.value)}
+              maxLength={300}
+              placeholder={connection ? "今天要推进什么？" : "连接 Private 数据仓库后创建任务"}
+              disabled={!connection || savingTask}
+            />
+          </label>
+          <label>分类
+            <select value={taskCategory} onChange={(event) => setTaskCategory(event.target.value as TaskCategory)} disabled={!connection || savingTask}>
+              {Object.entries(TASK_CATEGORY_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </select>
+          </label>
+          <label>优先级
+            <select value={taskPriority} onChange={(event) => setTaskPriority(event.target.value as TaskPriority)} disabled={!connection || savingTask}>
+              {Object.entries(TASK_PRIORITY_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </select>
+          </label>
+          <label>DDL
+            <input type="date" value={taskDueDate} onChange={(event) => setTaskDueDate(event.target.value)} disabled={!connection || savingTask} />
+          </label>
+          <button className="primary-button" type="submit" disabled={!connection || !taskTitle.trim() || savingTask || online === false}>{savingTask ? "保存中…" : "创建任务"}</button>
+        </form>
+
+        {!connection ? <p className="empty-note">连接后显示 Private 仓库中的任务。</p>
+          : loadingTasks && taskFiles.length === 0 ? <p className="empty-note">正在读取任务…</p>
+            : visibleTaskFiles.length === 0 ? <p className="empty-note">{taskView === "open" ? "还没有待办任务，可以创建第一项。" : "还没有已完成任务。"}</p>
+              : <ul className="task-list">{visibleTaskFiles.map((item) => (
+                <li key={item.record.id} className={taskView === "done" ? "completed" : ""}>
+                  <button
+                    className="task-toggle"
+                    type="button"
+                    aria-label={taskView === "done" ? `恢复任务：${item.record.data.title}` : `完成任务：${item.record.data.title}`}
+                    onClick={() => updateTaskCompletion(item, taskView === "done" ? "reopen" : "complete")}
+                    disabled={Boolean(savingTaskId) || online === false}
+                  >{savingTaskId === item.record.id ? "…" : taskView === "done" ? "✓" : "○"}</button>
+                  <div>
+                    <strong>{item.record.data.title}</strong>
+                    <span>{TASK_CATEGORY_LABELS[item.record.data.category]} · {TASK_PRIORITY_LABELS[item.record.data.priority]}优先级 · {formatTaskDue(item.record.data.due_at, currentTaskDate)}</span>
+                  </div>
+                  <code>v{item.record.version}</code>
+                </li>
+              ))}</ul>}
       </section>
 
       <section className="content-grid status-grid">
@@ -1160,7 +1470,7 @@ export default function GitHubWorkspacePage() {
           <article>
             <span className="step-number">01</span>
             <h3>下载开放数据包</h3>
-            <p>读取 workspace.json、Dashboard 布局和全部 Capture，生成带 SHA-256、Git blob SHA、文件数量与 schema 版本的 JSON。</p>
+            <p>读取 workspace.json、Dashboard 布局、全部 Capture 和 Task，生成带 SHA-256、Git blob SHA、文件数量与 schema 版本的 JSON。</p>
             <button className="primary-button" type="button" onClick={downloadPortableExport} disabled={!connection || exporting || online === false}>
               {exporting ? exportProgress || "正在生成…" : "导出并下载 JSON"}
             </button>

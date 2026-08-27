@@ -26,6 +26,31 @@ async function sampleExport() {
     timestamp: "2026-08-27T10:00:00.000Z",
     data: { raw_text: "恢复演练", status: "inbox" as const },
   });
+  const task = createWorkspaceRecord({
+    entityType: "task",
+    id: "task_restore_test",
+    ownerId: "github_lubannn",
+    timestamp: "2026-08-27T10:15:00.000Z",
+    data: {
+      title: "恢复任务",
+      category: "life",
+      project_id: null,
+      parent_task_id: null,
+      status: "todo",
+      priority: "medium",
+      planned_start_at: null,
+      planned_end_at: null,
+      due_at: "2026-08-27",
+      due_timezone: "Asia/Shanghai",
+      is_due_date_only: true,
+      estimated_duration_minutes: null,
+      actual_duration_minutes: null,
+      tags: [],
+      notes_markdown: "",
+      completed_at: null,
+      cancelled_at: null,
+    },
+  });
   return buildPortableWorkspaceExport({
     repository: "lubannn/personal-workspace-data",
     branch: "main",
@@ -37,6 +62,7 @@ async function sampleExport() {
       serializeDashboardLayout(createDefaultDashboardLayout("github_lubannn", "2026-08-27T10:30:00.000Z")),
       "dashboard-blob",
     ),
+    taskFiles: [storedFile("data/tasks/task_restore_test.json", serializeRecord(task), "task-blob")],
   });
 }
 
@@ -64,12 +90,13 @@ describe("portable restore planning", () => {
       branch: "main",
       expectedHeadCommitSha: "head-one",
       baseTreeSha: "tree-one",
-      counts: { files: 3, captures: 1 },
+      counts: { files: 4, captures: 1, tasks: 1 },
       errors: [],
     });
     expect(plan.files.map((file) => file.path)).toEqual([
       "config/dashboard-layout.json",
       "data/captures/capture_restore_test.json",
+      "data/tasks/task_restore_test.json",
       "workspace.json",
     ]);
     expect(plan.warnings.map((warning) => warning.code)).toContain("RESTORE_TARGET_NON_DATA_FILES_PRESERVED");
@@ -91,7 +118,7 @@ describe("portable restore planning", () => {
     }));
 
     expect(plan.ready).toBe(false);
-    expect(plan.files).toHaveLength(3);
+    expect(plan.files).toHaveLength(4);
     expect(plan.errors.map((error) => error.code)).toEqual(expect.arrayContaining([
       "RESTORE_TARGET_IS_SOURCE",
       "RESTORE_TARGET_HAS_WORKSPACE_DATA",
