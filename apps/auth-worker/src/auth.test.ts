@@ -106,4 +106,57 @@ describe("GitHub App auth routes", () => {
     );
     expect(response.headers.get("set-cookie")).toContain("Max-Age=0");
   });
+
+  it("revokes every session for the authenticated GitHub user", async () => {
+    const statements: Array<{ query: string; values: unknown[] }> = [];
+    const session = {
+      session_id_hash: "stored-session-hash",
+      github_user_id: "12345",
+      github_login: "lubannn",
+      encrypted_refresh_token: "encrypted-refresh-token",
+      access_token_expires_at: null,
+      created_at: "2026-08-27T00:00:00.000Z",
+      last_used_at: "2026-08-27T00:00:00.000Z",
+      expires_at: "2026-09-27T00:00:00.000Z",
+      revoked_at: null,
+    };
+    const database: D1DatabaseLike = {
+      prepare(query) {
+        const statement = { query, values: [] as unknown[] };
+        statements.push(statement);
+        return {
+          bind(...values) {
+            statement.values = values;
+            return this;
+          },
+          async first<T>() {
+            return session as T;
+          },
+          async run() {
+            return { success: true, meta: { changes: 5 } };
+          },
+        };
+      },
+    };
+    const env = { ...configuredEnv(), DB: database };
+    const response = await handleAuthRequest(
+      new Request("https://nexus.lubannn.workers.dev/auth/logout-all", {
+        method: "POST",
+        headers: {
+          cookie: "__Host-pw_session=session-token; __Host-pw_csrf=csrf-token",
+          origin: "https://nexus.lubannn.workers.dev",
+          "x-pw-csrf": "csrf-token",
+        },
+      }),
+      env,
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true });
+    expect(statements).toHaveLength(2);
+    expect(statements[1].query).toContain("WHERE github_user_id = ?2");
+    expect(statements[1].values[1]).toBe("12345");
+    expect(response.headers.get("set-cookie")).toContain("__Host-pw_session=");
+    expect(response.headers.get("set-cookie")).toContain("Max-Age=0");
+  });
 });
