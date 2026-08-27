@@ -1,6 +1,6 @@
 # Phase 1C：数据可迁移与恢复基础
 
-> 状态：导出预检、Capture 生命周期与隔离仓库原子恢复三个垂直切片均已通过正式环境验收  
+> 状态：前四个垂直切片均已通过正式环境验收；Dashboard layout 已通过正式环境单设备持久化验收，待跨设备确认  
 > 开始日期：2026-08-27  
 > 范围：GitHub-backed canonical data
 
@@ -137,6 +137,8 @@ Capture 回收站采用同路径软删除，不移动或物理删除 Private 仓
 - 缺少布局文件时在内存生成默认布局，只有用户保存后才创建 canonical 文件；浏览器不使用 LocalStorage 保存核心布局；
 - 未知未来 Widget 类型会完整保留配置并显示可恢复占位状态；
 - 新布局文件进入开放导出、SHA-256 manifest、schema dry run 和隔离恢复；旧版不含布局的 export v1 仍可预检和恢复。
+
+本地验证已通过 57 项自动测试、类型检查、Lint 和生产构建。2026-08-28 正式环境单设备验收通过：首次保存创建 `config/dashboard-layout.json`，模块隐藏后恢复、保存和页面刷新均正确，刷新后从 Private 仓库恢复 `Private layout v3`；开放导出包含 17 个文件（`workspace.json` + 15 条 Capture + 1 个 Dashboard layout）。跨设备读写验收待用户确认。
 
 ## 10. 后续切片
 

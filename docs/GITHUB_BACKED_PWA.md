@@ -112,3 +112,5 @@ Dashboard 布局保存在 `config/dashboard-layout.json`，不进入 LocalStorag
 默认 Registry 包含今日日程、今日待办、Quick Capture、项目进度、今日学习、今日运动、最近日记和习惯 Heatmap。未实现的数据模块只呈现空状态；未知未来 Widget 的配置会被保留。移动端统一单列，并提供上移/下移代替拖拽。
 
 布局文件纳入开放导出、SHA-256 manifest、schema dry run 和隔离恢复。旧版没有布局文件的 export v1 保持兼容。
+
+2026-08-28 正式环境单设备验收通过：创建并保存 `config/dashboard-layout.json` 后，页面刷新仍从 Private 仓库恢复 `Private layout v3`，8 个默认模块完整；开放导出预检通过，共 17 个文件、15 条 Capture 和 1 个 Dashboard layout。跨设备布局读写待用户确认。
