@@ -1,13 +1,12 @@
 "use client";
 
-import { type ChangeEvent, type FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { type ChangeEvent, type FormEvent, useCallback, useMemo, useRef, useState } from "react";
 
 import { GitHubContentsAdapter, GitHubDataError } from "../../../src/lib/github-data/github-contents";
 import {
   DASHBOARD_LAYOUT_PATH,
   createDefaultDashboardLayout,
   moveDashboardWidget,
-  parseDashboardLayout,
   serializeDashboardLayout,
   setDashboardWidgetEnabled,
   setDashboardWidgetSize,
@@ -20,7 +19,6 @@ import {
   buildPortableWorkspaceExport,
   inspectPortableWorkspaceExport,
   serializePortableWorkspaceExport,
-  type ExportInspectionIssue,
 } from "../../../src/lib/github-data/portable-export";
 import {
   createPortableRestorePlan,
@@ -39,192 +37,45 @@ import {
 import {
   newestCaptures,
   newestTrashedCaptures,
-  parseCaptureRecord,
-  parseWorkspaceDescriptor,
-  type CaptureRecord,
 } from "../../../src/lib/github-data/workspace";
 import {
   completedTasks,
   openTasks,
-  parseTaskRecord,
   setTaskStatus,
   tasksForToday,
   type TaskCategory,
   type TaskData,
   type TaskPriority,
-  type TaskRecord,
 } from "../../../src/lib/github-data/tasks";
-
-type Connection = {
-  repository: string;
-  ownerId: string;
-  ownerLogin: string;
-  timezone: string;
-};
-
-type SavedCapture = {
-  path: string;
-  commitSha: string;
-  text: string;
-};
-
-type SyncedCapture = {
-  record: CaptureRecord;
-  path: string;
-  blobSha: string;
-};
-
-type SyncedTask = {
-  record: TaskRecord;
-  path: string;
-  blobSha: string;
-};
-
-type AuthAvailability = "checking" | "unavailable" | "configured";
-type ConnectionMethod = "github-app" | "personal-token";
-
-type AuthStatus = {
-  configured?: boolean;
-  authenticated?: boolean;
-  login?: string | null;
-};
-
-type SessionToken = {
-  accessToken?: string;
-};
-
-type PortabilityResult = {
-  fileName: string;
-  valid: boolean;
-  files: number;
-  captures: number;
-  dashboardLayouts: number;
-  tasks: number;
-  errors: ExportInspectionIssue[];
-  warnings: ExportInspectionIssue[];
-};
-
-type DashboardWidgetDefinition = {
-  eyebrow: string;
-  title: string;
-  empty: string;
-};
-
-const DEFAULT_OWNER = "lubannn";
-const DEFAULT_REPOSITORY = "personal-workspace-data";
-
-const DASHBOARD_WIDGET_REGISTRY: Record<string, DashboardWidgetDefinition> = {
-  today_schedule: { eyebrow: "Calendar", title: "今日日程", empty: "Calendar 模块接入后，这里显示今天的时间块。" },
-  today_tasks: { eyebrow: "Tasks", title: "今日待办", empty: "Tasks 模块接入后，这里显示今天最重要的行动。" },
-  quick_capture: { eyebrow: "Quick Capture", title: "随手记下一件事", empty: "" },
-  project_progress: { eyebrow: "Projects", title: "项目进度", empty: "Projects 模块接入后，这里显示阶段、进度与风险。" },
-  learning_today: { eyebrow: "Learning", title: "今日学习", empty: "Learning 模块接入后，这里显示语言、乐器和运动学习任务。" },
-  exercise_today: { eyebrow: "Health", title: "今日运动", empty: "Health 数据经确认后，这里生成当天运动建议。" },
-  recent_journal: { eyebrow: "Journal", title: "最近日记", empty: "Journal 模块接入后，这里只显示克制的最近摘要。" },
-  habit_heatmap: { eyebrow: "Habits", title: "习惯月度打卡", empty: "Habit 模块接入后，这里显示当月 Heatmap。" },
-};
-
-const DASHBOARD_SIZE_LABELS: Record<DashboardWidgetSize, string> = {
-  compact: "紧凑",
-  standard: "标准",
-  wide: "通栏",
-};
-
-const TASK_CATEGORY_LABELS: Record<TaskCategory, string> = {
-  work: "工作",
-  life: "生活",
-  life_goal: "人生",
-};
-
-const TASK_PRIORITY_LABELS: Record<TaskPriority, string> = {
-  none: "无",
-  low: "低",
-  medium: "中",
-  high: "高",
-  urgent: "紧急",
-};
-
-function readCookie(name: string): string | null {
-  const prefix = `${name}=`;
-  const entry = document.cookie.split(";").map((part) => part.trim()).find((part) => part.startsWith(prefix));
-  return entry ? decodeURIComponent(entry.slice(prefix.length)) : null;
-}
-
-async function openPrivateRepository(rawToken: string, owner: string, repository: string) {
-  const adapter = new GitHubContentsAdapter({
-    owner: owner.trim(),
-    repository: repository.trim(),
-    branch: "main",
-    token: rawToken.trim(),
-  });
-  const repositoryStatus = await adapter.verifyPrivateRepository();
-  const descriptor = parseWorkspaceDescriptor((await adapter.readText("workspace.json")).text);
-  return {
-    adapter,
-    connection: {
-      repository: repositoryStatus.fullName,
-      ownerId: descriptor.owner_id,
-      ownerLogin: descriptor.owner_login,
-      timezone: descriptor.timezone,
-    } satisfies Connection,
-  };
-}
-
-function friendlyError(error: unknown) {
-  if (error instanceof GitHubDataError) {
-    if (error.code === "GITHUB_UNAUTHORIZED") return "令牌无效或已过期，请重新创建后再连接。";
-    if (error.code === "GITHUB_FORBIDDEN") return "令牌权限不足：需要该数据仓库的 Contents 读写权限。";
-    if (error.code === "GITHUB_NOT_FOUND") return "找不到数据仓库或 workspace.json，请检查仓库名称与令牌授权范围。";
-    if (error.code === "GITHUB_REPOSITORY_NOT_PRIVATE") return "安全检查未通过：数据仓库必须保持 Private。";
-    if (error.code === "GITHUB_SYNC_CONFLICT") return "文件已在另一台设备更新，请刷新后重试。";
-    if (error.code === "GITHUB_NETWORK_ERROR") return "浏览器无法访问 GitHub API。请确认当前网络能打开 api.github.com，然后重试。";
-    if (error.code === "GITHUB_CROSS_ORIGIN_BLOCKED") return "浏览器可以打开 GitHub API，但拦截了工作台的跨站请求。请关闭广告拦截/隐私扩展，或使用无痕窗口重试。";
-    if (error.code === "GITHUB_AUTH_REQUEST_BLOCKED") return "普通 GitHub API 请求正常，但浏览器拦截了带授权信息的请求。请关闭广告拦截/隐私扩展，或使用无痕窗口重试。";
-    if (error.code === "GITHUB_RATE_LIMITED") return "GitHub API 请求次数已达上限，请稍后再试。";
-    if (error.code === "GITHUB_BAD_REQUEST") return "GitHub 拒绝了连接请求（HTTP 400）。请使用 fine-grained token，并只授权 personal-workspace-data。";
-    if (error.code === "GITHUB_UNAVAILABLE") return `GitHub 服务暂时不可用（HTTP ${error.status}），请稍后重试。`;
-    if (error.code === "GITHUB_API_ERROR") return `GitHub 返回了异常响应（HTTP ${error.status}），请截图此提示给我。`;
-  }
-  if (error instanceof SyntaxError) return "数据仓库中的 JSON 格式无效。";
-  if (error instanceof Error && error.message === "INVALID_WORKSPACE_DESCRIPTOR") {
-    return "数据仓库中的 workspace.json 结构不符合当前版本，请让我修复初始化文件。";
-  }
-  return "连接 GitHub 时发生错误，请稍后重试。";
-}
-
-function formatCaptureTime(value: string) {
-  return new Intl.DateTimeFormat("zh-CN", {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(value));
-}
-
-function localDateInTimezone(timezone: string, value = new Date()) {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: timezone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(value);
-  const byType = new Map(parts.map((part) => [part.type, part.value]));
-  return `${byType.get("year")}-${byType.get("month")}-${byType.get("day")}`;
-}
-
-function formatTaskDue(value: string | null, today: string) {
-  if (!value) return "无 DDL";
-  const date = value.slice(0, 10);
-  if (date < today) return `已逾期 · ${date.slice(5).replace("-", "/")}`;
-  if (date === today) return "今天";
-  return date.slice(5).replace("-", "/");
-}
+import {
+  DEFAULT_OWNER,
+  DEFAULT_REPOSITORY,
+  buildReadiness,
+  friendlyError,
+  localDateInTimezone,
+  openPrivateRepository,
+  readCookie,
+  type AuthAvailability,
+  type Connection,
+  type ConnectionMethod,
+  type PortabilityResult,
+  type SavedCapture,
+  type SyncedCapture,
+  type SyncedTask,
+} from "./workspace/page-model";
+import { useOnlineStatus } from "./workspace/use-online-status";
+import { useWorkspaceCollections } from "./workspace/use-workspace-collections";
+import { useGitHubAppBootstrap } from "./workspace/use-github-app-bootstrap";
+import { CaptureInboxSection } from "./workspace/capture-inbox-section";
+import { DashboardSection } from "./workspace/dashboard-section";
+import { AuthSection } from "./workspace/auth-section";
+import { PortabilitySection } from "./workspace/portability-section";
+import { ReadinessSection } from "./workspace/readiness-section";
+import { TasksSection } from "./workspace/tasks-section";
 
 export default function GitHubWorkspacePage() {
   const adapterRef = useRef<GitHubContentsAdapter | null>(null);
   const restoreAdapterRef = useRef<GitHubContentsAdapter | null>(null);
-  const authBootstrapStarted = useRef(false);
-  const [online, setOnline] = useState<boolean | null>(null);
   const [owner, setOwner] = useState(DEFAULT_OWNER);
   const [repository, setRepository] = useState(DEFAULT_REPOSITORY);
   const [token, setToken] = useState("");
@@ -232,7 +83,6 @@ export default function GitHubWorkspacePage() {
   const [connectionMethod, setConnectionMethod] = useState<ConnectionMethod | null>(null);
   const [authAvailability, setAuthAvailability] = useState<AuthAvailability>("checking");
   const [connecting, setConnecting] = useState(false);
-  const [loadingCaptures, setLoadingCaptures] = useState(false);
   const [saving, setSaving] = useState(false);
   const [savingCaptureId, setSavingCaptureId] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
@@ -243,22 +93,16 @@ export default function GitHubWorkspacePage() {
   const [confirmingRevokeAll, setConfirmingRevokeAll] = useState(false);
   const [revokingAll, setRevokingAll] = useState(false);
   const [capture, setCapture] = useState("");
-  const [captureFiles, setCaptureFiles] = useState<SyncedCapture[]>([]);
   const [captureView, setCaptureView] = useState<"inbox" | "trash">("inbox");
   const [taskTitle, setTaskTitle] = useState("");
   const [taskCategory, setTaskCategory] = useState<TaskCategory>("work");
   const [taskPriority, setTaskPriority] = useState<TaskPriority>("medium");
   const [taskDueDate, setTaskDueDate] = useState(() => localDateInTimezone("Asia/Shanghai"));
-  const [taskFiles, setTaskFiles] = useState<SyncedTask[]>([]);
   const [taskView, setTaskView] = useState<"open" | "done">("open");
-  const [loadingTasks, setLoadingTasks] = useState(false);
   const [savingTask, setSavingTask] = useState(false);
   const [savingTaskId, setSavingTaskId] = useState<string | null>(null);
-  const [dashboardLayout, setDashboardLayout] = useState<DashboardLayout | null>(null);
-  const [dashboardBlobSha, setDashboardBlobSha] = useState<string | null>(null);
   const [dashboardDirty, setDashboardDirty] = useState(false);
   const [editingDashboard, setEditingDashboard] = useState(false);
-  const [loadingDashboard, setLoadingDashboard] = useState(false);
   const [savingDashboard, setSavingDashboard] = useState(false);
   const [savedCapture, setSavedCapture] = useState<SavedCapture | null>(null);
   const [exportResult, setExportResult] = useState<PortabilityResult | null>(null);
@@ -272,106 +116,48 @@ export default function GitHubWorkspacePage() {
   const [restoreCommitSha, setRestoreCommitSha] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
   const [statusMessage, setStatusMessage] = useState("");
-
-  useEffect(() => {
-    const update = () => setOnline(navigator.onLine);
-    update();
-    window.addEventListener("online", update);
-    window.addEventListener("offline", update);
-    return () => {
-      window.removeEventListener("online", update);
-      window.removeEventListener("offline", update);
-      adapterRef.current = null;
-      restoreAdapterRef.current = null;
-    };
+  const setDashboardClean = useCallback(() => setDashboardDirty(false), []);
+  const clearAdapters = useCallback(() => {
+    adapterRef.current = null;
+    restoreAdapterRef.current = null;
   }, []);
+  const online = useOnlineStatus(clearAdapters);
+  const {
+    captureFiles,
+    setCaptureFiles,
+    taskFiles,
+    setTaskFiles,
+    dashboardLayout,
+    setDashboardLayout,
+    dashboardBlobSha,
+    setDashboardBlobSha,
+    loadingCaptures,
+    loadingTasks,
+    loadingDashboard,
+    loadRecentCaptures,
+    loadTasks,
+    loadDashboardLayout,
+    clearCollections,
+  } = useWorkspaceCollections({ adapterRef, setErrorMessage, setDashboardClean });
 
-  useEffect(() => {
-    if (authBootstrapStarted.current) return;
-    authBootstrapStarted.current = true;
+  useGitHubAppBootstrap({
+    adapterRef,
+    setConnection,
+    setConnectionMethod,
+    setAuthAvailability,
+    setConnecting,
+    setErrorMessage,
+    setStatusMessage,
+    loadRecentCaptures,
+    loadDashboardLayout,
+    loadTasks,
+  });
 
-    const authResult = new URLSearchParams(window.location.search).get("auth");
 
-    async function bootstrapGitHubAppSession() {
-      try {
-        await Promise.resolve();
-        if (authResult === "denied") setErrorMessage("GitHub 登录已取消，私人数据没有被授权。");
-        if (authResult === "failed") setErrorMessage("GitHub 登录没有完成，请稍后重试。");
-
-        const statusResponse = await fetch("/auth/status", {
-          credentials: "same-origin",
-          headers: { accept: "application/json" },
-        });
-        if (!statusResponse.ok) {
-          setAuthAvailability("unavailable");
-          return;
-        }
-        const status = (await statusResponse.json()) as AuthStatus;
-        if (!status.configured) {
-          setAuthAvailability("unavailable");
-          return;
-        }
-        setAuthAvailability("configured");
-        if (!status.authenticated) return;
-
-        const csrf = readCookie("__Host-pw_csrf");
-        if (!csrf) {
-          setErrorMessage("登录会话缺少安全校验信息，请重新使用 GitHub 登录。");
-          return;
-        }
-
-        setConnecting(true);
-        const tokenResponse = await fetch("/auth/token", {
-          method: "POST",
-          credentials: "same-origin",
-          headers: {
-            accept: "application/json",
-            "x-pw-csrf": csrf,
-          },
-        });
-        if (!tokenResponse.ok) {
-          setErrorMessage("GitHub 登录会话已失效，请重新登录。");
-          return;
-        }
-        const sessionToken = (await tokenResponse.json()) as SessionToken;
-        if (!sessionToken.accessToken) throw new Error("MissingSessionAccessToken");
-
-        const opened = await openPrivateRepository(
-          sessionToken.accessToken,
-          DEFAULT_OWNER,
-          DEFAULT_REPOSITORY,
-        );
-        adapterRef.current = opened.adapter;
-        setConnection(opened.connection);
-        setConnectionMethod("github-app");
-        setStatusMessage(`已通过 GitHub App 登录${status.login ? `（${status.login}）` : ""}，访问令牌仅保留在当前页面内存中。`);
-        await Promise.all([
-          loadRecentCaptures(opened.adapter),
-          loadDashboardLayout(opened.adapter, opened.connection.ownerId),
-          loadTasks(opened.adapter),
-        ]);
-      } catch (error) {
-        adapterRef.current = null;
-        setConnection(null);
-        setConnectionMethod(null);
-        setErrorMessage(error instanceof GitHubDataError ? friendlyError(error) : "GitHub 登录会话连接失败，请重新登录。");
-      } finally {
-        setConnecting(false);
-        if (authResult) {
-          window.history.replaceState({}, "", `${window.location.pathname}${window.location.hash}`);
-        }
-      }
-    }
-
-    void bootstrapGitHubAppSession();
-  }, []);
-
-  const readiness = useMemo(() => [
-    { label: "Static PWA", detail: "Mac 关机时仍可打开", done: true },
-    { label: "Private data repo", detail: "可见性连接时强制检查", done: true },
-    { label: "GitHub authorization", detail: connection ? (connectionMethod === "github-app" ? "GitHub App 会话已授权" : "当前页面已授权") : authAvailability === "configured" ? "等待 GitHub 登录" : "等待最小权限令牌", done: Boolean(connection) },
-    { label: "Real sync", detail: connection ? "Capture 与 Tasks 已启用" : "连接后写入真实文件", done: Boolean(connection) },
-  ], [authAvailability, connection, connectionMethod]);
+  const readiness = useMemo(
+    () => buildReadiness(connection, connectionMethod, authAvailability),
+    [authAvailability, connection, connectionMethod],
+  );
 
   const inboxCaptures = useMemo(() => {
     const byId = new Map(captureFiles.map((item) => [item.record.id, item]));
@@ -420,111 +206,6 @@ export default function GitHubWorkspacePage() {
     () => displayedDashboardLayout.widgets.filter((widget) => !widget.enabled),
     [displayedDashboardLayout],
   );
-
-  async function loadRecentCaptures(adapter = adapterRef.current) {
-    if (!adapter) return;
-    setLoadingCaptures(true);
-    setErrorMessage("");
-    try {
-      let items;
-      try {
-        items = await adapter.listDirectory("data/captures");
-      } catch (error) {
-        if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") {
-          setCaptureFiles([]);
-          return;
-        }
-        throw error;
-      }
-      const candidates = items
-        .filter((item) => item.type === "file" && item.name.endsWith(".json"))
-        .sort((left, right) => right.name.localeCompare(left.name));
-      const records: SyncedCapture[] = [];
-      const batchSize = 6;
-      for (let index = 0; index < candidates.length; index += batchSize) {
-        records.push(...(await Promise.all(candidates.slice(index, index + batchSize).map(async (item) => {
-          try {
-            const file = await adapter.readText(item.path);
-            return { record: parseCaptureRecord(file.text), path: file.path, blobSha: file.blobSha };
-          } catch {
-            return null;
-          }
-        }))).filter((item): item is SyncedCapture => item !== null));
-      }
-      setCaptureFiles(records);
-    } catch (error) {
-      setErrorMessage(friendlyError(error));
-    } finally {
-      setLoadingCaptures(false);
-    }
-  }
-
-  async function loadTasks(adapter = adapterRef.current) {
-    if (!adapter) return;
-    setLoadingTasks(true);
-    setErrorMessage("");
-    try {
-      let items;
-      try {
-        items = await adapter.listDirectory("data/tasks");
-      } catch (error) {
-        if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") {
-          setTaskFiles([]);
-          return;
-        }
-        throw error;
-      }
-      const candidates = items
-        .filter((item) => item.type === "file" && item.name.endsWith(".json"))
-        .sort((left, right) => right.name.localeCompare(left.name));
-      const records: SyncedTask[] = [];
-      const batchSize = 6;
-      for (let index = 0; index < candidates.length; index += batchSize) {
-        records.push(...(await Promise.all(candidates.slice(index, index + batchSize).map(async (item) => {
-          try {
-            const file = await adapter.readText(item.path);
-            return { record: parseTaskRecord(file.text), path: file.path, blobSha: file.blobSha };
-          } catch {
-            return null;
-          }
-        }))).filter((item): item is SyncedTask => item !== null));
-      }
-      setTaskFiles(records);
-    } catch (error) {
-      setErrorMessage(friendlyError(error));
-    } finally {
-      setLoadingTasks(false);
-    }
-  }
-
-  async function loadDashboardLayout(
-    adapter = adapterRef.current,
-    ownerId?: string,
-  ) {
-    if (!adapter || !ownerId) return;
-    setLoadingDashboard(true);
-    setErrorMessage("");
-    try {
-      const file = await adapter.readText(DASHBOARD_LAYOUT_PATH);
-      const layout = parseDashboardLayout(file.text);
-      if (layout.owner_id !== ownerId) throw new Error("DASHBOARD_OWNER_MISMATCH");
-      setDashboardLayout(layout);
-      setDashboardBlobSha(file.blobSha);
-      setDashboardDirty(false);
-    } catch (error) {
-      if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") {
-        setDashboardLayout(createDefaultDashboardLayout(ownerId));
-        setDashboardBlobSha(null);
-        setDashboardDirty(false);
-        return;
-      }
-      setErrorMessage(error instanceof Error && error.message === "DASHBOARD_OWNER_MISMATCH"
-        ? "Dashboard 布局的 owner 与当前 workspace 不一致，已停止读取。"
-        : friendlyError(error));
-    } finally {
-      setLoadingDashboard(false);
-    }
-  }
 
   function applyDashboardLayout(next: DashboardLayout) {
     setDashboardLayout(next);
@@ -614,13 +295,10 @@ export default function GitHubWorkspacePage() {
     setConnectionMethod(null);
     setToken("");
     setCapture("");
-    setCaptureFiles([]);
-    setTaskFiles([]);
+    clearCollections();
     setTaskTitle("");
     setTaskView("open");
     setCaptureView("inbox");
-    setDashboardLayout(null);
-    setDashboardBlobSha(null);
     setDashboardDirty(false);
     setEditingDashboard(false);
     setSavedCapture(null);
@@ -1119,430 +797,132 @@ export default function GitHubWorkspacePage() {
     }
   }
 
-  function renderPortabilityResult(result: PortabilityResult) {
-    return (
-      <div className={`portability-result ${result.valid ? "valid" : "invalid"}`} role="status">
-        <strong>{result.valid ? "预检通过" : "预检未通过"}</strong>
-        <span>{result.fileName}</span>
-        <p>{result.files} 个文件 · {result.captures} 条 Capture · {result.tasks} 条 Task · {result.dashboardLayouts} 个 Dashboard 布局</p>
-        {result.errors.length > 0 ? (
-          <ul>{result.errors.slice(0, 5).map((issue, index) => (
-            <li key={`${issue.code}-${issue.path ?? index}`}>{issue.path ? `${issue.path}：` : ""}{issue.message}</li>
-          ))}</ul>
-        ) : null}
-        {result.warnings.length > 0 ? (
-          <ul>{result.warnings.slice(0, 3).map((issue, index) => (
-            <li key={`${issue.code}-${index}`}>{issue.message}</li>
-          ))}</ul>
-        ) : null}
-      </div>
-    );
-  }
-
-  function renderMigrationDryRun(result: SchemaMigrationDryRun) {
-    const ready = result.valid && result.counts.blocked === 0;
-    return (
-      <div className={`portability-result ${ready ? "valid" : "invalid"}`} role="status">
-        <strong>{ready ? "Schema dry run 通过" : "Schema dry run 阻断"}</strong>
-        <span>Migration registry v{result.registryVersion}</span>
-        <p>{result.counts.files} 个文件 · 当前 {result.counts.current} · 待迁移 {result.counts.migratable} · 阻断 {result.counts.blocked}</p>
-        {result.errors.length > 0 ? <ul>{result.errors.slice(0, 5).map((issue, index) => (
-          <li key={`${issue.code}-${issue.path ?? index}`}>{issue.path ? `${issue.path}：` : ""}{issue.message}</li>
-        ))}</ul> : null}
-      </div>
-    );
-  }
-
   return (
     <main className="preview-shell">
-      <header className="topbar">
-        <a className="brand" href="#top" aria-label="Personal Workspace">
-          <span>PW</span>
-          <strong>Personal<br />Workspace</strong>
-        </a>
-        <div className={`network ${online === false ? "offline" : ""}`}>
-          <i /> {online === null ? "检测网络" : online ? connection ? "Private repo 已连接" : "GitHub 可连接" : "当前离线"}
-        </div>
-      </header>
+      <AuthSection
+        online={online}
+        connection={connection}
+        connectionMethod={connectionMethod}
+        authAvailability={authAvailability}
+        owner={owner}
+        repository={repository}
+        token={token}
+        connecting={connecting}
+        confirmingRevokeAll={confirmingRevokeAll}
+        revokingAll={revokingAll}
+        errorMessage={errorMessage}
+        statusMessage={statusMessage}
+        onOwnerChange={setOwner}
+        onRepositoryChange={setRepository}
+        onTokenChange={setToken}
+        onConnect={connect}
+        onDisconnect={disconnect}
+        onConfirmingRevokeAllChange={setConfirmingRevokeAll}
+        onRevokeAll={revokeAllSessions}
+      />
 
-      <section className="hero" id="top">
-        <p className="eyebrow">GitHub-backed workspace</p>
-        <h1>工作台不再<br />依赖某一台电脑。</h1>
-        <p className="lede">公开 Pages 只提供应用外壳；连接后，当前浏览器直接读写你的 Private 数据仓库。令牌不会进入 Git，也不会写入浏览器持久存储。</p>
-        <div className="hero-meta">
-          <span>Public app</span><span>Private data</span><span>Memory-only token</span>
-        </div>
-      </section>
 
-      <section className={`connection-card ${connection ? "connected" : ""}`} aria-labelledby="connection-title">
-        <div className="connection-copy">
-          <p className="eyebrow">Private connection</p>
-          <h2 id="connection-title">{connection ? "私人数据已连接" : "连接你的数据仓库"}</h2>
-          <p>{connection
-            ? `${connection.repository} · Private · ${connection.timezone}`
-            : authAvailability === "configured"
-              ? "使用 GitHub App 登录；访问令牌只进入当前页面内存。也可继续使用 fine-grained token 作为备用方式。"
-              : "使用只授权 personal-workspace-data 的 fine-grained token；需要 Metadata 读取和 Contents 读写权限。"}</p>
-        </div>
-        {connection ? (
-          <div className="connection-actions">
-            <span className="private-badge">Private verified</span>
-            <button className="secondary-button" type="button" onClick={disconnect} disabled={revokingAll}>
-              {connectionMethod === "github-app" ? "退出当前设备" : "断开并清除"}
-            </button>
-            {connectionMethod === "github-app" ? confirmingRevokeAll ? (
-              <div className="revoke-confirm" role="group" aria-label="确认撤销全部设备">
-                <span>所有设备都需要重新登录。</span>
-                <button className="danger-button" type="button" onClick={revokeAllSessions} disabled={revokingAll}>
-                  {revokingAll ? "正在撤销…" : "确认撤销全部设备"}
-                </button>
-                <button className="secondary-button" type="button" onClick={() => setConfirmingRevokeAll(false)} disabled={revokingAll}>取消</button>
-              </div>
-            ) : (
-              <button className="danger-outline-button" type="button" onClick={() => setConfirmingRevokeAll(true)}>撤销全部设备</button>
-            ) : null}
-          </div>
-        ) : (
-          <form className="connection-form" onSubmit={connect}>
-            {authAvailability === "configured" ? (
-              <a className="github-login-button" href="/auth/login">使用 GitHub 登录</a>
-            ) : authAvailability === "checking" ? (
-              <span className="auth-checking">正在检查 GitHub App 登录…</span>
-            ) : null}
-            <label>Owner<input value={owner} onChange={(event) => setOwner(event.target.value)} autoCapitalize="none" spellCheck={false} /></label>
-            <label>Repository<input value={repository} onChange={(event) => setRepository(event.target.value)} autoCapitalize="none" spellCheck={false} /></label>
-            <label className="token-field">Fine-grained token<input type="password" value={token} onChange={(event) => setToken(event.target.value)} autoComplete="new-password" spellCheck={false} placeholder="github_pat_…" /></label>
-            <button type="submit" disabled={connecting || online === false || !token}>{connecting ? "正在安全检查…" : "使用 Token 连接"}</button>
-            <a className="token-help" href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noreferrer">在 GitHub 创建备用最小权限令牌 ↗</a>
-          </form>
-        )}
-      </section>
+      <DashboardSection
+        connection={connection}
+        online={online}
+        dashboardLayout={dashboardLayout}
+        dashboardBlobSha={dashboardBlobSha}
+        dashboardDirty={dashboardDirty}
+        editingDashboard={editingDashboard}
+        loadingDashboard={loadingDashboard}
+        savingDashboard={savingDashboard}
+        visibleWidgets={visibleDashboardWidgets}
+        hiddenWidgets={hiddenDashboardWidgets}
+        capture={capture}
+        savingCapture={saving}
+        savedCapture={savedCapture}
+        todayTasks={todayTaskFiles}
+        loadingTasks={loadingTasks}
+        savingTaskId={savingTaskId}
+        currentTaskDate={currentTaskDate}
+        onToggleEditing={() => setEditingDashboard((current) => !current)}
+        onRefresh={() => loadDashboardLayout(adapterRef.current, connection?.ownerId)}
+        onSaveLayout={saveDashboardLayout}
+        onWidgetChange={changeDashboardWidget}
+        onWidgetResize={resizeDashboardWidget}
+        onReset={resetDashboardToDefault}
+        onCaptureChange={setCapture}
+        onSaveCapture={saveCapture}
+        onCompleteTask={(item) => updateTaskCompletion(item, "complete")}
+      />
 
-      {(errorMessage || statusMessage) ? (
-        <div className={`message-bar ${errorMessage ? "error" : "success"}`} role={errorMessage ? "alert" : "status"}>
-          {errorMessage || statusMessage}
-        </div>
-      ) : null}
 
-      <section className="dashboard-card" aria-labelledby="dashboard-title">
-        <div className="card-heading dashboard-heading">
-          <div>
-            <p className="eyebrow">Today · Modular dashboard</p>
-            <h2 id="dashboard-title">我的今天</h2>
-            <p className="dashboard-subtitle">布局来自 Private 数据仓库；移动端自动变为单列。</p>
-          </div>
-          <div className="dashboard-actions" aria-label="Dashboard 布局操作">
-            <button className="secondary-button" type="button" onClick={() => setEditingDashboard((current) => !current)} disabled={!dashboardLayout}>
-              {editingDashboard ? "完成编辑" : "编辑布局"}
-            </button>
-            <button className="secondary-button" type="button" onClick={() => loadDashboardLayout(adapterRef.current, connection?.ownerId)} disabled={!connection || loadingDashboard || dashboardDirty}>
-              {loadingDashboard ? "读取中…" : "从 GitHub 刷新"}
-            </button>
-            <button className="primary-button" type="button" onClick={saveDashboardLayout} disabled={!connection || !dashboardLayout || savingDashboard || online === false || (!dashboardDirty && dashboardBlobSha !== null)}>
-              {savingDashboard ? "保存中…" : dashboardBlobSha ? "保存布局" : "保存默认布局"}
-            </button>
-          </div>
-        </div>
+      <TasksSection
+        connection={connection}
+        online={online}
+        taskTitle={taskTitle}
+        taskCategory={taskCategory}
+        taskPriority={taskPriority}
+        taskDueDate={taskDueDate}
+        taskView={taskView}
+        taskFiles={taskFiles}
+        openTaskFiles={openTaskFiles}
+        completedTaskFiles={completedTaskFiles}
+        visibleTaskFiles={visibleTaskFiles}
+        currentTaskDate={currentTaskDate}
+        loadingTasks={loadingTasks}
+        savingTask={savingTask}
+        savingTaskId={savingTaskId}
+        onTaskTitleChange={setTaskTitle}
+        onTaskCategoryChange={setTaskCategory}
+        onTaskPriorityChange={setTaskPriority}
+        onTaskDueDateChange={setTaskDueDate}
+        onTaskViewChange={setTaskView}
+        onCreateTask={saveTask}
+        onRefresh={() => loadTasks()}
+        onCompletionChange={updateTaskCompletion}
+      />
 
-        <div className="dashboard-layout-meta">
-              <span>{!connection ? "连接后从 Private GitHub 读取布局" : dashboardBlobSha && dashboardLayout ? `Private layout v${dashboardLayout.version}` : "尚未保存的默认布局"}</span>
-              <span>{visibleDashboardWidgets.length} 个显示 · {hiddenDashboardWidgets.length} 个隐藏{dashboardDirty ? " · 有未保存修改" : ""}</span>
-            </div>
-            <div className="dashboard-widget-grid">
-              {visibleDashboardWidgets.map((widget, index) => {
-                const definition = DASHBOARD_WIDGET_REGISTRY[widget.widget_type] ?? {
-                  eyebrow: "Extension",
-                  title: `未知模块 · ${widget.widget_type}`,
-                  empty: "当前版本未安装这个模块，但配置会被完整保留。",
-                };
-                return (
-                  <article className={`dashboard-widget size-${widget.size}`} key={widget.id}>
-                    <header>
-                      <div><p className="eyebrow">{definition.eyebrow}</p><h3>{definition.title}</h3></div>
-                      <span className="privacy-label">{widget.privacy_mode}</span>
-                    </header>
-                    {editingDashboard ? (
-                      <div className="widget-controls" aria-label={`${definition.title} 布局操作`}>
-                        <button type="button" onClick={() => changeDashboardWidget(widget, "up")} disabled={index === 0}>上移</button>
-                        <button type="button" onClick={() => changeDashboardWidget(widget, "down")} disabled={index === visibleDashboardWidgets.length - 1}>下移</button>
-                        <label>尺寸
-                          <select value={widget.size} onChange={(event) => resizeDashboardWidget(widget, event.target.value as DashboardWidgetSize)}>
-                            {Object.entries(DASHBOARD_SIZE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-                          </select>
-                        </label>
-                        <button type="button" onClick={() => changeDashboardWidget(widget, "hide")}>隐藏</button>
-                      </div>
-                    ) : null}
-                    {widget.widget_type === "quick_capture" ? (
-                      <div className="widget-capture">
-                        <textarea
-                          value={capture}
-                          onChange={(event) => setCapture(event.target.value)}
-                          placeholder={connection ? "任务、想法、提醒，先记下来再整理…" : "连接 Private 数据仓库后即可保存…"}
-                          maxLength={10_000}
-                          disabled={!connection || saving}
-                        />
-                        <footer>
-                          <span>{capture.length} / 10,000</span>
-                          <button type="button" onClick={saveCapture} disabled={!connection || !capture.trim() || saving || online === false}>{saving ? "正在保存…" : "保存 Capture"}</button>
-                        </footer>
-                        {savedCapture ? (
-                          <div className="file-preview">
-                            <code>{savedCapture.path}</code>
-                            <p>{savedCapture.text}</p>
-                            <span className="commit-note">Commit {savedCapture.commitSha.slice(0, 8)} · Private repository</span>
-                          </div>
-                        ) : <p className="widget-empty">每次保存生成开放 JSON 文件和一条 Git 历史记录。</p>}
-                      </div>
-                    ) : widget.widget_type === "today_tasks" ? (
-                      <div className="today-task-widget">
-                        {!connection ? <p className="widget-empty">连接 Private 数据仓库后显示今日任务。</p>
-                          : loadingTasks ? <p className="widget-empty">正在读取今日任务…</p>
-                            : todayTaskFiles.length === 0 ? <p className="widget-empty">今天没有到期或逾期任务。</p>
-                              : <ul>{todayTaskFiles.slice(0, 4).map((item) => (
-                                <li key={item.record.id}>
-                                  <button
-                                    type="button"
-                                    aria-label={`完成任务：${item.record.data.title}`}
-                                    onClick={() => updateTaskCompletion(item, "complete")}
-                                    disabled={Boolean(savingTaskId) || online === false}
-                                  >○</button>
-                                  <span>{item.record.data.title}</span>
-                                  <small>{formatTaskDue(item.record.data.due_at, currentTaskDate)}</small>
-                                </li>
-                              ))}</ul>}
-                        {todayTaskFiles.length > 4 ? <p className="task-overflow-note">另有 {todayTaskFiles.length - 4} 项，请在任务清单查看。</p> : null}
-                      </div>
-                    ) : <p className="widget-empty">{definition.empty}</p>}
-                  </article>
-                );
-              })}
-            </div>
-            {editingDashboard ? (
-              <div className="dashboard-editor-footer">
-                <div>
-                  <strong>已隐藏模块</strong>
-                  {hiddenDashboardWidgets.length === 0 ? <span>无</span> : hiddenDashboardWidgets.map((widget) => (
-                    <button type="button" key={widget.id} onClick={() => changeDashboardWidget(widget, "show")}>
-                      + {DASHBOARD_WIDGET_REGISTRY[widget.widget_type]?.title ?? widget.widget_type}
-                    </button>
-                  ))}
-                </div>
-                <button className="secondary-button" type="button" onClick={resetDashboardToDefault}>恢复默认布局</button>
-              </div>
-            ) : null}
-      </section>
 
-      <section className="tasks-card" aria-labelledby="tasks-title">
-        <div className="card-heading">
-          <div>
-            <p className="eyebrow">Phase 2 · Task foundation</p>
-            <h2 id="tasks-title">任务清单</h2>
-            <p className="tasks-subtitle">创建、今日聚合、完成与恢复均直接同步到 Private GitHub。</p>
-          </div>
-          <div className="task-view-actions" aria-label="任务视图与同步">
-            <button className={`view-button ${taskView === "open" ? "active" : ""}`} type="button" aria-pressed={taskView === "open"} onClick={() => setTaskView("open")}>待办 {openTaskFiles.length}</button>
-            <button className={`view-button ${taskView === "done" ? "active" : ""}`} type="button" aria-pressed={taskView === "done"} onClick={() => setTaskView("done")}>已完成 {completedTaskFiles.length}</button>
-            <button className="secondary-button" type="button" onClick={() => loadTasks()} disabled={!connection || loadingTasks}>{loadingTasks ? "刷新中…" : "从 GitHub 刷新"}</button>
-          </div>
-        </div>
+      <ReadinessSection readiness={readiness} connectionMethod={connectionMethod} />
 
-        <form className="task-create-form" onSubmit={saveTask}>
-          <label className="task-title-field">任务标题
-            <input
-              value={taskTitle}
-              onChange={(event) => setTaskTitle(event.target.value)}
-              maxLength={300}
-              placeholder={connection ? "今天要推进什么？" : "连接 Private 数据仓库后创建任务"}
-              disabled={!connection || savingTask}
-            />
-          </label>
-          <label>分类
-            <select value={taskCategory} onChange={(event) => setTaskCategory(event.target.value as TaskCategory)} disabled={!connection || savingTask}>
-              {Object.entries(TASK_CATEGORY_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-            </select>
-          </label>
-          <label>优先级
-            <select value={taskPriority} onChange={(event) => setTaskPriority(event.target.value as TaskPriority)} disabled={!connection || savingTask}>
-              {Object.entries(TASK_PRIORITY_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-            </select>
-          </label>
-          <label>DDL
-            <input type="date" value={taskDueDate} onChange={(event) => setTaskDueDate(event.target.value)} disabled={!connection || savingTask} />
-          </label>
-          <button className="primary-button" type="submit" disabled={!connection || !taskTitle.trim() || savingTask || online === false}>{savingTask ? "保存中…" : "创建任务"}</button>
-        </form>
 
-        {!connection ? <p className="empty-note">连接后显示 Private 仓库中的任务。</p>
-          : loadingTasks && taskFiles.length === 0 ? <p className="empty-note">正在读取任务…</p>
-            : visibleTaskFiles.length === 0 ? <p className="empty-note">{taskView === "open" ? "还没有待办任务，可以创建第一项。" : "还没有已完成任务。"}</p>
-              : <ul className="task-list">{visibleTaskFiles.map((item) => (
-                <li key={item.record.id} className={taskView === "done" ? "completed" : ""}>
-                  <button
-                    className="task-toggle"
-                    type="button"
-                    aria-label={taskView === "done" ? `恢复任务：${item.record.data.title}` : `完成任务：${item.record.data.title}`}
-                    onClick={() => updateTaskCompletion(item, taskView === "done" ? "reopen" : "complete")}
-                    disabled={Boolean(savingTaskId) || online === false}
-                  >{savingTaskId === item.record.id ? "…" : taskView === "done" ? "✓" : "○"}</button>
-                  <div>
-                    <strong>{item.record.data.title}</strong>
-                    <span>{TASK_CATEGORY_LABELS[item.record.data.category]} · {TASK_PRIORITY_LABELS[item.record.data.priority]}优先级 · {formatTaskDue(item.record.data.due_at, currentTaskDate)}</span>
-                  </div>
-                  <code>v{item.record.version}</code>
-                </li>
-              ))}</ul>}
-      </section>
+      <CaptureInboxSection
+        connection={connection}
+        online={online}
+        captureView={captureView}
+        inboxCaptures={inboxCaptures}
+        trashedCaptures={trashedCaptures}
+        visibleCaptures={visibleCaptures}
+        loadingCaptures={loadingCaptures}
+        savingCaptureId={savingCaptureId}
+        onViewChange={setCaptureView}
+        onRefresh={() => loadRecentCaptures()}
+        onLifecycleChange={updateCaptureLifecycle}
+      />
 
-      <section className="content-grid status-grid">
-        <aside className="status-card">
-          <p className="eyebrow">Live readiness</p>
-          <h2>运行状态</h2>
-          <ol>
-            {readiness.map((item) => (
-              <li key={item.label} className={item.done ? "done" : "waiting"}>
-                <i>{item.done ? "✓" : "·"}</i>
-                <div><strong>{item.label}</strong><span>{item.detail}</span></div>
-              </li>
-            ))}
-          </ol>
-          <div className="boundary-note">
-            <strong>凭据边界</strong>
-            <p>{connectionMethod === "github-app"
-              ? "页面刷新时会由服务端登录会话换取新的短期访问令牌；令牌只进入当前页面内存。断开连接会撤销本设备会话并清除已读取内容。"
-              : "手动 Token 在刷新或关闭页面后需要重新输入。断开连接会立即清除当前页面内的令牌和已读取内容。"}</p>
-          </div>
-        </aside>
-      </section>
 
-      <section className="recent-card" aria-labelledby="recent-title">
-        <div className="card-heading">
-          <div><p className="eyebrow">Cross-device inbox</p><h2 id="recent-title">Capture Inbox</h2></div>
-          <div className="recent-actions" aria-label="Capture 视图与同步">
-            <button
-              className={`view-button ${captureView === "inbox" ? "active" : ""}`}
-              type="button"
-              aria-pressed={captureView === "inbox"}
-              onClick={() => setCaptureView("inbox")}
-            >
-              Inbox {inboxCaptures.length}
-            </button>
-            <button
-              className={`view-button ${captureView === "trash" ? "active" : ""}`}
-              type="button"
-              aria-pressed={captureView === "trash"}
-              onClick={() => setCaptureView("trash")}
-            >
-              回收站 {trashedCaptures.length}
-            </button>
-            <button className="secondary-button" type="button" onClick={() => loadRecentCaptures()} disabled={!connection || loadingCaptures}>{loadingCaptures ? "刷新中…" : "从 GitHub 刷新"}</button>
-          </div>
-        </div>
-        {!connection ? <p className="empty-note">连接后显示 Private 仓库中的最近记录。</p>
-          : visibleCaptures.length === 0 ? <p className="empty-note">{captureView === "trash" ? "回收站是空的。" : "Inbox 还是空的，可以保存第一条记录。"}</p>
-            : <ul className="recent-list">{visibleCaptures.map((item) => (
-              <li key={item.record.id}>
-                <time dateTime={item.record.deleted_at ?? item.record.created_at}>
-                  {formatCaptureTime(item.record.deleted_at ?? item.record.created_at)}
-                </time>
-                <p>{item.record.data.raw_text}</p>
-                <div className="capture-row-actions">
-                  <span>{captureView === "trash" ? "trash" : item.record.data.status}</span>
-                  <button
-                    className={captureView === "trash" ? "restore-button" : "trash-button"}
-                    type="button"
-                    onClick={() => updateCaptureLifecycle(item, captureView === "trash" ? "restore" : "trash")}
-                    disabled={Boolean(savingCaptureId) || online === false}
-                  >
-                    {savingCaptureId === item.record.id ? "保存中…" : captureView === "trash" ? "恢复" : "移到回收站"}
-                  </button>
-                </div>
-              </li>
-            ))}</ul>}
-      </section>
+      <PortabilitySection
+        connection={connection}
+        online={online}
+        exporting={exporting}
+        exportProgress={exportProgress}
+        checkingRestore={checkingRestore}
+        checkingRestoreTarget={checkingRestoreTarget}
+        restoring={restoring}
+        exportResult={exportResult}
+        restoreResult={restoreResult}
+        migrationDryRun={migrationDryRun}
+        restoreTargetOwner={restoreTargetOwner}
+        restoreTargetRepository={restoreTargetRepository}
+        restorePlan={restorePlan}
+        restoreConfirmation={restoreConfirmation}
+        restoreCommitSha={restoreCommitSha}
+        onExport={downloadPortableExport}
+        onPreflight={preflightRestore}
+        onTargetOwnerChange={setRestoreTargetOwner}
+        onTargetRepositoryChange={setRestoreTargetRepository}
+        onResetTarget={resetRestoreTarget}
+        onCheckTarget={checkRestoreTarget}
+        onConfirmationChange={setRestoreConfirmation}
+        onRestore={executePortableRestore}
+      />
 
-      <section className="portability-card" aria-labelledby="portability-title">
-        <div className="card-heading">
-          <div><p className="eyebrow">Phase 1C · Data portability</p><h2 id="portability-title">导出与恢复预检</h2></div>
-          <span className={`memory-pill ${connection ? "live" : ""}`}>{connection ? "Private 数据已就绪" : "连接后可导出"}</span>
-        </div>
-        <div className="portability-grid">
-          <article>
-            <span className="step-number">01</span>
-            <h3>下载开放数据包</h3>
-            <p>读取 workspace.json、Dashboard 布局、全部 Capture 和 Task，生成带 SHA-256、Git blob SHA、文件数量与 schema 版本的 JSON。</p>
-            <button className="primary-button" type="button" onClick={downloadPortableExport} disabled={!connection || exporting || online === false}>
-              {exporting ? exportProgress || "正在生成…" : "导出并下载 JSON"}
-            </button>
-            {exportResult ? renderPortabilityResult(exportResult) : null}
-          </article>
-          <article>
-            <span className="step-number">02</span>
-            <h3>只读恢复预检</h3>
-            <p>在当前浏览器校验文件版本、所有者、路径、数量和哈希。本阶段不会上传，也不会写入或覆盖 GitHub。</p>
-            <label className={`file-picker ${checkingRestore ? "disabled" : ""}`}>
-              {checkingRestore ? "正在检查…" : "选择 JSON 导出文件"}
-              <input type="file" accept="application/json,.json" onChange={preflightRestore} disabled={checkingRestore} />
-            </label>
-            {restoreResult ? renderPortabilityResult(restoreResult) : null}
-            {migrationDryRun ? renderMigrationDryRun(migrationDryRun) : null}
-          </article>
-          <article className="restore-write-panel">
-            <span className="step-number">03</span>
-            <h3>隔离仓库原子恢复</h3>
-            <p>仅接受同一 owner 下、已用 README 初始化且尚无 Personal Workspace 业务数据的 Private 仓库。全部文件只通过一个 Git commit 写入。</p>
-            {!restoreResult?.valid ? (
-              <p className="restore-gate">先选择并通过第 02 步恢复预检。</p>
-            ) : !connection ? (
-              <p className="restore-gate">先连接来源 Private 仓库，复用当前页面内存中的临时授权检查目标。</p>
-            ) : (
-              <>
-                <div className="restore-target-form">
-                  <label>Target owner<input value={restoreTargetOwner} onChange={(event) => { setRestoreTargetOwner(event.target.value); resetRestoreTarget(); }} autoCapitalize="none" spellCheck={false} /></label>
-                  <label>Target repository<input value={restoreTargetRepository} onChange={(event) => { setRestoreTargetRepository(event.target.value); resetRestoreTarget(); }} autoCapitalize="none" spellCheck={false} /></label>
-                  <button className="secondary-button" type="button" onClick={checkRestoreTarget} disabled={checkingRestoreTarget || restoring || online === false || !restoreTargetOwner.trim() || !restoreTargetRepository.trim()}>
-                    {checkingRestoreTarget ? "正在检查…" : "检查恢复目标"}
-                  </button>
-                </div>
-                {restorePlan ? (
-                  <div className={`restore-plan ${restorePlan.ready ? "valid" : "invalid"}`} role="status">
-                    <strong>{restorePlan.ready ? "目标检查通过" : "禁止恢复到此目标"}</strong>
-                    <span>{restorePlan.targetRepository} · {restorePlan.branch}</span>
-                    <p>{restorePlan.counts.files} 个文件 · {restorePlan.counts.captures} 条 Capture · 单个原子 commit</p>
-                    {restorePlan.errors.length > 0 ? <ul>{restorePlan.errors.slice(0, 5).map((issue, index) => (
-                      <li key={`${issue.code}-${issue.path ?? index}`}>{issue.path ? `${issue.path}：` : ""}{issue.message}</li>
-                    ))}</ul> : null}
-                    {restorePlan.warnings.length > 0 ? <ul>{restorePlan.warnings.slice(0, 3).map((issue, index) => (
-                      <li key={`${issue.code}-${index}`}>{issue.message}</li>
-                    ))}</ul> : null}
-                  </div>
-                ) : null}
-                {restorePlan?.ready && !restoreCommitSha ? (
-                  <div className="restore-confirmation">
-                    <label>输入完整目标仓库名以确认
-                      <input
-                        value={restoreConfirmation}
-                        onChange={(event) => setRestoreConfirmation(event.target.value)}
-                        placeholder={restorePlan.targetRepository}
-                        autoCapitalize="none"
-                        spellCheck={false}
-                      />
-                    </label>
-                    <button className="danger-button" type="button" onClick={executePortableRestore} disabled={restoring || restoreConfirmation !== restorePlan.targetRepository || online === false}>
-                      {restoring ? "正在原子恢复…" : "确认恢复到隔离仓库"}
-                    </button>
-                  </div>
-                ) : null}
-                {restoreCommitSha ? <p className="restore-success">恢复 Commit {restoreCommitSha.slice(0, 8)}。来源仓库未被修改。</p> : null}
-              </>
-            )}
-          </article>
-        </div>
-        <div className="portability-boundary">
-          <strong>当前安全边界</strong>
-          <p>导出包含你的私人正文，请自行安全保存。恢复禁止写回来源仓库、禁止覆盖已有业务数据，并在执行前后检查目标分支；任何并发变化都会中止。</p>
-        </div>
-      </section>
 
       <footer className="page-footer">
         <span>Personal Workspace</span>

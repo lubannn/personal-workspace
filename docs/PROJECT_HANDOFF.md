@@ -1,7 +1,7 @@
 # Personal Workspace 阶段性交接
 
 > 文档用途：供完全未阅读历史聊天的新 Codex 会话直接接手项目。
-> 当前阶段：Phase 2A Tasks 首个垂直切片已通过正式环境跨设备验收；下一接力点是拆分正式 PWA 主页面。
+> 当前阶段：正式 PWA 主页面拆分已完成本地实现与回归；下一接力点是精确发布并完成正式环境回归，再继续补齐 Task 生命周期。
 > 最后核对：2026-08-28（Asia/Shanghai）
 > 正式入口：<https://nexus.lubannn.workers.dev/>
 
@@ -9,7 +9,7 @@
 
 这是一个长期维护、本人优先、单用户优先的 Personal OS。它不是企业后台，也不是把所有知识管理能力重新做一遍。当前可运行产品是一套公开静态应用外壳，通过 Cloudflare 上的 GitHub App 登录边缘服务，让本人浏览器直接读写独立的 GitHub 私有数据仓库。Mac 可以关机，Mac、Windows、iPhone 和 iPad 都可独立使用。
 
-接手后不要重新设计认证拓扑、不要迁回 LocalStorage、不要把公开代码仓库和私人数据仓库合并。Phase 2A Tasks 首个垂直切片已经完成代码、自动测试、正式环境单设备流程及跨设备反向写入验收。下一段工作由新对话执行：先在不改变业务行为的前提下拆分正式 PWA 主页面，再继续补齐 Task 生命周期。
+接手后不要重新设计认证拓扑、不要迁回 LocalStorage、不要把公开代码仓库和私人数据仓库合并。Phase 2A Tasks 首个垂直切片已经完成代码、自动测试、正式环境单设备流程及跨设备反向写入验收。正式 PWA 主页面也已在不改变业务语义的前提下完成本地拆分、自动回归和桌面/390px 视觉检查；尚未精确发布及执行正式环境登录、读写、导出/恢复回归。下一段工作先完成这一发布门槛，再继续补齐 Task 生命周期。
 
 开始任何修改前必须：
 
@@ -158,13 +158,13 @@ Dashboard 默认 Widget：今日日程、今日待办、Quick Capture、项目�
 
 ### 5.2 质量状态
 
-2026-08-28 重新执行并通过：
+2026-08-28 主页面拆分后重新执行并通过：
 
-- 15 个测试文件、62 项测试；
+- 16 个测试文件、68 项测试（新增正式 PWA 页面状态、日期和安全错误 characterization tests）；
 - `pnpm typecheck`；
 - `pnpm lint`；
 - `pnpm build:cloudflare-pwa`；
-- 此前已完成桌面与 390px 手机宽度视觉检查，无横向溢出。
+- 已重新完成桌面与 390px 手机宽度本地视觉检查，无横向溢出；移动端 Dashboard 与 Task 表单保持单列。
 
 Codex 桌面环境直接运行 pnpm 若提示 `node: not found`，先加载工作区依赖或把以下路径放在 PATH 前部：
 
@@ -213,7 +213,7 @@ Codex 桌面环境直接运行 pnpm 若提示 `node: not found`，先加载工�
 
 ### 7.1 立即事项
 
-1. 在添加更多复杂业务前，把 `apps/github-pwa/app/page.tsx`（当前约 1553 行）拆为清晰的 auth、data loading、Dashboard、Task、Capture、portability 组件/hooks。
+1. 精确发布本次正式 PWA 主页面拆分，并在正式入口回归 GitHub App 登录、Private GitHub 读取、Capture/Task 带 SHA 写入、Dashboard 布局、导出/预检/隔离恢复安全门；当前本地实现已将 `apps/github-pwa/app/page.tsx` 从约 1553 行降至 933 行，并提取 auth、data loading、Dashboard、Task、Capture、portability 组件/hooks。
 2. 为 Tasks 增加编辑、取消、归档、软删除/回收站、标签、notes、实际/预计耗时、一层子任务与项目引用。
 3. 建立 Projects canonical 文件、Milestone、阶段、进度来源、Notes、文件引用和 Activity Log。
 4. 建立内部 Calendar 日/周/月视图、时间块和提醒，并坚持 Task/Calendar 边界。
@@ -241,7 +241,7 @@ Codex 桌面环境直接运行 pnpm 若提示 `node: not found`，先加载工�
 
 ## 8. 已知 bug、风险与技术债
 
-- **正式 UI 单文件过大**：`apps/github-pwa/app/page.tsx` 混合认证、数据读取、业务状态、恢复和多个 UI 模块，继续堆功能会显著增加回归风险。
+- **正式 UI 编排仍偏大**：`apps/github-pwa/app/page.tsx` 已从约 1553 行降至 933 行，认证启动、数据加载和各 UI 区块已拆出；写入动作、portable export/restore 编排和较多页面状态仍集中在主文件，后续应在保持安全门不变的前提下继续提取领域 hooks。
 - **GitHub API 扩展性**：当前目录列表后逐文件读取；记录增长后会增加延迟、请求数和 rate-limit 风险。尚无分页索引、增量缓存或服务端 projection。
 - **有限离线**：PWA 只保证应用外壳，不承诺离线编辑核心数据。离线/弱网下写入应禁用或明确排队，不能假装已保存。
 - **明文隐私风险**：Private 不等于端到端加密。GitHub 账号接管、误加协作者或仓库误设 Public 会暴露完整数据；Git 历史还会保留旧版本。
@@ -263,7 +263,12 @@ Codex 桌面环境直接运行 pnpm 若提示 `node: not found`，先加载工�
 |---|---|
 | `AGENTS.md`、`apps/github-pwa/AGENTS.md` | 开发约束；尤其要求依据仓库内 Next.js 16 文档工作。 |
 | `package.json` | 版本、Node/pnpm 门槛和测试/构建/部署脚本。 |
-| `apps/github-pwa/app/page.tsx` | 当前正式 PWA 的主页面与业务编排；需要优先拆分。 |
+| `apps/github-pwa/app/page.tsx` | 正式 PWA 的页面级业务编排；保留跨领域协调和 GitHub 写入动作。 |
+| `apps/github-pwa/app/workspace/page-model.ts` | 页面共享类型、标签、日期/错误映射、Private 仓库打开边界。 |
+| `apps/github-pwa/app/workspace/use-github-app-bootstrap.ts` | GitHub App 会话探测、短期内存 token 换取和首次数据加载。 |
+| `apps/github-pwa/app/workspace/use-workspace-collections.ts` | Capture、Task 与 Dashboard 从 GitHub 读取、解析及加载状态。 |
+| `apps/github-pwa/app/workspace/*-section.tsx` | auth、Dashboard、Task、Capture、readiness 与 portability 展示组件。 |
+| `apps/github-pwa/app/workspace/page-model.test.ts` | 正式 PWA 关键状态、日期与安全错误 characterization tests。 |
 | `apps/github-pwa/app/globals.css` | 正式 PWA 视觉、响应式 Dashboard/Task/Capture 样式。 |
 | `apps/github-pwa/app/layout.tsx`、`manifest.ts`、`icon.svg` | PWA 元数据、应用壳和图标。 |
 | `apps/github-pwa/next.config.ts` | Next.js static export、basePath 与资源前缀。 |
@@ -300,8 +305,8 @@ Codex 桌面环境直接运行 pnpm 若提示 `node: not found`，先加载工�
 
 ## 10. 下一步建议执行顺序
 
-1. **拆分正式 PWA 主页面**：先写保持行为不变的 characterization tests，再提取 GitHub/auth hook、workspace loader、Dashboard、Task、Capture、portability 组件；不要在同一改动里加入新业务语义。该工作明确交由下一新对话执行。
-2. **补齐 Task 生命周期**：编辑 → 取消/归档 → Task 软删除/恢复 → tags/notes/duration → 一层子任务。每步都做跨设备 SHA 冲突验收，并进入导出/恢复/migration。
+1. **发布并验收主页面拆分**：以远端 `main` 最新 tree 为基准精确发布 `apps/github-pwa/app/page.tsx` 与 `apps/github-pwa/app/workspace/`，核对 Cloudflare deployment commit/status，再在正式入口回归认证、读取、写入、Dashboard 与 portability；不得把本地其他 modified/untracked 文件带入发布。
+2. **补齐 Task 生命周期**：正式回归通过后，按编辑 → 取消/归档 → Task 软删除/恢复 → tags/notes/duration → 一层子任务推进。每步都做跨设备 SHA 冲突验收，并进入导出/恢复/migration。
 3. **实现 Project 最小闭环**：Project 文件、阶段、Milestone、Task 关联、进度计算和 Activity Log；不能只存一个人工百分比而不记录来源。
 4. **实现内部 Calendar**：先数据协议和 Task/Event 边界，再做日/周/月、时间块与提醒。
 5. **实现确定性报告与 CSV**：事实汇总可追溯；AI 润色留到 Phase 5。
@@ -332,12 +337,12 @@ Codex 桌面环境直接运行 pnpm 若提示 `node: not found`，先加载工�
 
 ## 12. 当前接力点的完成定义
 
-Phase 2A 首个切片已完成，不需要新会话重复 Task 跨设备验收。新会话的第一项工作是正式 PWA 主页面拆分，完成定义为：
+Phase 2A 首个切片已完成，不需要新会话重复此前 Task 跨设备验收。正式 PWA 主页面拆分的本地代码与本地质量门已完成；以下完成定义中，正式发布与正式环境回归仍待执行：
 
-- 拆分前先建立足以锁定现有认证、Dashboard、Task、Capture、导出/恢复行为的 characterization tests；
-- 从 `apps/github-pwa/app/page.tsx` 提取职责清晰的组件/hooks，显著降低该文件体积和状态耦合；
+- 已建立锁定认证状态、Task 日期和 GitHub 安全错误映射的 characterization tests；既有数据层测试继续覆盖 Dashboard、Task、Capture、导出/恢复行为；
+- 已从 `apps/github-pwa/app/page.tsx` 提取职责清晰的组件/hooks，主文件由约 1553 行降至 933 行；
 - 不在同一切片引入新业务字段、数据迁移或视觉重设计；
 - GitHub App、内存 token、Private GitHub 直读写、blob SHA 冲突、导出/恢复和移动端行为保持不变；
-- 62 项既有测试及新增测试、类型检查、Lint、生产构建全部通过；
-- 完成桌面和移动端正式环境回归，确认跨设备读写未退化；
-- 更新本交接文档中的文件结构、测试数量、已知技术债与下一接力点，并精确发布、核对 Cloudflare deployment。
+- 62 项既有测试及 6 项新增测试、类型检查、Lint、生产构建全部通过；
+- 已完成桌面和 390px 移动端本地回归；正式环境与跨设备读写回归尚待发布后执行；
+- 已更新本交接文档中的文件结构、测试数量、已知技术债与下一接力点；尚待精确发布并核对 Cloudflare deployment。
