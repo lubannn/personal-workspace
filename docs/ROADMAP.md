@@ -1,6 +1,6 @@
 # Personal Workspace 路线图
 
-> 状态：Phase 0 已批准；Phase 1A SQLite 基线完成；Phase 1B GitHub-backed PWA 验收通过；Phase 1C 前四个切片已验收，第五个切片待跨设备确认
+> 状态：Phase 0 已批准；Phase 1A SQLite 基线完成；Phase 1B GitHub-backed PWA 验收通过；Phase 1C 前五个切片已验收
 > 版本：0.1  
 > 最后更新：2026-08-27
 > 原则：阶段按“风险被验证且可验收”推进，不用日期承诺替代范围控制。
@@ -70,7 +70,7 @@
 - Phase 1C 第二个切片：Capture 同路径软删除、回收站恢复与 blob SHA 跨设备冲突保护已实现，并通过跨设备正式环境验收。
 - Phase 1C 第三个切片：只写入业务数据为空的独立 Private 仓库、单个原子 commit 与并发拒写已实现；16 个文件（15 条 Capture）的正式隔离恢复演练、README 保留和独立仓库核对均已通过。
 - Phase 1C 第四个切片：只追加 schema migration registry 与只读 dry run 已实现；16 个文件（15 条 Capture）的正式环境预检显示 current 16、待迁移 0、阻断 0，验收完成。
-- Phase 1C 第五个切片：Dashboard Widget Registry、模块显隐/排序/尺寸与 Private GitHub 布局持久化已完成；正式环境写入、刷新回读及含布局的 17 文件开放导出已通过，待跨设备布局读写确认。
+- Phase 1C 第五个切片：Dashboard Widget Registry、模块显隐/排序/尺寸与 Private GitHub 布局持久化已完成；正式环境写入、刷新回读、含布局的 17 文件开放导出及跨设备布局读写均已验收通过。
 
 ### 技术验证
 

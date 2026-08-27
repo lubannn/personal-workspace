@@ -1,6 +1,6 @@
 # Phase 1 实施基线
 
-> 状态：SQLite 本地基线完成；Phase 1B GitHub-backed PWA 验收通过；Phase 1C 前四个数据可迁移切片均已验收，第五个切片待跨设备确认
+> 状态：SQLite 本地基线完成；Phase 1B GitHub-backed PWA 验收通过；Phase 1C 前五个数据可迁移切片均已验收
 > 开始日期：2026-08-24
 > 本地基线完成日期：2026-08-25
 
@@ -85,8 +85,7 @@ Phase 1C 第五个垂直切片已完成本地实现：
 - 未知 Widget 类型保持 round-trip，移动端使用上移/下移并自动单列。
 - 开放导出、完整性预检、schema dry run 与隔离恢复已纳入 Dashboard 布局，同时兼容旧版无布局 export v1。
 - 57 项自动测试、类型检查、Lint 与生产构建通过；正式环境已发布提交 `0f9d7ab`。
-- 2026-08-28 正式环境单设备验收通过：布局写入 Private 仓库，刷新后恢复 `Private layout v3`，8 个默认模块完整；导出包包含 17 个文件、15 条 Capture 和 1 个 Dashboard layout。
-- 跨设备布局读写验收待用户确认。
+- 2026-08-28 正式环境验收通过：布局写入 Private 仓库，刷新后恢复 `Private layout v3`，8 个默认模块完整；导出包包含 17 个文件、15 条 Capture 和 1 个 Dashboard layout；跨设备布局读写与持久化确认通过。
 
 ## 已确认技术基线
 

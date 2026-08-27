@@ -113,4 +113,4 @@ Dashboard 布局保存在 `config/dashboard-layout.json`，不进入 LocalStorag
 
 布局文件纳入开放导出、SHA-256 manifest、schema dry run 和隔离恢复。旧版没有布局文件的 export v1 保持兼容。
 
-2026-08-28 正式环境单设备验收通过：创建并保存 `config/dashboard-layout.json` 后，页面刷新仍从 Private 仓库恢复 `Private layout v3`，8 个默认模块完整；开放导出预检通过，共 17 个文件、15 条 Capture 和 1 个 Dashboard layout。跨设备布局读写待用户确认。
+2026-08-28 正式环境验收通过：创建并保存 `config/dashboard-layout.json` 后，页面刷新仍从 Private 仓库恢复 `Private layout v3`，8 个默认模块完整；开放导出预检通过，共 17 个文件、15 条 Capture 和 1 个 Dashboard layout；跨设备布局读写与持久化确认通过。
