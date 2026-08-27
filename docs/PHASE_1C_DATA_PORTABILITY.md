@@ -144,3 +144,5 @@ Capture 回收站采用同路径软删除，不移动或物理删除 Private 仓
 
 1. Task 已进入 manifest；继续扩展到 Projects、Journal、附件索引等后续模块。
 2. 在第一个真实 schema 升级出现时，追加不可变迁移步骤与独立恢复仓库演练。
+
+2026-08-28 Task 扩展正式预检通过：开放导出包含 18 个文件（15 条 Capture、1 条 Task、1 个 Dashboard layout 与 `workspace.json`），Schema dry run 报告当前 18、待迁移 0、阻断 0。

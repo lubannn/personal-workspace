@@ -120,3 +120,5 @@ Dashboard 布局保存在 `config/dashboard-layout.json`，不进入 LocalStorag
 Task 使用 `data/tasks/<task_id>.json` 独立文件并沿用通用 envelope。首个 Phase 2A 切片开放创建、Today 聚合、完成与恢复；工作、生活、人生分类以及完整的状态、优先级、DDL、时区、耗时、标签和 notes 字段保留在 canonical 结构中。
 
 任务更新携带读取时的 Git blob SHA，跨设备陈旧写入会明确冲突。Task 文件已进入开放导出、SHA-256 manifest、schema dry run 和隔离恢复；旧版没有 Task 的 export v1 仍保持兼容。
+
+2026-08-28 正式环境单设备验收通过：验收 Task 从 v1 创建、v2 完成、v3 恢复，刷新后仍从 Private GitHub 读取并显示在 Today；开放导出共 18 个文件、15 条 Capture、1 条 Task 和 1 个 Dashboard layout，Schema dry run 显示当前 18、阻断 0。跨设备 Task 读写待用户确认。

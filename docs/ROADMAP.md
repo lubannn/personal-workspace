@@ -71,7 +71,7 @@
 - Phase 1C 第三个切片：只写入业务数据为空的独立 Private 仓库、单个原子 commit 与并发拒写已实现；16 个文件（15 条 Capture）的正式隔离恢复演练、README 保留和独立仓库核对均已通过。
 - Phase 1C 第四个切片：只追加 schema migration registry 与只读 dry run 已实现；16 个文件（15 条 Capture）的正式环境预检显示 current 16、待迁移 0、阻断 0，验收完成。
 - Phase 1C 第五个切片：Dashboard Widget Registry、模块显隐/排序/尺寸与 Private GitHub 布局持久化已完成；正式环境写入、刷新回读、含布局的 17 文件开放导出及跨设备布局读写均已验收通过。
-- Phase 2A 首个切片：Task canonical JSON、创建、今日/逾期聚合、完成/恢复、Git blob SHA 并发保护与开放导出已完成本地实现，待正式环境跨设备验收。
+- Phase 2A 首个切片：Task canonical JSON、创建、今日/逾期聚合、完成/恢复、Git blob SHA 并发保护与开放导出已完成；正式环境创建/完成/恢复/刷新回读及含 1 条 Task 的 18 文件导出已通过，待跨设备 Task 读写确认。
 
 ### 技术验证
 
