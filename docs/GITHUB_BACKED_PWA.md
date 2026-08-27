@@ -121,4 +121,4 @@ Task 使用 `data/tasks/<task_id>.json` 独立文件并沿用通用 envelope。�
 
 任务更新携带读取时的 Git blob SHA，跨设备陈旧写入会明确冲突。Task 文件已进入开放导出、SHA-256 manifest、schema dry run 和隔离恢复；旧版没有 Task 的 export v1 仍保持兼容。
 
-2026-08-28 正式环境单设备验收通过：验收 Task 从 v1 创建、v2 完成、v3 恢复，刷新后仍从 Private GitHub 读取并显示在 Today；开放导出共 18 个文件、15 条 Capture、1 条 Task 和 1 个 Dashboard layout，Schema dry run 显示当前 18、阻断 0。跨设备 Task 读写待用户确认。
+2026-08-28 正式环境验收通过：验收 Task 从 v1 创建、v2 完成、v3 恢复，刷新后仍从 Private GitHub 读取并显示在 Today；开放导出共 18 个文件、15 条 Capture、1 条 Task 和 1 个 Dashboard layout，Schema dry run 显示当前 18、阻断 0。随后用户确认另一设备成功读取该 Task 并完成反向状态写入，跨设备 Task 同步闭环验收完成。

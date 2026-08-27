@@ -1,7 +1,7 @@
 # Personal Workspace 阶段性交接
 
 > 文档用途：供完全未阅读历史聊天的新 Codex 会话直接接手项目。
-> 当前阶段：Phase 2A Tasks 首个垂直切片已实现并通过单设备正式验收，待跨设备 Task 反向写入确认。
+> 当前阶段：Phase 2A Tasks 首个垂直切片已通过正式环境跨设备验收；下一接力点是拆分正式 PWA 主页面。
 > 最后核对：2026-08-28（Asia/Shanghai）
 > 正式入口：<https://nexus.lubannn.workers.dev/>
 
@@ -9,7 +9,7 @@
 
 这是一个长期维护、本人优先、单用户优先的 Personal OS。它不是企业后台，也不是把所有知识管理能力重新做一遍。当前可运行产品是一套公开静态应用外壳，通过 Cloudflare 上的 GitHub App 登录边缘服务，让本人浏览器直接读写独立的 GitHub 私有数据仓库。Mac 可以关机，Mac、Windows、iPhone 和 iPad 都可独立使用。
 
-接手后不要重新设计认证拓扑、不要迁回 LocalStorage、不要把公开代码仓库和私人数据仓库合并。当前最接近完成的工作是 Phase 2A Tasks：代码、自动测试和单设备正式验收已完成，私人仓库中留有一条 v3 待办任务 `Phase 2A 跨设备验收任务`，只差用户在另一设备读取并完成它，随后记录验收结果。
+接手后不要重新设计认证拓扑、不要迁回 LocalStorage、不要把公开代码仓库和私人数据仓库合并。Phase 2A Tasks 首个垂直切片已经完成代码、自动测试、正式环境单设备流程及跨设备反向写入验收。下一段工作由新对话执行：先在不改变业务行为的前提下拆分正式 PWA 主页面，再继续补齐 Task 生命周期。
 
 开始任何修改前必须：
 
@@ -144,7 +144,7 @@ Dashboard 默认 Widget：今日日程、今日待办、Quick Capture、项目�
 
 正式单设备验收记录：创建 `Phase 2A 跨设备验收任务`（v1），完成为 v2，恢复为 v3，刷新后仍从 Private GitHub 出现在 Today/待办。导出为 18 个文件：15 Capture、1 Task、1 Dashboard layout 和 `workspace.json`；dry run 为 current 18、migratable 0、blocked 0。
 
-**尚未完成的唯一 Phase 2A 当前切片验收项**：用户在另一设备读取该 v3 待办任务并完成它，再由原设备刷新确认反向状态同步。不要把它写成已经通过。
+2026-08-28 用户确认 Task 跨设备验收通过：另一设备能够读取同一任务并完成反向状态写入，跨设备同步闭环成立。Phase 2A 首个垂直切片至此验收完成。
 
 ## 5. 当前代码与部署状态
 
@@ -213,12 +213,11 @@ Codex 桌面环境直接运行 pnpm 若提示 `node: not found`，先加载工�
 
 ### 7.1 立即事项
 
-1. 完成 Phase 2A Task 跨设备验收并更新 `PHASE_2_TASKS.md`、`ROADMAP.md`、`GITHUB_BACKED_PWA.md` 与本文件。
-2. 在添加更多复杂业务前，把 `apps/github-pwa/app/page.tsx`（当前约 1553 行）拆为清晰的 auth、data loading、Dashboard、Task、Capture、portability 组件/hooks。
-3. 为 Tasks 增加编辑、取消、归档、软删除/回收站、标签、notes、实际/预计耗时、一层子任务与项目引用。
-4. 建立 Projects canonical 文件、Milestone、阶段、进度来源、Notes、文件引用和 Activity Log。
-5. 建立内部 Calendar 日/周/月视图、时间块和提醒，并坚持 Task/Calendar 边界。
-6. 建立周报/月报的确定性事实汇总、个人复盘版与领导汇报版；再补 Tasks/Projects/Time Entries CSV 导出。
+1. 在添加更多复杂业务前，把 `apps/github-pwa/app/page.tsx`（当前约 1553 行）拆为清晰的 auth、data loading、Dashboard、Task、Capture、portability 组件/hooks。
+2. 为 Tasks 增加编辑、取消、归档、软删除/回收站、标签、notes、实际/预计耗时、一层子任务与项目引用。
+3. 建立 Projects canonical 文件、Milestone、阶段、进度来源、Notes、文件引用和 Activity Log。
+4. 建立内部 Calendar 日/周/月视图、时间块和提醒，并坚持 Task/Calendar 边界。
+5. 建立周报/月报的确定性事实汇总、个人复盘版与领导汇报版；再补 Tasks/Projects/Time Entries CSV 导出。
 
 ### 7.2 后续阶段
 
@@ -252,7 +251,7 @@ Codex 桌面环境直接运行 pnpm 若提示 `node: not found`，先加载工�
 - **恢复目标一次性**：已演练的 restore-test 仓库已有业务文件，再次恢复应被拒绝，这是预期保护而非 bug。新演练需新建空 Private 目标。
 - **导出格式 v1 已扩展可选模块**：旧 v1 不含 Task 仍兼容；未来发生不兼容语义变化必须提升 `export_version`，不能继续偷偷扩展。
 - **Task 日期语义尚窄**：当前创建 UI 只暴露 date-only DDL 与 Asia/Shanghai 默认；计划时间、原始时区、跨时区和 Calendar 耦合尚未验收。
-- **任务测试数据仍在正式私库**：`Phase 2A 跨设备验收任务` 被故意保留为 v3 待办。完成验收后再决定保留、归档或删除；当前 UI 尚无 Task 删除。
+- **任务测试数据仍在正式私库**：`Phase 2A 跨设备验收任务` 已用于跨设备完成验收，记录仍留在正式私库。后续决定保留、归档或删除；当前 UI 尚无 Task 删除。
 - **旧 SQLite 与正式 GitHub 路径并存**：新开发者可能误改 `src/app` 而不是 `apps/github-pwa/app`，或误建双写。正式线上前端目前是后者。
 - **Cloudflare 构建范围较宽**：`main` 更新会触发 Pages 构建；发布纯文档也可能部署应用。每次发布后检查 deployment commit 与状态。
 - **基础恢复门槛尚有缺口**：Phase 1 路线图要求的独立加密备份目标、passphrase 管理和真实 Vault/iOS 文件语义仍未全部验收；本机缺少 Docker 时容器恢复路径也未验证。
@@ -301,15 +300,13 @@ Codex 桌面环境直接运行 pnpm 若提示 `node: not found`，先加载工�
 
 ## 10. 下一步建议执行顺序
 
-1. **完成 Task 跨设备验收**：另一设备打开正式入口并登录，点击 Task/页面的 GitHub 刷新，确认 v3 待办存在，执行完成；原设备刷新确认进入已完成。记录设备、时间、版本与结果。
-2. **更新验收文档并发布**：同步修改 `PHASE_2_TASKS.md`、`ROADMAP.md`、`GITHUB_BACKED_PWA.md` 和本文件；再次跑测试、类型、Lint、构建，精确发布并核对 Cloudflare deployment commit。
-3. **拆分正式 PWA 主页面**：先写保持行为不变的 characterization tests，再提取 GitHub/auth hook、workspace loader、Dashboard、Task、Capture、portability 组件；不要在同一改动里加入新业务语义。
-4. **补齐 Task 生命周期**：编辑 → 取消/归档 → Task 软删除/恢复 → tags/notes/duration → 一层子任务。每步都做跨设备 SHA 冲突验收，并进入导出/恢复/migration。
-5. **实现 Project 最小闭环**：Project 文件、阶段、Milestone、Task 关联、进度计算和 Activity Log；不能只存一个人工百分比而不记录来源。
-6. **实现内部 Calendar**：先数据协议和 Task/Event 边界，再做日/周/月、时间块与提醒。
-7. **实现确定性报告与 CSV**：事实汇总可追溯；AI 润色留到 Phase 5。
-8. **转入 Journal/Obsidian**：先确认实际 Vault 和同步方式，再做单向安全同步与冲突；之后才做 Legacy Word Importer。
-9. **再做 Learning/Habit/Health、AI、Share Layer**：严格遵循 staging、最小上下文和独立发布快照边界。
+1. **拆分正式 PWA 主页面**：先写保持行为不变的 characterization tests，再提取 GitHub/auth hook、workspace loader、Dashboard、Task、Capture、portability 组件；不要在同一改动里加入新业务语义。该工作明确交由下一新对话执行。
+2. **补齐 Task 生命周期**：编辑 → 取消/归档 → Task 软删除/恢复 → tags/notes/duration → 一层子任务。每步都做跨设备 SHA 冲突验收，并进入导出/恢复/migration。
+3. **实现 Project 最小闭环**：Project 文件、阶段、Milestone、Task 关联、进度计算和 Activity Log；不能只存一个人工百分比而不记录来源。
+4. **实现内部 Calendar**：先数据协议和 Task/Event 边界，再做日/周/月、时间块与提醒。
+5. **实现确定性报告与 CSV**：事实汇总可追溯；AI 润色留到 Phase 5。
+6. **转入 Journal/Obsidian**：先确认实际 Vault 和同步方式，再做单向安全同步与冲突；之后才做 Legacy Word Importer。
+7. **再做 Learning/Habit/Health、AI、Share Layer**：严格遵循 staging、最小上下文和独立发布快照边界。
 
 ## 11. 继续开发时必须遵守的约束
 
@@ -335,14 +332,12 @@ Codex 桌面环境直接运行 pnpm 若提示 `node: not found`，先加载工�
 
 ## 12. 当前接力点的完成定义
 
-新会话若要结束 Phase 2A 当前切片，必须同时满足：
+Phase 2A 首个切片已完成，不需要新会话重复 Task 跨设备验收。新会话的第一项工作是正式 PWA 主页面拆分，完成定义为：
 
-- 用户在第二设备读取并完成 `Phase 2A 跨设备验收任务`；
-- 第一设备刷新看到相同完成状态；
-- 没有静默冲突或重复任务；
-- Task 仍出现在开放导出、恢复预检和 migration dry run 中；
-- 自动质量门槛继续通过；
-- 三份阶段文档与本交接文档更新并发布；
-- Cloudflare deployment 的 commit 与文档记录一致且状态为 success。
-
-满足前不要把 Phase 2A 首个切片写为“跨设备验收完成”。
+- 拆分前先建立足以锁定现有认证、Dashboard、Task、Capture、导出/恢复行为的 characterization tests；
+- 从 `apps/github-pwa/app/page.tsx` 提取职责清晰的组件/hooks，显著降低该文件体积和状态耦合；
+- 不在同一切片引入新业务字段、数据迁移或视觉重设计；
+- GitHub App、内存 token、Private GitHub 直读写、blob SHA 冲突、导出/恢复和移动端行为保持不变；
+- 62 项既有测试及新增测试、类型检查、Lint、生产构建全部通过；
+- 完成桌面和移动端正式环境回归，确认跨设备读写未退化；
+- 更新本交接文档中的文件结构、测试数量、已知技术债与下一接力点，并精确发布、核对 Cloudflare deployment。
