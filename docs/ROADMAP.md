@@ -1,6 +1,6 @@
 # Personal Workspace 路线图
 
-> 状态：Phase 0 已批准；Phase 1A SQLite 基线完成；Phase 1B GitHub-backed PWA 与桌面 OAuth 验收通过，四设备 OAuth 复验待完成
+> 状态：Phase 0 已批准；Phase 1A SQLite 基线完成；Phase 1B GitHub-backed PWA 四设备登录、刷新与读写验收通过，退出与撤销复验待完成
 > 版本：0.1  
 > 最后更新：2026-08-27
 > 原则：阶段按“风险被验证且可验收”推进，不用日期承诺替代范围控制。
