@@ -110,6 +110,8 @@ export default function GitHubWorkspacePage() {
   const [connecting, setConnecting] = useState(false);
   const [loadingCaptures, setLoadingCaptures] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [confirmingRevokeAll, setConfirmingRevokeAll] = useState(false);
+  const [revokingAll, setRevokingAll] = useState(false);
   const [capture, setCapture] = useState("");
   const [recentCaptures, setRecentCaptures] = useState<CaptureRecord[]>([]);
   const [savedCapture, setSavedCapture] = useState<SavedCapture | null>(null);
@@ -270,6 +272,19 @@ export default function GitHubWorkspacePage() {
     }
   }
 
+  function clearConnection(message: string) {
+    adapterRef.current = null;
+    setConnection(null);
+    setConnectionMethod(null);
+    setToken("");
+    setCapture("");
+    setRecentCaptures([]);
+    setSavedCapture(null);
+    setConfirmingRevokeAll(false);
+    setErrorMessage("");
+    setStatusMessage(message);
+  }
+
   async function disconnect() {
     if (connectionMethod === "github-app") {
       const csrf = readCookie("__Host-pw_csrf");
@@ -285,15 +300,33 @@ export default function GitHubWorkspacePage() {
         }
       }
     }
-    adapterRef.current = null;
-    setConnection(null);
-    setConnectionMethod(null);
-    setToken("");
-    setCapture("");
-    setRecentCaptures([]);
-    setSavedCapture(null);
+    clearConnection("已退出当前设备；页面中的令牌和私人内容已清除。");
+  }
+
+  async function revokeAllSessions() {
+    if (connectionMethod !== "github-app" || revokingAll) return;
+    const csrf = readCookie("__Host-pw_csrf");
+    if (!csrf) {
+      setConfirmingRevokeAll(false);
+      setErrorMessage("登录会话缺少安全校验信息，请刷新页面后重试。");
+      return;
+    }
+
+    setRevokingAll(true);
     setErrorMessage("");
-    setStatusMessage("已断开；当前页面中的令牌和私人内容已清除。");
+    try {
+      const response = await fetch("/auth/logout-all", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "x-pw-csrf": csrf },
+      });
+      if (!response.ok) throw new Error("SessionRevocationFailed");
+      clearConnection("已撤销全部设备会话；所有设备需要重新使用 GitHub 登录。");
+    } catch {
+      setErrorMessage("无法撤销全部设备会话，请稍后重试。");
+    } finally {
+      setRevokingAll(false);
+    }
   }
 
   async function saveCapture() {
@@ -365,7 +398,20 @@ export default function GitHubWorkspacePage() {
         {connection ? (
           <div className="connection-actions">
             <span className="private-badge">Private verified</span>
-            <button className="secondary-button" type="button" onClick={disconnect}>断开并清除</button>
+            <button className="secondary-button" type="button" onClick={disconnect} disabled={revokingAll}>
+              {connectionMethod === "github-app" ? "退出当前设备" : "断开并清除"}
+            </button>
+            {connectionMethod === "github-app" ? confirmingRevokeAll ? (
+              <div className="revoke-confirm" role="group" aria-label="确认撤销全部设备">
+                <span>所有设备都需要重新登录。</span>
+                <button className="danger-button" type="button" onClick={revokeAllSessions} disabled={revokingAll}>
+                  {revokingAll ? "正在撤销…" : "确认撤销全部设备"}
+                </button>
+                <button className="secondary-button" type="button" onClick={() => setConfirmingRevokeAll(false)} disabled={revokingAll}>取消</button>
+              </div>
+            ) : (
+              <button className="danger-outline-button" type="button" onClick={() => setConfirmingRevokeAll(true)}>撤销全部设备</button>
+            ) : null}
           </div>
         ) : (
           <form className="connection-form" onSubmit={connect}>
