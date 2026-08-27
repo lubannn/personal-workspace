@@ -1,6 +1,6 @@
 # Personal Workspace 认证体验升级规格
 
-> 状态：已批准；无 Secret 的认证基础已部署，等待创建 GitHub App
+> 状态：GitHub App OAuth 已上线并完成桌面浏览器端到端验收；四设备 OAuth 复验待完成
 > 版本：0.2
 > 日期：2026-08-27
 
@@ -19,7 +19,7 @@
 
 ## 2. 当前基线
 
-当前 Phase 1B 使用只授权数据仓库的 fine-grained token：
+Phase 1B 最初使用只授权数据仓库的 fine-grained token：
 
 - token 只保存在当前页面 JavaScript 内存中。
 - 刷新、关闭或断开页面后 token 被清除。
@@ -156,9 +156,11 @@ GitHub Pages 不能运行 auth broker。正式免手输入口需要支持同源�
 7. 在 Mac、Windows、iPhone、iPad 重新完成登录、刷新、写入、读取和退出验收。
 8. 验收完成后将 GitHub App 登录设为默认，PAT 入口降级为高级回退。
 
-当前进度：步骤 1、2 和认证服务的无 Secret 实现已完成；`nexus` Worker
-已部署 fail-closed 版本。GitHub App 表单已按最小权限准备，但尚未执行最终创建，
-因此没有生成 Client ID、Client Secret 或任何真实会话。
+当前进度：步骤 1 至 6 已完成。GitHub App `Personal Workspace Auth` 已创建并且
+只安装到 `lubannn/personal-workspace-data`；`nexus` Worker 已配置 Client ID、
+Workers Secrets 和 D1。2026-08-27 已完成桌面浏览器授权、callback、短期 token、
+Private 仓库读取和刷新后会话恢复验证，D1 中生成了首个有效会话。步骤 7 的
+Mac、Windows、iPhone、iPad OAuth 登录、写入、退出和撤销复验仍待用户实机完成。
 
 ## 12. 已确认决策
 
