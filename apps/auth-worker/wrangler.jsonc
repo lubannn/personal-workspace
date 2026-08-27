@@ -6,6 +6,7 @@
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": true,
   "vars": {
+    "GITHUB_CLIENT_ID": "Iv23liMKCWS5z7czUAyl",
     "ALLOWED_GITHUB_LOGIN": "lubannn",
     "ALLOWED_REPO_OWNER": "lubannn",
     "ALLOWED_REPO_NAME": "personal-workspace-data"
