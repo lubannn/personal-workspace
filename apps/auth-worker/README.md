@@ -40,9 +40,10 @@ The Cloudflare entry has passed Mac, Windows, iPhone, and iPad GitHub App login,
 refresh, write, and cross-device read acceptance. The App is installed only on
 `personal-workspace-data`. D1 reported five active sessions for the single
 allowed GitHub account after testing, including the initial desktop acceptance
-session. The remaining acceptance work is:
-
-1. Verify current-device logout and all-device revocation paths.
+session. Current-device logout reduced the active session count from five to
+four, re-login restored it to five, and all-device revocation reduced it to
+zero while retaining eight revoked rows for audit. The full authentication
+acceptance is complete.
 
 The implemented flow uses OAuth state plus PKCE, a `__Host-` HttpOnly session
 cookie, a same-origin CSRF token, HMAC-hashed session identifiers, encrypted and
