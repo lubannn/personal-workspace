@@ -52,6 +52,12 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, a:focus-visib
 .connection-actions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
 .private-badge { padding: 8px 11px; border-radius: 999px; background: var(--accent); color: white; font-size: 9px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
 .secondary-button { border: 1px solid var(--line); border-radius: 10px; padding: 10px 13px; background: transparent; color: inherit; cursor: pointer; font-size: 10px; font-weight: 670; }
+.danger-outline-button, .danger-button { border: 1px solid #b87d73; border-radius: 10px; padding: 10px 13px; cursor: pointer; font-size: 10px; font-weight: 700; }
+.danger-outline-button { background: transparent; color: #7a4138; }
+.danger-button { background: #7a4138; color: white; }
+.danger-outline-button:disabled, .danger-button:disabled { opacity: .42; cursor: default; }
+.revoke-confirm { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+.revoke-confirm > span { flex-basis: 100%; color: #7a4138; font-size: 9px; text-align: right; }
 .message-bar { margin: 0 0 18px; padding: 13px 16px; border: 1px solid; border-radius: 12px; font-size: 10px; line-height: 1.6; }
 .message-bar.success { border-color: #b9c9b4; background: #e6ede3; color: #40513d; }
 .message-bar.error { border-color: #d5aaa2; background: #f3e2df; color: #773e35; }
@@ -104,6 +110,8 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, a:focus-visib
   .connection-form { grid-template-columns: 1fr 1fr; }
   .connection-form .token-field, .connection-form button { grid-column: 1 / -1; }
   .connection-actions { justify-content: flex-start; flex-wrap: wrap; }
+  .revoke-confirm { justify-content: flex-start; }
+  .revoke-confirm > span { text-align: left; }
   .content-grid { grid-template-columns: 1fr; }
   .card-heading { display: grid; }
   .memory-pill { width: fit-content; }
