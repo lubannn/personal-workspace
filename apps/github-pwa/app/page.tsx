@@ -1,8 +1,14 @@
 "use client";
 
-import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { type ChangeEvent, type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { GitHubContentsAdapter, GitHubDataError } from "../../../src/lib/github-data/github-contents";
+import {
+  buildPortableWorkspaceExport,
+  inspectPortableWorkspaceExport,
+  serializePortableWorkspaceExport,
+  type ExportInspectionIssue,
+} from "../../../src/lib/github-data/portable-export";
 import { createWorkspaceRecord, recordPath, serializeRecord } from "../../../src/lib/github-data/protocol";
 import {
   newestCaptures,
@@ -35,6 +41,15 @@ type AuthStatus = {
 
 type SessionToken = {
   accessToken?: string;
+};
+
+type PortabilityResult = {
+  fileName: string;
+  valid: boolean;
+  files: number;
+  captures: number;
+  errors: ExportInspectionIssue[];
+  warnings: ExportInspectionIssue[];
 };
 
 const DEFAULT_OWNER = "lubannn";
@@ -110,11 +125,16 @@ export default function GitHubWorkspacePage() {
   const [connecting, setConnecting] = useState(false);
   const [loadingCaptures, setLoadingCaptures] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportProgress, setExportProgress] = useState("");
+  const [checkingRestore, setCheckingRestore] = useState(false);
   const [confirmingRevokeAll, setConfirmingRevokeAll] = useState(false);
   const [revokingAll, setRevokingAll] = useState(false);
   const [capture, setCapture] = useState("");
   const [recentCaptures, setRecentCaptures] = useState<CaptureRecord[]>([]);
   const [savedCapture, setSavedCapture] = useState<SavedCapture | null>(null);
+  const [exportResult, setExportResult] = useState<PortabilityResult | null>(null);
+  const [restoreResult, setRestoreResult] = useState<PortabilityResult | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
   const [statusMessage, setStatusMessage] = useState("");
 
@@ -280,6 +300,9 @@ export default function GitHubWorkspacePage() {
     setCapture("");
     setRecentCaptures([]);
     setSavedCapture(null);
+    setExportResult(null);
+    setRestoreResult(null);
+    setExportProgress("");
     setConfirmingRevokeAll(false);
     setErrorMessage("");
     setStatusMessage(message);
@@ -362,6 +385,138 @@ export default function GitHubWorkspacePage() {
     } finally {
       setSaving(false);
     }
+  }
+
+  async function listCaptureFiles(adapter: GitHubContentsAdapter) {
+    try {
+      return (await adapter.listDirectory("data/captures"))
+        .filter((item) => item.type === "file" && item.name.endsWith(".json"))
+        .sort((left, right) => left.path.localeCompare(right.path));
+    } catch (error) {
+      if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") return [];
+      throw error;
+    }
+  }
+
+  async function downloadPortableExport() {
+    const adapter = adapterRef.current;
+    if (!adapter || !connection || exporting || online === false) return;
+    setExporting(true);
+    setExportResult(null);
+    setErrorMessage("");
+    setStatusMessage("");
+    try {
+      setExportProgress("正在读取 workspace.json…");
+      const workspaceFile = await adapter.readText("workspace.json");
+      const candidates = await listCaptureFiles(adapter);
+      const captureFiles = [];
+      const batchSize = 6;
+      for (let index = 0; index < candidates.length; index += batchSize) {
+        setExportProgress(`正在读取 Capture ${Math.min(index + batchSize, candidates.length)} / ${candidates.length}…`);
+        captureFiles.push(...await Promise.all(
+          candidates.slice(index, index + batchSize).map((item) => adapter.readText(item.path)),
+        ));
+      }
+
+      setExportProgress("正在生成 SHA-256 manifest…");
+      const generatedAt = new Date().toISOString();
+      const portableExport = await buildPortableWorkspaceExport({
+        repository: connection.repository,
+        branch: "main",
+        workspaceFile,
+        captureFiles,
+        generatedAt,
+      });
+      const inspection = await inspectPortableWorkspaceExport(portableExport);
+      const compactTime = generatedAt.replaceAll(/\D/g, "").slice(0, 14);
+      const fileName = `personal-workspace-export-${compactTime}.json`;
+      const blob = new Blob([serializePortableWorkspaceExport(portableExport)], { type: "application/json;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = fileName;
+      document.body.append(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      setExportResult({
+        fileName,
+        valid: inspection.valid,
+        files: inspection.counts.files,
+        captures: inspection.counts.captures,
+        errors: inspection.errors,
+        warnings: inspection.warnings,
+      });
+      setStatusMessage(inspection.valid
+        ? "开放 JSON 导出已下载，并已通过恢复预检。"
+        : "导出已下载，但预检发现异常；请先保留文件并查看下方诊断。");
+    } catch (error) {
+      setErrorMessage(error instanceof GitHubDataError ? friendlyError(error) : "无法生成导出，请稍后重试。");
+    } finally {
+      setExporting(false);
+      setExportProgress("");
+    }
+  }
+
+  async function preflightRestore(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file || checkingRestore) return;
+    setCheckingRestore(true);
+    setRestoreResult(null);
+    try {
+      if (file.size > 50 * 1024 * 1024) {
+        setRestoreResult({
+          fileName: file.name,
+          valid: false,
+          files: 0,
+          captures: 0,
+          errors: [{ code: "EXPORT_TOO_LARGE", message: "当前预检仅接受 50 MB 以内的 JSON 文件。" }],
+          warnings: [],
+        });
+        return;
+      }
+      const inspection = await inspectPortableWorkspaceExport(JSON.parse(await file.text()) as unknown);
+      setRestoreResult({
+        fileName: file.name,
+        valid: inspection.valid,
+        files: inspection.counts.files,
+        captures: inspection.counts.captures,
+        errors: inspection.errors,
+        warnings: inspection.warnings,
+      });
+    } catch {
+      setRestoreResult({
+        fileName: file.name,
+        valid: false,
+        files: 0,
+        captures: 0,
+        errors: [{ code: "INVALID_JSON", message: "文件不是有效的 JSON，未执行任何恢复操作。" }],
+        warnings: [],
+      });
+    } finally {
+      setCheckingRestore(false);
+    }
+  }
+
+  function renderPortabilityResult(result: PortabilityResult) {
+    return (
+      <div className={`portability-result ${result.valid ? "valid" : "invalid"}`} role="status">
+        <strong>{result.valid ? "预检通过" : "预检未通过"}</strong>
+        <span>{result.fileName}</span>
+        <p>{result.files} 个文件 · {result.captures} 条 Capture</p>
+        {result.errors.length > 0 ? (
+          <ul>{result.errors.slice(0, 5).map((issue, index) => (
+            <li key={`${issue.code}-${issue.path ?? index}`}>{issue.path ? `${issue.path}：` : ""}{issue.message}</li>
+          ))}</ul>
+        ) : null}
+        {result.warnings.length > 0 ? (
+          <ul>{result.warnings.slice(0, 3).map((issue, index) => (
+            <li key={`${issue.code}-${index}`}>{issue.message}</li>
+          ))}</ul>
+        ) : null}
+      </div>
+    );
   }
 
   return (
@@ -497,9 +652,41 @@ export default function GitHubWorkspacePage() {
             ))}</ul>}
       </section>
 
+      <section className="portability-card" aria-labelledby="portability-title">
+        <div className="card-heading">
+          <div><p className="eyebrow">Phase 1C · Data portability</p><h2 id="portability-title">导出与恢复预检</h2></div>
+          <span className={`memory-pill ${connection ? "live" : ""}`}>{connection ? "Private 数据已就绪" : "连接后可导出"}</span>
+        </div>
+        <div className="portability-grid">
+          <article>
+            <span className="step-number">01</span>
+            <h3>下载开放数据包</h3>
+            <p>读取 workspace.json 和全部 Capture，生成带 SHA-256、Git blob SHA、文件数量与 schema 版本的 JSON。</p>
+            <button className="primary-button" type="button" onClick={downloadPortableExport} disabled={!connection || exporting || online === false}>
+              {exporting ? exportProgress || "正在生成…" : "导出并下载 JSON"}
+            </button>
+            {exportResult ? renderPortabilityResult(exportResult) : null}
+          </article>
+          <article>
+            <span className="step-number">02</span>
+            <h3>只读恢复预检</h3>
+            <p>在当前浏览器校验文件版本、所有者、路径、数量和哈希。本阶段不会上传，也不会写入或覆盖 GitHub。</p>
+            <label className={`file-picker ${checkingRestore ? "disabled" : ""}`}>
+              {checkingRestore ? "正在检查…" : "选择 JSON 导出文件"}
+              <input type="file" accept="application/json,.json" onChange={preflightRestore} disabled={checkingRestore} />
+            </label>
+            {restoreResult ? renderPortabilityResult(restoreResult) : null}
+          </article>
+        </div>
+        <div className="portability-boundary">
+          <strong>当前安全边界</strong>
+          <p>导出包含你的私人正文，请自行安全保存。本轮恢复只做预检；真正写回空仓库将在独立确认和冲突保护完成后开放。</p>
+        </div>
+      </section>
+
       <footer className="page-footer">
         <span>Personal Workspace</span>
-        <span>GitHub live sync · Phase 1B</span>
+        <span>GitHub live sync · Phase 1C</span>
       </footer>
     </main>
   );

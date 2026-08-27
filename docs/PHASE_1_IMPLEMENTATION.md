@@ -1,6 +1,6 @@
 # Phase 1 实施基线
 
-> 状态：SQLite 本地基线完成；Phase 1B GitHub-backed PWA 四设备与完整会话生命周期验收通过
+> 状态：SQLite 本地基线完成；Phase 1B GitHub-backed PWA 验收通过；Phase 1C 数据可迁移基础进行中
 > 开始日期：2026-08-24
 > 本地基线完成日期：2026-08-25
 
@@ -37,6 +37,18 @@ Phase 1B 认证升级已完成：
 - 2026-08-27 Mac、Windows、iPhone、iPad 的 GitHub App 登录、刷新、写入与跨设备读取均已通过；D1 核对到 5 个同账号有效会话，其中一个为初始桌面验收会话；手工 PAT 入口保留为回退。
 - 当前设备退出使有效会话从 5 降至 4；重新登录恢复为 5；全部设备撤销后有效会话为 0、已撤销记录为 8，页面与 D1 状态一致。
 - GitHub App 登录为正式默认入口，手工 PAT 仅作为高级回退；Phase 1B 认证升级验收完成。
+
+## 2026-08-27 Phase 1C 启动
+
+首个数据可迁移垂直切片已经实现：
+
+- 从 canonical Private 仓库读取 `workspace.json` 与全部 `data/captures/*.json`。
+- 生成 UTF-8 开放 JSON 导出包，包含来源仓库、导出版本、范围、计数、Git blob SHA、字节数和逐文件 SHA-256。
+- 下载前自动运行同一套恢复预检；用户也可以重新选择本地导出文件进行只读预检。
+- 预检覆盖格式/版本、manifest 集合、数量、哈希、workspace、owner、Capture schema、ID 与路径一致性。
+- 导出和预检不保存或包含 GitHub/Cloudflare 凭据；预检不会上传或写回数据。
+
+正式环境与移动设备验收完成前，不开放恢复写入。详细协议见 `PHASE_1C_DATA_PORTABILITY.md`。
 
 ## 已确认技术基线
 

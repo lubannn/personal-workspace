@@ -77,3 +77,9 @@ Phase 1B 首个可用版本使用只授权 `personal-workspace-data` 的 fine-gr
 6. 在四类设备验证登录、读取、写入、冲突和退出。
 
 未经第 5 步人工核对，不删除 SQLite 数据，也不允许两个主真源同时写入。
+
+## 8. Phase 1C 开放导出
+
+工作台提供 `personal-workspace-export` v1 JSON：首个 scope 包含 `workspace.json` 和全部 Capture。manifest 为每个文件保存 Git blob SHA、UTF-8 字节数和 SHA-256；正文以原始开放文本保存在同一导出文件中。
+
+浏览器恢复预检只读取用户选择的本地 JSON，检查版本、数量、哈希、owner、schema、ID 与路径，不上传也不执行 GitHub 写入。实际恢复必须晚于空目标判断、逐文件冲突保护和单独人工确认。
