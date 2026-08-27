@@ -1,6 +1,6 @@
 # Phase 1C：数据可迁移与恢复基础
 
-> 状态：导出预检与 Capture 生命周期两个垂直切片均已通过正式环境验收  
+> 状态：导出预检、Capture 生命周期与隔离仓库原子恢复三个垂直切片均已通过正式环境验收  
 > 开始日期：2026-08-27  
 > 范围：GitHub-backed canonical data
 
@@ -81,7 +81,7 @@ Phase 1C 在继续增加业务模块前，先证明私人仓库中的开放文�
 
 - 导出包含 Private 仓库中的明文私人数据，下载后的副本由用户自行保管。
 - 浏览器只在生成或预检期间把正文保留在页面内存，不写入 LocalStorage、SessionStorage 或 IndexedDB。
-- 本阶段不开放“恢复写入”，避免在空仓库判断、owner 判断、并发保护完成前造成覆盖。
+- 恢复写入只对通过 owner、Private、空业务数据与分支并发检查的独立仓库开放；来源仓库始终只读。
 - GitHub 历史仍是当前在线版本恢复来源；开放导出提供厂商迁移能力，但不替代独立备份。
 
 ## 6. Capture 生命周期切片
@@ -110,10 +110,11 @@ Capture 回收站采用同路径软删除，不移动或物理删除 Private 仓
 - 用户必须再次输入完整目标仓库名才能启用执行按钮；
 - 来源仓库永远不会被恢复流程修改。
 
-本地实现已通过协议、原子提交、冲突映射、类型、Lint、生产构建及 390px 布局检查；正式发布和隔离仓库恢复演练尚待独立确认。
+本地实现已通过协议、原子提交、冲突映射、类型、Lint、生产构建及 390px 布局检查。
+
+正式环境验收于 2026-08-27 完成：从 `lubannn/personal-workspace-data` 生成并自动预检 16 个文件（`workspace.json` + 15 条 Capture），恢复到独立 Private 仓库 `lubannn/personal-workspace-restore-test`。目标仓库原有 README 被保留，全部业务文件通过单个 commit `8389cdceec1cbc1c318c933f4b5498b6e7269c4f` 写入；独立核对确认 15 个唯一 Capture 文件、`workspace.json`、2 条仓库历史记录和来源仓库未修改。
 
 ## 8. 后续切片
 
-1. 完成隔离恢复仓库的正式演练并核对文件数量、哈希和 Capture 可读性。
-2. 增加 workspace schema migration registry 和迁移 dry run。
-3. 扩展 manifest 到 Dashboard layout、Tasks、Projects、Journal、附件索引等后续模块。
+1. 增加 workspace schema migration registry 和迁移 dry run。
+2. 扩展 manifest 到 Dashboard layout、Tasks、Projects、Journal、附件索引等后续模块。

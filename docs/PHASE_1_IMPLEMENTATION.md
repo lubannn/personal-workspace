@@ -1,6 +1,6 @@
 # Phase 1 实施基线
 
-> 状态：SQLite 本地基线完成；Phase 1B GitHub-backed PWA 验收通过；Phase 1C 导出预检与 Capture 生命周期已验收
+> 状态：SQLite 本地基线完成；Phase 1B GitHub-backed PWA 验收通过；Phase 1C 三个数据可迁移切片均已验收
 > 开始日期：2026-08-24
 > 本地基线完成日期：2026-08-25
 
@@ -32,7 +32,7 @@ Phase 1B 已完成：
 Phase 1B 认证升级已完成：
 
 - Cloudflare Worker + D1 最小 auth broker 已部署到 `https://nexus.lubannn.workers.dev/`。
-- GitHub App 仅安装到 `personal-workspace-data`，权限限定为 Metadata 读取与 Contents 读写。
+- GitHub App 正式业务访问保持在 `personal-workspace-data`；为隔离恢复演练额外授权 `personal-workspace-restore-test`，两者权限均限定为 Metadata 读取与 Contents 读写。
 - OAuth state + PKCE、HttpOnly 会话 Cookie、HMAC session ID、加密 refresh token、同源 CSRF 与显式用户/仓库 allowlist 已实现。
 - 2026-08-27 Mac、Windows、iPhone、iPad 的 GitHub App 登录、刷新、写入与跨设备读取均已通过；D1 核对到 5 个同账号有效会话，其中一个为初始桌面验收会话；手工 PAT 入口保留为回退。
 - 当前设备退出使有效会话从 5 降至 4；重新登录恢复为 5；全部设备撤销后有效会话为 0、已撤销记录为 8，页面与 D1 状态一致。
@@ -58,14 +58,15 @@ Phase 1C 第二个垂直切片已实现并通过跨设备正式环境验收：
 - 导出继续读取全部 Capture，因此回收站记录也包含在开放数据包中。
 - 一台设备移入回收站、另一台设备刷新并恢复、原设备再次刷新回读的完整链路已通过。
 
-Phase 1C 第三个垂直切片已完成本地实现：
+Phase 1C 第三个垂直切片已实现并通过正式环境验收：
 
 - 恢复目标必须是同一 owner 下、不同于来源仓库、已初始化且业务数据为空的 Private 仓库。
 - 目标可以保留 README 等非业务文件，但任何 canonical 数据根路径都会阻断恢复。
 - 全部文件以 Git blobs → tree → commit → 非强制 ref 更新的单次原子提交写入。
 - 执行前重新检查目标 HEAD；并发变化会中止，不允许覆盖。
 - 用户必须再次输入完整目标仓库名才可执行；来源仓库不会被修改。
-- 47 项自动测试、类型检查、Lint、生产构建与 390px 本地布局检查通过；正式隔离仓库演练待确认。
+- 47 项自动测试、类型检查、Lint、生产构建与 390px 本地布局检查通过。
+- 正式演练从 canonical Private 仓库导出并预检 16 个文件（15 条 Capture），随后以单个 commit `8389cdceec1cbc1c318c933f4b5498b6e7269c4f` 写入 `personal-workspace-restore-test`；README 保留，文件数量与 Git 历史独立核对通过，来源仓库未修改。
 
 ## 已确认技术基线
 

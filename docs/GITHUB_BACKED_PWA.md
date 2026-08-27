@@ -85,6 +85,8 @@ Phase 1B 首个可用版本使用只授权 `personal-workspace-data` 的 fine-gr
 
 浏览器恢复预检只读取用户选择的本地 JSON，检查版本、数量、哈希、owner、schema、ID 与路径，不上传也不执行 GitHub 写入。实际恢复必须晚于空目标判断、逐文件冲突保护和单独人工确认。
 
+当前页面生成的导出包会在下载前完成同一套预检，并仅在该页面内存中继续交给隔离恢复步骤；刷新后仍需重新生成或选择本地文件。
+
 ## 9. Capture 回收站与冲突保护
 
 Inbox 只读取 `deleted_at: null` 的 Capture；回收站读取 `deleted_at` 非空的记录并允许恢复。界面不提供永久删除。每次生命周期写入使用 GitHub Contents API 的 `sha` 前置条件；如果另一设备已经更新相同文件，陈旧写入被转换为 `GITHUB_SYNC_CONFLICT`，用户刷新后再决定，不发生最后写入者静默覆盖。
@@ -94,3 +96,5 @@ Inbox 只读取 `deleted_at: null` 的 Capture；回收站读取 `deleted_at` �
 ## 10. 隔离仓库恢复
 
 开放导出只能恢复到同一 owner 下、不同于来源仓库、已初始化且没有 canonical 业务路径的 Private 仓库。README 等非业务根目录条目会保留。恢复把全部文件组成一个新 tree 和一个 commit，再以非强制 ref 更新提交；执行前后任何分支变化都会阻断写入。界面要求用户再次输入完整目标仓库名，且永不把恢复写回 canonical 来源仓库。
+
+2026-08-27 正式演练通过：16 个业务文件（`workspace.json` + 15 条 Capture）通过单个 commit `8389cdceec1cbc1c318c933f4b5498b6e7269c4f` 写入 `lubannn/personal-workspace-restore-test`，目标 README 保留，来源仓库未修改。
