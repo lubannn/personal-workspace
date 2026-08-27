@@ -1,6 +1,6 @@
 # Phase 1 实施基线
 
-> 状态：SQLite 本地基线完成；Phase 1B GitHub-backed PWA 核心验收通过，认证体验升级待办  
+> 状态：SQLite 本地基线完成；Phase 1B GitHub-backed PWA 与桌面 OAuth 验收通过，四设备 OAuth 复验待完成
 > 开始日期：2026-08-24
 > 本地基线完成日期：2026-08-25
 
@@ -29,9 +29,16 @@ Phase 1B 已完成：
 - Windows 工作电脑：经用户确认公司合规与安全策略允许后，连接、读取和跨设备写入通过。
 - Mac、Windows、iPhone、iPad 四类目标设备读取的数据均来自 `personal-workspace-data`，未依赖 Mac 本地存储或 Mac 上运行的服务。
 
+Phase 1B 认证升级已完成：
+
+- Cloudflare Worker + D1 最小 auth broker 已部署到 `https://nexus.lubannn.workers.dev/`。
+- GitHub App 仅安装到 `personal-workspace-data`，权限限定为 Metadata 读取与 Contents 读写。
+- OAuth state + PKCE、HttpOnly 会话 Cookie、HMAC session ID、加密 refresh token、同源 CSRF 与显式用户/仓库 allowlist 已实现。
+- 2026-08-27 桌面浏览器授权、callback、D1 会话、Private 仓库读取和刷新后自动恢复已通过；手工 PAT 入口保留为回退。
+
 Phase 1B 尚待：
 
-- 设计最小 auth broker 后注册 GitHub App，替换需要手工输入的 Phase 1B token 方案。
+- 在 Mac、Windows、iPhone、iPad 上完成新的 GitHub App 登录、写入、读取、退出与撤销复验。
 
 ## 已确认技术基线
 
