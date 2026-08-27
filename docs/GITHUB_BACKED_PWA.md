@@ -61,11 +61,11 @@ JSON 采用 UTF-8、稳定字段名和显式 `schema_version`。Markdown 使用�
 
 ## 6. 授权目标
 
-Phase 1B 首个可用版本使用只授权 `personal-workspace-data` 的 fine-grained token，并仅申请 Metadata 读取与 Contents 读写权限。token 只存在于当前页面内存中，不进入 LocalStorage、SessionStorage、IndexedDB、日志或 Git；刷新或关闭后必须重新输入。
+Phase 1B 首个可用版本使用只授权 `personal-workspace-data` 的 fine-grained token，并仅申请 Metadata 读取与 Contents 读写权限。token 只存在于当前页面内存中，不进入 LocalStorage、SessionStorage、IndexedDB、日志或 Git；该入口现保留为高级回退。
 
-长期仍优先迁移到只安装于数据仓库的 GitHub App。由于纯静态 Pages 不能安全保存 client secret 或 private key，GitHub App 用户令牌交换必须经独立最小权限 auth broker 完成；在该 broker 设计和审核前不得把任何 App secret 放进静态包。
+正式默认入口已迁移为只安装于 `personal-workspace-data` 的 GitHub App。用户令牌交换由同源 Cloudflare Worker 最小 auth broker 完成；client secret 与加密密钥只存在于 Workers Secrets，不进入静态包。2026-08-27 四设备登录、刷新、读写、当前设备退出和全部设备撤销均已通过。
 
-在正式授权流完成前，原型使用可注入 fetch 的 adapter 和 mock API 验证数据契约，不要求把长期 token 粘贴进页面。
+浏览器仍直接使用可注入 fetch 的 adapter 访问 GitHub Contents API；auth broker 不接收或代理任何业务正文。
 
 ## 7. 迁移顺序
 
