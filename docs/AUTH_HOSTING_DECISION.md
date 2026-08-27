@@ -1,6 +1,6 @@
 # Auth Broker 托管选择
 
-> 状态：已批准；Cloudflare 四设备验收通过；正式 Workers 地址已确定；D1 认证基础已创建
+> 状态：已批准；Cloudflare 四设备可用性验收通过；GitHub App OAuth 已上线，四设备 OAuth 复验待完成
 > 日期：2026-08-26
 > 关联规格：`AUTHENTICATION_UPGRADE.md`
 
@@ -114,11 +114,11 @@ Cloudflare 官方当前说明：
 2. 完成本地 mock GitHub OAuth、加密、会话、CSRF、撤销和日志边界测试。
 3. 用户连接或创建 Cloudflare 账户。
 4. 已部署不含 secret 的静态壳与 `/health`，并在 Mac、Windows、iPhone、iPad 和 Mac 关机场景下验证跨设备可用性。
-5. 健康检查通过后，已创建 Free plan D1 数据库并应用 `0001_auth_sessions.sql`；会话表保持空白，尚未写入任何 secret 或真实认证会话。
+5. 健康检查通过后，已创建 Free plan D1 数据库并应用 `0001_auth_sessions.sql`；2026-08-27 OAuth 验收后已写入首个加密认证会话。
 6. 已创建 `nexus` Worker，并将账户子域名从 `huangyzh2d.workers.dev` 更新为 `lubannn.workers.dev`；旧 Worker 资源暂时保留。
-7. 已部署无 Secret、默认 fail-closed 的认证路由基础；注册 GitHub App 时仅安装到 `personal-workspace-data`，Homepage URL 使用 `https://nexus.lubannn.workers.dev/`，callback 使用 `https://nexus.lubannn.workers.dev/auth/callback`。
-8. 用户亲自输入 GitHub client secret 和随机生成的加密密钥到 Workers Secrets。
-9. 部署认证测试入口并完成四设备验收。
+7. GitHub App `Personal Workspace Auth` 已创建且仅安装到 `personal-workspace-data`，Homepage URL 使用 `https://nexus.lubannn.workers.dev/`，callback 使用 `https://nexus.lubannn.workers.dev/auth/callback`。
+8. GitHub client secret、token 加密密钥和 session HMAC 密钥已安全写入 Workers Secrets；Secret 未进入 Git、构建物或浏览器持久存储。
+9. 认证版本已部署到 100% 正式流量；桌面浏览器授权、回调、D1 会话、Private 仓库读取和刷新恢复已通过。Mac、Windows、iPhone、iPad 的 OAuth 登录、写入、退出和撤销复验仍待完成。
 
 ## 9. 待用户批准
 
