@@ -533,6 +533,16 @@ export default function GitHubWorkspacePage() {
         errors: inspection.errors,
         warnings: inspection.warnings,
       });
+      setRestoreResult({
+        fileName,
+        valid: inspection.valid,
+        files: inspection.counts.files,
+        captures: inspection.counts.captures,
+        errors: inspection.errors,
+        warnings: inspection.warnings,
+      });
+      setRestorePackage(inspection.valid ? portableExport : null);
+      resetRestoreTarget();
       setStatusMessage(inspection.valid
         ? "开放 JSON 导出已下载，并已通过恢复预检。"
         : "导出已下载，但预检发现异常；请先保留文件并查看下方诊断。");
