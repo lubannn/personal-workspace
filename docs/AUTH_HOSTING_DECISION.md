@@ -1,6 +1,6 @@
 # Auth Broker 托管选择
 
-> 状态：已批准；GitHub App OAuth 四设备登录、刷新与读写验收通过；退出与撤销复验待完成
+> 状态：已批准；GitHub App OAuth 四设备与完整会话生命周期验收全部通过
 > 日期：2026-08-26
 > 关联规格：`AUTHENTICATION_UPGRADE.md`
 
@@ -118,7 +118,7 @@ Cloudflare 官方当前说明：
 6. 已创建 `nexus` Worker，并将账户子域名从 `huangyzh2d.workers.dev` 更新为 `lubannn.workers.dev`；旧 Worker 资源暂时保留。
 7. GitHub App `Personal Workspace Auth` 已创建且仅安装到 `personal-workspace-data`，Homepage URL 使用 `https://nexus.lubannn.workers.dev/`，callback 使用 `https://nexus.lubannn.workers.dev/auth/callback`。
 8. GitHub client secret、token 加密密钥和 session HMAC 密钥已安全写入 Workers Secrets；Secret 未进入 Git、构建物或浏览器持久存储。
-9. 认证版本已部署到 100% 正式流量；Mac、Windows、iPhone、iPad 的 OAuth 登录、刷新、写入和跨设备读取均已通过。D1 核对到 5 个同账号有效会话，其中一个为初始桌面验收会话。当前仅余当前设备退出与全部设备撤销的实机复验。
+9. 认证版本已部署到 100% 正式流量；Mac、Windows、iPhone、iPad 的 OAuth 登录、刷新、写入和跨设备读取均已通过。当前设备退出使有效会话从 5 降至 4，重新登录后恢复为 5；全部设备撤销后有效会话为 0、已撤销历史记录为 8，页面与 D1 状态一致。
 
 ## 9. 待用户批准
 
