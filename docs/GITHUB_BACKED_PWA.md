@@ -98,3 +98,7 @@ Inbox 只读取 `deleted_at: null` 的 Capture；回收站读取 `deleted_at` �
 开放导出只能恢复到同一 owner 下、不同于来源仓库、已初始化且没有 canonical 业务路径的 Private 仓库。README 等非业务根目录条目会保留。恢复把全部文件组成一个新 tree 和一个 commit，再以非强制 ref 更新提交；执行前后任何分支变化都会阻断写入。界面要求用户再次输入完整目标仓库名，且永不把恢复写回 canonical 来源仓库。
 
 2026-08-27 正式演练通过：16 个业务文件（`workspace.json` + 15 条 Capture）通过单个 commit `8389cdceec1cbc1c318c933f4b5498b6e7269c4f` 写入 `lubannn/personal-workspace-restore-test`，目标 README 保留，来源仓库未修改。
+
+## 11. Schema migration dry run
+
+工作台维护只追加的 schema migration registry。导出或回选文件通过完整性预检后，浏览器为 `workspace.json` 和每个记录文件规划从当前 `schema_version` 到工作台目标版本的唯一路径，并汇总 current、migratable、blocked 与步骤数量。未来版本、缺失版本、未注册路径或注册表歧义都会阻断；dry run 不修改正文、不写 GitHub，也不把结果保存到浏览器持久存储。

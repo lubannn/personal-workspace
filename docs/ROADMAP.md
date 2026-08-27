@@ -69,7 +69,8 @@
 - Phase 1C 首个切片：`workspace.json` + 全部 Capture 的开放 JSON 导出、逐文件 SHA-256 manifest 与浏览器只读恢复预检已实现，并通过 Windows 正式环境与 iPad 验收。
 - Phase 1C 第二个切片：Capture 同路径软删除、回收站恢复与 blob SHA 跨设备冲突保护已实现，并通过跨设备正式环境验收。
 - Phase 1C 第三个切片：只写入业务数据为空的独立 Private 仓库、单个原子 commit 与并发拒写已实现；16 个文件（15 条 Capture）的正式隔离恢复演练、README 保留和独立仓库核对均已通过。
-- schema migration registry 和 Dashboard layout 持久化仍属于 Phase 1C 后续切片。
+- Phase 1C 第四个切片：只追加 schema migration registry 与只读 dry run 已完成本地实现，待正式环境核对。
+- Dashboard layout 持久化仍属于 Phase 1C 后续切片。
 
 ### 技术验证
 

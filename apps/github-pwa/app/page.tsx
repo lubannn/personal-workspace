@@ -14,6 +14,10 @@ import {
   type PortableRestorePlan,
 } from "../../../src/lib/github-data/portable-restore";
 import {
+  dryRunPortableWorkspaceMigrations,
+  type SchemaMigrationDryRun,
+} from "../../../src/lib/github-data/schema-migrations";
+import {
   createWorkspaceRecord,
   recordPath,
   serializeRecord,
@@ -156,6 +160,7 @@ export default function GitHubWorkspacePage() {
   const [savedCapture, setSavedCapture] = useState<SavedCapture | null>(null);
   const [exportResult, setExportResult] = useState<PortabilityResult | null>(null);
   const [restoreResult, setRestoreResult] = useState<PortabilityResult | null>(null);
+  const [migrationDryRun, setMigrationDryRun] = useState<SchemaMigrationDryRun | null>(null);
   const [restorePackage, setRestorePackage] = useState<unknown | null>(null);
   const [restoreTargetOwner, setRestoreTargetOwner] = useState(DEFAULT_OWNER);
   const [restoreTargetRepository, setRestoreTargetRepository] = useState("personal-workspace-restore-test");
@@ -351,6 +356,7 @@ export default function GitHubWorkspacePage() {
     setSavedCapture(null);
     setExportResult(null);
     setRestoreResult(null);
+    setMigrationDryRun(null);
     setRestorePackage(null);
     setRestorePlan(null);
     setRestoreConfirmation("");
@@ -514,6 +520,9 @@ export default function GitHubWorkspacePage() {
         generatedAt,
       });
       const inspection = await inspectPortableWorkspaceExport(portableExport);
+      const migrationInspection = inspection.valid
+        ? await dryRunPortableWorkspaceMigrations(portableExport)
+        : null;
       const compactTime = generatedAt.replaceAll(/\D/g, "").slice(0, 14);
       const fileName = `personal-workspace-export-${compactTime}.json`;
       const blob = new Blob([serializePortableWorkspaceExport(portableExport)], { type: "application/json;charset=utf-8" });
@@ -542,6 +551,7 @@ export default function GitHubWorkspacePage() {
         warnings: inspection.warnings,
       });
       setRestorePackage(inspection.valid ? portableExport : null);
+      setMigrationDryRun(migrationInspection);
       resetRestoreTarget();
       setStatusMessage(inspection.valid
         ? "开放 JSON 导出已下载，并已通过恢复预检。"
@@ -560,6 +570,7 @@ export default function GitHubWorkspacePage() {
     if (!file || checkingRestore) return;
     setCheckingRestore(true);
     setRestoreResult(null);
+    setMigrationDryRun(null);
     setRestorePackage(null);
     setRestorePlan(null);
     setRestoreConfirmation("");
@@ -587,7 +598,10 @@ export default function GitHubWorkspacePage() {
         errors: inspection.errors,
         warnings: inspection.warnings,
       });
-      if (inspection.valid) setRestorePackage(parsed);
+      if (inspection.valid) {
+        setRestorePackage(parsed);
+        setMigrationDryRun(await dryRunPortableWorkspaceMigrations(parsed));
+      }
     } catch {
       setRestoreResult({
         fileName: file.name,
@@ -732,6 +746,20 @@ export default function GitHubWorkspacePage() {
             <li key={`${issue.code}-${index}`}>{issue.message}</li>
           ))}</ul>
         ) : null}
+      </div>
+    );
+  }
+
+  function renderMigrationDryRun(result: SchemaMigrationDryRun) {
+    const ready = result.valid && result.counts.blocked === 0;
+    return (
+      <div className={`portability-result ${ready ? "valid" : "invalid"}`} role="status">
+        <strong>{ready ? "Schema dry run 通过" : "Schema dry run 阻断"}</strong>
+        <span>Migration registry v{result.registryVersion}</span>
+        <p>{result.counts.files} 个文件 · 当前 {result.counts.current} · 待迁移 {result.counts.migratable} · 阻断 {result.counts.blocked}</p>
+        {result.errors.length > 0 ? <ul>{result.errors.slice(0, 5).map((issue, index) => (
+          <li key={`${issue.code}-${issue.path ?? index}`}>{issue.path ? `${issue.path}：` : ""}{issue.message}</li>
+        ))}</ul> : null}
       </div>
     );
   }
@@ -923,6 +951,7 @@ export default function GitHubWorkspacePage() {
               <input type="file" accept="application/json,.json" onChange={preflightRestore} disabled={checkingRestore} />
             </label>
             {restoreResult ? renderPortabilityResult(restoreResult) : null}
+            {migrationDryRun ? renderMigrationDryRun(migrationDryRun) : null}
           </article>
           <article className="restore-write-panel">
             <span className="step-number">03</span>

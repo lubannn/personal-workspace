@@ -114,7 +114,19 @@ Capture 回收站采用同路径软删除，不移动或物理删除 Private 仓
 
 正式环境验收于 2026-08-27 完成：从 `lubannn/personal-workspace-data` 生成并自动预检 16 个文件（`workspace.json` + 15 条 Capture），恢复到独立 Private 仓库 `lubannn/personal-workspace-restore-test`。目标仓库原有 README 被保留，全部业务文件通过单个 commit `8389cdceec1cbc1c318c933f4b5498b6e7269c4f` 写入；独立核对确认 15 个唯一 Capture 文件、`workspace.json`、2 条仓库历史记录和来源仓库未修改。
 
-## 8. 后续切片
+## 8. Schema migration registry 与 dry run
 
-1. 增加 workspace schema migration registry 和迁移 dry run。
-2. 扩展 manifest 到 Dashboard layout、Tasks、Projects、Journal、附件索引等后续模块。
+第四个切片建立只读 schema 升级预演能力：
+
+- `SCHEMA_MIGRATIONS` 是唯一迁移注册表；版本 1 是首个 canonical GitHub 文件 schema，未来步骤只能追加，不改写已发布历史；
+- 每个步骤必须具有唯一 ID、明确文件类型、正整数来源版本和单向目标版本；重复路由、分支歧义、循环、降级和未来版本都会被阻断；
+- dry run 对导出包中的 `workspace.json` 与每个记录文件分别规划升级路径，汇总 current、migratable、blocked 和 step 数量；
+- dry run 不返回改写后的正文，不调用 GitHub 写接口，也不改变页面内的导出包；
+- 导出成功或用户回选有效导出文件后自动执行，并在恢复前显示结果。
+
+本地验证已通过 51 项自动测试、类型检查、Lint 和生产构建；正式环境尚待发布后核对当前 16 个文件全部为 current、0 待迁移、0 阻断。
+
+## 9. 后续切片
+
+1. 扩展 manifest 到 Dashboard layout、Tasks、Projects、Journal、附件索引等后续模块。
+2. 在第一个真实 schema 升级出现时，追加不可变迁移步骤与独立恢复仓库演练。

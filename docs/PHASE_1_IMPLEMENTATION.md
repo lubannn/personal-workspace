@@ -48,7 +48,7 @@ Phase 1B 认证升级已完成：
 - 预检覆盖格式/版本、manifest 集合、数量、哈希、workspace、owner、Capture schema、ID 与路径一致性。
 - 导出和预检不保存或包含 GitHub/Cloudflare 凭据；预检不会上传或写回数据。
 
-Windows 正式环境导出回选（15 个文件、14 条 Capture）和 iPad 预检均已通过。真正的批量恢复写入仍需空目标约束与独立确认，详细协议见 `PHASE_1C_DATA_PORTABILITY.md`。
+Windows 正式环境导出回选（15 个文件、14 条 Capture）和 iPad 预检均已通过；后续第三个切片已补齐空目标约束、独立确认和原子恢复写入，详细协议见 `PHASE_1C_DATA_PORTABILITY.md`。
 
 Phase 1C 第二个垂直切片已实现并通过跨设备正式环境验收：
 
@@ -67,6 +67,14 @@ Phase 1C 第三个垂直切片已实现并通过正式环境验收：
 - 用户必须再次输入完整目标仓库名才可执行；来源仓库不会被修改。
 - 47 项自动测试、类型检查、Lint、生产构建与 390px 本地布局检查通过。
 - 正式演练从 canonical Private 仓库导出并预检 16 个文件（15 条 Capture），随后以单个 commit `8389cdceec1cbc1c318c933f4b5498b6e7269c4f` 写入 `personal-workspace-restore-test`；README 保留，文件数量与 Git 历史独立核对通过，来源仓库未修改。
+
+Phase 1C 第四个垂直切片已完成本地实现：
+
+- 建立版本化、只追加的 schema migration registry，校验唯一 ID、单一路由和严格单向版本升级。
+- 对开放导出中的 workspace 与每个记录文件生成只读迁移计划，区分 current、migratable 与 blocked。
+- 缺失版本、未来版本、未注册路径、重复路由和无效步骤均显式阻断；dry run 不生成写入内容，也不调用 GitHub 写接口。
+- 导出或回选文件预检成功后，页面显示 migration registry 版本及文件统计。
+- 51 项自动测试、类型检查、Lint 与生产构建通过；正式环境验收待发布。
 
 ## 已确认技术基线
 
