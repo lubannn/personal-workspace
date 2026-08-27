@@ -1,7 +1,7 @@
 # Personal Workspace 阶段性交接
 
 > 文档用途：供完全未阅读历史聊天的新 Codex 会话直接接手项目。
-> 当前阶段：正式 PWA 主页面拆分已完成本地实现与回归；下一接力点是精确发布并完成正式环境回归，再继续补齐 Task 生命周期。
+> 当前阶段：正式 PWA 主页面拆分已 squash 合并并发布；下一接力点是完成正式环境认证后读写/portability 回归，再继续补齐 Task 生命周期。
 > 最后核对：2026-08-28（Asia/Shanghai）
 > 正式入口：<https://nexus.lubannn.workers.dev/>
 
@@ -9,7 +9,7 @@
 
 这是一个长期维护、本人优先、单用户优先的 Personal OS。它不是企业后台，也不是把所有知识管理能力重新做一遍。当前可运行产品是一套公开静态应用外壳，通过 Cloudflare 上的 GitHub App 登录边缘服务，让本人浏览器直接读写独立的 GitHub 私有数据仓库。Mac 可以关机，Mac、Windows、iPhone 和 iPad 都可独立使用。
 
-接手后不要重新设计认证拓扑、不要迁回 LocalStorage、不要把公开代码仓库和私人数据仓库合并。Phase 2A Tasks 首个垂直切片已经完成代码、自动测试、正式环境单设备流程及跨设备反向写入验收。正式 PWA 主页面也已在不改变业务语义的前提下完成本地拆分、自动回归和桌面/390px 视觉检查；尚未精确发布及执行正式环境登录、读写、导出/恢复回归。下一段工作先完成这一发布门槛，再继续补齐 Task 生命周期。
+接手后不要重新设计认证拓扑、不要迁回 LocalStorage、不要把公开代码仓库和私人数据仓库合并。Phase 2A Tasks 首个垂直切片已经完成代码、自动测试、正式环境单设备流程及跨设备反向写入验收。正式 PWA 主页面也已在不改变业务语义的前提下完成拆分、本地质量门、精确发布和正式入口未登录烟雾检查；当前浏览器尚未执行登录后的 Private GitHub 读取、真实写入、导出/预检/隔离恢复安全门回归。下一段工作先完成这一认证后回归，再继续补齐 Task 生命周期。
 
 开始任何修改前必须：
 
@@ -179,6 +179,9 @@ Codex 桌面环境直接运行 pnpm 若提示 `node: not found`，先加载工�
 - Phase 2 单设备验收记录：`d969fc9166d107d18413d863f48263e2fe99d64d`
 - 对应 Cloudflare Pages deployment：`92e3d036-0f73-4277-9cdb-0248ac526903`
 - 2026-08-28 已复核该部署为 `success / deploy`，其 commit 正是 `d969fc9…`。
+- 正式 PWA 主页面拆分：PR [#1](https://github.com/lubannn/personal-workspace/pull/1)，以 squash 方式合并到 `main`，提交 `141fd2e9705bbb9c6728967c07b881c0b5db4c80`；远端分支 `codex/pwa-page-split` 保留未删。
+- 2026-08-28 已在 GitHub Actions 核对 `141fd2e…`：`build` 成功（43 秒），`deploy` 成功（8 秒）；正式入口可加载 `Personal Workspace`，可见认证入口、Dashboard 与 Task 区块。
+- 上述正式入口检查发生在未登录状态，只证明新版应用外壳与主要区块可用；不等同于登录后的 Private GitHub 读取、Capture/Task 写入、Dashboard 布局写入或 portability 安全门验收。
 
 正式运行路径是 Worker `nexus` 代理 Pages，不应把临时 preview 地址或带账户随机子域的旧地址重新写回产品入口。GitHub Pages workflow 仍存在，旧 GitHub Pages 页面可作为历史/回退，但正式入口是 `nexus.lubannn.workers.dev`。
 
@@ -213,7 +216,7 @@ Codex 桌面环境直接运行 pnpm 若提示 `node: not found`，先加载工�
 
 ### 7.1 立即事项
 
-1. 精确发布本次正式 PWA 主页面拆分，并在正式入口回归 GitHub App 登录、Private GitHub 读取、Capture/Task 带 SHA 写入、Dashboard 布局、导出/预检/隔离恢复安全门；当前本地实现已将 `apps/github-pwa/app/page.tsx` 从约 1553 行降至 933 行，并提取 auth、data loading、Dashboard、Task、Capture、portability 组件/hooks。
+1. 在正式入口完成本次主页面拆分的认证后回归：GitHub App 登录、Private GitHub 读取、Capture/Task 带 SHA 写入、Dashboard 布局、导出/预检/隔离恢复安全门；拆分已随 `141fd2e…` 发布，`apps/github-pwa/app/page.tsx` 已从约 1553 行降至 933 行，并提取 auth、data loading、Dashboard、Task、Capture、portability 组件/hooks。
 2. 为 Tasks 增加编辑、取消、归档、软删除/回收站、标签、notes、实际/预计耗时、一层子任务与项目引用。
 3. 建立 Projects canonical 文件、Milestone、阶段、进度来源、Notes、文件引用和 Activity Log。
 4. 建立内部 Calendar 日/周/月视图、时间块和提醒，并坚持 Task/Calendar 边界。
@@ -305,7 +308,7 @@ Codex 桌面环境直接运行 pnpm 若提示 `node: not found`，先加载工�
 
 ## 10. 下一步建议执行顺序
 
-1. **发布并验收主页面拆分**：以远端 `main` 最新 tree 为基准精确发布 `apps/github-pwa/app/page.tsx` 与 `apps/github-pwa/app/workspace/`，核对 Cloudflare deployment commit/status，再在正式入口回归认证、读取、写入、Dashboard 与 portability；不得把本地其他 modified/untracked 文件带入发布。
+1. **完成主页面拆分的认证后验收**：拆分已随 `141fd2e…` 精确发布，正式入口未登录烟雾检查通过；接着回归认证、Private GitHub 读取、带 SHA 写入、Dashboard 与 portability，期间不得把私人正文或凭据写入公开仓库、日志或测试输出。
 2. **补齐 Task 生命周期**：正式回归通过后，按编辑 → 取消/归档 → Task 软删除/恢复 → tags/notes/duration → 一层子任务推进。每步都做跨设备 SHA 冲突验收，并进入导出/恢复/migration。
 3. **实现 Project 最小闭环**：Project 文件、阶段、Milestone、Task 关联、进度计算和 Activity Log；不能只存一个人工百分比而不记录来源。
 4. **实现内部 Calendar**：先数据协议和 Task/Event 边界，再做日/周/月、时间块与提醒。
@@ -337,12 +340,12 @@ Codex 桌面环境直接运行 pnpm 若提示 `node: not found`，先加载工�
 
 ## 12. 当前接力点的完成定义
 
-Phase 2A 首个切片已完成，不需要新会话重复此前 Task 跨设备验收。正式 PWA 主页面拆分的本地代码与本地质量门已完成；以下完成定义中，正式发布与正式环境回归仍待执行：
+Phase 2A 首个切片已完成，不需要新会话重复此前 Task 跨设备验收。正式 PWA 主页面拆分的本地代码、本地质量门、精确发布和未登录正式烟雾检查已完成；以下完成定义中，认证后的正式环境回归仍待执行：
 
 - 已建立锁定认证状态、Task 日期和 GitHub 安全错误映射的 characterization tests；既有数据层测试继续覆盖 Dashboard、Task、Capture、导出/恢复行为；
 - 已从 `apps/github-pwa/app/page.tsx` 提取职责清晰的组件/hooks，主文件由约 1553 行降至 933 行；
 - 不在同一切片引入新业务字段、数据迁移或视觉重设计；
 - GitHub App、内存 token、Private GitHub 直读写、blob SHA 冲突、导出/恢复和移动端行为保持不变；
 - 62 项既有测试及 6 项新增测试、类型检查、Lint、生产构建全部通过；
-- 已完成桌面和 390px 移动端本地回归；正式环境与跨设备读写回归尚待发布后执行；
-- 已更新本交接文档中的文件结构、测试数量、已知技术债与下一接力点；尚待精确发布并核对 Cloudflare deployment。
+- 已完成桌面和 390px 移动端本地回归；正式入口未登录烟雾检查通过，认证后的真实读写与 portability 回归尚待执行；
+- 已更新本交接文档中的文件结构、测试数量、已知技术债、PR/合并提交、部署结果与下一接力点。
