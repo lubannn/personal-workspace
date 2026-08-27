@@ -12,8 +12,8 @@
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; background: var(--canvas); }
 body { margin: 0; background: var(--canvas); color: var(--ink); font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif; -webkit-font-smoothing: antialiased; }
-button, textarea, input { font: inherit; }
-button:focus-visible, textarea:focus-visible, input:focus-visible, a:focus-visible, .file-picker:focus-within { outline: 2px solid var(--accent); outline-offset: 3px; }
+button, textarea, input, select { font: inherit; }
+button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible, .file-picker:focus-within { outline: 2px solid var(--accent); outline-offset: 3px; }
 
 .preview-shell { width: min(1180px, calc(100% - 48px)); margin: 0 auto; }
 .topbar { height: 108px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); }
@@ -40,7 +40,7 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, a:focus-visib
 .connection-form label { display: grid; gap: 7px; color: #aaa9a1; font-size: 9px; font-weight: 680; letter-spacing: .06em; text-transform: uppercase; }
 .connection-form input { min-width: 0; width: 100%; height: 42px; padding: 0 12px; border: 1px solid #55564e; border-radius: 10px; background: #33342d; color: white; outline: none; font-size: 11px; }
 .connection-form input:focus { border-color: #aab8a4; }
-.connection-form button, .capture-card button { border: 0; border-radius: 10px; padding: 11px 15px; background: var(--ink); color: white; cursor: pointer; font-weight: 670; }
+.connection-form button, .capture-card button, .widget-capture > footer button { border: 0; border-radius: 10px; padding: 11px 15px; background: var(--ink); color: white; cursor: pointer; font-weight: 670; }
 .connection-form button { min-height: 42px; background: #f0eee7; color: var(--ink); white-space: nowrap; }
 .connection-form > a { grid-column: 1 / -1; width: fit-content; margin-top: 3px; color: #c8d2c3; font-size: 9px; text-decoration: none; }
 .connection-form > a:hover { text-decoration: underline; }
@@ -62,8 +62,37 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, a:focus-visib
 .message-bar.success { border-color: #b9c9b4; background: #e6ede3; color: #40513d; }
 .message-bar.error { border-color: #d5aaa2; background: #f3e2df; color: #773e35; }
 
+.dashboard-card { margin-bottom: 18px; padding: clamp(24px, 4vw, 40px); }
+.dashboard-card, .capture-card, .status-card, .recent-card, .portability-card { border: 1px solid var(--line); border-radius: 24px; background: rgba(250,249,245,.72); }
+.dashboard-heading { align-items: center; }
+.dashboard-heading h2 { margin: 0; font: 500 32px/1.15 ui-serif, Georgia, "Songti SC", serif; letter-spacing: -.035em; }
+.dashboard-subtitle { margin: 10px 0 0; color: var(--muted); font-size: 10px; }
+.dashboard-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.dashboard-layout-meta { display: flex; justify-content: space-between; gap: 14px; margin: 28px 0 14px; padding-top: 16px; border-top: 1px solid var(--line); color: var(--muted); font-size: 9px; }
+.dashboard-widget-grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 14px; }
+.dashboard-widget { min-width: 0; min-height: 185px; padding: 22px; border: 1px solid var(--line); border-radius: 18px; background: rgba(255,255,255,.4); }
+.dashboard-widget.size-compact { grid-column: span 3; }
+.dashboard-widget.size-standard { grid-column: span 6; }
+.dashboard-widget.size-wide { grid-column: span 12; }
+.dashboard-widget > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.dashboard-widget h3 { margin: 0; font: 500 21px/1.25 ui-serif, Georgia, "Songti SC", serif; letter-spacing: -.025em; }
+.privacy-label { color: var(--muted); font-size: 8px; letter-spacing: .06em; text-transform: uppercase; }
+.widget-empty { max-width: 390px; margin: 38px 0 0; color: var(--muted); font-size: 10px; line-height: 1.75; }
+.widget-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 18px 0 0; padding: 10px; border-radius: 11px; background: #eeebe3; }
+.widget-controls button, .dashboard-editor-footer button { border: 1px solid var(--line); border-radius: 8px; padding: 7px 9px; background: rgba(255,255,255,.55); color: var(--soft); cursor: pointer; font-size: 9px; font-weight: 680; }
+.widget-controls button:disabled { opacity: .35; cursor: default; }
+.widget-controls label { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 9px; }
+.widget-controls select { border: 1px solid var(--line); border-radius: 7px; padding: 5px 7px; background: white; color: var(--ink); }
+.widget-capture textarea { width: 100%; min-height: 112px; margin-top: 24px; padding: 16px; border: 1px solid var(--line); border-radius: 13px; resize: vertical; background: rgba(255,255,255,.55); color: var(--ink); font: 16px/1.7 ui-serif, Georgia, "Songti SC", serif; outline: none; }
+.widget-capture textarea:focus { border-color: var(--accent); background: white; }
+.widget-capture > footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 10px; color: var(--muted); font-size: 9px; }
+.widget-capture > footer button:disabled { opacity: .35; cursor: default; }
+.dashboard-editor-footer { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-top: 16px; padding: 16px; border: 1px dashed var(--line); border-radius: 14px; }
+.dashboard-editor-footer > div { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.dashboard-editor-footer strong, .dashboard-editor-footer span { color: var(--muted); font-size: 9px; }
+
 .content-grid { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(280px, .75fr); gap: 18px; padding-bottom: 18px; }
-.capture-card, .status-card, .recent-card, .portability-card { border: 1px solid var(--line); border-radius: 24px; background: rgba(250,249,245,.72); }
+.content-grid.status-grid { grid-template-columns: 1fr; }
 .capture-card { padding: clamp(24px, 4vw, 42px); }
 .status-card { padding: 30px; }
 .card-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
@@ -157,6 +186,11 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, a:focus-visib
   .revoke-confirm { justify-content: flex-start; }
   .revoke-confirm > span { text-align: left; }
   .content-grid { grid-template-columns: 1fr; }
+  .dashboard-actions { justify-content: flex-start; }
+  .dashboard-layout-meta { align-items: flex-start; flex-direction: column; }
+  .dashboard-widget-grid { grid-template-columns: 1fr; }
+  .dashboard-widget.size-compact, .dashboard-widget.size-standard, .dashboard-widget.size-wide { grid-column: 1; }
+  .dashboard-editor-footer { align-items: flex-start; flex-direction: column; }
   .portability-grid { grid-template-columns: 1fr; }
   .restore-target-form, .restore-confirmation { grid-template-columns: 1fr; }
   .restore-target-form button, .restore-confirmation button { width: 100%; }

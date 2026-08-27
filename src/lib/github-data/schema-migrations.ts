@@ -1,4 +1,5 @@
 import { GITHUB_DATA_SCHEMA_VERSION } from "./protocol";
+import { DASHBOARD_LAYOUT_SCHEMA_VERSION } from "./dashboard-layout";
 import {
   PORTABLE_EXPORT_FORMAT,
   PORTABLE_EXPORT_VERSION,
@@ -9,7 +10,7 @@ import {
 export const SCHEMA_MIGRATION_REGISTRY_VERSION = 1 as const;
 export const WORKSPACE_SCHEMA_VERSION = 1 as const;
 
-export type SchemaDocumentKind = "workspace" | "record";
+export type SchemaDocumentKind = "workspace" | "record" | "dashboard_layout";
 export type SchemaMigrationStatus = "current" | "migratable" | "blocked";
 
 export type SchemaMigrationStep = {
@@ -56,7 +57,9 @@ function isObject(value: unknown): value is Record<string, unknown> {
 }
 
 function targetVersion(kind: SchemaDocumentKind) {
-  return kind === "workspace" ? WORKSPACE_SCHEMA_VERSION : GITHUB_DATA_SCHEMA_VERSION;
+  if (kind === "workspace") return WORKSPACE_SCHEMA_VERSION;
+  if (kind === "dashboard_layout") return DASHBOARD_LAYOUT_SCHEMA_VERSION;
+  return GITHUB_DATA_SCHEMA_VERSION;
 }
 
 export function validateSchemaMigrationRegistry(
@@ -187,7 +190,9 @@ export async function dryRunPortableWorkspaceMigrations(value: unknown): Promise
   }
 
   for (const file of files.sort((left, right) => left.path.localeCompare(right.path))) {
-    const kind: SchemaDocumentKind = file.path === "workspace.json" ? "workspace" : "record";
+    const kind: SchemaDocumentKind = file.path === "workspace.json"
+      ? "workspace"
+      : file.path === "config/dashboard-layout.json" ? "dashboard_layout" : "record";
     let parsed: unknown;
     try {
       parsed = JSON.parse(file.content);

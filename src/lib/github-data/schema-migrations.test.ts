@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { buildPortableWorkspaceExport } from "./portable-export";
+import { createDefaultDashboardLayout, serializeDashboardLayout } from "./dashboard-layout";
 import { createWorkspaceRecord, serializeRecord } from "./protocol";
 import {
   dryRunPortableWorkspaceMigrations,
@@ -38,6 +39,11 @@ describe("schema migration registry", () => {
       generatedAt: "2026-08-27T02:00:00.000Z",
       workspaceFile: storedFile("workspace.json", workspaceText, "workspace-blob"),
       captureFiles: [storedFile("data/captures/capture_20260827010000000_schema.json", serializeRecord(record), "capture-blob")],
+      dashboardLayoutFile: storedFile(
+        "config/dashboard-layout.json",
+        serializeDashboardLayout(createDefaultDashboardLayout("github_lubannn", "2026-08-27T01:30:00.000Z")),
+        "dashboard-blob",
+      ),
     });
     const before = JSON.stringify(exported);
     const dryRun = await dryRunPortableWorkspaceMigrations(exported);
@@ -45,9 +51,10 @@ describe("schema migration registry", () => {
     expect(dryRun).toMatchObject({
       valid: true,
       registryVersion: 1,
-      counts: { files: 2, current: 2, migratable: 0, blocked: 0, steps: 0 },
+      counts: { files: 3, current: 3, migratable: 0, blocked: 0, steps: 0 },
       errors: [],
     });
+    expect(dryRun.files.find((file) => file.path === "config/dashboard-layout.json")?.kind).toBe("dashboard_layout");
     expect(JSON.stringify(exported)).toBe(before);
   });
 

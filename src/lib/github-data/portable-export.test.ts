@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { createWorkspaceRecord, serializeRecord } from "./protocol";
+import { createDefaultDashboardLayout, serializeDashboardLayout } from "./dashboard-layout";
 import {
   buildPortableWorkspaceExport,
   inspectPortableWorkspaceExport,
@@ -29,20 +30,26 @@ async function sampleExport() {
     data: { raw_text: "可迁移的数据", status: "inbox" as const },
   });
   const captureText = serializeRecord(capture);
+  const dashboardText = serializeDashboardLayout(createDefaultDashboardLayout(
+    "github_lubannn",
+    "2026-08-27T01:30:00.000Z",
+  ));
   return buildPortableWorkspaceExport({
     repository: "lubannn/personal-workspace-data",
     branch: "main",
     generatedAt: "2026-08-27T02:00:00.000Z",
     workspaceFile: storedFile("workspace.json", workspaceText, "workspace-blob"),
     captureFiles: [storedFile("data/captures/capture_20260827010000000_abcd1234.json", captureText, "capture-blob")],
+    dashboardLayoutFile: storedFile("config/dashboard-layout.json", dashboardText, "dashboard-blob"),
   });
 }
 
 describe("portable GitHub workspace export", () => {
   it("builds a deterministic manifest and passes restore preflight", async () => {
     const exported = await sampleExport();
-    expect(exported.manifest.counts).toEqual({ files: 2, captures: 1 });
+    expect(exported.manifest.counts).toEqual({ files: 3, captures: 1, dashboard_layouts: 1 });
     expect(exported.manifest.files.map((file) => file.path)).toEqual([
+      "config/dashboard-layout.json",
       "data/captures/capture_20260827010000000_abcd1234.json",
       "workspace.json",
     ]);
@@ -51,7 +58,7 @@ describe("portable GitHub workspace export", () => {
     await expect(inspectPortableWorkspaceExport(exported)).resolves.toMatchObject({
       valid: true,
       repository: "lubannn/personal-workspace-data",
-      counts: { files: 2, captures: 1 },
+      counts: { files: 3, captures: 1, dashboardLayouts: 1 },
       errors: [],
       workspace: { owner_id: "github_lubannn" },
     });
@@ -102,5 +109,17 @@ describe("portable GitHub workspace export", () => {
       "UNSUPPORTED_EXPORT_VERSION",
       "WORKSPACE_FILE_MISSING",
     ]));
+  });
+
+  it("continues to accept version 1 exports created before dashboard layouts existed", async () => {
+    const exported = await sampleExport();
+    exported.files = exported.files.filter((file) => file.path !== "config/dashboard-layout.json");
+    exported.manifest.files = exported.manifest.files.filter((file) => file.path !== "config/dashboard-layout.json");
+    exported.manifest.scope.modules = ["workspace", "captures"];
+    exported.manifest.counts = { files: 2, captures: 1 } as typeof exported.manifest.counts;
+    await expect(inspectPortableWorkspaceExport(exported)).resolves.toMatchObject({
+      valid: true,
+      counts: { files: 2, captures: 1, dashboardLayouts: 0 },
+    });
   });
 });

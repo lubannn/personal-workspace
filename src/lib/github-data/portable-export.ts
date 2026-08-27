@@ -1,4 +1,5 @@
 import type { GitHubStoredFile } from "./github-contents";
+import { DASHBOARD_LAYOUT_PATH, parseDashboardLayout } from "./dashboard-layout";
 import { recordPath } from "./protocol";
 import { parseCaptureRecord, parseWorkspaceDescriptor, type WorkspaceDescriptor } from "./workspace";
 
@@ -28,12 +29,13 @@ export type PortableWorkspaceExport = {
   manifest: {
     schema_version: 1;
     scope: {
-      modules: ["workspace", "captures"];
+      modules: Array<"workspace" | "captures" | "dashboard_layout">;
       complete: true;
     };
     counts: {
       files: number;
       captures: number;
+      dashboard_layouts: number;
     };
     files: PortableExportManifestFile[];
   };
@@ -54,6 +56,7 @@ export type ExportInspection = {
   counts: {
     files: number;
     captures: number;
+    dashboardLayouts: number;
   };
   errors: ExportInspectionIssue[];
   warnings: ExportInspectionIssue[];
@@ -77,9 +80,11 @@ export async function buildPortableWorkspaceExport(input: {
   branch: string;
   workspaceFile: GitHubStoredFile;
   captureFiles: GitHubStoredFile[];
+  dashboardLayoutFile?: GitHubStoredFile | null;
   generatedAt?: string;
 }): Promise<PortableWorkspaceExport> {
-  const files = [input.workspaceFile, ...input.captureFiles]
+  const dashboardLayoutFiles = input.dashboardLayoutFile ? [input.dashboardLayoutFile] : [];
+  const files = [input.workspaceFile, ...input.captureFiles, ...dashboardLayoutFiles]
     .map((file) => ({ ...file }))
     .sort((left, right) => left.path.localeCompare(right.path));
   const manifestFiles = await Promise.all(files.map(async (file) => ({
@@ -96,8 +101,12 @@ export async function buildPortableWorkspaceExport(input: {
     source: { repository: input.repository, branch: input.branch },
     manifest: {
       schema_version: 1,
-      scope: { modules: ["workspace", "captures"], complete: true },
-      counts: { files: files.length, captures: input.captureFiles.length },
+      scope: { modules: ["workspace", "captures", "dashboard_layout"], complete: true },
+      counts: {
+        files: files.length,
+        captures: input.captureFiles.length,
+        dashboard_layouts: dashboardLayoutFiles.length,
+      },
       files: manifestFiles,
     },
     files: files.map((file) => ({ path: file.path, content: file.text })),
@@ -130,7 +139,7 @@ export async function inspectPortableWorkspaceExport(value: unknown): Promise<Ex
     generatedAt: null,
     repository: null,
     workspace: null,
-    counts: { files: 0, captures: 0 },
+    counts: { files: 0, captures: 0, dashboardLayouts: 0 },
     errors,
     warnings,
   };
@@ -248,15 +257,42 @@ export async function inspectPortableWorkspaceExport(value: unknown): Promise<Ex
       errors.push({ code: "INVALID_CAPTURE_RECORD", message: "Capture 文件无法通过结构校验。", path: file.path });
     }
   }
-  const unexpectedFiles = validPayloadFiles.filter((file) => file.path !== "workspace.json" && !file.path.startsWith("data/captures/"));
-  for (const file of unexpectedFiles) {
-    errors.push({ code: "UNEXPECTED_FILE", message: "当前版本不支持此导出路径。", path: file.path });
-  }
   if (!manifestCounts || manifestCounts.captures !== captureFiles.length) {
     errors.push({ code: "CAPTURE_COUNT_MISMATCH", message: "Capture 数量与 manifest 不一致。" });
   }
   if (captureFiles.length === 0) {
     warnings.push({ code: "NO_CAPTURES", message: "导出包中没有 Capture；结构仍可用于恢复空工作台。" });
+  }
+
+  const dashboardLayoutFiles = validPayloadFiles.filter((file) => file.path === DASHBOARD_LAYOUT_PATH);
+  result.counts.dashboardLayouts = dashboardLayoutFiles.length;
+  if (dashboardLayoutFiles.length > 1) {
+    errors.push({ code: "DASHBOARD_LAYOUT_COUNT_INVALID", message: "导出包中只能包含一个 Dashboard 布局文件。" });
+  }
+  for (const file of dashboardLayoutFiles) {
+    try {
+      const layout = parseDashboardLayout(file.content);
+      if (result.workspace && layout.owner_id !== result.workspace.owner_id) {
+        errors.push({ code: "OWNER_MISMATCH", message: "Dashboard 布局的 owner_id 与 workspace 不一致。", path: file.path });
+      }
+    } catch {
+      errors.push({ code: "INVALID_DASHBOARD_LAYOUT", message: "Dashboard 布局无法通过结构校验。", path: file.path });
+    }
+  }
+  const rawDashboardLayoutCount = manifestCounts?.dashboard_layouts;
+  if (
+    (rawDashboardLayoutCount !== undefined || dashboardLayoutFiles.length > 0)
+    && rawDashboardLayoutCount !== dashboardLayoutFiles.length
+  ) {
+    errors.push({ code: "DASHBOARD_LAYOUT_COUNT_MISMATCH", message: "Dashboard 布局数量与 manifest 不一致。" });
+  }
+
+  const supportedPaths = new Set(["workspace.json", DASHBOARD_LAYOUT_PATH]);
+  const unexpectedFiles = validPayloadFiles.filter((file) => (
+    !supportedPaths.has(file.path) && !file.path.startsWith("data/captures/")
+  ));
+  for (const file of unexpectedFiles) {
+    errors.push({ code: "UNEXPECTED_FILE", message: "当前版本不支持此导出路径。", path: file.path });
   }
 
   result.valid = errors.length === 0;

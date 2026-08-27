@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { buildPortableWorkspaceExport } from "./portable-export";
 import { createPortableRestorePlan, type PortableRestoreTarget } from "./portable-restore";
 import { createWorkspaceRecord, serializeRecord } from "./protocol";
+import { createDefaultDashboardLayout, serializeDashboardLayout } from "./dashboard-layout";
 
 const workspaceText = `${JSON.stringify({
   schema_version: 1,
@@ -31,6 +32,11 @@ async function sampleExport() {
     generatedAt: "2026-08-27T11:00:00.000Z",
     workspaceFile: storedFile("workspace.json", workspaceText, "workspace-blob"),
     captureFiles: [storedFile("data/captures/capture_restore_test.json", serializeRecord(capture), "capture-blob")],
+    dashboardLayoutFile: storedFile(
+      "config/dashboard-layout.json",
+      serializeDashboardLayout(createDefaultDashboardLayout("github_lubannn", "2026-08-27T10:30:00.000Z")),
+      "dashboard-blob",
+    ),
   });
 }
 
@@ -58,10 +64,11 @@ describe("portable restore planning", () => {
       branch: "main",
       expectedHeadCommitSha: "head-one",
       baseTreeSha: "tree-one",
-      counts: { files: 2, captures: 1 },
+      counts: { files: 3, captures: 1 },
       errors: [],
     });
     expect(plan.files.map((file) => file.path)).toEqual([
+      "config/dashboard-layout.json",
       "data/captures/capture_restore_test.json",
       "workspace.json",
     ]);
@@ -84,7 +91,7 @@ describe("portable restore planning", () => {
     }));
 
     expect(plan.ready).toBe(false);
-    expect(plan.files).toHaveLength(2);
+    expect(plan.files).toHaveLength(3);
     expect(plan.errors.map((error) => error.code)).toEqual(expect.arrayContaining([
       "RESTORE_TARGET_IS_SOURCE",
       "RESTORE_TARGET_HAS_WORKSPACE_DATA",

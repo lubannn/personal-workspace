@@ -4,6 +4,19 @@ import { type ChangeEvent, type FormEvent, useEffect, useMemo, useRef, useState 
 
 import { GitHubContentsAdapter, GitHubDataError } from "../../../src/lib/github-data/github-contents";
 import {
+  DASHBOARD_LAYOUT_PATH,
+  createDefaultDashboardLayout,
+  moveDashboardWidget,
+  parseDashboardLayout,
+  serializeDashboardLayout,
+  setDashboardWidgetEnabled,
+  setDashboardWidgetSize,
+  updateDashboardWidgets,
+  type DashboardLayout,
+  type DashboardWidgetConfig,
+  type DashboardWidgetSize,
+} from "../../../src/lib/github-data/dashboard-layout";
+import {
   buildPortableWorkspaceExport,
   inspectPortableWorkspaceExport,
   serializePortableWorkspaceExport,
@@ -68,12 +81,36 @@ type PortabilityResult = {
   valid: boolean;
   files: number;
   captures: number;
+  dashboardLayouts: number;
   errors: ExportInspectionIssue[];
   warnings: ExportInspectionIssue[];
 };
 
+type DashboardWidgetDefinition = {
+  eyebrow: string;
+  title: string;
+  empty: string;
+};
+
 const DEFAULT_OWNER = "lubannn";
 const DEFAULT_REPOSITORY = "personal-workspace-data";
+
+const DASHBOARD_WIDGET_REGISTRY: Record<string, DashboardWidgetDefinition> = {
+  today_schedule: { eyebrow: "Calendar", title: "今日日程", empty: "Calendar 模块接入后，这里显示今天的时间块。" },
+  today_tasks: { eyebrow: "Tasks", title: "今日待办", empty: "Tasks 模块接入后，这里显示今天最重要的行动。" },
+  quick_capture: { eyebrow: "Quick Capture", title: "随手记下一件事", empty: "" },
+  project_progress: { eyebrow: "Projects", title: "项目进度", empty: "Projects 模块接入后，这里显示阶段、进度与风险。" },
+  learning_today: { eyebrow: "Learning", title: "今日学习", empty: "Learning 模块接入后，这里显示语言、乐器和运动学习任务。" },
+  exercise_today: { eyebrow: "Health", title: "今日运动", empty: "Health 数据经确认后，这里生成当天运动建议。" },
+  recent_journal: { eyebrow: "Journal", title: "最近日记", empty: "Journal 模块接入后，这里只显示克制的最近摘要。" },
+  habit_heatmap: { eyebrow: "Habits", title: "习惯月度打卡", empty: "Habit 模块接入后，这里显示当月 Heatmap。" },
+};
+
+const DASHBOARD_SIZE_LABELS: Record<DashboardWidgetSize, string> = {
+  compact: "紧凑",
+  standard: "标准",
+  wide: "通栏",
+};
 
 function readCookie(name: string): string | null {
   const prefix = `${name}=`;
@@ -157,6 +194,12 @@ export default function GitHubWorkspacePage() {
   const [capture, setCapture] = useState("");
   const [captureFiles, setCaptureFiles] = useState<SyncedCapture[]>([]);
   const [captureView, setCaptureView] = useState<"inbox" | "trash">("inbox");
+  const [dashboardLayout, setDashboardLayout] = useState<DashboardLayout | null>(null);
+  const [dashboardBlobSha, setDashboardBlobSha] = useState<string | null>(null);
+  const [dashboardDirty, setDashboardDirty] = useState(false);
+  const [editingDashboard, setEditingDashboard] = useState(false);
+  const [loadingDashboard, setLoadingDashboard] = useState(false);
+  const [savingDashboard, setSavingDashboard] = useState(false);
   const [savedCapture, setSavedCapture] = useState<SavedCapture | null>(null);
   const [exportResult, setExportResult] = useState<PortabilityResult | null>(null);
   const [restoreResult, setRestoreResult] = useState<PortabilityResult | null>(null);
@@ -242,7 +285,10 @@ export default function GitHubWorkspacePage() {
         setConnection(opened.connection);
         setConnectionMethod("github-app");
         setStatusMessage(`已通过 GitHub App 登录${status.login ? `（${status.login}）` : ""}，访问令牌仅保留在当前页面内存中。`);
-        await loadRecentCaptures(opened.adapter);
+        await Promise.all([
+          loadRecentCaptures(opened.adapter),
+          loadDashboardLayout(opened.adapter, opened.connection.ownerId),
+        ]);
       } catch (error) {
         adapterRef.current = null;
         setConnection(null);
@@ -281,6 +327,18 @@ export default function GitHubWorkspacePage() {
   }, [captureFiles]);
 
   const visibleCaptures = captureView === "inbox" ? inboxCaptures : trashedCaptures;
+  const displayedDashboardLayout = useMemo(
+    () => dashboardLayout ?? createDefaultDashboardLayout("preview", "1970-01-01T00:00:00.000Z"),
+    [dashboardLayout],
+  );
+  const visibleDashboardWidgets = useMemo(
+    () => displayedDashboardLayout.widgets.filter((widget) => widget.enabled),
+    [displayedDashboardLayout],
+  );
+  const hiddenDashboardWidgets = useMemo(
+    () => displayedDashboardLayout.widgets.filter((widget) => !widget.enabled),
+    [displayedDashboardLayout],
+  );
 
   async function loadRecentCaptures(adapter = adapterRef.current) {
     if (!adapter) return;
@@ -320,6 +378,88 @@ export default function GitHubWorkspacePage() {
     }
   }
 
+  async function loadDashboardLayout(
+    adapter = adapterRef.current,
+    ownerId?: string,
+  ) {
+    if (!adapter || !ownerId) return;
+    setLoadingDashboard(true);
+    setErrorMessage("");
+    try {
+      const file = await adapter.readText(DASHBOARD_LAYOUT_PATH);
+      const layout = parseDashboardLayout(file.text);
+      if (layout.owner_id !== ownerId) throw new Error("DASHBOARD_OWNER_MISMATCH");
+      setDashboardLayout(layout);
+      setDashboardBlobSha(file.blobSha);
+      setDashboardDirty(false);
+    } catch (error) {
+      if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") {
+        setDashboardLayout(createDefaultDashboardLayout(ownerId));
+        setDashboardBlobSha(null);
+        setDashboardDirty(false);
+        return;
+      }
+      setErrorMessage(error instanceof Error && error.message === "DASHBOARD_OWNER_MISMATCH"
+        ? "Dashboard 布局的 owner 与当前 workspace 不一致，已停止读取。"
+        : friendlyError(error));
+    } finally {
+      setLoadingDashboard(false);
+    }
+  }
+
+  function applyDashboardLayout(next: DashboardLayout) {
+    setDashboardLayout(next);
+    setDashboardDirty(true);
+    setStatusMessage("");
+  }
+
+  function changeDashboardWidget(
+    widget: DashboardWidgetConfig,
+    operation: "up" | "down" | "hide" | "show",
+  ) {
+    if (!dashboardLayout) return;
+    if (operation === "up" || operation === "down") {
+      applyDashboardLayout(moveDashboardWidget(dashboardLayout, widget.id, operation));
+      return;
+    }
+    applyDashboardLayout(setDashboardWidgetEnabled(dashboardLayout, widget.id, operation === "show"));
+  }
+
+  function resizeDashboardWidget(widget: DashboardWidgetConfig, size: DashboardWidgetSize) {
+    if (!dashboardLayout) return;
+    applyDashboardLayout(setDashboardWidgetSize(dashboardLayout, widget.id, size));
+  }
+
+  function resetDashboardToDefault() {
+    if (!dashboardLayout || !connection) return;
+    const defaults = createDefaultDashboardLayout(connection.ownerId).widgets;
+    applyDashboardLayout(updateDashboardWidgets(dashboardLayout, defaults));
+  }
+
+  async function saveDashboardLayout() {
+    const adapter = adapterRef.current;
+    if (!adapter || !dashboardLayout || !connection || savingDashboard || online === false) return;
+    setSavingDashboard(true);
+    setErrorMessage("");
+    setStatusMessage("");
+    try {
+      const result = await adapter.writeText({
+        path: DASHBOARD_LAYOUT_PATH,
+        text: serializeDashboardLayout(dashboardLayout),
+        message: `dashboard: save layout v${dashboardLayout.version}`,
+        expectedBlobSha: dashboardBlobSha ?? undefined,
+      });
+      setDashboardBlobSha(result.blobSha);
+      setDashboardDirty(false);
+      setEditingDashboard(false);
+      setStatusMessage("Dashboard 布局已保存到 Private 数据仓库，可在其他设备刷新后读取。");
+    } catch (error) {
+      setErrorMessage(friendlyError(error));
+    } finally {
+      setSavingDashboard(false);
+    }
+  }
+
   async function connect(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!owner.trim() || !repository.trim() || !token || online === false) return;
@@ -334,7 +474,10 @@ export default function GitHubWorkspacePage() {
       setConnectionMethod("personal-token");
       setToken("");
       setStatusMessage("已通过 Private 仓库检查。令牌仅保留在当前页面内存中。");
-      await loadRecentCaptures(opened.adapter);
+      await Promise.all([
+        loadRecentCaptures(opened.adapter),
+        loadDashboardLayout(opened.adapter, opened.connection.ownerId),
+      ]);
     } catch (error) {
       adapterRef.current = null;
       setConnection(null);
@@ -353,6 +496,10 @@ export default function GitHubWorkspacePage() {
     setCapture("");
     setCaptureFiles([]);
     setCaptureView("inbox");
+    setDashboardLayout(null);
+    setDashboardBlobSha(null);
+    setDashboardDirty(false);
+    setEditingDashboard(false);
     setSavedCapture(null);
     setExportResult(null);
     setRestoreResult(null);
@@ -500,6 +647,12 @@ export default function GitHubWorkspacePage() {
     try {
       setExportProgress("正在读取 workspace.json…");
       const workspaceFile = await adapter.readText("workspace.json");
+      let dashboardLayoutFile = null;
+      try {
+        dashboardLayoutFile = await adapter.readText(DASHBOARD_LAYOUT_PATH);
+      } catch (error) {
+        if (!(error instanceof GitHubDataError) || error.code !== "GITHUB_NOT_FOUND") throw error;
+      }
       const candidates = await listCaptureFiles(adapter);
       const captureFiles = [];
       const batchSize = 6;
@@ -517,6 +670,7 @@ export default function GitHubWorkspacePage() {
         branch: "main",
         workspaceFile,
         captureFiles,
+        dashboardLayoutFile,
         generatedAt,
       });
       const inspection = await inspectPortableWorkspaceExport(portableExport);
@@ -539,6 +693,7 @@ export default function GitHubWorkspacePage() {
         valid: inspection.valid,
         files: inspection.counts.files,
         captures: inspection.counts.captures,
+        dashboardLayouts: inspection.counts.dashboardLayouts,
         errors: inspection.errors,
         warnings: inspection.warnings,
       });
@@ -547,6 +702,7 @@ export default function GitHubWorkspacePage() {
         valid: inspection.valid,
         files: inspection.counts.files,
         captures: inspection.counts.captures,
+        dashboardLayouts: inspection.counts.dashboardLayouts,
         errors: inspection.errors,
         warnings: inspection.warnings,
       });
@@ -583,6 +739,7 @@ export default function GitHubWorkspacePage() {
           valid: false,
           files: 0,
           captures: 0,
+          dashboardLayouts: 0,
           errors: [{ code: "EXPORT_TOO_LARGE", message: "当前预检仅接受 50 MB 以内的 JSON 文件。" }],
           warnings: [],
         });
@@ -595,6 +752,7 @@ export default function GitHubWorkspacePage() {
         valid: inspection.valid,
         files: inspection.counts.files,
         captures: inspection.counts.captures,
+        dashboardLayouts: inspection.counts.dashboardLayouts,
         errors: inspection.errors,
         warnings: inspection.warnings,
       });
@@ -608,6 +766,7 @@ export default function GitHubWorkspacePage() {
         valid: false,
         files: 0,
         captures: 0,
+        dashboardLayouts: 0,
         errors: [{ code: "INVALID_JSON", message: "文件不是有效的 JSON，未执行任何恢复操作。" }],
         warnings: [],
       });
@@ -735,7 +894,7 @@ export default function GitHubWorkspacePage() {
       <div className={`portability-result ${result.valid ? "valid" : "invalid"}`} role="status">
         <strong>{result.valid ? "预检通过" : "预检未通过"}</strong>
         <span>{result.fileName}</span>
-        <p>{result.files} 个文件 · {result.captures} 条 Capture</p>
+        <p>{result.files} 个文件 · {result.captures} 条 Capture · {result.dashboardLayouts} 个 Dashboard 布局</p>
         {result.errors.length > 0 ? (
           <ul>{result.errors.slice(0, 5).map((issue, index) => (
             <li key={`${issue.code}-${issue.path ?? index}`}>{issue.path ? `${issue.path}：` : ""}{issue.message}</li>
@@ -835,32 +994,97 @@ export default function GitHubWorkspacePage() {
         </div>
       ) : null}
 
-      <section className="content-grid">
-        <article className="capture-card">
-          <div className="card-heading">
-            <div><p className="eyebrow">Quick Capture</p><h2>随手记下一件事</h2></div>
-            <span className={`memory-pill ${connection ? "live" : ""}`}>{connection ? "保存到 Private GitHub" : "需要先连接"}</span>
+      <section className="dashboard-card" aria-labelledby="dashboard-title">
+        <div className="card-heading dashboard-heading">
+          <div>
+            <p className="eyebrow">Today · Modular dashboard</p>
+            <h2 id="dashboard-title">我的今天</h2>
+            <p className="dashboard-subtitle">布局来自 Private 数据仓库；移动端自动变为单列。</p>
           </div>
-          <textarea
-            value={capture}
-            onChange={(event) => setCapture(event.target.value)}
-            placeholder={connection ? "任务、想法、提醒，先记下来再整理…" : "连接 Private 数据仓库后即可保存…"}
-            maxLength={10_000}
-            disabled={!connection || saving}
-          />
-          <footer>
-            <span>{capture.length} / 10,000</span>
-            <button type="button" onClick={saveCapture} disabled={!connection || !capture.trim() || saving || online === false}>{saving ? "正在保存…" : "保存 Capture"}</button>
-          </footer>
-          {savedCapture ? (
-            <div className="file-preview">
-              <code>{savedCapture.path}</code>
-              <p>{savedCapture.text}</p>
-              <span className="commit-note">Commit {savedCapture.commitSha.slice(0, 8)} · Private repository</span>
-            </div>
-          ) : <p className="empty-note">每次保存生成一个开放 JSON 文件和一条 Git 历史记录。</p>}
-        </article>
+          <div className="dashboard-actions" aria-label="Dashboard 布局操作">
+            <button className="secondary-button" type="button" onClick={() => setEditingDashboard((current) => !current)} disabled={!dashboardLayout}>
+              {editingDashboard ? "完成编辑" : "编辑布局"}
+            </button>
+            <button className="secondary-button" type="button" onClick={() => loadDashboardLayout(adapterRef.current, connection?.ownerId)} disabled={!connection || loadingDashboard || dashboardDirty}>
+              {loadingDashboard ? "读取中…" : "从 GitHub 刷新"}
+            </button>
+            <button className="primary-button" type="button" onClick={saveDashboardLayout} disabled={!connection || !dashboardLayout || savingDashboard || online === false || (!dashboardDirty && dashboardBlobSha !== null)}>
+              {savingDashboard ? "保存中…" : dashboardBlobSha ? "保存布局" : "保存默认布局"}
+            </button>
+          </div>
+        </div>
 
+        <div className="dashboard-layout-meta">
+              <span>{!connection ? "连接后从 Private GitHub 读取布局" : dashboardBlobSha && dashboardLayout ? `Private layout v${dashboardLayout.version}` : "尚未保存的默认布局"}</span>
+              <span>{visibleDashboardWidgets.length} 个显示 · {hiddenDashboardWidgets.length} 个隐藏{dashboardDirty ? " · 有未保存修改" : ""}</span>
+            </div>
+            <div className="dashboard-widget-grid">
+              {visibleDashboardWidgets.map((widget, index) => {
+                const definition = DASHBOARD_WIDGET_REGISTRY[widget.widget_type] ?? {
+                  eyebrow: "Extension",
+                  title: `未知模块 · ${widget.widget_type}`,
+                  empty: "当前版本未安装这个模块，但配置会被完整保留。",
+                };
+                return (
+                  <article className={`dashboard-widget size-${widget.size}`} key={widget.id}>
+                    <header>
+                      <div><p className="eyebrow">{definition.eyebrow}</p><h3>{definition.title}</h3></div>
+                      <span className="privacy-label">{widget.privacy_mode}</span>
+                    </header>
+                    {editingDashboard ? (
+                      <div className="widget-controls" aria-label={`${definition.title} 布局操作`}>
+                        <button type="button" onClick={() => changeDashboardWidget(widget, "up")} disabled={index === 0}>上移</button>
+                        <button type="button" onClick={() => changeDashboardWidget(widget, "down")} disabled={index === visibleDashboardWidgets.length - 1}>下移</button>
+                        <label>尺寸
+                          <select value={widget.size} onChange={(event) => resizeDashboardWidget(widget, event.target.value as DashboardWidgetSize)}>
+                            {Object.entries(DASHBOARD_SIZE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                          </select>
+                        </label>
+                        <button type="button" onClick={() => changeDashboardWidget(widget, "hide")}>隐藏</button>
+                      </div>
+                    ) : null}
+                    {widget.widget_type === "quick_capture" ? (
+                      <div className="widget-capture">
+                        <textarea
+                          value={capture}
+                          onChange={(event) => setCapture(event.target.value)}
+                          placeholder={connection ? "任务、想法、提醒，先记下来再整理…" : "连接 Private 数据仓库后即可保存…"}
+                          maxLength={10_000}
+                          disabled={!connection || saving}
+                        />
+                        <footer>
+                          <span>{capture.length} / 10,000</span>
+                          <button type="button" onClick={saveCapture} disabled={!connection || !capture.trim() || saving || online === false}>{saving ? "正在保存…" : "保存 Capture"}</button>
+                        </footer>
+                        {savedCapture ? (
+                          <div className="file-preview">
+                            <code>{savedCapture.path}</code>
+                            <p>{savedCapture.text}</p>
+                            <span className="commit-note">Commit {savedCapture.commitSha.slice(0, 8)} · Private repository</span>
+                          </div>
+                        ) : <p className="widget-empty">每次保存生成开放 JSON 文件和一条 Git 历史记录。</p>}
+                      </div>
+                    ) : <p className="widget-empty">{definition.empty}</p>}
+                  </article>
+                );
+              })}
+            </div>
+            {editingDashboard ? (
+              <div className="dashboard-editor-footer">
+                <div>
+                  <strong>已隐藏模块</strong>
+                  {hiddenDashboardWidgets.length === 0 ? <span>无</span> : hiddenDashboardWidgets.map((widget) => (
+                    <button type="button" key={widget.id} onClick={() => changeDashboardWidget(widget, "show")}>
+                      + {DASHBOARD_WIDGET_REGISTRY[widget.widget_type]?.title ?? widget.widget_type}
+                    </button>
+                  ))}
+                </div>
+                <button className="secondary-button" type="button" onClick={resetDashboardToDefault}>恢复默认布局</button>
+              </div>
+            ) : null}
+      </section>
+
+      <section className="content-grid status-grid">
         <aside className="status-card">
           <p className="eyebrow">Live readiness</p>
           <h2>运行状态</h2>
@@ -936,7 +1160,7 @@ export default function GitHubWorkspacePage() {
           <article>
             <span className="step-number">01</span>
             <h3>下载开放数据包</h3>
-            <p>读取 workspace.json 和全部 Capture，生成带 SHA-256、Git blob SHA、文件数量与 schema 版本的 JSON。</p>
+            <p>读取 workspace.json、Dashboard 布局和全部 Capture，生成带 SHA-256、Git blob SHA、文件数量与 schema 版本的 JSON。</p>
             <button className="primary-button" type="button" onClick={downloadPortableExport} disabled={!connection || exporting || online === false}>
               {exporting ? exportProgress || "正在生成…" : "导出并下载 JSON"}
             </button>

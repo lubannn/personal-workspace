@@ -11,6 +11,7 @@ import {
 
 const CANONICAL_ROOT_NAMES = new Set([
   "workspace.json",
+  "config",
   "data",
   "journal",
   "attachments",
