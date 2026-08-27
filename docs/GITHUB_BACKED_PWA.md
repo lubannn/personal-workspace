@@ -88,3 +88,9 @@ Phase 1B 首个可用版本使用只授权 `personal-workspace-data` 的 fine-gr
 ## 9. Capture 回收站与冲突保护
 
 Inbox 只读取 `deleted_at: null` 的 Capture；回收站读取 `deleted_at` 非空的记录并允许恢复。界面不提供永久删除。每次生命周期写入使用 GitHub Contents API 的 `sha` 前置条件；如果另一设备已经更新相同文件，陈旧写入被转换为 `GITHUB_SYNC_CONFLICT`，用户刷新后再决定，不发生最后写入者静默覆盖。
+
+2026-08-27 已完成跨设备正式验收：创建、软删除、另一设备读取和恢复、原设备刷新回读均通过。
+
+## 10. 隔离仓库恢复
+
+开放导出只能恢复到同一 owner 下、不同于来源仓库、已初始化且没有 canonical 业务路径的 Private 仓库。README 等非业务根目录条目会保留。恢复把全部文件组成一个新 tree 和一个 commit，再以非强制 ref 更新提交；执行前后任何分支变化都会阻断写入。界面要求用户再次输入完整目标仓库名，且永不把恢复写回 canonical 来源仓库。

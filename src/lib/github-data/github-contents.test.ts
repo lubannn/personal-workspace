@@ -93,6 +93,77 @@ describe("GitHub contents adapter", () => {
     expect(fetcher.mock.calls[0]?.[1]).toMatchObject({ cache: "no-store" });
   });
 
+  it("lists an initialized repository root and reuses the in-memory credential for an isolated target", async () => {
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse([
+        { type: "file", name: "README.md", path: "README.md", sha: "readme-blob", size: 10 },
+      ]))
+      .mockResolvedValueOnce(jsonResponse({
+        full_name: "owner/personal-workspace-restore-test",
+        private: true,
+        visibility: "private",
+        default_branch: "main",
+      }));
+    const canonical = new GitHubContentsAdapter(
+      { owner: "owner", repository: "personal-workspace-data", branch: "main", token: "shared-token" },
+      fetcher,
+    );
+
+    await expect(canonical.listDirectory("")).resolves.toEqual([
+      { type: "file", name: "README.md", path: "README.md", blobSha: "readme-blob", sizeBytes: 10 },
+    ]);
+    await expect(canonical.forRepository("owner", "personal-workspace-restore-test").verifyPrivateRepository())
+      .resolves.toMatchObject({ fullName: "owner/personal-workspace-restore-test", private: true });
+    expect(fetcher.mock.calls[0]?.[0]).toContain("/contents?ref=main");
+    expect(fetcher.mock.calls[1]?.[1]?.headers).toMatchObject({ Authorization: "Bearer shared-token" });
+  });
+
+  it("creates an atomic multi-file restore commit from an expected branch head", async () => {
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({
+        ref: "refs/heads/main",
+        object: { sha: "head-one", type: "commit" },
+      }))
+      .mockResolvedValueOnce(jsonResponse({ sha: "head-one", tree: { sha: "tree-one" } }))
+      .mockResolvedValueOnce(jsonResponse({ sha: "blob-workspace" }, 201))
+      .mockResolvedValueOnce(jsonResponse({ sha: "blob-capture" }, 201))
+      .mockResolvedValueOnce(jsonResponse({ sha: "tree-two" }, 201))
+      .mockResolvedValueOnce(jsonResponse({ sha: "commit-two", tree: { sha: "tree-two" } }, 201))
+      .mockResolvedValueOnce(jsonResponse({
+        ref: "refs/heads/main",
+        object: { sha: "commit-two", type: "commit" },
+      }));
+    const adapter = new GitHubContentsAdapter(
+      { owner: "owner", repository: "personal-workspace-restore-test", branch: "main", token: "test-token" },
+      fetcher,
+    );
+    const snapshot = await adapter.readBranchSnapshot();
+    await expect(adapter.writeAtomicFiles({
+      files: [
+        { path: "workspace.json", text: "workspace" },
+        { path: "data/captures/one.json", text: "capture" },
+      ],
+      message: "restore: import portable export",
+      expectedHeadCommitSha: snapshot.headCommitSha,
+      baseTreeSha: snapshot.rootTreeSha,
+    })).resolves.toEqual({ commitSha: "commit-two", treeSha: "tree-two" });
+
+    expect(snapshot).toEqual({ branch: "main", headCommitSha: "head-one", rootTreeSha: "tree-one" });
+    const treeBody = JSON.parse(String(fetcher.mock.calls[4]?.[1]?.body)) as {
+      base_tree: string;
+      tree: Array<{ path: string; sha: string }>;
+    };
+    expect(treeBody).toMatchObject({
+      base_tree: "tree-one",
+      tree: [
+        { path: "workspace.json", sha: "blob-workspace" },
+        { path: "data/captures/one.json", sha: "blob-capture" },
+      ],
+    });
+    const refBody = JSON.parse(String(fetcher.mock.calls[6]?.[1]?.body)) as { sha: string; force: boolean };
+    expect(refBody).toEqual({ sha: "commit-two", force: false });
+  });
+
   it("normalizes pasted tokens and classifies cross-origin browser failures", async () => {
     const fetcher = vi.fn<typeof fetch>().mockRejectedValue(new TypeError("Failed to fetch"));
     const adapter = new GitHubContentsAdapter(

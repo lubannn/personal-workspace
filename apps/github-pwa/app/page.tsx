@@ -10,6 +10,10 @@ import {
   type ExportInspectionIssue,
 } from "../../../src/lib/github-data/portable-export";
 import {
+  createPortableRestorePlan,
+  type PortableRestorePlan,
+} from "../../../src/lib/github-data/portable-restore";
+import {
   createWorkspaceRecord,
   recordPath,
   serializeRecord,
@@ -126,6 +130,7 @@ function formatCaptureTime(value: string) {
 
 export default function GitHubWorkspacePage() {
   const adapterRef = useRef<GitHubContentsAdapter | null>(null);
+  const restoreAdapterRef = useRef<GitHubContentsAdapter | null>(null);
   const authBootstrapStarted = useRef(false);
   const [online, setOnline] = useState<boolean | null>(null);
   const [owner, setOwner] = useState(DEFAULT_OWNER);
@@ -141,6 +146,8 @@ export default function GitHubWorkspacePage() {
   const [exporting, setExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState("");
   const [checkingRestore, setCheckingRestore] = useState(false);
+  const [checkingRestoreTarget, setCheckingRestoreTarget] = useState(false);
+  const [restoring, setRestoring] = useState(false);
   const [confirmingRevokeAll, setConfirmingRevokeAll] = useState(false);
   const [revokingAll, setRevokingAll] = useState(false);
   const [capture, setCapture] = useState("");
@@ -149,6 +156,12 @@ export default function GitHubWorkspacePage() {
   const [savedCapture, setSavedCapture] = useState<SavedCapture | null>(null);
   const [exportResult, setExportResult] = useState<PortabilityResult | null>(null);
   const [restoreResult, setRestoreResult] = useState<PortabilityResult | null>(null);
+  const [restorePackage, setRestorePackage] = useState<unknown | null>(null);
+  const [restoreTargetOwner, setRestoreTargetOwner] = useState(DEFAULT_OWNER);
+  const [restoreTargetRepository, setRestoreTargetRepository] = useState("personal-workspace-restore-test");
+  const [restorePlan, setRestorePlan] = useState<PortableRestorePlan | null>(null);
+  const [restoreConfirmation, setRestoreConfirmation] = useState("");
+  const [restoreCommitSha, setRestoreCommitSha] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
   const [statusMessage, setStatusMessage] = useState("");
 
@@ -161,6 +174,7 @@ export default function GitHubWorkspacePage() {
       window.removeEventListener("online", update);
       window.removeEventListener("offline", update);
       adapterRef.current = null;
+      restoreAdapterRef.current = null;
     };
   }, []);
 
@@ -337,6 +351,11 @@ export default function GitHubWorkspacePage() {
     setSavedCapture(null);
     setExportResult(null);
     setRestoreResult(null);
+    setRestorePackage(null);
+    setRestorePlan(null);
+    setRestoreConfirmation("");
+    setRestoreCommitSha(null);
+    restoreAdapterRef.current = null;
     setExportProgress("");
     setConfirmingRevokeAll(false);
     setErrorMessage("");
@@ -531,6 +550,11 @@ export default function GitHubWorkspacePage() {
     if (!file || checkingRestore) return;
     setCheckingRestore(true);
     setRestoreResult(null);
+    setRestorePackage(null);
+    setRestorePlan(null);
+    setRestoreConfirmation("");
+    setRestoreCommitSha(null);
+    restoreAdapterRef.current = null;
     try {
       if (file.size > 50 * 1024 * 1024) {
         setRestoreResult({
@@ -543,7 +567,8 @@ export default function GitHubWorkspacePage() {
         });
         return;
       }
-      const inspection = await inspectPortableWorkspaceExport(JSON.parse(await file.text()) as unknown);
+      const parsed = JSON.parse(await file.text()) as unknown;
+      const inspection = await inspectPortableWorkspaceExport(parsed);
       setRestoreResult({
         fileName: file.name,
         valid: inspection.valid,
@@ -552,6 +577,7 @@ export default function GitHubWorkspacePage() {
         errors: inspection.errors,
         warnings: inspection.warnings,
       });
+      if (inspection.valid) setRestorePackage(parsed);
     } catch {
       setRestoreResult({
         fileName: file.name,
@@ -563,6 +589,120 @@ export default function GitHubWorkspacePage() {
       });
     } finally {
       setCheckingRestore(false);
+    }
+  }
+
+  function resetRestoreTarget() {
+    restoreAdapterRef.current = null;
+    setRestorePlan(null);
+    setRestoreConfirmation("");
+    setRestoreCommitSha(null);
+  }
+
+  async function checkRestoreTarget() {
+    const canonicalAdapter = adapterRef.current;
+    const targetOwner = restoreTargetOwner.trim();
+    const targetRepository = restoreTargetRepository.trim();
+    if (
+      !canonicalAdapter
+      || !connection
+      || !restorePackage
+      || !restoreResult?.valid
+      || !targetOwner
+      || !targetRepository
+      || checkingRestoreTarget
+      || online === false
+    ) return;
+
+    setCheckingRestoreTarget(true);
+    setErrorMessage("");
+    setStatusMessage("");
+    resetRestoreTarget();
+    try {
+      const verifier = canonicalAdapter.forRepository(targetOwner, targetRepository);
+      const repositoryStatus = await verifier.verifyPrivateRepository();
+      const targetAdapter = canonicalAdapter.forRepository(
+        targetOwner,
+        targetRepository,
+        repositoryStatus.defaultBranch,
+      );
+      const [branch, rootEntries] = await Promise.all([
+        targetAdapter.readBranchSnapshot(),
+        targetAdapter.listDirectory(""),
+      ]);
+      const plan = await createPortableRestorePlan(restorePackage, {
+        repository: repositoryStatus,
+        branch,
+        rootEntries,
+      });
+      setRestorePlan(plan);
+      if (plan.ready) {
+        restoreAdapterRef.current = targetAdapter;
+        setStatusMessage("恢复目标检查通过。只有再次输入完整仓库名后，原子恢复按钮才会启用。");
+      }
+    } catch (error) {
+      setErrorMessage(error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND"
+        ? "找不到恢复目标，或目标尚未用 README 初始化默认分支，或 GitHub App 尚未获得该仓库权限。"
+        : friendlyError(error));
+    } finally {
+      setCheckingRestoreTarget(false);
+    }
+  }
+
+  async function executePortableRestore() {
+    const targetAdapter = restoreAdapterRef.current;
+    if (
+      !targetAdapter
+      || !restorePackage
+      || !restorePlan?.ready
+      || restoreConfirmation !== restorePlan.targetRepository
+      || restoring
+      || online === false
+    ) return;
+
+    setRestoring(true);
+    setErrorMessage("");
+    setStatusMessage("");
+    try {
+      const repositoryStatus = await targetAdapter.verifyPrivateRepository();
+      const [branch, rootEntries] = await Promise.all([
+        targetAdapter.readBranchSnapshot(),
+        targetAdapter.listDirectory(""),
+      ]);
+      const freshPlan = await createPortableRestorePlan(restorePackage, {
+        repository: repositoryStatus,
+        branch,
+        rootEntries,
+      });
+      setRestorePlan(freshPlan);
+      if (!freshPlan.ready) {
+        restoreAdapterRef.current = null;
+        setRestoreConfirmation("");
+        setErrorMessage("恢复目标已不再满足安全条件，未写入任何文件。请检查诊断后重新开始。");
+        return;
+      }
+      if (freshPlan.expectedHeadCommitSha !== restorePlan.expectedHeadCommitSha) {
+        restoreAdapterRef.current = null;
+        setRestoreConfirmation("");
+        setErrorMessage("恢复目标在确认期间发生了变化，未写入任何文件。请重新检查目标。");
+        return;
+      }
+      const result = await targetAdapter.writeAtomicFiles({
+        files: freshPlan.files,
+        message: `restore: import ${freshPlan.counts.files} workspace files`,
+        expectedHeadCommitSha: freshPlan.expectedHeadCommitSha,
+        baseTreeSha: freshPlan.baseTreeSha,
+      });
+      setRestoreCommitSha(result.commitSha);
+      setRestoreConfirmation("");
+      restoreAdapterRef.current = null;
+      setStatusMessage(`恢复完成：${freshPlan.counts.files} 个文件已通过单个 Git commit 写入隔离仓库。`);
+    } catch (error) {
+      setErrorMessage(error instanceof GitHubDataError && error.code === "GITHUB_SYNC_CONFLICT"
+        ? "恢复目标在写入期间发生了变化，GitHub 已拒绝提交；没有发生静默覆盖。"
+        : friendlyError(error));
+    } finally {
+      setRestoring(false);
     }
   }
 
@@ -774,10 +914,60 @@ export default function GitHubWorkspacePage() {
             </label>
             {restoreResult ? renderPortabilityResult(restoreResult) : null}
           </article>
+          <article className="restore-write-panel">
+            <span className="step-number">03</span>
+            <h3>隔离仓库原子恢复</h3>
+            <p>仅接受同一 owner 下、已用 README 初始化且尚无 Personal Workspace 业务数据的 Private 仓库。全部文件只通过一个 Git commit 写入。</p>
+            {!restoreResult?.valid ? (
+              <p className="restore-gate">先选择并通过第 02 步恢复预检。</p>
+            ) : !connection ? (
+              <p className="restore-gate">先连接来源 Private 仓库，复用当前页面内存中的临时授权检查目标。</p>
+            ) : (
+              <>
+                <div className="restore-target-form">
+                  <label>Target owner<input value={restoreTargetOwner} onChange={(event) => { setRestoreTargetOwner(event.target.value); resetRestoreTarget(); }} autoCapitalize="none" spellCheck={false} /></label>
+                  <label>Target repository<input value={restoreTargetRepository} onChange={(event) => { setRestoreTargetRepository(event.target.value); resetRestoreTarget(); }} autoCapitalize="none" spellCheck={false} /></label>
+                  <button className="secondary-button" type="button" onClick={checkRestoreTarget} disabled={checkingRestoreTarget || restoring || online === false || !restoreTargetOwner.trim() || !restoreTargetRepository.trim()}>
+                    {checkingRestoreTarget ? "正在检查…" : "检查恢复目标"}
+                  </button>
+                </div>
+                {restorePlan ? (
+                  <div className={`restore-plan ${restorePlan.ready ? "valid" : "invalid"}`} role="status">
+                    <strong>{restorePlan.ready ? "目标检查通过" : "禁止恢复到此目标"}</strong>
+                    <span>{restorePlan.targetRepository} · {restorePlan.branch}</span>
+                    <p>{restorePlan.counts.files} 个文件 · {restorePlan.counts.captures} 条 Capture · 单个原子 commit</p>
+                    {restorePlan.errors.length > 0 ? <ul>{restorePlan.errors.slice(0, 5).map((issue, index) => (
+                      <li key={`${issue.code}-${issue.path ?? index}`}>{issue.path ? `${issue.path}：` : ""}{issue.message}</li>
+                    ))}</ul> : null}
+                    {restorePlan.warnings.length > 0 ? <ul>{restorePlan.warnings.slice(0, 3).map((issue, index) => (
+                      <li key={`${issue.code}-${index}`}>{issue.message}</li>
+                    ))}</ul> : null}
+                  </div>
+                ) : null}
+                {restorePlan?.ready && !restoreCommitSha ? (
+                  <div className="restore-confirmation">
+                    <label>输入完整目标仓库名以确认
+                      <input
+                        value={restoreConfirmation}
+                        onChange={(event) => setRestoreConfirmation(event.target.value)}
+                        placeholder={restorePlan.targetRepository}
+                        autoCapitalize="none"
+                        spellCheck={false}
+                      />
+                    </label>
+                    <button className="danger-button" type="button" onClick={executePortableRestore} disabled={restoring || restoreConfirmation !== restorePlan.targetRepository || online === false}>
+                      {restoring ? "正在原子恢复…" : "确认恢复到隔离仓库"}
+                    </button>
+                  </div>
+                ) : null}
+                {restoreCommitSha ? <p className="restore-success">恢复 Commit {restoreCommitSha.slice(0, 8)}。来源仓库未被修改。</p> : null}
+              </>
+            )}
+          </article>
         </div>
         <div className="portability-boundary">
           <strong>当前安全边界</strong>
-          <p>导出包含你的私人正文，请自行安全保存。本轮恢复只做预检；真正写回空仓库将在独立确认和冲突保护完成后开放。</p>
+          <p>导出包含你的私人正文，请自行安全保存。恢复禁止写回来源仓库、禁止覆盖已有业务数据，并在执行前后检查目标分支；任何并发变化都会中止。</p>
         </div>
       </section>
 

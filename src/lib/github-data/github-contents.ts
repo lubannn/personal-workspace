@@ -33,6 +33,19 @@ type GitHubWriteResponse = {
   commit: { sha: string };
 };
 
+type GitHubRefResponse = {
+  ref: string;
+  object: { sha: string; type: "commit" };
+};
+
+type GitHubCommitResponse = {
+  sha: string;
+  tree: { sha: string };
+};
+
+type GitHubBlobResponse = { sha: string };
+type GitHubTreeResponse = { sha: string };
+
 type GitHubDirectoryResponse = Array<{
   type: "file" | "dir" | "symlink" | "submodule";
   name: string;
@@ -61,6 +74,12 @@ export type GitHubRepositoryStatus = {
   private: boolean;
   visibility: string;
   defaultBranch: string;
+};
+
+export type GitHubBranchSnapshot = {
+  branch: string;
+  headCommitSha: string;
+  rootTreeSha: string;
 };
 
 function encodeRepositoryPath(value: string) {
@@ -110,6 +129,15 @@ export class GitHubContentsAdapter {
     if (!config.token.trim()) throw new Error("GITHUB_TOKEN_REQUIRED");
     const transport = fetcher ?? globalThis.fetch.bind(globalThis);
     this.fetcher = (input, init) => transport(input, init);
+  }
+
+  forRepository(owner: string, repository: string, branch = "main") {
+    return new GitHubContentsAdapter({
+      owner,
+      repository,
+      branch,
+      token: this.config.token,
+    }, this.fetcher);
   }
 
   private async throwTransportError(error: unknown): Promise<never> {
@@ -199,10 +227,11 @@ export class GitHubContentsAdapter {
   }
 
   async listDirectory(pathname: string): Promise<GitHubDirectoryItem[]> {
-    assertFilePath(pathname);
+    if (pathname) assertFilePath(pathname);
     const branch = this.config.branch ? `?ref=${encodeURIComponent(this.config.branch)}` : "";
+    const contentsPath = pathname ? `/contents/${encodeRepositoryPath(pathname)}` : "/contents";
     const result = await this.request<GitHubDirectoryResponse>(
-      `/repos/${encodeURIComponent(this.config.owner)}/${encodeURIComponent(this.config.repository)}/contents/${encodeRepositoryPath(pathname)}${branch}`,
+      `/repos/${encodeURIComponent(this.config.owner)}/${encodeURIComponent(this.config.repository)}${contentsPath}${branch}`,
     );
     if (!Array.isArray(result)) {
       throw new GitHubDataError("Expected a GitHub directory listing.", 500, "GITHUB_UNSUPPORTED_CONTENT");
@@ -239,5 +268,82 @@ export class GitHubContentsAdapter {
     );
     if (!result.content) throw new GitHubDataError("GitHub did not return the updated file.", 500, "GITHUB_INVALID_RESPONSE");
     return { path: result.content.path, blobSha: result.content.sha, commitSha: result.commit.sha };
+  }
+
+  async readBranchSnapshot(): Promise<GitHubBranchSnapshot> {
+    const branch = this.config.branch ?? "main";
+    const encodedOwner = encodeURIComponent(this.config.owner);
+    const encodedRepository = encodeURIComponent(this.config.repository);
+    const ref = await this.request<GitHubRefResponse>(
+      `/repos/${encodedOwner}/${encodedRepository}/git/ref/heads/${encodeURIComponent(branch)}`,
+    );
+    const commit = await this.request<GitHubCommitResponse>(
+      `/repos/${encodedOwner}/${encodedRepository}/git/commits/${encodeURIComponent(ref.object.sha)}`,
+    );
+    return { branch, headCommitSha: ref.object.sha, rootTreeSha: commit.tree.sha };
+  }
+
+  async writeAtomicFiles(input: {
+    files: Array<{ path: string; text: string }>;
+    message: string;
+    expectedHeadCommitSha: string;
+    baseTreeSha: string;
+  }) {
+    if (input.files.length === 0) throw new Error("ATOMIC_WRITE_FILES_REQUIRED");
+    if (!input.message || input.message.length > 120) throw new Error("INVALID_COMMIT_MESSAGE");
+    const seenPaths = new Set<string>();
+    for (const file of input.files) {
+      assertFilePath(file.path);
+      if (seenPaths.has(file.path)) throw new Error("DUPLICATE_GITHUB_PATH");
+      seenPaths.add(file.path);
+    }
+
+    const encodedOwner = encodeURIComponent(this.config.owner);
+    const encodedRepository = encodeURIComponent(this.config.repository);
+    const blobs = await Promise.all(input.files.map((file) => this.request<GitHubBlobResponse>(
+      `/repos/${encodedOwner}/${encodedRepository}/git/blobs`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: encodeBase64(file.text), encoding: "base64" }),
+      },
+    )));
+    const tree = await this.request<GitHubTreeResponse>(
+      `/repos/${encodedOwner}/${encodedRepository}/git/trees`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          base_tree: input.baseTreeSha,
+          tree: input.files.map((file, index) => ({
+            path: file.path,
+            mode: "100644",
+            type: "blob",
+            sha: blobs[index]!.sha,
+          })),
+        }),
+      },
+    );
+    const commit = await this.request<GitHubCommitResponse>(
+      `/repos/${encodedOwner}/${encodedRepository}/git/commits`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: input.message,
+          tree: tree.sha,
+          parents: [input.expectedHeadCommitSha],
+        }),
+      },
+    );
+    await this.request<GitHubRefResponse>(
+      `/repos/${encodedOwner}/${encodedRepository}/git/refs/heads/${encodeURIComponent(this.config.branch ?? "main")}`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sha: commit.sha, force: false }),
+      },
+    );
+    return { commitSha: commit.sha, treeSha: tree.sha };
   }
 }

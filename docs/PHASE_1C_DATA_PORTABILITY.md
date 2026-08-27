@@ -1,6 +1,6 @@
 # Phase 1C：数据可迁移与恢复基础
 
-> 状态：首个垂直切片已通过 Windows 与 iPad 正式环境验收；Capture 生命周期切片实现中  
+> 状态：导出预检与 Capture 生命周期两个垂直切片均已通过正式环境验收  
 > 开始日期：2026-08-27  
 > 范围：GitHub-backed canonical data
 
@@ -95,9 +95,25 @@ Capture 回收站采用同路径软删除，不移动或物理删除 Private 仓
 - 不提供永久删除入口，旧版本仍保留在 Git 历史中；
 - 开放导出包含 Inbox 与回收站中的全部 Capture，保证迁移不遗漏软删除记录。
 
-## 7. 后续切片
+正式环境验收于 2026-08-27 完成：一台设备创建并将测试 Capture 移入回收站，另一台设备刷新后读取并恢复，原设备再次刷新后可在 Inbox 读取恢复记录。整个流程未执行物理删除，也未依赖 Mac 保持开机。
 
-1. 只允许恢复到新建空仓库或隔离分支，并在写入前再次显示文件数量与目标仓库。
-2. 为所有文件写入使用 blob SHA / 空目标约束，禁止静默覆盖。
-3. 增加 workspace schema migration registry 和迁移 dry run。
-4. 扩展 manifest 到 Dashboard layout、Tasks、Projects、Journal、附件索引等后续模块。
+## 7. 隔离恢复切片
+
+真正恢复采用“已初始化、业务数据为空的独立 Private 仓库 + 单个原子 Git commit”模型：
+
+- 目标必须与导出来源仓库不同，且 owner 必须与 `workspace.json` 一致；
+- 目标必须保持 Private，并使用当前默认分支；
+- 目标可以保留 README、LICENSE、`.gitignore` 等非业务文件，但不得存在 `workspace.json`、`data/`、`journal/`、`attachments/`、`imports/` 或 `indexes/`；
+- 浏览器在写入前重新校验导出包、仓库可见性、目标根目录和分支 HEAD；
+- 所有导出文件先生成 Git blobs，再组成一个 tree 和一个 commit，最后以 `force: false` 更新目标分支；
+- 检查后或写入期间只要目标 HEAD 变化，GitHub 会拒绝非快进更新，不发生静默覆盖；
+- 用户必须再次输入完整目标仓库名才能启用执行按钮；
+- 来源仓库永远不会被恢复流程修改。
+
+本地实现已通过协议、原子提交、冲突映射、类型、Lint、生产构建及 390px 布局检查；正式发布和隔离仓库恢复演练尚待独立确认。
+
+## 8. 后续切片
+
+1. 完成隔离恢复仓库的正式演练并核对文件数量、哈希和 Capture 可读性。
+2. 增加 workspace schema migration registry 和迁移 dry run。
+3. 扩展 manifest 到 Dashboard layout、Tasks、Projects、Journal、附件索引等后续模块。
