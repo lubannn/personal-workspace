@@ -167,7 +167,7 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .task-row-actions { min-width: 116px; justify-items: end; }
 .task-item-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 3px 10px; }
 .task-row-actions .text-button { padding: 2px 0; font-size: 10px; }
-.task-row-actions .task-cancel-button { color: #7a4138; }
+.task-row-actions .task-destructive-button { color: #7a4138; }
 .task-edit-form { display: grid; grid-template-columns: minmax(180px, 1.4fr) repeat(3, minmax(96px, .6fr)); gap: 10px; padding: 14px; border: 1px solid var(--line); border-radius: 14px; background: rgba(255,255,255,.46); }
 .task-edit-form label { display: grid; gap: 6px; color: var(--muted); font-size: 9px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
 .task-edit-form input, .task-edit-form select { min-width: 0; width: 100%; height: 40px; border: 1px solid var(--line); border-radius: 9px; padding: 0 10px; background: white; color: var(--ink); outline: none; }

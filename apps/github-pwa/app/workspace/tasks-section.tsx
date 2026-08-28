@@ -18,12 +18,13 @@ type Props = {
   taskCategory: TaskCategory;
   taskPriority: TaskPriority;
   taskDueDate: string;
-  taskView: "open" | "done" | "cancelled" | "archived";
+  taskView: "open" | "done" | "cancelled" | "archived" | "trash";
   taskFiles: SyncedTask[];
   openTaskFiles: SyncedTask[];
   completedTaskFiles: SyncedTask[];
   cancelledTaskFiles: SyncedTask[];
   archivedTaskFiles: SyncedTask[];
+  trashedTaskFiles: SyncedTask[];
   visibleTaskFiles: SyncedTask[];
   currentTaskDate: string;
   loadingTasks: boolean;
@@ -33,21 +34,22 @@ type Props = {
   onTaskCategoryChange: (value: TaskCategory) => void;
   onTaskPriorityChange: (value: TaskPriority) => void;
   onTaskDueDateChange: (value: string) => void;
-  onTaskViewChange: (value: "open" | "done" | "cancelled" | "archived") => void;
+  onTaskViewChange: (value: "open" | "done" | "cancelled" | "archived" | "trash") => void;
   onCreateTask: (event: FormEvent<HTMLFormElement>) => void;
   onRefresh: () => void;
   onLifecycleChange: (item: SyncedTask, operation: "complete" | "reopen" | "cancel" | "archive") => void;
+  onDeletionChange: (item: SyncedTask, operation: "trash" | "restore") => void;
   onEditTask: (item: SyncedTask, details: TaskEditableFields) => Promise<boolean>;
 };
 
 export function TasksSection(props: Props) {
   const {
     connection, online, taskTitle, taskCategory, taskPriority, taskDueDate, taskView,
-    taskFiles, openTaskFiles, completedTaskFiles, cancelledTaskFiles, archivedTaskFiles,
+    taskFiles, openTaskFiles, completedTaskFiles, cancelledTaskFiles, archivedTaskFiles, trashedTaskFiles,
     visibleTaskFiles, currentTaskDate,
     loadingTasks, savingTask, savingTaskId, onTaskTitleChange, onTaskCategoryChange,
     onTaskPriorityChange, onTaskDueDateChange, onTaskViewChange, onCreateTask,
-    onRefresh, onLifecycleChange, onEditTask,
+    onRefresh, onLifecycleChange, onDeletionChange, onEditTask,
   } = props;
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState("");
@@ -88,6 +90,7 @@ export function TasksSection(props: Props) {
           <button className={`view-button ${taskView === "done" ? "active" : ""}`} type="button" aria-pressed={taskView === "done"} onClick={() => onTaskViewChange("done")} disabled={editingTaskId !== null || Boolean(savingTaskId)}>已完成 {completedTaskFiles.length}</button>
           <button className={`view-button ${taskView === "cancelled" ? "active" : ""}`} type="button" aria-pressed={taskView === "cancelled"} onClick={() => onTaskViewChange("cancelled")} disabled={editingTaskId !== null || Boolean(savingTaskId)}>已取消 {cancelledTaskFiles.length}</button>
           <button className={`view-button ${taskView === "archived" ? "active" : ""}`} type="button" aria-pressed={taskView === "archived"} onClick={() => onTaskViewChange("archived")} disabled={editingTaskId !== null || Boolean(savingTaskId)}>已归档 {archivedTaskFiles.length}</button>
+          <button className={`view-button ${taskView === "trash" ? "active" : ""}`} type="button" aria-pressed={taskView === "trash"} onClick={() => onTaskViewChange("trash")} disabled={editingTaskId !== null || Boolean(savingTaskId)}>回收站 {trashedTaskFiles.length}</button>
           <button className="secondary-button" type="button" onClick={onRefresh} disabled={!connection || loadingTasks || editingTaskId !== null || Boolean(savingTaskId)}>{loadingTasks ? "刷新中…" : "从 GitHub 刷新"}</button>
         </div>
       </div>
@@ -119,10 +122,11 @@ export function TasksSection(props: Props) {
             done: "还没有已完成任务。",
             cancelled: "还没有已取消任务。",
             archived: "还没有已归档任务。",
+            trash: "任务回收站是空的。",
           }[taskView]}</p>
             : <ul className="task-list">{visibleTaskFiles.map((item) => (
               <li key={item.record.id} className={taskView === "done" ? "completed" : taskView}>
-                <button className="task-toggle" type="button" aria-label={taskView === "open" ? `完成任务：${item.record.data.title}` : `恢复任务：${item.record.data.title}`} onClick={() => onLifecycleChange(item, taskView === "open" ? "complete" : "reopen")} disabled={editingTaskId !== null || Boolean(savingTaskId) || online === false}>
+                <button className="task-toggle" type="button" aria-label={taskView === "open" ? `完成任务：${item.record.data.title}` : taskView === "trash" ? `从回收站恢复任务：${item.record.data.title}` : `恢复任务：${item.record.data.title}`} onClick={() => taskView === "trash" ? onDeletionChange(item, "restore") : onLifecycleChange(item, taskView === "open" ? "complete" : "reopen")} disabled={editingTaskId !== null || Boolean(savingTaskId) || online === false}>
                   {savingTaskId === item.record.id ? "…" : taskView === "open" ? "○" : taskView === "done" ? "✓" : "↶"}
                 </button>
                 <div className="task-content">
@@ -157,9 +161,10 @@ export function TasksSection(props: Props) {
                 <div className="task-row-actions">
                   <code>v{item.record.version}</code>
                   {editingTaskId === item.record.id ? null : <div className="task-item-actions">
-                    {taskView === "archived" ? null : <button className="text-button" type="button" onClick={() => beginEdit(item)} disabled={editingTaskId !== null || Boolean(savingTaskId) || online === false}>编辑</button>}
-                    {taskView === "open" ? <button className="text-button task-cancel-button" type="button" onClick={() => onLifecycleChange(item, "cancel")} disabled={editingTaskId !== null || Boolean(savingTaskId) || online === false}>取消任务</button> : null}
-                    {taskView !== "archived" ? <button className="text-button" type="button" onClick={() => onLifecycleChange(item, "archive")} disabled={editingTaskId !== null || Boolean(savingTaskId) || online === false}>归档</button> : null}
+                    {taskView === "archived" || taskView === "trash" ? null : <button className="text-button" type="button" onClick={() => beginEdit(item)} disabled={editingTaskId !== null || Boolean(savingTaskId) || online === false}>编辑</button>}
+                    {taskView === "open" ? <button className="text-button task-destructive-button" type="button" onClick={() => onLifecycleChange(item, "cancel")} disabled={editingTaskId !== null || Boolean(savingTaskId) || online === false}>取消任务</button> : null}
+                    {taskView !== "archived" && taskView !== "trash" ? <button className="text-button" type="button" onClick={() => onLifecycleChange(item, "archive")} disabled={editingTaskId !== null || Boolean(savingTaskId) || online === false}>归档</button> : null}
+                    {taskView !== "trash" ? <button className="text-button task-destructive-button" type="button" onClick={() => onDeletionChange(item, "trash")} disabled={editingTaskId !== null || Boolean(savingTaskId) || online === false}>移到回收站</button> : null}
                   </div>}
                 </div>
               </li>

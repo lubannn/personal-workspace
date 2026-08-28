@@ -45,6 +45,7 @@ import {
   openTasks,
   setTaskStatus,
   tasksForToday,
+  trashedTasks,
   updateTaskDetails,
   type TaskCategory,
   type TaskData,
@@ -102,7 +103,7 @@ export default function GitHubWorkspacePage() {
   const [taskCategory, setTaskCategory] = useState<TaskCategory>("work");
   const [taskPriority, setTaskPriority] = useState<TaskPriority>("medium");
   const [taskDueDate, setTaskDueDate] = useState(() => localDateInTimezone("Asia/Shanghai"));
-  const [taskView, setTaskView] = useState<"open" | "done" | "cancelled" | "archived">("open");
+  const [taskView, setTaskView] = useState<"open" | "done" | "cancelled" | "archived" | "trash">("open");
   const [savingTask, setSavingTask] = useState(false);
   const [savingTaskId, setSavingTaskId] = useState<string | null>(null);
   const [dashboardDirty, setDashboardDirty] = useState(false);
@@ -203,6 +204,12 @@ export default function GitHubWorkspacePage() {
       .map((record) => byId.get(record.id))
       .filter((item): item is SyncedTask => Boolean(item));
   }, [taskFiles]);
+  const trashedTaskFiles = useMemo(() => {
+    const byId = new Map(taskFiles.map((item) => [item.record.id, item]));
+    return trashedTasks(taskFiles.map((item) => item.record))
+      .map((record) => byId.get(record.id))
+      .filter((item): item is SyncedTask => Boolean(item));
+  }, [taskFiles]);
   const todayTaskFiles = useMemo(() => {
     const byId = new Map(taskFiles.map((item) => [item.record.id, item]));
     return tasksForToday(taskFiles.map((item) => item.record), currentTaskDate)
@@ -214,6 +221,7 @@ export default function GitHubWorkspacePage() {
     done: completedTaskFiles,
     cancelled: cancelledTaskFiles,
     archived: archivedTaskFiles,
+    trash: trashedTaskFiles,
   }[taskView];
   const displayedDashboardLayout = useMemo(
     () => dashboardLayout ?? createDefaultDashboardLayout("preview", "1970-01-01T00:00:00.000Z"),
@@ -564,6 +572,38 @@ export default function GitHubWorkspacePage() {
     } catch (error) {
       setErrorMessage(friendlyError(error));
       return false;
+    } finally {
+      setSavingTaskId(null);
+    }
+  }
+
+  async function updateTaskDeletion(item: SyncedTask, operation: "trash" | "restore") {
+    const adapter = adapterRef.current;
+    if (!adapter || !connection || savingTaskId || online === false) return;
+    setSavingTaskId(item.record.id);
+    setErrorMessage("");
+    setStatusMessage("");
+    const timestamp = new Date().toISOString();
+    const updated = setWorkspaceRecordDeleted(
+      item.record,
+      operation === "trash" ? timestamp : null,
+      timestamp,
+    );
+    try {
+      const result = await adapter.writeText({
+        path: item.path,
+        text: serializeRecord(updated),
+        message: `task: ${operation} ${item.record.id}`,
+        expectedBlobSha: item.blobSha,
+      });
+      setTaskFiles((current) => current.map((candidate) => candidate.record.id === item.record.id
+        ? { record: updated, path: result.path, blobSha: result.blobSha }
+        : candidate));
+      setStatusMessage(operation === "trash"
+        ? "任务已移到回收站；原状态和 Git 历史均保留，可随时恢复。"
+        : "任务已从回收站恢复到原状态；请在其他设备刷新后查看最新版本。");
+    } catch (error) {
+      setErrorMessage(friendlyError(error));
     } finally {
       setSavingTaskId(null);
     }
@@ -925,6 +965,7 @@ export default function GitHubWorkspacePage() {
         completedTaskFiles={completedTaskFiles}
         cancelledTaskFiles={cancelledTaskFiles}
         archivedTaskFiles={archivedTaskFiles}
+        trashedTaskFiles={trashedTaskFiles}
         visibleTaskFiles={visibleTaskFiles}
         currentTaskDate={currentTaskDate}
         loadingTasks={loadingTasks}
@@ -938,6 +979,7 @@ export default function GitHubWorkspacePage() {
         onCreateTask={saveTask}
         onRefresh={() => loadTasks()}
         onLifecycleChange={updateTaskLifecycle}
+        onDeletionChange={updateTaskDeletion}
         onEditTask={saveTaskEdit}
       />
 
