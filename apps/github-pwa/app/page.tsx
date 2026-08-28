@@ -42,6 +42,7 @@ import {
   archivedTasks,
   cancelledTasks,
   completedTasks,
+  createSubtaskData,
   openTasks,
   setTaskStatus,
   tasksForToday,
@@ -550,6 +551,41 @@ export default function GitHubWorkspacePage() {
     }
   }
 
+  async function saveSubtask(parent: SyncedTask, rawTitle: string) {
+    const adapter = adapterRef.current;
+    if (!adapter || !connection || savingTaskId || online === false) return false;
+    setSavingTaskId(parent.record.id);
+    setErrorMessage("");
+    setStatusMessage("");
+    const timestamp = new Date().toISOString();
+    const timePart = timestamp.replaceAll(/\D/g, "").slice(0, 17);
+    const id = `task_${timePart}_${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`;
+    try {
+      const data = createSubtaskData(parent.record, rawTitle);
+      const record = createWorkspaceRecord({
+        entityType: "task",
+        id,
+        ownerId: connection.ownerId,
+        timestamp,
+        data,
+      });
+      const result = await adapter.writeText({
+        path: recordPath("task", id),
+        text: serializeRecord(record),
+        message: `task: create subtask ${id}`,
+      });
+      setTaskFiles((current) => [{ record, path: result.path, blobSha: result.blobSha }, ...current]);
+      setTaskView("open");
+      setStatusMessage("子任务已保存；它继承父任务的分类、项目、优先级和 DDL，可继续单独编辑。");
+      return true;
+    } catch (error) {
+      setErrorMessage(friendlyError(error));
+      return false;
+    } finally {
+      setSavingTaskId(null);
+    }
+  }
+
   async function saveTaskEdit(item: SyncedTask, details: TaskEditableFields) {
     const adapter = adapterRef.current;
     if (!adapter || !connection || savingTaskId || online === false) return false;
@@ -981,6 +1017,7 @@ export default function GitHubWorkspacePage() {
         onLifecycleChange={updateTaskLifecycle}
         onDeletionChange={updateTaskDeletion}
         onEditTask={saveTaskEdit}
+        onCreateSubtask={saveSubtask}
       />
 
 

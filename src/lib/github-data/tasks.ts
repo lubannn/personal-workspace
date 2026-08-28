@@ -88,6 +88,7 @@ export function parseTaskRecord(value: string): TaskRecord {
     || !TASK_CATEGORIES.includes(data.category as TaskCategory)
     || !isNullableString(data.project_id)
     || !isNullableString(data.parent_task_id)
+    || data.parent_task_id === record.id
     || !TASK_STATUSES.includes(data.status as TaskStatus)
     || !TASK_PRIORITIES.includes(data.priority as TaskPriority)
     || !isNullableString(data.planned_start_at)
@@ -167,38 +168,74 @@ export function updateTaskDetails(
   }, timestamp);
 }
 
+export function createSubtaskData(parent: TaskRecord, rawTitle: string): TaskData {
+  const title = rawTitle.trim();
+  if (
+    !title
+    || title.length > 300
+    || parent.deleted_at !== null
+    || parent.data.parent_task_id !== null
+    || !OPEN_TASK_STATUSES.has(parent.data.status)
+  ) throw new Error("INVALID_SUBTASK_PARENT");
+
+  return {
+    title,
+    category: parent.data.category,
+    project_id: parent.data.project_id,
+    parent_task_id: parent.id,
+    status: "todo",
+    priority: parent.data.priority,
+    planned_start_at: null,
+    planned_end_at: null,
+    due_at: parent.data.due_at,
+    due_timezone: parent.data.due_timezone,
+    is_due_date_only: parent.data.is_due_date_only,
+    estimated_duration_minutes: null,
+    actual_duration_minutes: null,
+    tags: [],
+    notes_markdown: "",
+    completed_at: null,
+    cancelled_at: null,
+  };
+}
+
 function isEditableDuration(value: number | null) {
   return isNullableDuration(value) && (value === null || value <= MAX_TASK_DURATION_MINUTES);
 }
 
 export function openTasks(records: TaskRecord[]) {
-  return [...records]
-    .filter((record) => record.deleted_at === null && OPEN_TASK_STATUSES.has(record.data.status))
-    .sort(compareTasks);
+  return sortTasksWithParents(
+    records.filter((record) => record.deleted_at === null && OPEN_TASK_STATUSES.has(record.data.status)),
+    compareTasks,
+  );
 }
 
 export function completedTasks(records: TaskRecord[]) {
-  return [...records]
-    .filter((record) => record.deleted_at === null && record.data.status === "done")
-    .sort((left, right) => String(right.data.completed_at).localeCompare(String(left.data.completed_at)));
+  return sortTasksWithParents(
+    records.filter((record) => record.deleted_at === null && record.data.status === "done"),
+    (left, right) => String(right.data.completed_at).localeCompare(String(left.data.completed_at)),
+  );
 }
 
 export function cancelledTasks(records: TaskRecord[]) {
-  return [...records]
-    .filter((record) => record.deleted_at === null && record.data.status === "cancelled")
-    .sort((left, right) => String(right.data.cancelled_at).localeCompare(String(left.data.cancelled_at)));
+  return sortTasksWithParents(
+    records.filter((record) => record.deleted_at === null && record.data.status === "cancelled"),
+    (left, right) => String(right.data.cancelled_at).localeCompare(String(left.data.cancelled_at)),
+  );
 }
 
 export function archivedTasks(records: TaskRecord[]) {
-  return [...records]
-    .filter((record) => record.deleted_at === null && record.data.status === "archived")
-    .sort((left, right) => right.updated_at.localeCompare(left.updated_at));
+  return sortTasksWithParents(
+    records.filter((record) => record.deleted_at === null && record.data.status === "archived"),
+    (left, right) => right.updated_at.localeCompare(left.updated_at),
+  );
 }
 
 export function trashedTasks(records: TaskRecord[]) {
-  return [...records]
-    .filter((record) => record.deleted_at !== null)
-    .sort((left, right) => String(right.deleted_at).localeCompare(String(left.deleted_at)));
+  return sortTasksWithParents(
+    records.filter((record) => record.deleted_at !== null),
+    (left, right) => String(right.deleted_at).localeCompare(String(left.deleted_at)),
+  );
 }
 
 export function tasksForToday(records: TaskRecord[], localDate: string) {
@@ -215,4 +252,34 @@ function compareTasks(left: TaskRecord, right: TaskRecord) {
   return leftDue.localeCompare(rightDue)
     || PRIORITY_WEIGHT[right.data.priority] - PRIORITY_WEIGHT[left.data.priority]
     || right.created_at.localeCompare(left.created_at);
+}
+
+function sortTasksWithParents(
+  records: TaskRecord[],
+  compare: (left: TaskRecord, right: TaskRecord) => number,
+) {
+  const byId = new Map(records.map((record) => [record.id, record]));
+  const childrenByParent = new Map<string, TaskRecord[]>();
+  const roots: TaskRecord[] = [];
+  for (const record of records) {
+    const parentId = record.data.parent_task_id;
+    if (parentId && byId.has(parentId)) {
+      childrenByParent.set(parentId, [...(childrenByParent.get(parentId) ?? []), record]);
+    } else {
+      roots.push(record);
+    }
+  }
+
+  const ordered: TaskRecord[] = [];
+  const emitted = new Set<string>();
+  for (const root of roots.sort(compare)) {
+    ordered.push(root);
+    emitted.add(root.id);
+    for (const child of (childrenByParent.get(root.id) ?? []).sort(compare)) {
+      ordered.push(child);
+      emitted.add(child.id);
+    }
+  }
+  ordered.push(...records.filter((record) => !emitted.has(record.id)).sort(compare));
+  return ordered;
 }

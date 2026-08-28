@@ -165,6 +165,8 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .task-list li.completed strong { color: var(--muted); text-decoration: line-through; text-decoration-thickness: 1px; }
 .task-list li.cancelled strong { color: var(--muted); text-decoration: line-through; text-decoration-style: dashed; text-decoration-thickness: 1px; }
 .task-list li.archived strong { color: var(--muted); }
+.task-list li.subtask { padding-left: 24px; }
+.task-list .task-parent-label { color: var(--accent); font-weight: 700; }
 .task-row-actions { min-width: 116px; justify-items: end; }
 .task-item-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 3px 10px; }
 .task-row-actions .text-button { padding: 2px 0; font-size: 10px; }
@@ -178,6 +180,12 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .task-edit-tags { grid-column: span 2; }
 .task-edit-notes { grid-column: 1 / -1; }
 .task-edit-actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; }
+.task-subtask-form { display: grid; grid-template-columns: minmax(180px, 1fr) auto; align-items: end; gap: 9px; margin-top: 8px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: rgba(255,255,255,.42); }
+.task-subtask-form label { display: grid; gap: 6px; color: var(--muted); font-size: 9px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.task-subtask-form input { min-width: 0; width: 100%; height: 40px; border: 1px solid var(--line); border-radius: 9px; padding: 0 10px; background: white; color: var(--ink); outline: none; }
+.task-subtask-form > div { display: flex; flex-wrap: wrap; gap: 8px; }
+.task-subtask-form .primary-button, .task-subtask-form .secondary-button { min-height: 40px; }
+.task-subtask-form small { grid-column: 1 / -1; color: var(--muted); font-size: 8px; line-height: 1.55; }
 .portability-card { margin-bottom: 72px; padding: clamp(24px, 4vw, 40px); }
 .portability-card .card-heading h2 { font-size: 25px; }
 .portability-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 30px; }
@@ -265,4 +273,7 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
   .task-list li { grid-template-columns: auto minmax(0, 1fr); align-items: start; }
   .task-row-actions { grid-column: 2; min-width: 0; justify-items: start; }
   .task-item-actions { justify-content: flex-start; }
+  .task-list li.subtask { padding-left: 12px; }
+  .task-subtask-form { grid-template-columns: 1fr; }
+  .task-subtask-form > div, .task-subtask-form small { grid-column: 1; }
 }
