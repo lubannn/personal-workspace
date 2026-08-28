@@ -43,8 +43,10 @@ import {
   openTasks,
   setTaskStatus,
   tasksForToday,
+  updateTaskDetails,
   type TaskCategory,
   type TaskData,
+  type TaskEditableFields,
   type TaskPriority,
 } from "../../../src/lib/github-data/tasks";
 import {
@@ -509,6 +511,33 @@ export default function GitHubWorkspacePage() {
     }
   }
 
+  async function saveTaskEdit(item: SyncedTask, details: TaskEditableFields) {
+    const adapter = adapterRef.current;
+    if (!adapter || !connection || savingTaskId || online === false) return false;
+    setSavingTaskId(item.record.id);
+    setErrorMessage("");
+    setStatusMessage("");
+    try {
+      const updated = updateTaskDetails(item.record, details);
+      const result = await adapter.writeText({
+        path: item.path,
+        text: serializeRecord(updated),
+        message: `task: edit ${item.record.id}`,
+        expectedBlobSha: item.blobSha,
+      });
+      setTaskFiles((current) => current.map((candidate) => candidate.record.id === item.record.id
+        ? { record: updated, path: result.path, blobSha: result.blobSha }
+        : candidate));
+      setStatusMessage("任务修改已保存；Git 历史和跨设备冲突保护保持启用。");
+      return true;
+    } catch (error) {
+      setErrorMessage(friendlyError(error));
+      return false;
+    } finally {
+      setSavingTaskId(null);
+    }
+  }
+
   async function listCaptureFiles(adapter: GitHubContentsAdapter) {
     try {
       return (await adapter.listDirectory("data/captures"))
@@ -876,6 +905,7 @@ export default function GitHubWorkspacePage() {
         onCreateTask={saveTask}
         onRefresh={() => loadTasks()}
         onCompletionChange={updateTaskCompletion}
+        onEditTask={saveTaskEdit}
       />
 
 

@@ -1,8 +1,8 @@
 "use client";
 
-import type { FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 
-import type { TaskCategory, TaskPriority } from "../../../../src/lib/github-data/tasks";
+import type { TaskCategory, TaskEditableFields, TaskPriority } from "../../../../src/lib/github-data/tasks";
 import {
   TASK_CATEGORY_LABELS,
   TASK_PRIORITY_LABELS,
@@ -35,6 +35,7 @@ type Props = {
   onCreateTask: (event: FormEvent<HTMLFormElement>) => void;
   onRefresh: () => void;
   onCompletionChange: (item: SyncedTask, operation: "complete" | "reopen") => void;
+  onEditTask: (item: SyncedTask, details: TaskEditableFields) => Promise<boolean>;
 };
 
 export function TasksSection(props: Props) {
@@ -43,8 +44,33 @@ export function TasksSection(props: Props) {
     taskFiles, openTaskFiles, completedTaskFiles, visibleTaskFiles, currentTaskDate,
     loadingTasks, savingTask, savingTaskId, onTaskTitleChange, onTaskCategoryChange,
     onTaskPriorityChange, onTaskDueDateChange, onTaskViewChange, onCreateTask,
-    onRefresh, onCompletionChange,
+    onRefresh, onCompletionChange, onEditTask,
   } = props;
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editCategory, setEditCategory] = useState<TaskCategory>("work");
+  const [editPriority, setEditPriority] = useState<TaskPriority>("medium");
+  const [editDueDate, setEditDueDate] = useState("");
+
+  function beginEdit(item: SyncedTask) {
+    setEditingTaskId(item.record.id);
+    setEditTitle(item.record.data.title);
+    setEditCategory(item.record.data.category);
+    setEditPriority(item.record.data.priority);
+    setEditDueDate(item.record.data.due_at?.slice(0, 10) ?? "");
+  }
+
+  async function submitEdit(event: FormEvent<HTMLFormElement>, item: SyncedTask) {
+    event.preventDefault();
+    if (!editTitle.trim() || savingTaskId || online === false) return;
+    const saved = await onEditTask(item, {
+      title: editTitle,
+      category: editCategory,
+      priority: editPriority,
+      due_at: editDueDate || null,
+    });
+    if (saved) setEditingTaskId(null);
+  }
 
   return (
     <section className="tasks-card" aria-labelledby="tasks-title">
@@ -55,9 +81,9 @@ export function TasksSection(props: Props) {
           <p className="tasks-subtitle">创建、今日聚合、完成与恢复均直接同步到 Private GitHub。</p>
         </div>
         <div className="task-view-actions" aria-label="任务视图与同步">
-          <button className={`view-button ${taskView === "open" ? "active" : ""}`} type="button" aria-pressed={taskView === "open"} onClick={() => onTaskViewChange("open")}>待办 {openTaskFiles.length}</button>
-          <button className={`view-button ${taskView === "done" ? "active" : ""}`} type="button" aria-pressed={taskView === "done"} onClick={() => onTaskViewChange("done")}>已完成 {completedTaskFiles.length}</button>
-          <button className="secondary-button" type="button" onClick={onRefresh} disabled={!connection || loadingTasks}>{loadingTasks ? "刷新中…" : "从 GitHub 刷新"}</button>
+          <button className={`view-button ${taskView === "open" ? "active" : ""}`} type="button" aria-pressed={taskView === "open"} onClick={() => onTaskViewChange("open")} disabled={editingTaskId !== null || Boolean(savingTaskId)}>待办 {openTaskFiles.length}</button>
+          <button className={`view-button ${taskView === "done" ? "active" : ""}`} type="button" aria-pressed={taskView === "done"} onClick={() => onTaskViewChange("done")} disabled={editingTaskId !== null || Boolean(savingTaskId)}>已完成 {completedTaskFiles.length}</button>
+          <button className="secondary-button" type="button" onClick={onRefresh} disabled={!connection || loadingTasks || editingTaskId !== null || Boolean(savingTaskId)}>{loadingTasks ? "刷新中…" : "从 GitHub 刷新"}</button>
         </div>
       </div>
 
@@ -86,14 +112,42 @@ export function TasksSection(props: Props) {
           : visibleTaskFiles.length === 0 ? <p className="empty-note">{taskView === "open" ? "还没有待办任务，可以创建第一项。" : "还没有已完成任务。"}</p>
             : <ul className="task-list">{visibleTaskFiles.map((item) => (
               <li key={item.record.id} className={taskView === "done" ? "completed" : ""}>
-                <button className="task-toggle" type="button" aria-label={taskView === "done" ? `恢复任务：${item.record.data.title}` : `完成任务：${item.record.data.title}`} onClick={() => onCompletionChange(item, taskView === "done" ? "reopen" : "complete")} disabled={Boolean(savingTaskId) || online === false}>
+                <button className="task-toggle" type="button" aria-label={taskView === "done" ? `恢复任务：${item.record.data.title}` : `完成任务：${item.record.data.title}`} onClick={() => onCompletionChange(item, taskView === "done" ? "reopen" : "complete")} disabled={editingTaskId !== null || Boolean(savingTaskId) || online === false}>
                   {savingTaskId === item.record.id ? "…" : taskView === "done" ? "✓" : "○"}
                 </button>
-                <div>
-                  <strong>{item.record.data.title}</strong>
-                  <span>{TASK_CATEGORY_LABELS[item.record.data.category]} · {TASK_PRIORITY_LABELS[item.record.data.priority]}优先级 · {formatTaskDue(item.record.data.due_at, currentTaskDate)}</span>
+                <div className="task-content">
+                  {editingTaskId === item.record.id ? (
+                    <form className="task-edit-form" onSubmit={(event) => submitEdit(event, item)}>
+                      <label className="task-edit-title">任务标题
+                        <input value={editTitle} onChange={(event) => setEditTitle(event.target.value)} maxLength={300} autoFocus disabled={savingTaskId === item.record.id} />
+                      </label>
+                      <label>分类
+                        <select value={editCategory} onChange={(event) => setEditCategory(event.target.value as TaskCategory)} disabled={savingTaskId === item.record.id}>
+                          {Object.entries(TASK_CATEGORY_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                        </select>
+                      </label>
+                      <label>优先级
+                        <select value={editPriority} onChange={(event) => setEditPriority(event.target.value as TaskPriority)} disabled={savingTaskId === item.record.id}>
+                          {Object.entries(TASK_PRIORITY_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                        </select>
+                      </label>
+                      <label>DDL
+                        <input type="date" value={editDueDate} onChange={(event) => setEditDueDate(event.target.value)} disabled={savingTaskId === item.record.id} />
+                      </label>
+                      <div className="task-edit-actions">
+                        <button className="primary-button" type="submit" disabled={!editTitle.trim() || Boolean(savingTaskId) || online === false}>{savingTaskId === item.record.id ? "保存中…" : "保存修改"}</button>
+                        <button className="secondary-button" type="button" onClick={() => setEditingTaskId(null)} disabled={savingTaskId === item.record.id}>取消</button>
+                      </div>
+                    </form>
+                  ) : <>
+                    <strong>{item.record.data.title}</strong>
+                    <span>{TASK_CATEGORY_LABELS[item.record.data.category]} · {TASK_PRIORITY_LABELS[item.record.data.priority]}优先级 · {formatTaskDue(item.record.data.due_at, currentTaskDate)}</span>
+                  </>}
                 </div>
-                <code>v{item.record.version}</code>
+                <div className="task-row-actions">
+                  <code>v{item.record.version}</code>
+                  {editingTaskId === item.record.id ? null : <button className="text-button" type="button" onClick={() => beginEdit(item)} disabled={editingTaskId !== null || Boolean(savingTaskId) || online === false}>编辑</button>}
+                </div>
               </li>
             ))}</ul>}
     </section>
