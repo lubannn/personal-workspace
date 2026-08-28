@@ -7,6 +7,7 @@ import {
   parseTaskRecord,
   setTaskStatus,
   tasksForToday,
+  updateTaskDetails,
   type TaskData,
 } from "./tasks";
 
@@ -53,6 +54,45 @@ describe("GitHub task records", () => {
     expect(done).toMatchObject({ version: 2, data: { status: "done", completed_at: "2026-08-28T02:00:00.000Z" } });
     const reopened = setTaskStatus(done, "todo", "2026-08-28T03:00:00.000Z");
     expect(reopened).toMatchObject({ version: 3, data: { status: "todo", completed_at: null } });
+  });
+
+  it("edits user-facing task details without changing lifecycle or future fields", () => {
+    const done = setTaskStatus(task("task_edit"), "done", "2026-08-28T02:00:00.000Z");
+    const edited = updateTaskDetails(done, {
+      title: "  提交最终周报  ",
+      category: "life",
+      priority: "urgent",
+      due_at: "2026-08-30",
+    }, "2026-08-28T03:00:00.000Z");
+
+    expect(edited).toMatchObject({
+      version: 3,
+      updated_at: "2026-08-28T03:00:00.000Z",
+      data: {
+        title: "提交最终周报",
+        category: "life",
+        priority: "urgent",
+        due_at: "2026-08-30",
+        status: "done",
+        completed_at: "2026-08-28T02:00:00.000Z",
+        estimated_duration_minutes: 30,
+      },
+    });
+  });
+
+  it("rejects invalid task edits", () => {
+    expect(() => updateTaskDetails(task("task_invalid_edit"), {
+      title: "   ",
+      category: "work",
+      priority: "medium",
+      due_at: null,
+    })).toThrow("INVALID_TASK_DETAILS");
+    expect(() => updateTaskDetails(task("task_invalid_due"), {
+      title: "合法标题",
+      category: "work",
+      priority: "medium",
+      due_at: "2026-02-31",
+    })).toThrow("INVALID_TASK_DETAILS");
   });
 
   it("orders overdue and higher-priority open tasks for Today", () => {
