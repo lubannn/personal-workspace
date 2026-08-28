@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import { createWorkspaceRecord, serializeRecord } from "./protocol";
 import {
+  archivedTasks,
+  cancelledTasks,
   completedTasks,
   openTasks,
   parseTaskRecord,
@@ -56,6 +58,20 @@ describe("GitHub task records", () => {
     expect(reopened).toMatchObject({ version: 3, data: { status: "todo", completed_at: null } });
   });
 
+  it("sets cancellation facts and clears them when the task is restored or archived", () => {
+    const cancelled = setTaskStatus(task("task_cancelled"), "cancelled", "2026-08-28T02:00:00.000Z");
+    expect(cancelled).toMatchObject({
+      version: 2,
+      data: { status: "cancelled", completed_at: null, cancelled_at: "2026-08-28T02:00:00.000Z" },
+    });
+
+    const restored = setTaskStatus(cancelled, "todo", "2026-08-28T03:00:00.000Z");
+    expect(restored).toMatchObject({ version: 3, data: { status: "todo", cancelled_at: null } });
+
+    const archived = setTaskStatus(cancelled, "archived", "2026-08-28T04:00:00.000Z");
+    expect(archived).toMatchObject({ version: 3, data: { status: "archived", completed_at: null, cancelled_at: null } });
+  });
+
   it("edits user-facing task details without changing lifecycle or future fields", () => {
     const done = setTaskStatus(task("task_edit"), "done", "2026-08-28T02:00:00.000Z");
     const edited = updateTaskDetails(done, {
@@ -105,10 +121,15 @@ describe("GitHub task records", () => {
     ]);
   });
 
-  it("separates open and completed task views", () => {
+  it("separates open, completed, cancelled, and archived task views", () => {
     const done = setTaskStatus(task("task_done"), "done", "2026-08-28T02:00:00.000Z");
-    expect(openTasks([task("task_open"), done]).map((record) => record.id)).toEqual(["task_open"]);
-    expect(completedTasks([task("task_open"), done]).map((record) => record.id)).toEqual(["task_done"]);
+    const cancelled = setTaskStatus(task("task_cancelled"), "cancelled", "2026-08-28T03:00:00.000Z");
+    const archived = setTaskStatus(task("task_archived"), "archived", "2026-08-28T04:00:00.000Z");
+    const records = [task("task_open"), done, cancelled, archived];
+    expect(openTasks(records).map((record) => record.id)).toEqual(["task_open"]);
+    expect(completedTasks(records).map((record) => record.id)).toEqual(["task_done"]);
+    expect(cancelledTasks(records).map((record) => record.id)).toEqual(["task_cancelled"]);
+    expect(archivedTasks(records).map((record) => record.id)).toEqual(["task_archived"]);
   });
 
   it("rejects inconsistent completion data", () => {
