@@ -80,6 +80,10 @@ describe("GitHub task records", () => {
       category: "life",
       priority: "urgent",
       due_at: "2026-08-30",
+      estimated_duration_minutes: 45,
+      actual_duration_minutes: 50,
+      tags: ["report", " weekly ", "report", ""],
+      notes_markdown: "## 验收\n\n- 已复核",
     }, "2026-08-28T03:00:00.000Z");
 
     expect(edited).toMatchObject({
@@ -92,7 +96,10 @@ describe("GitHub task records", () => {
         due_at: "2026-08-30",
         status: "done",
         completed_at: "2026-08-28T02:00:00.000Z",
-        estimated_duration_minutes: 30,
+        estimated_duration_minutes: 45,
+        actual_duration_minutes: 50,
+        tags: ["report", "weekly"],
+        notes_markdown: "## 验收\n\n- 已复核",
       },
     });
   });
@@ -103,12 +110,40 @@ describe("GitHub task records", () => {
       category: "work",
       priority: "medium",
       due_at: null,
+      estimated_duration_minutes: null,
+      actual_duration_minutes: null,
+      tags: [],
+      notes_markdown: "",
     })).toThrow("INVALID_TASK_DETAILS");
     expect(() => updateTaskDetails(task("task_invalid_due"), {
       title: "合法标题",
       category: "work",
       priority: "medium",
       due_at: "2026-02-31",
+      estimated_duration_minutes: null,
+      actual_duration_minutes: null,
+      tags: [],
+      notes_markdown: "",
+    })).toThrow("INVALID_TASK_DETAILS");
+    expect(() => updateTaskDetails(task("task_invalid_duration"), {
+      title: "合法标题",
+      category: "work",
+      priority: "medium",
+      due_at: null,
+      estimated_duration_minutes: -1,
+      actual_duration_minutes: null,
+      tags: [],
+      notes_markdown: "",
+    })).toThrow("INVALID_TASK_DETAILS");
+    expect(() => updateTaskDetails(task("task_too_many_tags"), {
+      title: "合法标题",
+      category: "work",
+      priority: "medium",
+      due_at: null,
+      estimated_duration_minutes: null,
+      actual_duration_minutes: null,
+      tags: Array.from({ length: 21 }, (_, index) => `tag-${index}`),
+      notes_markdown: "",
     })).toThrow("INVALID_TASK_DETAILS");
   });
 
