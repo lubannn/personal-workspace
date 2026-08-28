@@ -160,6 +160,7 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .task-list li > div { min-width: 0; display: grid; gap: 5px; }
 .task-list strong { overflow-wrap: anywhere; font: 500 15px/1.45 ui-serif, Georgia, "Songti SC", serif; }
 .task-list span { color: var(--muted); font-size: 9px; }
+.task-list .task-detail-summary { color: var(--soft); line-height: 1.55; overflow-wrap: anywhere; }
 .task-list code { color: var(--muted); font-size: 9px; }
 .task-list li.completed strong { color: var(--muted); text-decoration: line-through; text-decoration-thickness: 1px; }
 .task-list li.cancelled strong { color: var(--muted); text-decoration: line-through; text-decoration-style: dashed; text-decoration-thickness: 1px; }
@@ -171,7 +172,11 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .task-edit-form { display: grid; grid-template-columns: minmax(180px, 1.4fr) repeat(3, minmax(96px, .6fr)); gap: 10px; padding: 14px; border: 1px solid var(--line); border-radius: 14px; background: rgba(255,255,255,.46); }
 .task-edit-form label { display: grid; gap: 6px; color: var(--muted); font-size: 9px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
 .task-edit-form input, .task-edit-form select { min-width: 0; width: 100%; height: 40px; border: 1px solid var(--line); border-radius: 9px; padding: 0 10px; background: white; color: var(--ink); outline: none; }
-.task-edit-form input:focus, .task-edit-form select:focus { border-color: var(--accent); }
+.task-edit-form textarea { min-width: 0; width: 100%; min-height: 116px; resize: vertical; border: 1px solid var(--line); border-radius: 9px; padding: 10px; background: white; color: var(--ink); outline: none; font: inherit; line-height: 1.55; }
+.task-edit-form input:focus, .task-edit-form select:focus, .task-edit-form textarea:focus { border-color: var(--accent); }
+.task-edit-form input:disabled, .task-edit-form select:disabled, .task-edit-form textarea:disabled { opacity: .52; cursor: default; }
+.task-edit-tags { grid-column: span 2; }
+.task-edit-notes { grid-column: 1 / -1; }
 .task-edit-actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; }
 .portability-card { margin-bottom: 72px; padding: clamp(24px, 4vw, 40px); }
 .portability-card .card-heading h2 { font-size: 25px; }
@@ -256,6 +261,7 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
   .task-create-form .task-title-field { grid-column: 1; }
   .task-edit-form { grid-template-columns: 1fr; }
   .task-edit-form .task-edit-title { grid-column: 1; }
+  .task-edit-form .task-edit-tags, .task-edit-form .task-edit-notes { grid-column: 1; }
   .task-list li { grid-template-columns: auto minmax(0, 1fr); align-items: start; }
   .task-row-actions { grid-column: 2; min-width: 0; justify-items: start; }
   .task-item-actions { justify-content: flex-start; }

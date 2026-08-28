@@ -33,7 +33,22 @@ export type TaskData = {
 };
 
 export type TaskRecord = WorkspaceRecord<TaskData>;
-export type TaskEditableFields = Pick<TaskData, "title" | "category" | "priority" | "due_at">;
+export type TaskEditableFields = Pick<
+  TaskData,
+  | "title"
+  | "category"
+  | "priority"
+  | "due_at"
+  | "estimated_duration_minutes"
+  | "actual_duration_minutes"
+  | "tags"
+  | "notes_markdown"
+>;
+
+const MAX_TASK_TAGS = 20;
+const MAX_TASK_TAG_LENGTH = 50;
+const MAX_TASK_NOTES_LENGTH = 50_000;
+const MAX_TASK_DURATION_MINUTES = 525_600;
 
 const OPEN_TASK_STATUSES = new Set<TaskStatus>(["inbox", "todo", "in_progress", "blocked"]);
 const PRIORITY_WEIGHT: Record<TaskPriority, number> = {
@@ -122,12 +137,19 @@ export function updateTaskDetails(
   timestamp = new Date().toISOString(),
 ): TaskRecord {
   const title = details.title.trim();
+  const tags = [...new Set(details.tags.map((tag) => tag.trim()).filter(Boolean))];
   if (
     !title
     || title.length > 300
     || !TASK_CATEGORIES.includes(details.category)
     || !TASK_PRIORITIES.includes(details.priority)
     || (details.due_at !== null && !isValidDateOnly(details.due_at))
+    || tags.length > MAX_TASK_TAGS
+    || tags.some((tag) => tag.length > MAX_TASK_TAG_LENGTH)
+    || typeof details.notes_markdown !== "string"
+    || details.notes_markdown.length > MAX_TASK_NOTES_LENGTH
+    || !isEditableDuration(details.estimated_duration_minutes)
+    || !isEditableDuration(details.actual_duration_minutes)
     || Number.isNaN(Date.parse(timestamp))
   ) throw new Error("INVALID_TASK_DETAILS");
 
@@ -138,7 +160,15 @@ export function updateTaskDetails(
     priority: details.priority,
     due_at: details.due_at,
     is_due_date_only: true,
+    estimated_duration_minutes: details.estimated_duration_minutes,
+    actual_duration_minutes: details.actual_duration_minutes,
+    tags,
+    notes_markdown: details.notes_markdown,
   }, timestamp);
+}
+
+function isEditableDuration(value: number | null) {
+  return isNullableDuration(value) && (value === null || value <= MAX_TASK_DURATION_MINUTES);
 }
 
 export function openTasks(records: TaskRecord[]) {
