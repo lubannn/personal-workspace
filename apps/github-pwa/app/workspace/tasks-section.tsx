@@ -56,6 +56,10 @@ export function TasksSection(props: Props) {
   const [editCategory, setEditCategory] = useState<TaskCategory>("work");
   const [editPriority, setEditPriority] = useState<TaskPriority>("medium");
   const [editDueDate, setEditDueDate] = useState("");
+  const [editEstimatedMinutes, setEditEstimatedMinutes] = useState("");
+  const [editActualMinutes, setEditActualMinutes] = useState("");
+  const [editTags, setEditTags] = useState("");
+  const [editNotes, setEditNotes] = useState("");
 
   function beginEdit(item: SyncedTask) {
     setEditingTaskId(item.record.id);
@@ -63,6 +67,10 @@ export function TasksSection(props: Props) {
     setEditCategory(item.record.data.category);
     setEditPriority(item.record.data.priority);
     setEditDueDate(item.record.data.due_at?.slice(0, 10) ?? "");
+    setEditEstimatedMinutes(item.record.data.estimated_duration_minutes?.toString() ?? "");
+    setEditActualMinutes(item.record.data.actual_duration_minutes?.toString() ?? "");
+    setEditTags(item.record.data.tags.join(", "));
+    setEditNotes(item.record.data.notes_markdown);
   }
 
   async function submitEdit(event: FormEvent<HTMLFormElement>, item: SyncedTask) {
@@ -73,6 +81,10 @@ export function TasksSection(props: Props) {
       category: editCategory,
       priority: editPriority,
       due_at: editDueDate || null,
+      estimated_duration_minutes: parseDuration(editEstimatedMinutes),
+      actual_duration_minutes: parseDuration(editActualMinutes),
+      tags: editTags.split(/[,，]/),
+      notes_markdown: editNotes,
     });
     if (saved) setEditingTaskId(null);
   }
@@ -148,6 +160,18 @@ export function TasksSection(props: Props) {
                       <label>DDL
                         <input type="date" value={editDueDate} onChange={(event) => setEditDueDate(event.target.value)} disabled={savingTaskId === item.record.id} />
                       </label>
+                      <label className="task-edit-tags">标签（逗号分隔）
+                        <input value={editTags} onChange={(event) => setEditTags(event.target.value)} maxLength={1020} placeholder="周报, 等待反馈" disabled={savingTaskId === item.record.id} />
+                      </label>
+                      <label>预计耗时（分钟）
+                        <input type="number" min={0} max={525600} step={1} value={editEstimatedMinutes} onChange={(event) => setEditEstimatedMinutes(event.target.value)} placeholder="例如 45" disabled={savingTaskId === item.record.id} />
+                      </label>
+                      <label>实际耗时（人工）
+                        <input type="number" min={0} max={525600} step={1} value={editActualMinutes} onChange={(event) => setEditActualMinutes(event.target.value)} placeholder="例如 50" disabled={savingTaskId === item.record.id} />
+                      </label>
+                      <label className="task-edit-notes">Markdown 备注
+                        <textarea value={editNotes} onChange={(event) => setEditNotes(event.target.value)} maxLength={50000} rows={5} placeholder="补充上下文、检查清单或结果…" disabled={savingTaskId === item.record.id} />
+                      </label>
                       <div className="task-edit-actions">
                         <button className="primary-button" type="submit" disabled={!editTitle.trim() || Boolean(savingTaskId) || online === false}>{savingTaskId === item.record.id ? "保存中…" : "保存修改"}</button>
                         <button className="secondary-button" type="button" onClick={() => setEditingTaskId(null)} disabled={savingTaskId === item.record.id}>放弃修改</button>
@@ -156,6 +180,7 @@ export function TasksSection(props: Props) {
                   ) : <>
                     <strong>{item.record.data.title}</strong>
                     <span>{TASK_CATEGORY_LABELS[item.record.data.category]} · {TASK_PRIORITY_LABELS[item.record.data.priority]}优先级 · {formatTaskDue(item.record.data.due_at, currentTaskDate)}</span>
+                    {hasTaskDetails(item) ? <span className="task-detail-summary">{formatTaskDetails(item)}</span> : null}
                   </>}
                 </div>
                 <div className="task-row-actions">
@@ -171,4 +196,27 @@ export function TasksSection(props: Props) {
             ))}</ul>}
     </section>
   );
+}
+
+function parseDuration(value: string) {
+  if (!value) return null;
+  const parsed = Number(value);
+  return Number.isInteger(parsed) ? parsed : Number.NaN;
+}
+
+function hasTaskDetails(item: SyncedTask) {
+  return item.record.data.tags.length > 0
+    || item.record.data.estimated_duration_minutes !== null
+    || item.record.data.actual_duration_minutes !== null
+    || Boolean(item.record.data.notes_markdown);
+}
+
+function formatTaskDetails(item: SyncedTask) {
+  const { tags, estimated_duration_minutes: estimated, actual_duration_minutes: actual, notes_markdown: notes } = item.record.data;
+  return [
+    ...tags.map((tag) => `#${tag}`),
+    estimated === null ? null : `预计 ${estimated} 分钟`,
+    actual === null ? null : `实际 ${actual} 分钟`,
+    notes ? "有备注" : null,
+  ].filter(Boolean).join(" · ");
 }
