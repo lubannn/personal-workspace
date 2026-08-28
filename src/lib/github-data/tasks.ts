@@ -33,6 +33,7 @@ export type TaskData = {
 };
 
 export type TaskRecord = WorkspaceRecord<TaskData>;
+export type TaskEditableFields = Pick<TaskData, "title" | "category" | "priority" | "due_at">;
 
 const OPEN_TASK_STATUSES = new Set<TaskStatus>(["inbox", "todo", "in_progress", "blocked"]);
 const PRIORITY_WEIGHT: Record<TaskPriority, number> = {
@@ -52,7 +53,9 @@ function isNullableDuration(value: unknown): value is number | null {
 }
 
 function isValidDateOnly(value: string) {
-  return /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(`${value}T00:00:00Z`));
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(parsed.valueOf()) && parsed.toISOString().slice(0, 10) === value;
 }
 
 function hasValidTimestamp(value: string | null) {
@@ -110,6 +113,31 @@ export function setTaskStatus(
     status,
     completed_at: status === "done" ? timestamp : null,
     cancelled_at: status === "cancelled" ? timestamp : null,
+  }, timestamp);
+}
+
+export function updateTaskDetails(
+  current: TaskRecord,
+  details: TaskEditableFields,
+  timestamp = new Date().toISOString(),
+): TaskRecord {
+  const title = details.title.trim();
+  if (
+    !title
+    || title.length > 300
+    || !TASK_CATEGORIES.includes(details.category)
+    || !TASK_PRIORITIES.includes(details.priority)
+    || (details.due_at !== null && !isValidDateOnly(details.due_at))
+    || Number.isNaN(Date.parse(timestamp))
+  ) throw new Error("INVALID_TASK_DETAILS");
+
+  return updateWorkspaceRecord(current, {
+    ...current.data,
+    title,
+    category: details.category,
+    priority: details.priority,
+    due_at: details.due_at,
+    is_due_date_only: true,
   }, timestamp);
 }
 
