@@ -5,6 +5,7 @@ import {
   archivedTasks,
   cancelledTasks,
   completedTasks,
+  createSubtaskData,
   openTasks,
   parseTaskRecord,
   setTaskStatus,
@@ -147,6 +148,42 @@ describe("GitHub task records", () => {
     })).toThrow("INVALID_TASK_DETAILS");
   });
 
+  it("creates one-level subtask data while inheriting scheduling context", () => {
+    const parent = task("task_parent", { ...baseData, project_id: "project_alpha", priority: "urgent" });
+    expect(createSubtaskData(parent, "  整理附件  ")).toMatchObject({
+      title: "整理附件",
+      category: "work",
+      project_id: "project_alpha",
+      parent_task_id: "task_parent",
+      status: "todo",
+      priority: "urgent",
+      due_at: "2026-08-28",
+      tags: [],
+      notes_markdown: "",
+    });
+  });
+
+  it("places visible children directly after their parent", () => {
+    const parent = task("task_parent", { ...baseData, priority: "low" });
+    const child = task("task_child", { ...baseData, parent_task_id: parent.id, priority: "urgent" });
+    const unrelated = task("task_unrelated", { ...baseData, due_at: "2026-08-27" });
+    expect(openTasks([child, parent, unrelated]).map((record) => record.id)).toEqual([
+      "task_unrelated",
+      "task_parent",
+      "task_child",
+    ]);
+  });
+
+  it("rejects nested, closed, or deleted subtask parents", () => {
+    const parent = task("task_parent");
+    const child = task("task_child", { ...baseData, parent_task_id: parent.id });
+    const done = setTaskStatus(parent, "done", "2026-08-28T02:00:00.000Z");
+    const deleted = setWorkspaceRecordDeleted(parent, "2026-08-28T03:00:00.000Z", "2026-08-28T03:00:00.000Z");
+    expect(() => createSubtaskData(child, "孙任务")).toThrow("INVALID_SUBTASK_PARENT");
+    expect(() => createSubtaskData(done, "已完成父任务的子任务")).toThrow("INVALID_SUBTASK_PARENT");
+    expect(() => createSubtaskData(deleted, "已删除父任务的子任务")).toThrow("INVALID_SUBTASK_PARENT");
+  });
+
   it("orders overdue and higher-priority open tasks for Today", () => {
     const overdue = task("task_overdue", { ...baseData, title: "逾期", due_at: "2026-08-27", priority: "low" });
     const urgent = task("task_urgent", { ...baseData, title: "紧急", priority: "urgent" });
@@ -185,6 +222,11 @@ describe("GitHub task records", () => {
 
   it("rejects inconsistent completion data", () => {
     const invalid = task("task_invalid", { ...baseData, status: "done", completed_at: null });
+    expect(() => parseTaskRecord(serializeRecord(invalid))).toThrow("INVALID_TASK_RECORD");
+  });
+
+  it("rejects a task that references itself as its parent", () => {
+    const invalid = task("task_self", { ...baseData, parent_task_id: "task_self" });
     expect(() => parseTaskRecord(serializeRecord(invalid))).toThrow("INVALID_TASK_RECORD");
   });
 });
