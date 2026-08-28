@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createWorkspaceRecord, serializeRecord } from "./protocol";
+import { createWorkspaceRecord, serializeRecord, setWorkspaceRecordDeleted } from "./protocol";
 import {
   archivedTasks,
   cancelledTasks,
@@ -9,6 +9,7 @@ import {
   parseTaskRecord,
   setTaskStatus,
   tasksForToday,
+  trashedTasks,
   updateTaskDetails,
   type TaskData,
 } from "./tasks";
@@ -130,6 +131,21 @@ describe("GitHub task records", () => {
     expect(completedTasks(records).map((record) => record.id)).toEqual(["task_done"]);
     expect(cancelledTasks(records).map((record) => record.id)).toEqual(["task_cancelled"]);
     expect(archivedTasks(records).map((record) => record.id)).toEqual(["task_archived"]);
+  });
+
+  it("keeps soft-deleted tasks out of lifecycle views and exposes them in trash", () => {
+    const done = setTaskStatus(task("task_trashed_done"), "done", "2026-08-28T02:00:00.000Z");
+    const trashed = setWorkspaceRecordDeleted(done, "2026-08-28T04:00:00.000Z", "2026-08-28T04:00:00.000Z");
+    const records = [task("task_open"), trashed];
+
+    expect(openTasks(records).map((record) => record.id)).toEqual(["task_open"]);
+    expect(completedTasks(records)).toEqual([]);
+    expect(trashedTasks(records)).toEqual([trashed]);
+    expect(trashed).toMatchObject({
+      version: 3,
+      deleted_at: "2026-08-28T04:00:00.000Z",
+      data: { status: "done", completed_at: "2026-08-28T02:00:00.000Z" },
+    });
   });
 
   it("rejects inconsistent completion data", () => {
