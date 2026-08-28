@@ -165,6 +165,12 @@ export function archivedTasks(records: TaskRecord[]) {
     .sort((left, right) => right.updated_at.localeCompare(left.updated_at));
 }
 
+export function trashedTasks(records: TaskRecord[]) {
+  return [...records]
+    .filter((record) => record.deleted_at !== null)
+    .sort((left, right) => String(right.deleted_at).localeCompare(String(left.deleted_at)));
+}
+
 export function tasksForToday(records: TaskRecord[], localDate: string) {
   if (!isValidDateOnly(localDate)) throw new Error("INVALID_TASK_LOCAL_DATE");
   return openTasks(records).filter((record) => {
