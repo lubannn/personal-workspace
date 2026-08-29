@@ -54,6 +54,7 @@ import { createProjectPhaseData } from "../../../src/lib/github-data/project-pha
 import { createMilestoneData, setMilestoneStatus } from "../../../src/lib/github-data/milestones";
 import { createProjectNoteData, updateProjectNoteDetails, type ProjectNoteEditableFields } from "../../../src/lib/github-data/project-notes";
 import { createActivityEventData, type ActivityChangeSummary } from "../../../src/lib/github-data/activity-events";
+import { createCalendarEventData, localDateTimeToIso } from "../../../src/lib/github-data/calendar-events";
 import {
   archivedTasks,
   cancelledTasks,
@@ -97,6 +98,7 @@ import { DashboardSection } from "./workspace/dashboard-section";
 import { AuthSection } from "./workspace/auth-section";
 import { PortabilitySection } from "./workspace/portability-section";
 import { ProjectsSection } from "./workspace/projects-section";
+import { CalendarSection, type CalendarEventCreateFields } from "./workspace/calendar-section";
 import { ReadinessSection } from "./workspace/readiness-section";
 import { TasksSection } from "./workspace/tasks-section";
 
@@ -139,6 +141,7 @@ export default function GitHubWorkspacePage() {
   const [savingMilestoneId, setSavingMilestoneId] = useState<string | null>(null);
   const [savingProjectNoteProjectId, setSavingProjectNoteProjectId] = useState<string | null>(null);
   const [savingProjectNoteId, setSavingProjectNoteId] = useState<string | null>(null);
+  const [savingCalendarEvent, setSavingCalendarEvent] = useState(false);
   const [dashboardDirty, setDashboardDirty] = useState(false);
   const [editingDashboard, setEditingDashboard] = useState(false);
   const [savingDashboard, setSavingDashboard] = useState(false);
@@ -175,6 +178,8 @@ export default function GitHubWorkspacePage() {
     setProjectNoteFiles,
     activityEventFiles,
     setActivityEventFiles,
+    calendarEventFiles,
+    setCalendarEventFiles,
     dashboardLayout,
     setDashboardLayout,
     dashboardBlobSha,
@@ -186,6 +191,7 @@ export default function GitHubWorkspacePage() {
     loadingMilestones,
     loadingProjectNotes,
     loadingActivityEvents,
+    loadingCalendarEvents,
     loadingDashboard,
     loadRecentCaptures,
     loadTasks,
@@ -194,6 +200,7 @@ export default function GitHubWorkspacePage() {
     loadMilestones,
     loadProjectNotes,
     loadActivityEvents,
+    loadCalendarEvents,
     loadDashboardLayout,
     clearCollections,
   } = useWorkspaceCollections({ adapterRef, setErrorMessage, setDashboardClean });
@@ -214,6 +221,7 @@ export default function GitHubWorkspacePage() {
     loadMilestones,
     loadProjectNotes,
     loadActivityEvents,
+    loadCalendarEvents,
   });
 
 
@@ -387,6 +395,7 @@ export default function GitHubWorkspacePage() {
         loadMilestones(opened.adapter),
         loadProjectNotes(opened.adapter),
         loadActivityEvents(opened.adapter),
+        loadCalendarEvents(opened.adapter),
       ]);
     } catch (error) {
       adapterRef.current = null;
@@ -592,6 +601,57 @@ export default function GitHubWorkspacePage() {
       setErrorMessage(friendlyError(error));
     } finally {
       setSavingTask(false);
+    }
+  }
+
+  async function saveCalendarEvent(fields: CalendarEventCreateFields) {
+    const adapter = adapterRef.current;
+    if (!adapter || !connection || savingCalendarEvent || online === false) return false;
+    if (fields.linkedTaskId && !taskFiles.some((item) => item.record.id === fields.linkedTaskId && item.record.deleted_at === null)) {
+      setErrorMessage("关联 Task 已不在当前数据中，请刷新后重新选择；未写入 CalendarEvent。");
+      return false;
+    }
+    setSavingCalendarEvent(true);
+    setErrorMessage("");
+    setStatusMessage("");
+    const timestamp = new Date().toISOString();
+    const timePart = timestamp.replaceAll(/\D/g, "").slice(0, 17);
+    const id = `calendar_event_${timePart}_${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`;
+    try {
+      const startAt = localDateTimeToIso(fields.localDate, fields.startTime, connection.timezone);
+      const endAt = localDateTimeToIso(fields.localDate, fields.endTime, connection.timezone);
+      const record = createWorkspaceRecord({
+        entityType: "calendar_event",
+        id,
+        ownerId: connection.ownerId,
+        timestamp,
+        data: createCalendarEventData({
+          title: fields.title,
+          eventType: fields.eventType,
+          startAt,
+          endAt,
+          timezone: connection.timezone,
+          localDate: fields.localDate,
+          linkedTaskId: fields.linkedTaskId,
+        }),
+      });
+      const result = await adapter.writeText({
+        path: recordPath("calendar_event", id),
+        text: serializeRecord(record),
+        message: `calendar: create ${id}`,
+      });
+      setCalendarEventFiles((current) => [...current, { record, path: result.path, blobSha: result.blobSha }]);
+      setStatusMessage(fields.linkedTaskId
+        ? "时间块已保存；关联 Task 只作为引用，DDL、状态和耗时均未改写。"
+        : "内部日程已保存到 Private 数据仓库。");
+      return true;
+    } catch (error) {
+      setErrorMessage(error instanceof Error && error.message.startsWith("INVALID_CALENDAR")
+        ? "日程日期、时间或时区无效，未写入任何数据。"
+        : friendlyError(error));
+      return false;
+    } finally {
+      setSavingCalendarEvent(false);
     }
   }
 
@@ -1183,6 +1243,17 @@ export default function GitHubWorkspacePage() {
     }
   }
 
+  async function listCalendarEventFiles(adapter: GitHubContentsAdapter) {
+    try {
+      return (await adapter.listDirectory("data/calendar-events"))
+        .filter((item) => item.type === "file" && item.name.endsWith(".json"))
+        .sort((left, right) => left.path.localeCompare(right.path));
+    } catch (error) {
+      if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") return [];
+      throw error;
+    }
+  }
+
   async function downloadPortableExport() {
     const adapter = adapterRef.current;
     if (!adapter || !connection || exporting || online === false) return;
@@ -1256,6 +1327,14 @@ export default function GitHubWorkspacePage() {
           activityEventCandidates.slice(index, index + batchSize).map((item) => adapter.readText(item.path)),
         ));
       }
+      const calendarEventCandidates = await listCalendarEventFiles(adapter);
+      const calendarEventFiles = [];
+      for (let index = 0; index < calendarEventCandidates.length; index += batchSize) {
+        setExportProgress(`正在读取 CalendarEvent ${Math.min(index + batchSize, calendarEventCandidates.length)} / ${calendarEventCandidates.length}…`);
+        calendarEventFiles.push(...await Promise.all(
+          calendarEventCandidates.slice(index, index + batchSize).map((item) => adapter.readText(item.path)),
+        ));
+      }
 
       setExportProgress("正在生成 SHA-256 manifest…");
       const generatedAt = new Date().toISOString();
@@ -1271,6 +1350,7 @@ export default function GitHubWorkspacePage() {
         milestoneFiles,
         projectNoteFiles,
         activityEventFiles,
+        calendarEventFiles,
         generatedAt,
       });
       const inspection = await inspectPortableWorkspaceExport(portableExport);
@@ -1300,6 +1380,7 @@ export default function GitHubWorkspacePage() {
         milestones: inspection.counts.milestones,
         projectNotes: inspection.counts.projectNotes,
         activityEvents: inspection.counts.activityEvents,
+        calendarEvents: inspection.counts.calendarEvents,
         errors: inspection.errors,
         warnings: inspection.warnings,
       });
@@ -1315,6 +1396,7 @@ export default function GitHubWorkspacePage() {
         milestones: inspection.counts.milestones,
         projectNotes: inspection.counts.projectNotes,
         activityEvents: inspection.counts.activityEvents,
+        calendarEvents: inspection.counts.calendarEvents,
         errors: inspection.errors,
         warnings: inspection.warnings,
       });
@@ -1358,6 +1440,7 @@ export default function GitHubWorkspacePage() {
           milestones: 0,
           projectNotes: 0,
           activityEvents: 0,
+          calendarEvents: 0,
           errors: [{ code: "EXPORT_TOO_LARGE", message: "当前预检仅接受 50 MB 以内的 JSON 文件。" }],
           warnings: [],
         });
@@ -1377,6 +1460,7 @@ export default function GitHubWorkspacePage() {
         milestones: inspection.counts.milestones,
         projectNotes: inspection.counts.projectNotes,
         activityEvents: inspection.counts.activityEvents,
+        calendarEvents: inspection.counts.calendarEvents,
         errors: inspection.errors,
         warnings: inspection.warnings,
       });
@@ -1397,6 +1481,7 @@ export default function GitHubWorkspacePage() {
         milestones: 0,
         projectNotes: 0,
         activityEvents: 0,
+        calendarEvents: 0,
         errors: [{ code: "INVALID_JSON", message: "文件不是有效的 JSON，未执行任何恢复操作。" }],
         warnings: [],
       });
@@ -1562,9 +1647,11 @@ export default function GitHubWorkspacePage() {
         currentProjects={currentProjectFiles}
         projectTasks={taskFiles}
         projectMilestones={milestoneFiles}
+        calendarEvents={calendarEventFiles}
         loadingTasks={loadingTasks}
         loadingProjects={loadingProjects}
         loadingMilestones={loadingMilestones}
+        loadingCalendarEvents={loadingCalendarEvents}
         savingTaskId={savingTaskId}
         currentTaskDate={currentTaskDate}
         onToggleEditing={() => setEditingDashboard((current) => !current)}
@@ -1576,6 +1663,20 @@ export default function GitHubWorkspacePage() {
         onCaptureChange={setCapture}
         onSaveCapture={saveCapture}
         onCompleteTask={(item) => updateTaskLifecycle(item, "complete")}
+      />
+
+
+      <CalendarSection
+        key={connection?.timezone ?? "disconnected"}
+        connection={connection}
+        online={online}
+        todayDate={currentTaskDate}
+        eventFiles={calendarEventFiles}
+        taskFiles={taskFiles}
+        loading={loadingCalendarEvents}
+        saving={savingCalendarEvent}
+        onCreate={saveCalendarEvent}
+        onRefresh={() => loadCalendarEvents()}
       />
 
 

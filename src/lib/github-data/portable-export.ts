@@ -6,6 +6,7 @@ import { parseProjectPhaseRecord } from "./project-phases";
 import { parseMilestoneRecord } from "./milestones";
 import { parseProjectNoteRecord } from "./project-notes";
 import { parseActivityEventRecord } from "./activity-events";
+import { parseCalendarEventRecord } from "./calendar-events";
 import { parseTaskRecord } from "./tasks";
 import { parseCaptureRecord, parseWorkspaceDescriptor, type WorkspaceDescriptor } from "./workspace";
 
@@ -35,7 +36,7 @@ export type PortableWorkspaceExport = {
   manifest: {
     schema_version: 1;
     scope: {
-      modules: Array<"workspace" | "captures" | "dashboard_layout" | "tasks" | "projects" | "project_phases" | "milestones" | "project_notes" | "activity_events">;
+      modules: Array<"workspace" | "captures" | "dashboard_layout" | "tasks" | "projects" | "project_phases" | "milestones" | "project_notes" | "activity_events" | "calendar_events">;
       complete: true;
     };
     counts: {
@@ -48,6 +49,7 @@ export type PortableWorkspaceExport = {
       milestones: number;
       project_notes: number;
       activity_events: number;
+      calendar_events: number;
     };
     files: PortableExportManifestFile[];
   };
@@ -75,6 +77,7 @@ export type ExportInspection = {
     milestones: number;
     projectNotes: number;
     activityEvents: number;
+    calendarEvents: number;
   };
   errors: ExportInspectionIssue[];
   warnings: ExportInspectionIssue[];
@@ -105,6 +108,7 @@ export async function buildPortableWorkspaceExport(input: {
   milestoneFiles?: GitHubStoredFile[];
   projectNoteFiles?: GitHubStoredFile[];
   activityEventFiles?: GitHubStoredFile[];
+  calendarEventFiles?: GitHubStoredFile[];
   generatedAt?: string;
 }): Promise<PortableWorkspaceExport> {
   const dashboardLayoutFiles = input.dashboardLayoutFile ? [input.dashboardLayoutFile] : [];
@@ -114,7 +118,8 @@ export async function buildPortableWorkspaceExport(input: {
   const milestoneFiles = input.milestoneFiles ?? [];
   const projectNoteFiles = input.projectNoteFiles ?? [];
   const activityEventFiles = input.activityEventFiles ?? [];
-  const files = [input.workspaceFile, ...input.captureFiles, ...dashboardLayoutFiles, ...taskFiles, ...projectFiles, ...projectPhaseFiles, ...milestoneFiles, ...projectNoteFiles, ...activityEventFiles]
+  const calendarEventFiles = input.calendarEventFiles ?? [];
+  const files = [input.workspaceFile, ...input.captureFiles, ...dashboardLayoutFiles, ...taskFiles, ...projectFiles, ...projectPhaseFiles, ...milestoneFiles, ...projectNoteFiles, ...activityEventFiles, ...calendarEventFiles]
     .map((file) => ({ ...file }))
     .sort((left, right) => left.path.localeCompare(right.path));
   const manifestFiles = await Promise.all(files.map(async (file) => ({
@@ -131,7 +136,7 @@ export async function buildPortableWorkspaceExport(input: {
     source: { repository: input.repository, branch: input.branch },
     manifest: {
       schema_version: 1,
-      scope: { modules: ["workspace", "captures", "dashboard_layout", "tasks", "projects", "project_phases", "milestones", "project_notes", "activity_events"], complete: true },
+      scope: { modules: ["workspace", "captures", "dashboard_layout", "tasks", "projects", "project_phases", "milestones", "project_notes", "activity_events", "calendar_events"], complete: true },
       counts: {
         files: files.length,
         captures: input.captureFiles.length,
@@ -142,6 +147,7 @@ export async function buildPortableWorkspaceExport(input: {
         milestones: milestoneFiles.length,
         project_notes: projectNoteFiles.length,
         activity_events: activityEventFiles.length,
+        calendar_events: calendarEventFiles.length,
       },
       files: manifestFiles,
     },
@@ -175,7 +181,7 @@ export async function inspectPortableWorkspaceExport(value: unknown): Promise<Ex
     generatedAt: null,
     repository: null,
     workspace: null,
-    counts: { files: 0, captures: 0, dashboardLayouts: 0, tasks: 0, projects: 0, projectPhases: 0, milestones: 0, projectNotes: 0, activityEvents: 0 },
+    counts: { files: 0, captures: 0, dashboardLayouts: 0, tasks: 0, projects: 0, projectPhases: 0, milestones: 0, projectNotes: 0, activityEvents: 0, calendarEvents: 0 },
     errors,
     warnings,
   };
@@ -498,6 +504,34 @@ export async function inspectPortableWorkspaceExport(value: unknown): Promise<Ex
     errors.push({ code: "ACTIVITY_EVENT_COUNT_MISMATCH", message: "ActivityEvent 数量与 manifest 不一致。" });
   }
 
+  const calendarEventIds = new Set<string>();
+  const calendarEventFiles = validPayloadFiles.filter((file) => file.path.startsWith("data/calendar-events/"));
+  result.counts.calendarEvents = calendarEventFiles.length;
+  for (const file of calendarEventFiles) {
+    try {
+      const record = parseCalendarEventRecord(file.content);
+      if (result.workspace && record.owner_id !== result.workspace.owner_id) {
+        errors.push({ code: "OWNER_MISMATCH", message: "CalendarEvent 的 owner_id 与 workspace 不一致。", path: file.path });
+      }
+      if (recordPath("calendar_event", record.id) !== file.path) {
+        errors.push({ code: "CALENDAR_EVENT_PATH_MISMATCH", message: "CalendarEvent 的 ID 与文件路径不一致。", path: file.path });
+      }
+      if (calendarEventIds.has(record.id)) {
+        errors.push({ code: "DUPLICATE_CALENDAR_EVENT_ID", message: "导出包中存在重复 CalendarEvent ID。", path: file.path });
+      }
+      calendarEventIds.add(record.id);
+      if (record.data.linked_entity_type === "task" && record.data.linked_entity_id && !taskIds.has(record.data.linked_entity_id)) {
+        errors.push({ code: "CALENDAR_EVENT_TASK_MISSING", message: "CalendarEvent 引用的 Task 不在导出包中。", path: file.path });
+      }
+    } catch {
+      errors.push({ code: "INVALID_CALENDAR_EVENT_RECORD", message: "CalendarEvent 文件无法通过结构校验。", path: file.path });
+    }
+  }
+  const rawCalendarEventCount = manifestCounts?.calendar_events;
+  if ((rawCalendarEventCount !== undefined || calendarEventFiles.length > 0) && rawCalendarEventCount !== calendarEventFiles.length) {
+    errors.push({ code: "CALENDAR_EVENT_COUNT_MISMATCH", message: "CalendarEvent 数量与 manifest 不一致。" });
+  }
+
   const supportedPaths = new Set(["workspace.json", DASHBOARD_LAYOUT_PATH]);
   const unexpectedFiles = validPayloadFiles.filter((file) => (
     !supportedPaths.has(file.path)
@@ -508,6 +542,7 @@ export async function inspectPortableWorkspaceExport(value: unknown): Promise<Ex
     && !file.path.startsWith("data/milestones/")
     && !file.path.startsWith("data/project-notes/")
     && !file.path.startsWith("data/activity-events/")
+    && !file.path.startsWith("data/calendar-events/")
   ));
   for (const file of unexpectedFiles) {
     errors.push({ code: "UNEXPECTED_FILE", message: "当前版本不支持此导出路径。", path: file.path });
