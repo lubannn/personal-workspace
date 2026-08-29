@@ -14,8 +14,9 @@ import { parseProjectRecord } from "../../../../src/lib/github-data/projects";
 import { parseProjectPhaseRecord } from "../../../../src/lib/github-data/project-phases";
 import { parseMilestoneRecord } from "../../../../src/lib/github-data/milestones";
 import { parseProjectNoteRecord } from "../../../../src/lib/github-data/project-notes";
+import { parseActivityEventRecord } from "../../../../src/lib/github-data/activity-events";
 import { parseCaptureRecord } from "../../../../src/lib/github-data/workspace";
-import { friendlyError, type SyncedCapture, type SyncedMilestone, type SyncedProject, type SyncedProjectNote, type SyncedProjectPhase, type SyncedTask } from "./page-model";
+import { friendlyError, type SyncedActivityEvent, type SyncedCapture, type SyncedMilestone, type SyncedProject, type SyncedProjectNote, type SyncedProjectPhase, type SyncedTask } from "./page-model";
 
 type Options = {
   adapterRef: MutableRefObject<GitHubContentsAdapter | null>;
@@ -30,6 +31,7 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
   const [projectPhaseFiles, setProjectPhaseFiles] = useState<SyncedProjectPhase[]>([]);
   const [milestoneFiles, setMilestoneFiles] = useState<SyncedMilestone[]>([]);
   const [projectNoteFiles, setProjectNoteFiles] = useState<SyncedProjectNote[]>([]);
+  const [activityEventFiles, setActivityEventFiles] = useState<SyncedActivityEvent[]>([]);
   const [dashboardLayout, setDashboardLayout] = useState<DashboardLayout | null>(null);
   const [dashboardBlobSha, setDashboardBlobSha] = useState<string | null>(null);
   const [loadingCaptures, setLoadingCaptures] = useState(false);
@@ -38,6 +40,7 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
   const [loadingProjectPhases, setLoadingProjectPhases] = useState(false);
   const [loadingMilestones, setLoadingMilestones] = useState(false);
   const [loadingProjectNotes, setLoadingProjectNotes] = useState(false);
+  const [loadingActivityEvents, setLoadingActivityEvents] = useState(false);
   const [loadingDashboard, setLoadingDashboard] = useState(false);
 
   const loadRecentCaptures = useCallback(async (adapter = adapterRef.current) => {
@@ -268,6 +271,44 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     }
   }, [adapterRef, setErrorMessage]);
 
+  const loadActivityEvents = useCallback(async (adapter = adapterRef.current) => {
+    if (!adapter) return;
+    setLoadingActivityEvents(true);
+    setErrorMessage("");
+    try {
+      let items;
+      try {
+        items = await adapter.listDirectory("data/activity-events");
+      } catch (error) {
+        if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") {
+          setActivityEventFiles([]);
+          return;
+        }
+        throw error;
+      }
+      const candidates = items
+        .filter((item) => item.type === "file" && item.name.endsWith(".json"))
+        .sort((left, right) => right.name.localeCompare(left.name));
+      const records: SyncedActivityEvent[] = [];
+      const batchSize = 6;
+      for (let index = 0; index < candidates.length; index += batchSize) {
+        records.push(...(await Promise.all(candidates.slice(index, index + batchSize).map(async (item) => {
+          try {
+            const file = await adapter.readText(item.path);
+            return { record: parseActivityEventRecord(file.text), path: file.path, blobSha: file.blobSha };
+          } catch {
+            return null;
+          }
+        }))).filter((item): item is SyncedActivityEvent => item !== null));
+      }
+      setActivityEventFiles(records);
+    } catch (error) {
+      setErrorMessage(friendlyError(error));
+    } finally {
+      setLoadingActivityEvents(false);
+    }
+  }, [adapterRef, setErrorMessage]);
+
   const loadDashboardLayout = useCallback(async (
     adapter = adapterRef.current,
     ownerId?: string,
@@ -304,6 +345,7 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     setProjectPhaseFiles([]);
     setMilestoneFiles([]);
     setProjectNoteFiles([]);
+    setActivityEventFiles([]);
     setDashboardLayout(null);
     setDashboardBlobSha(null);
   }
@@ -321,6 +363,8 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     setMilestoneFiles,
     projectNoteFiles,
     setProjectNoteFiles,
+    activityEventFiles,
+    setActivityEventFiles,
     dashboardLayout,
     setDashboardLayout,
     dashboardBlobSha,
@@ -331,6 +375,7 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     loadingProjectPhases,
     loadingMilestones,
     loadingProjectNotes,
+    loadingActivityEvents,
     loadingDashboard,
     loadRecentCaptures,
     loadTasks,
@@ -338,6 +383,7 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     loadProjectPhases,
     loadMilestones,
     loadProjectNotes,
+    loadActivityEvents,
     loadDashboardLayout,
     clearCollections,
   };

@@ -6,7 +6,8 @@ import { projectMilestoneProgress, projectTaskProgress, type ProjectEditableFiel
 import { phasesForProject } from "../../../../src/lib/github-data/project-phases";
 import { milestonesForProject } from "../../../../src/lib/github-data/milestones";
 import { projectNotesForProject, type ProjectNoteEditableFields } from "../../../../src/lib/github-data/project-notes";
-import type { Connection, SyncedMilestone, SyncedProject, SyncedProjectNote, SyncedProjectPhase, SyncedTask } from "./page-model";
+import { activityEventsForProject } from "../../../../src/lib/github-data/activity-events";
+import type { Connection, SyncedActivityEvent, SyncedMilestone, SyncedProject, SyncedProjectNote, SyncedProjectPhase, SyncedTask } from "./page-model";
 
 type Props = {
   connection: Connection | null;
@@ -17,6 +18,7 @@ type Props = {
   projectPhaseFiles: SyncedProjectPhase[];
   milestoneFiles: SyncedMilestone[];
   projectNoteFiles: SyncedProjectNote[];
+  activityEventFiles: SyncedActivityEvent[];
   currentProjectFiles: SyncedProject[];
   completedProjectFiles: SyncedProject[];
   cancelledProjectFiles: SyncedProject[];
@@ -29,6 +31,7 @@ type Props = {
   loadingProjectPhases: boolean;
   loadingMilestones: boolean;
   loadingProjectNotes: boolean;
+  loadingActivityEvents: boolean;
   savingProject: boolean;
   savingProjectId: string | null;
   savingProjectPhaseProjectId: string | null;
@@ -55,9 +58,9 @@ type Props = {
 
 export function ProjectsSection(props: Props) {
   const {
-    connection, online, projectName, projectTargetDate, projectFiles, projectPhaseFiles, milestoneFiles, projectNoteFiles, currentProjectFiles,
+    connection, online, projectName, projectTargetDate, projectFiles, projectPhaseFiles, milestoneFiles, projectNoteFiles, activityEventFiles, currentProjectFiles,
     completedProjectFiles, cancelledProjectFiles, archivedProjectFiles, trashedProjectFiles,
-    visibleProjectFiles, projectView, taskFiles, loadingProjects, loadingProjectPhases, loadingMilestones, loadingProjectNotes, savingProject, savingProjectId, savingProjectPhaseProjectId,
+    visibleProjectFiles, projectView, taskFiles, loadingProjects, loadingProjectPhases, loadingMilestones, loadingProjectNotes, loadingActivityEvents, savingProject, savingProjectId, savingProjectPhaseProjectId,
     savingMilestoneProjectId, savingMilestoneId, savingProjectNoteProjectId, savingProjectNoteId, currentDate,
     onProjectNameChange, onProjectTargetDateChange, onCreateProject, onProjectViewChange,
     onLifecycleChange, onDeletionChange, onEditProject, onCreatePhase, onSetCurrentPhase, onCreateMilestone, onMilestoneLifecycle,
@@ -82,14 +85,16 @@ export function ProjectsSection(props: Props) {
   const [editNoteTitle, setEditNoteTitle] = useState("");
   const [editNoteBody, setEditNoteBody] = useState("");
   const [editNoteDate, setEditNoteDate] = useState("");
+  const [activityProjectId, setActivityProjectId] = useState<string | null>(null);
   const projectOperationBusy = savingProject || savingProjectId !== null || savingProjectPhaseProjectId !== null || savingMilestoneProjectId !== null || savingMilestoneId !== null || savingProjectNoteProjectId !== null || savingProjectNoteId !== null;
-  const projectFormActive = editingProjectId !== null || phaseProjectId !== null || milestoneProjectId !== null || noteProjectId !== null;
+  const projectFormActive = editingProjectId !== null || phaseProjectId !== null || milestoneProjectId !== null || noteProjectId !== null || activityProjectId !== null;
   const projectBusy = projectOperationBusy || projectFormActive;
 
   function beginEdit(item: SyncedProject) {
     setPhaseProjectId(null);
     setMilestoneProjectId(null);
     setNoteProjectId(null);
+    setActivityProjectId(null);
     setEditingProjectId(item.record.id);
     setEditName(item.record.data.name);
     setEditDescription(item.record.data.description_markdown);
@@ -102,6 +107,7 @@ export function ProjectsSection(props: Props) {
     setEditingProjectId(null);
     setMilestoneProjectId(null);
     setNoteProjectId(null);
+    setActivityProjectId(null);
     setPhaseProjectId(item.record.id);
     setPhaseName("");
   }
@@ -110,6 +116,7 @@ export function ProjectsSection(props: Props) {
     setEditingProjectId(null);
     setPhaseProjectId(null);
     setNoteProjectId(null);
+    setActivityProjectId(null);
     setMilestoneProjectId(item.record.id);
     setMilestoneTitle("");
     setMilestoneTargetDate("");
@@ -119,11 +126,20 @@ export function ProjectsSection(props: Props) {
     setEditingProjectId(null);
     setPhaseProjectId(null);
     setMilestoneProjectId(null);
+    setActivityProjectId(null);
     setNoteProjectId(item.record.id);
     setEditingProjectNoteId(null);
     setNoteTitle("");
     setNoteBody("");
     setNoteDate(currentDate);
+  }
+
+  function beginActivityManagement(item: SyncedProject) {
+    setEditingProjectId(null);
+    setPhaseProjectId(null);
+    setMilestoneProjectId(null);
+    setNoteProjectId(null);
+    setActivityProjectId(item.record.id);
   }
 
   function beginNoteEdit(item: SyncedProjectNote) {
@@ -231,6 +247,7 @@ export function ProjectsSection(props: Props) {
               const phases = syncedPhasesForProject(projectPhaseFiles, item.record.id);
               const milestones = syncedMilestonesForProject(milestoneFiles, item.record.id);
               const projectNotes = syncedProjectNotesForProject(projectNoteFiles, item.record.id);
+              const activities = syncedActivityEventsForProject(activityEventFiles, item.record.id);
               const currentPhase = phases.find((phase) => phase.record.id === item.record.data.current_phase_id);
               return <li key={item.record.id}>
                 <div className="project-content">
@@ -339,6 +356,15 @@ export function ProjectsSection(props: Props) {
                             </>}
                           </li>)}</ul>}
                     </div> : null}
+                    {activityProjectId === item.record.id ? <div className="project-activity-manager">
+                      <div><strong>Activity Log</strong><button className="secondary-button" type="button" onClick={() => setActivityProjectId(null)}>完成查看</button></div>
+                      {loadingActivityEvents ? <small>正在读取 Activity Log…</small>
+                        : activities.length === 0 ? <small>还没有活动事件；此切片发布后的项目操作才会开始追加记录。</small>
+                          : <ol>{activities.slice(0, 30).map((activity) => <li key={activity.record.id}>
+                            <span><strong>{activityEventLabel(activity.record.data.event_type)}</strong><small>{formatActivityTime(activity.record.data.occurred_at)} · {activity.record.data.actor_type}</small></span>
+                            <code>{formatActivitySummary(activity.record.data.change_summary_json)}</code>
+                          </li>)}</ol>}
+                    </div> : null}
                   </>}
                 </div>
                 <div className="project-row-actions">
@@ -349,6 +375,7 @@ export function ProjectsSection(props: Props) {
                       {projectView === "current" ? <button className="text-button" type="button" onClick={() => beginPhaseManagement(item)} disabled={projectBusy || online === false}>管理阶段</button> : null}
                       {projectView === "current" ? <button className="text-button" type="button" onClick={() => beginMilestoneManagement(item)} disabled={projectBusy || online === false}>管理里程碑</button> : null}
                       {projectView !== "archived" ? <button className="text-button" type="button" onClick={() => beginNoteManagement(item)} disabled={projectBusy || online === false}>管理 Notes</button> : null}
+                      <button className="text-button" type="button" onClick={() => beginActivityManagement(item)} disabled={projectBusy}>Activity Log</button>
                       {projectView === "current" ? <button className="text-button" type="button" onClick={() => onLifecycleChange(item, item.record.data.status === "on_hold" ? "resume" : "pause")} disabled={projectBusy || online === false}>{item.record.data.status === "on_hold" ? "恢复进行" : "暂停"}</button> : null}
                       {projectView === "current" ? <button className="text-button" type="button" onClick={() => onLifecycleChange(item, "complete")} disabled={projectBusy || online === false}>完成</button> : <button className="text-button" type="button" onClick={() => onLifecycleChange(item, "reopen")} disabled={projectBusy || online === false}>重新打开</button>}
                       {projectView === "current" ? <button className="text-button project-destructive-button" type="button" onClick={() => onLifecycleChange(item, "cancel")} disabled={projectBusy || online === false}>取消项目</button> : null}
@@ -399,4 +426,35 @@ function syncedProjectNotesForProject(projectNoteFiles: SyncedProjectNote[], pro
   return projectNotesForProject(projectNoteFiles.map((item) => item.record), projectId)
     .map((record) => byId.get(record.id))
     .filter((item): item is SyncedProjectNote => Boolean(item));
+}
+
+function syncedActivityEventsForProject(activityEventFiles: SyncedActivityEvent[], projectId: string) {
+  const byId = new Map(activityEventFiles.map((item) => [item.record.id, item]));
+  return activityEventsForProject(activityEventFiles.map((item) => item.record), projectId)
+    .map((record) => byId.get(record.id))
+    .filter((item): item is SyncedActivityEvent => Boolean(item));
+}
+
+function activityEventLabel(eventType: string) {
+  return ({
+    "project.created": "创建项目",
+    "project.updated": "更新项目信息",
+    "project.status_changed": "更新项目状态",
+    "project.phase_changed": "切换当前阶段",
+    "project.trashed": "移到回收站",
+    "project.restored": "从回收站恢复",
+    "project_phase.created": "创建项目阶段",
+    "milestone.created": "创建里程碑",
+    "milestone.status_changed": "更新里程碑状态",
+    "project_note.created": "创建 Project Note",
+    "project_note.updated": "更新 Project Note",
+  } as Record<string, string>)[eventType] ?? eventType;
+}
+
+function formatActivityTime(value: string) {
+  return new Intl.DateTimeFormat("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(value));
+}
+
+function formatActivitySummary(summary: SyncedActivityEvent["record"]["data"]["change_summary_json"]) {
+  return Object.entries(summary).map(([key, value]) => `${key}: ${String(value ?? "—")}`).join(" · ");
 }

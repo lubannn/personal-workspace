@@ -5,6 +5,7 @@ import { parseProjectRecord } from "./projects";
 import { parseProjectPhaseRecord } from "./project-phases";
 import { parseMilestoneRecord } from "./milestones";
 import { parseProjectNoteRecord } from "./project-notes";
+import { parseActivityEventRecord } from "./activity-events";
 import { parseTaskRecord } from "./tasks";
 import { parseCaptureRecord, parseWorkspaceDescriptor, type WorkspaceDescriptor } from "./workspace";
 
@@ -34,7 +35,7 @@ export type PortableWorkspaceExport = {
   manifest: {
     schema_version: 1;
     scope: {
-      modules: Array<"workspace" | "captures" | "dashboard_layout" | "tasks" | "projects" | "project_phases" | "milestones" | "project_notes">;
+      modules: Array<"workspace" | "captures" | "dashboard_layout" | "tasks" | "projects" | "project_phases" | "milestones" | "project_notes" | "activity_events">;
       complete: true;
     };
     counts: {
@@ -46,6 +47,7 @@ export type PortableWorkspaceExport = {
       project_phases: number;
       milestones: number;
       project_notes: number;
+      activity_events: number;
     };
     files: PortableExportManifestFile[];
   };
@@ -72,6 +74,7 @@ export type ExportInspection = {
     projectPhases: number;
     milestones: number;
     projectNotes: number;
+    activityEvents: number;
   };
   errors: ExportInspectionIssue[];
   warnings: ExportInspectionIssue[];
@@ -101,6 +104,7 @@ export async function buildPortableWorkspaceExport(input: {
   projectPhaseFiles?: GitHubStoredFile[];
   milestoneFiles?: GitHubStoredFile[];
   projectNoteFiles?: GitHubStoredFile[];
+  activityEventFiles?: GitHubStoredFile[];
   generatedAt?: string;
 }): Promise<PortableWorkspaceExport> {
   const dashboardLayoutFiles = input.dashboardLayoutFile ? [input.dashboardLayoutFile] : [];
@@ -109,7 +113,8 @@ export async function buildPortableWorkspaceExport(input: {
   const projectPhaseFiles = input.projectPhaseFiles ?? [];
   const milestoneFiles = input.milestoneFiles ?? [];
   const projectNoteFiles = input.projectNoteFiles ?? [];
-  const files = [input.workspaceFile, ...input.captureFiles, ...dashboardLayoutFiles, ...taskFiles, ...projectFiles, ...projectPhaseFiles, ...milestoneFiles, ...projectNoteFiles]
+  const activityEventFiles = input.activityEventFiles ?? [];
+  const files = [input.workspaceFile, ...input.captureFiles, ...dashboardLayoutFiles, ...taskFiles, ...projectFiles, ...projectPhaseFiles, ...milestoneFiles, ...projectNoteFiles, ...activityEventFiles]
     .map((file) => ({ ...file }))
     .sort((left, right) => left.path.localeCompare(right.path));
   const manifestFiles = await Promise.all(files.map(async (file) => ({
@@ -126,7 +131,7 @@ export async function buildPortableWorkspaceExport(input: {
     source: { repository: input.repository, branch: input.branch },
     manifest: {
       schema_version: 1,
-      scope: { modules: ["workspace", "captures", "dashboard_layout", "tasks", "projects", "project_phases", "milestones", "project_notes"], complete: true },
+      scope: { modules: ["workspace", "captures", "dashboard_layout", "tasks", "projects", "project_phases", "milestones", "project_notes", "activity_events"], complete: true },
       counts: {
         files: files.length,
         captures: input.captureFiles.length,
@@ -136,6 +141,7 @@ export async function buildPortableWorkspaceExport(input: {
         project_phases: projectPhaseFiles.length,
         milestones: milestoneFiles.length,
         project_notes: projectNoteFiles.length,
+        activity_events: activityEventFiles.length,
       },
       files: manifestFiles,
     },
@@ -169,7 +175,7 @@ export async function inspectPortableWorkspaceExport(value: unknown): Promise<Ex
     generatedAt: null,
     repository: null,
     workspace: null,
-    counts: { files: 0, captures: 0, dashboardLayouts: 0, tasks: 0, projects: 0, projectPhases: 0, milestones: 0, projectNotes: 0 },
+    counts: { files: 0, captures: 0, dashboardLayouts: 0, tasks: 0, projects: 0, projectPhases: 0, milestones: 0, projectNotes: 0, activityEvents: 0 },
     errors,
     warnings,
   };
@@ -464,6 +470,34 @@ export async function inspectPortableWorkspaceExport(value: unknown): Promise<Ex
     errors.push({ code: "PROJECT_NOTE_COUNT_MISMATCH", message: "ProjectNote 数量与 manifest 不一致。" });
   }
 
+  const activityEventIds = new Set<string>();
+  const activityEventFiles = validPayloadFiles.filter((file) => file.path.startsWith("data/activity-events/"));
+  result.counts.activityEvents = activityEventFiles.length;
+  for (const file of activityEventFiles) {
+    try {
+      const record = parseActivityEventRecord(file.content);
+      if (result.workspace && record.owner_id !== result.workspace.owner_id) {
+        errors.push({ code: "OWNER_MISMATCH", message: "ActivityEvent 的 owner_id 与 workspace 不一致。", path: file.path });
+      }
+      if (recordPath("activity_event", record.id) !== file.path) {
+        errors.push({ code: "ACTIVITY_EVENT_PATH_MISMATCH", message: "ActivityEvent 的 ID 与文件路径不一致。", path: file.path });
+      }
+      if (activityEventIds.has(record.id)) {
+        errors.push({ code: "DUPLICATE_ACTIVITY_EVENT_ID", message: "导出包中存在重复 ActivityEvent ID。", path: file.path });
+      }
+      activityEventIds.add(record.id);
+      if (!projectIds.has(record.data.entity_id)) {
+        errors.push({ code: "ACTIVITY_EVENT_PROJECT_MISSING", message: "ActivityEvent 引用的 Project 不在导出包中。", path: file.path });
+      }
+    } catch {
+      errors.push({ code: "INVALID_ACTIVITY_EVENT_RECORD", message: "ActivityEvent 文件无法通过结构校验。", path: file.path });
+    }
+  }
+  const rawActivityEventCount = manifestCounts?.activity_events;
+  if ((rawActivityEventCount !== undefined || activityEventFiles.length > 0) && rawActivityEventCount !== activityEventFiles.length) {
+    errors.push({ code: "ACTIVITY_EVENT_COUNT_MISMATCH", message: "ActivityEvent 数量与 manifest 不一致。" });
+  }
+
   const supportedPaths = new Set(["workspace.json", DASHBOARD_LAYOUT_PATH]);
   const unexpectedFiles = validPayloadFiles.filter((file) => (
     !supportedPaths.has(file.path)
@@ -473,6 +507,7 @@ export async function inspectPortableWorkspaceExport(value: unknown): Promise<Ex
     && !file.path.startsWith("data/project-phases/")
     && !file.path.startsWith("data/milestones/")
     && !file.path.startsWith("data/project-notes/")
+    && !file.path.startsWith("data/activity-events/")
   ));
   for (const file of unexpectedFiles) {
     errors.push({ code: "UNEXPECTED_FILE", message: "当前版本不支持此导出路径。", path: file.path });
