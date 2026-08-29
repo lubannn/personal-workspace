@@ -2,7 +2,8 @@
 
 import type { DashboardLayout, DashboardWidgetConfig, DashboardWidgetSize } from "../../../../src/lib/github-data/dashboard-layout";
 import { projectMilestoneProgress, projectTaskProgress } from "../../../../src/lib/github-data/projects";
-import { formatTaskDue, type Connection, type SavedCapture, type SyncedMilestone, type SyncedProject, type SyncedTask } from "./page-model";
+import { calendarEventsForDate } from "../../../../src/lib/github-data/calendar-events";
+import { formatTaskDue, type Connection, type SavedCapture, type SyncedCalendarEvent, type SyncedMilestone, type SyncedProject, type SyncedTask } from "./page-model";
 
 type WidgetDefinition = { eyebrow: string; title: string; empty: string };
 
@@ -37,9 +38,11 @@ type Props = {
   currentProjects: SyncedProject[];
   projectTasks: SyncedTask[];
   projectMilestones: SyncedMilestone[];
+  calendarEvents: SyncedCalendarEvent[];
   loadingTasks: boolean;
   loadingProjects: boolean;
   loadingMilestones: boolean;
+  loadingCalendarEvents: boolean;
   savingTaskId: string | null;
   currentTaskDate: string;
   onToggleEditing: () => void;
@@ -54,7 +57,8 @@ type Props = {
 };
 
 export function DashboardSection(props: Props) {
-  const { connection, online, dashboardLayout, dashboardBlobSha, dashboardDirty, editingDashboard, loadingDashboard, savingDashboard, visibleWidgets, hiddenWidgets, capture, savingCapture, savedCapture, todayTasks, currentProjects, projectTasks, projectMilestones, loadingTasks, loadingProjects, loadingMilestones, savingTaskId, currentTaskDate, onToggleEditing, onRefresh, onSaveLayout, onWidgetChange, onWidgetResize, onReset, onCaptureChange, onSaveCapture, onCompleteTask } = props;
+  const { connection, online, dashboardLayout, dashboardBlobSha, dashboardDirty, editingDashboard, loadingDashboard, savingDashboard, visibleWidgets, hiddenWidgets, capture, savingCapture, savedCapture, todayTasks, currentProjects, projectTasks, projectMilestones, calendarEvents, loadingTasks, loadingProjects, loadingMilestones, loadingCalendarEvents, savingTaskId, currentTaskDate, onToggleEditing, onRefresh, onSaveLayout, onWidgetChange, onWidgetResize, onReset, onCaptureChange, onSaveCapture, onCompleteTask } = props;
+  const todayCalendarEvents = calendarEventsForDate(calendarEvents.map((item) => item.record), currentTaskDate);
   return (
     <section className="dashboard-card" aria-labelledby="dashboard-title">
       <div className="card-heading dashboard-heading">
@@ -97,6 +101,14 @@ export function DashboardSection(props: Props) {
                   <textarea value={capture} onChange={(event) => onCaptureChange(event.target.value)} placeholder={connection ? "任务、想法、提醒，先记下来再整理…" : "连接 Private 数据仓库后即可保存…"} maxLength={10_000} disabled={!connection || savingCapture} />
                   <footer><span>{capture.length} / 10,000</span><button type="button" onClick={onSaveCapture} disabled={!connection || !capture.trim() || savingCapture || online === false}>{savingCapture ? "正在保存…" : "保存 Capture"}</button></footer>
                   {savedCapture ? <div className="file-preview"><code>{savedCapture.path}</code><p>{savedCapture.text}</p><span className="commit-note">Commit {savedCapture.commitSha.slice(0, 8)} · Private repository</span></div> : <p className="widget-empty">每次保存生成开放 JSON 文件和一条 Git 历史记录。</p>}
+                </div>
+              ) : widget.widget_type === "today_schedule" ? (
+                <div className="today-task-widget today-schedule-widget">
+                  {!connection ? <p className="widget-empty">连接 Private 数据仓库后显示今日日程。</p>
+                    : loadingCalendarEvents ? <p className="widget-empty">正在读取今日日程…</p>
+                      : todayCalendarEvents.length === 0 ? <p className="widget-empty">今天还没有日程或时间块。</p>
+                        : <ul>{todayCalendarEvents.slice(0, 4).map((event) => <li key={event.id}><span>{event.data.title}</span><small>{formatScheduleTime(event.data.start_at, event.data.end_at, event.data.timezone)}</small></li>)}</ul>}
+                  {todayCalendarEvents.length > 4 ? <p className="task-overflow-note">另有 {todayCalendarEvents.length - 4} 项，请在 Calendar 查看。</p> : null}
                 </div>
               ) : widget.widget_type === "today_tasks" ? (
                 <div className="today-task-widget">
@@ -145,4 +157,9 @@ export function DashboardSection(props: Props) {
 function projectDashboardMeta(item: SyncedProject) {
   const status = item.record.data.status === "on_hold" ? "暂停" : item.record.data.status === "planned" ? "计划中" : "进行中";
   return item.record.data.target_date ? `${status} · 目标 ${item.record.data.target_date}` : `${status} · 未设目标日期`;
+}
+
+function formatScheduleTime(startAt: string, endAt: string, timezone: string) {
+  const formatter = new Intl.DateTimeFormat("zh-CN", { timeZone: timezone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+  return `${formatter.format(new Date(startAt))}–${formatter.format(new Date(endAt))}`;
 }
