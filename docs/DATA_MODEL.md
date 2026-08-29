@@ -172,10 +172,14 @@ GitHub-backed canonical 路径为 `data/tasks/<task_id>.json`。每个任务是�
 - `id`, `project_id`, `name`, `description`, `sort_order`
 - `started_at`, `completed_at`, `status`
 
+Phase 2 的首个阶段切片把 `status` 保持为向前兼容的非空字符串，创建时写入 `active`；在阶段完成/取消规则正式定义前，不开放其他状态转换。创建阶段与设置 `Project.current_phase_id` 是两个独立、带 Git 历史的动作，避免一次非原子 Contents 写入伪装成完整成功。
+
 ### Milestone
 
 - `id`, `project_id`, `title`, `description`
 - `target_date`, `status`, `weight`, `completed_at`, `sort_order`
+
+Milestone 使用 `open`、`completed`、`cancelled` 三种状态；只有 `completed` 必须带 `completed_at`，恢复为 `open` 或取消时清空当前完成时间。默认 `weight = 1`。当 Project 明确选择 `progress_mode = milestones` 时，进度按未删除、未取消里程碑的权重计算；既有项目默认继续使用 `tasks`，不会因创建里程碑自动切换口径。
 
 ### ProjectNote
 

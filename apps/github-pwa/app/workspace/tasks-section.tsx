@@ -8,6 +8,7 @@ import {
   TASK_PRIORITY_LABELS,
   formatTaskDue,
   type Connection,
+  type SyncedProject,
   type SyncedTask,
 } from "./page-model";
 
@@ -17,9 +18,12 @@ type Props = {
   taskTitle: string;
   taskCategory: TaskCategory;
   taskPriority: TaskPriority;
+  taskProjectId: string;
   taskDueDate: string;
   taskView: "open" | "done" | "cancelled" | "archived" | "trash";
   taskFiles: SyncedTask[];
+  projectFiles: SyncedProject[];
+  selectableProjectFiles: SyncedProject[];
   openTaskFiles: SyncedTask[];
   completedTaskFiles: SyncedTask[];
   cancelledTaskFiles: SyncedTask[];
@@ -33,6 +37,7 @@ type Props = {
   onTaskTitleChange: (value: string) => void;
   onTaskCategoryChange: (value: TaskCategory) => void;
   onTaskPriorityChange: (value: TaskPriority) => void;
+  onTaskProjectIdChange: (value: string) => void;
   onTaskDueDateChange: (value: string) => void;
   onTaskViewChange: (value: "open" | "done" | "cancelled" | "archived" | "trash") => void;
   onCreateTask: (event: FormEvent<HTMLFormElement>) => void;
@@ -45,17 +50,18 @@ type Props = {
 
 export function TasksSection(props: Props) {
   const {
-    connection, online, taskTitle, taskCategory, taskPriority, taskDueDate, taskView,
-    taskFiles, openTaskFiles, completedTaskFiles, cancelledTaskFiles, archivedTaskFiles, trashedTaskFiles,
+    connection, online, taskTitle, taskCategory, taskPriority, taskProjectId, taskDueDate, taskView,
+    taskFiles, projectFiles, selectableProjectFiles, openTaskFiles, completedTaskFiles, cancelledTaskFiles, archivedTaskFiles, trashedTaskFiles,
     visibleTaskFiles, currentTaskDate,
     loadingTasks, savingTask, savingTaskId, onTaskTitleChange, onTaskCategoryChange,
-    onTaskPriorityChange, onTaskDueDateChange, onTaskViewChange, onCreateTask,
+    onTaskPriorityChange, onTaskProjectIdChange, onTaskDueDateChange, onTaskViewChange, onCreateTask,
     onRefresh, onLifecycleChange, onDeletionChange, onEditTask, onCreateSubtask,
   } = props;
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState("");
   const [editCategory, setEditCategory] = useState<TaskCategory>("work");
   const [editPriority, setEditPriority] = useState<TaskPriority>("medium");
+  const [editProjectId, setEditProjectId] = useState("");
   const [editDueDate, setEditDueDate] = useState("");
   const [editEstimatedMinutes, setEditEstimatedMinutes] = useState("");
   const [editActualMinutes, setEditActualMinutes] = useState("");
@@ -71,6 +77,7 @@ export function TasksSection(props: Props) {
     setEditTitle(item.record.data.title);
     setEditCategory(item.record.data.category);
     setEditPriority(item.record.data.priority);
+    setEditProjectId(item.record.data.project_id ?? "");
     setEditDueDate(item.record.data.due_at?.slice(0, 10) ?? "");
     setEditEstimatedMinutes(item.record.data.estimated_duration_minutes?.toString() ?? "");
     setEditActualMinutes(item.record.data.actual_duration_minutes?.toString() ?? "");
@@ -100,6 +107,7 @@ export function TasksSection(props: Props) {
     const saved = await onEditTask(item, {
       title: editTitle,
       category: editCategory,
+      project_id: editProjectId || null,
       priority: editPriority,
       due_at: editDueDate || null,
       estimated_duration_minutes: parseDuration(editEstimatedMinutes),
@@ -142,6 +150,12 @@ export function TasksSection(props: Props) {
             {Object.entries(TASK_PRIORITY_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
           </select>
         </label>
+        <label>项目
+          <select value={taskProjectId} onChange={(event) => onTaskProjectIdChange(event.target.value)} disabled={!connection || savingTask || taskFormActive}>
+            <option value="">无项目</option>
+            {selectableProjectFiles.map((item) => <option key={item.record.id} value={item.record.id}>{item.record.data.name}</option>)}
+          </select>
+        </label>
         <label>DDL
           <input type="date" value={taskDueDate} onChange={(event) => onTaskDueDateChange(event.target.value)} disabled={!connection || savingTask || taskFormActive} />
         </label>
@@ -178,6 +192,12 @@ export function TasksSection(props: Props) {
                           {Object.entries(TASK_PRIORITY_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                         </select>
                       </label>
+                      <label>项目
+                        <select value={editProjectId} onChange={(event) => setEditProjectId(event.target.value)} disabled={savingTaskId === item.record.id}>
+                          <option value="">无项目</option>
+                          {projectOptions(selectableProjectFiles, item.record.data.project_id, projectFiles).map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+                        </select>
+                      </label>
                       <label>DDL
                         <input type="date" value={editDueDate} onChange={(event) => setEditDueDate(event.target.value)} disabled={savingTaskId === item.record.id} />
                       </label>
@@ -201,7 +221,7 @@ export function TasksSection(props: Props) {
                   ) : <>
                     <strong>{item.record.data.title}</strong>
                     {item.record.data.parent_task_id ? <span className="task-parent-label">↳ {parentTitle(item, taskFiles)}</span> : null}
-                    <span>{TASK_CATEGORY_LABELS[item.record.data.category]} · {TASK_PRIORITY_LABELS[item.record.data.priority]}优先级 · {formatTaskDue(item.record.data.due_at, currentTaskDate)}</span>
+                    <span>{TASK_CATEGORY_LABELS[item.record.data.category]} · {TASK_PRIORITY_LABELS[item.record.data.priority]}优先级 · {projectName(item.record.data.project_id, projectFiles)} · {formatTaskDue(item.record.data.due_at, currentTaskDate)}</span>
                     {hasTaskDetails(item) ? <span className="task-detail-summary">{formatTaskDetails(item)}</span> : null}
                     {subtaskParentId === item.record.id ? <form className="task-subtask-form" onSubmit={(event) => submitSubtask(event, item)}>
                       <label>子任务标题
@@ -256,4 +276,20 @@ function formatTaskDetails(item: SyncedTask) {
 
 function parentTitle(item: SyncedTask, taskFiles: SyncedTask[]) {
   return taskFiles.find((candidate) => candidate.record.id === item.record.data.parent_task_id)?.record.data.title ?? "父任务不可用";
+}
+
+function projectOptions(projectFiles: SyncedProject[], currentProjectId: string | null, allProjectFiles: SyncedProject[]) {
+  const options = projectFiles.map((item) => ({ id: item.record.id, name: item.record.data.name }));
+  if (currentProjectId && !options.some((project) => project.id === currentProjectId)) {
+    const current = allProjectFiles.find((item) => item.record.id === currentProjectId);
+    options.push({ id: currentProjectId, name: current ? `${current.record.data.name}（当前不可关联）` : `不可用项目（${currentProjectId}）` });
+  }
+  return options;
+}
+
+function projectName(projectId: string | null, projectFiles: SyncedProject[]) {
+  if (!projectId) return "无项目";
+  const project = projectFiles.find((item) => item.record.id === projectId);
+  if (!project) return "项目不可用";
+  return project.record.deleted_at === null ? project.record.data.name : `${project.record.data.name}（回收站）`;
 }

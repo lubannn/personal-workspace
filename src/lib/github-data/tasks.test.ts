@@ -79,6 +79,7 @@ describe("GitHub task records", () => {
     const edited = updateTaskDetails(done, {
       title: "  提交最终周报  ",
       category: "life",
+      project_id: "project_weekly",
       priority: "urgent",
       due_at: "2026-08-30",
       estimated_duration_minutes: 45,
@@ -93,6 +94,7 @@ describe("GitHub task records", () => {
       data: {
         title: "提交最终周报",
         category: "life",
+        project_id: "project_weekly",
         priority: "urgent",
         due_at: "2026-08-30",
         status: "done",
@@ -109,6 +111,7 @@ describe("GitHub task records", () => {
     expect(() => updateTaskDetails(task("task_invalid_edit"), {
       title: "   ",
       category: "work",
+      project_id: null,
       priority: "medium",
       due_at: null,
       estimated_duration_minutes: null,
@@ -119,6 +122,7 @@ describe("GitHub task records", () => {
     expect(() => updateTaskDetails(task("task_invalid_due"), {
       title: "合法标题",
       category: "work",
+      project_id: null,
       priority: "medium",
       due_at: "2026-02-31",
       estimated_duration_minutes: null,
@@ -129,6 +133,7 @@ describe("GitHub task records", () => {
     expect(() => updateTaskDetails(task("task_invalid_duration"), {
       title: "合法标题",
       category: "work",
+      project_id: null,
       priority: "medium",
       due_at: null,
       estimated_duration_minutes: -1,
@@ -139,6 +144,7 @@ describe("GitHub task records", () => {
     expect(() => updateTaskDetails(task("task_too_many_tags"), {
       title: "合法标题",
       category: "work",
+      project_id: null,
       priority: "medium",
       due_at: null,
       estimated_duration_minutes: null,

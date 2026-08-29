@@ -4,6 +4,8 @@ export type EntityType =
   | "capture"
   | "task"
   | "project"
+  | "project_phase"
+  | "milestone"
   | "calendar_event"
   | "journal"
   | "learning"
@@ -26,6 +28,8 @@ const ENTITY_DIRECTORIES: Record<Exclude<EntityType, "journal">, string> = {
   capture: "captures",
   task: "tasks",
   project: "projects",
+  project_phase: "project-phases",
+  milestone: "milestones",
   calendar_event: "calendar-events",
   learning: "learning",
   habit: "habits",

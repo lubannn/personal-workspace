@@ -63,7 +63,7 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .message-bar.error { border-color: #d5aaa2; background: #f3e2df; color: #773e35; }
 
 .dashboard-card { margin-bottom: 18px; padding: clamp(24px, 4vw, 40px); }
-.dashboard-card, .capture-card, .status-card, .recent-card, .tasks-card, .portability-card { border: 1px solid var(--line); border-radius: 24px; background: rgba(250,249,245,.72); }
+.dashboard-card, .capture-card, .status-card, .recent-card, .projects-card, .tasks-card, .portability-card { border: 1px solid var(--line); border-radius: 24px; background: rgba(250,249,245,.72); }
 .dashboard-heading { align-items: center; }
 .dashboard-heading h2 { margin: 0; font: 500 32px/1.15 ui-serif, Georgia, "Songti SC", serif; letter-spacing: -.035em; }
 .dashboard-subtitle { margin: 10px 0 0; color: var(--muted); font-size: 10px; }
@@ -96,6 +96,16 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .today-task-widget li span { min-width: 0; overflow: hidden; color: var(--soft); font: 12px/1.4 ui-serif, Georgia, "Songti SC", serif; text-overflow: ellipsis; white-space: nowrap; }
 .today-task-widget li small { color: var(--muted); font-size: 8px; white-space: nowrap; }
 .task-overflow-note { margin: 10px 0 0; color: var(--muted); font-size: 9px; }
+.dashboard-project-widget { margin-top: 22px; }
+.dashboard-project-widget .widget-empty { margin-top: 38px; }
+.dashboard-project-widget ul { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; }
+.dashboard-project-widget li { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 7px 14px; }
+.dashboard-project-widget li > div:first-child { min-width: 0; display: grid; gap: 3px; }
+.dashboard-project-widget strong { overflow: hidden; color: var(--soft); font: 500 12px/1.4 ui-serif, Georgia, "Songti SC", serif; text-overflow: ellipsis; white-space: nowrap; }
+.dashboard-project-widget small, .dashboard-project-widget span { color: var(--muted); font-size: 8px; white-space: nowrap; }
+.dashboard-project-widget li > span { grid-column: 2; grid-row: 1 / 3; align-self: center; }
+.dashboard-project-progress { height: 4px; overflow: hidden; border-radius: 999px; background: #e5e1d8; }
+.dashboard-project-progress i { height: 100%; display: block; border-radius: inherit; background: var(--accent); }
 .dashboard-editor-footer { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-top: 16px; padding: 16px; border: 1px dashed var(--line); border-radius: 14px; }
 .dashboard-editor-footer > div { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .dashboard-editor-footer strong, .dashboard-editor-footer span { color: var(--muted); font-size: 9px; }
@@ -144,11 +154,50 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .trash-button { border-color: #d5aaa2; color: #7a4138; }
 .restore-button { border-color: #b9c9b4; color: var(--accent); }
 .trash-button:disabled, .restore-button:disabled { opacity: .4; cursor: default; }
-.tasks-card { margin-bottom: 18px; padding: clamp(24px, 4vw, 40px); }
+.projects-card, .tasks-card { margin-bottom: 18px; padding: clamp(24px, 4vw, 40px); }
+.projects-card .card-heading h2, .tasks-card .card-heading h2 { font-size: 25px; }
+.projects-subtitle, .tasks-subtitle { margin: 9px 0 0; color: var(--muted); font-size: 10px; line-height: 1.6; }
+.project-view-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.project-create-form { display: grid; grid-template-columns: minmax(240px, 1fr) minmax(140px, .35fr) auto; align-items: end; gap: 10px; margin-top: 28px; padding: 18px; border: 1px solid var(--line); border-radius: 16px; background: rgba(255,255,255,.38); }
+.project-create-form label { display: grid; gap: 7px; color: var(--muted); font-size: 9px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.project-create-form input { min-width: 0; width: 100%; height: 42px; border: 1px solid var(--line); border-radius: 10px; padding: 0 11px; background: rgba(255,255,255,.72); color: var(--ink); outline: none; }
+.project-create-form input:focus { border-color: var(--accent); background: white; }
+.project-create-form input:disabled { opacity: .52; cursor: default; }
+.project-list { margin: 24px 0 0; padding: 0; list-style: none; }
+.project-list > li { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 18px; padding: 17px 0; border-top: 1px solid var(--line); }
+.project-content { min-width: 0; display: grid; gap: 6px; }
+.project-content strong { overflow-wrap: anywhere; font: 500 16px/1.45 ui-serif, Georgia, "Songti SC", serif; }
+.project-content span, .project-content small, .project-list code { color: var(--muted); font-size: 9px; }
+.project-progress { height: 5px; overflow: hidden; margin-top: 4px; border-radius: 999px; background: #e5e1d8; }
+.project-progress i { height: 100%; display: block; border-radius: inherit; background: var(--accent); }
+.project-content .project-description-indicator { color: var(--soft); }
+.project-edit-form { display: grid; grid-template-columns: minmax(180px, 1.4fr) repeat(2, minmax(120px, .55fr)); gap: 10px; padding: 14px; border: 1px solid var(--line); border-radius: 14px; background: rgba(255,255,255,.46); }
+.project-edit-form label { display: grid; gap: 6px; color: var(--muted); font-size: 9px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.project-edit-form input, .project-edit-form select { min-width: 0; width: 100%; height: 40px; border: 1px solid var(--line); border-radius: 9px; padding: 0 10px; background: white; color: var(--ink); outline: none; }
+.project-edit-form textarea { min-width: 0; width: 100%; min-height: 116px; resize: vertical; border: 1px solid var(--line); border-radius: 9px; padding: 10px; background: white; color: var(--ink); outline: none; font: inherit; line-height: 1.55; }
+.project-edit-form input:focus, .project-edit-form select:focus, .project-edit-form textarea:focus { border-color: var(--accent); }
+.project-edit-form input:disabled, .project-edit-form select:disabled, .project-edit-form textarea:disabled { opacity: .52; cursor: default; }
+.project-edit-description, .project-edit-actions { grid-column: 1 / -1; }
+.project-edit-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.project-phase-manager, .project-milestone-manager { margin-top: 7px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: rgba(255,255,255,.42); }
+.project-phase-manager > form, .project-milestone-manager > form { display: grid; grid-template-columns: minmax(180px, 1fr) auto auto; align-items: end; gap: 8px; }
+.project-milestone-manager > form { grid-template-columns: minmax(180px, 1fr) minmax(130px, .45fr) auto auto; }
+.project-phase-manager label, .project-milestone-manager label { display: grid; gap: 6px; color: var(--muted); font-size: 9px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.project-phase-manager input, .project-milestone-manager input { min-width: 0; width: 100%; height: 40px; border: 1px solid var(--line); border-radius: 9px; padding: 0 10px; background: white; color: var(--ink); outline: none; }
+.project-phase-manager input:focus, .project-milestone-manager input:focus { border-color: var(--accent); }
+.project-phase-manager > ul, .project-milestone-manager > ul { margin: 12px 0 0; padding: 0; list-style: none; }
+.project-phase-manager > ul > li, .project-milestone-manager > ul > li { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 9px 0; border-top: 1px solid var(--line); }
+.project-phase-manager > ul > li > span, .project-milestone-manager > ul > li > span:first-child { min-width: 0; display: grid; gap: 3px; }
+.project-phase-manager > ul strong, .project-milestone-manager > ul strong { overflow-wrap: anywhere; font: 500 12px/1.4 ui-serif, Georgia, "Songti SC", serif; }
+.project-phase-manager em { color: var(--accent); font-size: 9px; font-style: normal; font-weight: 700; }
+.project-milestone-actions { display: flex; align-items: center; gap: 10px; }
+.project-row-actions { min-width: 126px; display: grid; justify-items: end; gap: 7px; }
+.project-item-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 3px 10px; }
+.project-row-actions .text-button { padding: 2px 0; font-size: 10px; }
+.project-row-actions .project-destructive-button { color: #7a4138; }
 .tasks-card .card-heading h2 { font-size: 25px; }
-.tasks-subtitle { margin: 9px 0 0; color: var(--muted); font-size: 10px; line-height: 1.6; }
 .task-view-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
-.task-create-form { display: grid; grid-template-columns: minmax(240px, 1.7fr) repeat(3, minmax(100px, .55fr)) auto; align-items: end; gap: 10px; margin-top: 28px; padding: 18px; border: 1px solid var(--line); border-radius: 16px; background: rgba(255,255,255,.38); }
+.task-create-form { display: grid; grid-template-columns: minmax(220px, 1.5fr) repeat(4, minmax(100px, .55fr)) auto; align-items: end; gap: 10px; margin-top: 28px; padding: 18px; border: 1px solid var(--line); border-radius: 16px; background: rgba(255,255,255,.38); }
 .task-create-form label { display: grid; gap: 7px; color: var(--muted); font-size: 9px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
 .task-create-form input, .task-create-form select { min-width: 0; width: 100%; height: 42px; border: 1px solid var(--line); border-radius: 10px; padding: 0 11px; background: rgba(255,255,255,.72); color: var(--ink); outline: none; }
 .task-create-form input:focus, .task-create-form select:focus { border-color: var(--accent); background: white; }
@@ -248,11 +297,19 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
   .card-heading { display: grid; }
   .memory-pill { width: fit-content; }
   .recent-actions { justify-content: flex-start; }
+  .project-view-actions { justify-content: flex-start; }
   .task-view-actions { justify-content: flex-start; }
+  .project-create-form { grid-template-columns: 1fr 1fr; }
+  .project-create-form label:first-child, .project-create-form button { grid-column: 1 / -1; }
+  .project-create-form button { width: 100%; }
   .task-create-form { grid-template-columns: 1fr 1fr; }
   .task-create-form .task-title-field { grid-column: 1 / -1; }
   .task-create-form button { width: 100%; }
   .task-edit-form { grid-template-columns: 1fr 1fr; }
+  .project-edit-form { grid-template-columns: 1fr 1fr; }
+  .project-edit-form .project-edit-name { grid-column: 1 / -1; }
+  .project-phase-manager > form, .project-milestone-manager > form { grid-template-columns: 1fr 1fr; }
+  .project-phase-manager > form label, .project-milestone-manager > form label:first-child { grid-column: 1 / -1; }
   .task-edit-form .task-edit-title { grid-column: 1 / -1; }
   .recent-list li { grid-template-columns: 1fr auto; gap: 9px 15px; }
   .recent-list p { grid-column: 1 / -1; grid-row: 2; }
@@ -266,11 +323,21 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
   .connection-form { grid-template-columns: 1fr; }
   .connection-form label, .connection-form .token-field, .connection-form button { grid-column: 1; }
   .task-create-form { grid-template-columns: 1fr; }
+  .project-create-form { grid-template-columns: 1fr; }
+  .project-create-form label:first-child, .project-create-form button { grid-column: 1; }
   .task-create-form .task-title-field { grid-column: 1; }
   .task-edit-form { grid-template-columns: 1fr; }
+  .project-edit-form { grid-template-columns: 1fr; }
+  .project-edit-form .project-edit-name, .project-edit-form .project-edit-description, .project-edit-form .project-edit-actions { grid-column: 1; }
   .task-edit-form .task-edit-title { grid-column: 1; }
   .task-edit-form .task-edit-tags, .task-edit-form .task-edit-notes { grid-column: 1; }
   .task-list li { grid-template-columns: auto minmax(0, 1fr); align-items: start; }
+  .project-list > li { grid-template-columns: 1fr; }
+  .project-row-actions { min-width: 0; justify-items: start; }
+  .project-item-actions { justify-content: flex-start; }
+  .project-phase-manager > form, .project-milestone-manager > form { grid-template-columns: 1fr; }
+  .project-phase-manager > form label, .project-milestone-manager > form label:first-child { grid-column: 1; }
+  .project-phase-manager > form button, .project-milestone-manager > form button { width: 100%; }
   .task-row-actions { grid-column: 2; min-width: 0; justify-items: start; }
   .task-item-actions { justify-content: flex-start; }
   .task-list li.subtask { padding-left: 12px; }

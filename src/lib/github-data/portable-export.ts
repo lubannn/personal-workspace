@@ -1,6 +1,9 @@
 import type { GitHubStoredFile } from "./github-contents";
 import { DASHBOARD_LAYOUT_PATH, parseDashboardLayout } from "./dashboard-layout";
 import { recordPath } from "./protocol";
+import { parseProjectRecord } from "./projects";
+import { parseProjectPhaseRecord } from "./project-phases";
+import { parseMilestoneRecord } from "./milestones";
 import { parseTaskRecord } from "./tasks";
 import { parseCaptureRecord, parseWorkspaceDescriptor, type WorkspaceDescriptor } from "./workspace";
 
@@ -30,7 +33,7 @@ export type PortableWorkspaceExport = {
   manifest: {
     schema_version: 1;
     scope: {
-      modules: Array<"workspace" | "captures" | "dashboard_layout" | "tasks">;
+      modules: Array<"workspace" | "captures" | "dashboard_layout" | "tasks" | "projects" | "project_phases" | "milestones">;
       complete: true;
     };
     counts: {
@@ -38,6 +41,9 @@ export type PortableWorkspaceExport = {
       captures: number;
       dashboard_layouts: number;
       tasks: number;
+      projects: number;
+      project_phases: number;
+      milestones: number;
     };
     files: PortableExportManifestFile[];
   };
@@ -60,6 +66,9 @@ export type ExportInspection = {
     captures: number;
     dashboardLayouts: number;
     tasks: number;
+    projects: number;
+    projectPhases: number;
+    milestones: number;
   };
   errors: ExportInspectionIssue[];
   warnings: ExportInspectionIssue[];
@@ -85,11 +94,17 @@ export async function buildPortableWorkspaceExport(input: {
   captureFiles: GitHubStoredFile[];
   dashboardLayoutFile?: GitHubStoredFile | null;
   taskFiles?: GitHubStoredFile[];
+  projectFiles?: GitHubStoredFile[];
+  projectPhaseFiles?: GitHubStoredFile[];
+  milestoneFiles?: GitHubStoredFile[];
   generatedAt?: string;
 }): Promise<PortableWorkspaceExport> {
   const dashboardLayoutFiles = input.dashboardLayoutFile ? [input.dashboardLayoutFile] : [];
   const taskFiles = input.taskFiles ?? [];
-  const files = [input.workspaceFile, ...input.captureFiles, ...dashboardLayoutFiles, ...taskFiles]
+  const projectFiles = input.projectFiles ?? [];
+  const projectPhaseFiles = input.projectPhaseFiles ?? [];
+  const milestoneFiles = input.milestoneFiles ?? [];
+  const files = [input.workspaceFile, ...input.captureFiles, ...dashboardLayoutFiles, ...taskFiles, ...projectFiles, ...projectPhaseFiles, ...milestoneFiles]
     .map((file) => ({ ...file }))
     .sort((left, right) => left.path.localeCompare(right.path));
   const manifestFiles = await Promise.all(files.map(async (file) => ({
@@ -106,12 +121,15 @@ export async function buildPortableWorkspaceExport(input: {
     source: { repository: input.repository, branch: input.branch },
     manifest: {
       schema_version: 1,
-      scope: { modules: ["workspace", "captures", "dashboard_layout", "tasks"], complete: true },
+      scope: { modules: ["workspace", "captures", "dashboard_layout", "tasks", "projects", "project_phases", "milestones"], complete: true },
       counts: {
         files: files.length,
         captures: input.captureFiles.length,
         dashboard_layouts: dashboardLayoutFiles.length,
         tasks: taskFiles.length,
+        projects: projectFiles.length,
+        project_phases: projectPhaseFiles.length,
+        milestones: milestoneFiles.length,
       },
       files: manifestFiles,
     },
@@ -145,7 +163,7 @@ export async function inspectPortableWorkspaceExport(value: unknown): Promise<Ex
     generatedAt: null,
     repository: null,
     workspace: null,
-    counts: { files: 0, captures: 0, dashboardLayouts: 0, tasks: 0 },
+    counts: { files: 0, captures: 0, dashboardLayouts: 0, tasks: 0, projects: 0, projectPhases: 0, milestones: 0 },
     errors,
     warnings,
   };
@@ -318,11 +336,108 @@ export async function inspectPortableWorkspaceExport(value: unknown): Promise<Ex
     errors.push({ code: "TASK_COUNT_MISMATCH", message: "Task 数量与 manifest 不一致。" });
   }
 
+  const projectIds = new Set<string>();
+  const projectRecords = new Map<string, ReturnType<typeof parseProjectRecord>>();
+  const projectFiles = validPayloadFiles.filter((file) => file.path.startsWith("data/projects/"));
+  result.counts.projects = projectFiles.length;
+  for (const file of projectFiles) {
+    try {
+      const record = parseProjectRecord(file.content);
+      if (result.workspace && record.owner_id !== result.workspace.owner_id) {
+        errors.push({ code: "OWNER_MISMATCH", message: "Project 的 owner_id 与 workspace 不一致。", path: file.path });
+      }
+      if (recordPath("project", record.id) !== file.path) {
+        errors.push({ code: "PROJECT_PATH_MISMATCH", message: "Project 的 ID 与文件路径不一致。", path: file.path });
+      }
+      if (projectIds.has(record.id)) {
+        errors.push({ code: "DUPLICATE_PROJECT_ID", message: "导出包中存在重复 Project ID。", path: file.path });
+      }
+      projectIds.add(record.id);
+      projectRecords.set(record.id, record);
+    } catch {
+      errors.push({ code: "INVALID_PROJECT_RECORD", message: "Project 文件无法通过结构校验。", path: file.path });
+    }
+  }
+  const rawProjectCount = manifestCounts?.projects;
+  if ((rawProjectCount !== undefined || projectFiles.length > 0) && rawProjectCount !== projectFiles.length) {
+    errors.push({ code: "PROJECT_COUNT_MISMATCH", message: "Project 数量与 manifest 不一致。" });
+  }
+
+  const projectPhaseIds = new Set<string>();
+  const projectPhaseRecords = new Map<string, ReturnType<typeof parseProjectPhaseRecord>>();
+  const projectPhaseFiles = validPayloadFiles.filter((file) => file.path.startsWith("data/project-phases/"));
+  result.counts.projectPhases = projectPhaseFiles.length;
+  for (const file of projectPhaseFiles) {
+    try {
+      const record = parseProjectPhaseRecord(file.content);
+      if (result.workspace && record.owner_id !== result.workspace.owner_id) {
+        errors.push({ code: "OWNER_MISMATCH", message: "ProjectPhase 的 owner_id 与 workspace 不一致。", path: file.path });
+      }
+      if (recordPath("project_phase", record.id) !== file.path) {
+        errors.push({ code: "PROJECT_PHASE_PATH_MISMATCH", message: "ProjectPhase 的 ID 与文件路径不一致。", path: file.path });
+      }
+      if (projectPhaseIds.has(record.id)) {
+        errors.push({ code: "DUPLICATE_PROJECT_PHASE_ID", message: "导出包中存在重复 ProjectPhase ID。", path: file.path });
+      }
+      projectPhaseIds.add(record.id);
+      projectPhaseRecords.set(record.id, record);
+      if (!projectIds.has(record.data.project_id)) {
+        errors.push({ code: "PROJECT_PHASE_PROJECT_MISSING", message: "ProjectPhase 引用的 Project 不在导出包中。", path: file.path });
+      }
+    } catch {
+      errors.push({ code: "INVALID_PROJECT_PHASE_RECORD", message: "ProjectPhase 文件无法通过结构校验。", path: file.path });
+    }
+  }
+  const rawProjectPhaseCount = manifestCounts?.project_phases;
+  if ((rawProjectPhaseCount !== undefined || projectPhaseFiles.length > 0) && rawProjectPhaseCount !== projectPhaseFiles.length) {
+    errors.push({ code: "PROJECT_PHASE_COUNT_MISMATCH", message: "ProjectPhase 数量与 manifest 不一致。" });
+  }
+  for (const project of projectRecords.values()) {
+    if (!project.data.current_phase_id) continue;
+    const phase = projectPhaseRecords.get(project.data.current_phase_id);
+    if (!phase) {
+      errors.push({ code: "CURRENT_PROJECT_PHASE_MISSING", message: "Project 当前阶段引用的文件不在导出包中。", path: recordPath("project", project.id) });
+    } else if (phase.data.project_id !== project.id) {
+      errors.push({ code: "CURRENT_PROJECT_PHASE_MISMATCH", message: "Project 当前阶段属于另一个 Project。", path: recordPath("project", project.id) });
+    }
+  }
+
+  const milestoneIds = new Set<string>();
+  const milestoneFiles = validPayloadFiles.filter((file) => file.path.startsWith("data/milestones/"));
+  result.counts.milestones = milestoneFiles.length;
+  for (const file of milestoneFiles) {
+    try {
+      const record = parseMilestoneRecord(file.content);
+      if (result.workspace && record.owner_id !== result.workspace.owner_id) {
+        errors.push({ code: "OWNER_MISMATCH", message: "Milestone 的 owner_id 与 workspace 不一致。", path: file.path });
+      }
+      if (recordPath("milestone", record.id) !== file.path) {
+        errors.push({ code: "MILESTONE_PATH_MISMATCH", message: "Milestone 的 ID 与文件路径不一致。", path: file.path });
+      }
+      if (milestoneIds.has(record.id)) {
+        errors.push({ code: "DUPLICATE_MILESTONE_ID", message: "导出包中存在重复 Milestone ID。", path: file.path });
+      }
+      milestoneIds.add(record.id);
+      if (!projectIds.has(record.data.project_id)) {
+        errors.push({ code: "MILESTONE_PROJECT_MISSING", message: "Milestone 引用的 Project 不在导出包中。", path: file.path });
+      }
+    } catch {
+      errors.push({ code: "INVALID_MILESTONE_RECORD", message: "Milestone 文件无法通过结构校验。", path: file.path });
+    }
+  }
+  const rawMilestoneCount = manifestCounts?.milestones;
+  if ((rawMilestoneCount !== undefined || milestoneFiles.length > 0) && rawMilestoneCount !== milestoneFiles.length) {
+    errors.push({ code: "MILESTONE_COUNT_MISMATCH", message: "Milestone 数量与 manifest 不一致。" });
+  }
+
   const supportedPaths = new Set(["workspace.json", DASHBOARD_LAYOUT_PATH]);
   const unexpectedFiles = validPayloadFiles.filter((file) => (
     !supportedPaths.has(file.path)
     && !file.path.startsWith("data/captures/")
     && !file.path.startsWith("data/tasks/")
+    && !file.path.startsWith("data/projects/")
+    && !file.path.startsWith("data/project-phases/")
+    && !file.path.startsWith("data/milestones/")
   ));
   for (const file of unexpectedFiles) {
     errors.push({ code: "UNEXPECTED_FILE", message: "当前版本不支持此导出路径。", path: file.path });

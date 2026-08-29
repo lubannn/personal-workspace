@@ -37,6 +37,7 @@ export type TaskEditableFields = Pick<
   TaskData,
   | "title"
   | "category"
+  | "project_id"
   | "priority"
   | "due_at"
   | "estimated_duration_minutes"
@@ -143,6 +144,7 @@ export function updateTaskDetails(
     !title
     || title.length > 300
     || !TASK_CATEGORIES.includes(details.category)
+    || !isNullableString(details.project_id)
     || !TASK_PRIORITIES.includes(details.priority)
     || (details.due_at !== null && !isValidDateOnly(details.due_at))
     || tags.length > MAX_TASK_TAGS
@@ -158,6 +160,7 @@ export function updateTaskDetails(
     ...current.data,
     title,
     category: details.category,
+    project_id: details.project_id,
     priority: details.priority,
     due_at: details.due_at,
     is_due_date_only: true,
