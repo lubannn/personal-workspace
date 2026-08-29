@@ -54,7 +54,12 @@ import { createProjectPhaseData } from "../../../src/lib/github-data/project-pha
 import { createMilestoneData, setMilestoneStatus } from "../../../src/lib/github-data/milestones";
 import { createProjectNoteData, updateProjectNoteDetails, type ProjectNoteEditableFields } from "../../../src/lib/github-data/project-notes";
 import { createActivityEventData, type ActivityChangeSummary } from "../../../src/lib/github-data/activity-events";
-import { createCalendarEventData, localDateTimeToIso } from "../../../src/lib/github-data/calendar-events";
+import {
+  createCalendarEventData,
+  localDateTimeToIso,
+  setCalendarEventStatus,
+  updateCalendarEventDetails,
+} from "../../../src/lib/github-data/calendar-events";
 import {
   archivedTasks,
   cancelledTasks,
@@ -84,6 +89,7 @@ import {
   type PortabilityResult,
   type SavedCapture,
   type SyncedCapture,
+  type SyncedCalendarEvent,
   type SyncedProject,
   type SyncedProjectPhase,
   type SyncedMilestone,
@@ -98,7 +104,7 @@ import { DashboardSection } from "./workspace/dashboard-section";
 import { AuthSection } from "./workspace/auth-section";
 import { PortabilitySection } from "./workspace/portability-section";
 import { ProjectsSection } from "./workspace/projects-section";
-import { CalendarSection, type CalendarEventCreateFields } from "./workspace/calendar-section";
+import { CalendarSection, type CalendarEventFields } from "./workspace/calendar-section";
 import { ReadinessSection } from "./workspace/readiness-section";
 import { TasksSection } from "./workspace/tasks-section";
 
@@ -142,6 +148,7 @@ export default function GitHubWorkspacePage() {
   const [savingProjectNoteProjectId, setSavingProjectNoteProjectId] = useState<string | null>(null);
   const [savingProjectNoteId, setSavingProjectNoteId] = useState<string | null>(null);
   const [savingCalendarEvent, setSavingCalendarEvent] = useState(false);
+  const [savingCalendarEventId, setSavingCalendarEventId] = useState<string | null>(null);
   const [dashboardDirty, setDashboardDirty] = useState(false);
   const [editingDashboard, setEditingDashboard] = useState(false);
   const [savingDashboard, setSavingDashboard] = useState(false);
@@ -604,9 +611,9 @@ export default function GitHubWorkspacePage() {
     }
   }
 
-  async function saveCalendarEvent(fields: CalendarEventCreateFields) {
+  async function saveCalendarEvent(fields: CalendarEventFields) {
     const adapter = adapterRef.current;
-    if (!adapter || !connection || savingCalendarEvent || online === false) return false;
+    if (!adapter || !connection || savingCalendarEvent || savingCalendarEventId || online === false) return false;
     if (fields.linkedTaskId && !taskFiles.some((item) => item.record.id === fields.linkedTaskId && item.record.deleted_at === null)) {
       setErrorMessage("关联 Task 已不在当前数据中，请刷新后重新选择；未写入 CalendarEvent。");
       return false;
@@ -652,6 +659,102 @@ export default function GitHubWorkspacePage() {
       return false;
     } finally {
       setSavingCalendarEvent(false);
+    }
+  }
+
+  async function saveCalendarEventEdit(item: SyncedCalendarEvent, fields: CalendarEventFields) {
+    const adapter = adapterRef.current;
+    if (!adapter || !connection || savingCalendarEvent || savingCalendarEventId || online === false) return false;
+    if (fields.linkedTaskId && !taskFiles.some((candidate) => candidate.record.id === fields.linkedTaskId && candidate.record.deleted_at === null)) {
+      setErrorMessage("关联 Task 已不在当前数据中，请刷新后重新选择；未改写 CalendarEvent。");
+      return false;
+    }
+    setSavingCalendarEventId(item.record.id);
+    setErrorMessage("");
+    setStatusMessage("");
+    try {
+      const updated = updateCalendarEventDetails(item.record, {
+        title: fields.title,
+        eventType: fields.eventType,
+        startAt: localDateTimeToIso(fields.localDate, fields.startTime, connection.timezone),
+        endAt: localDateTimeToIso(fields.localDate, fields.endTime, connection.timezone),
+        timezone: connection.timezone,
+        localDate: fields.localDate,
+        linkedTaskId: fields.linkedTaskId,
+      });
+      const result = await adapter.writeText({
+        path: item.path,
+        text: serializeRecord(updated),
+        message: `calendar: edit ${item.record.id}`,
+        expectedBlobSha: item.blobSha,
+      });
+      setCalendarEventFiles((current) => current.map((candidate) => candidate.record.id === item.record.id
+        ? { record: updated, path: result.path, blobSha: result.blobSha }
+        : candidate));
+      setStatusMessage("日程修改已保存；关联 Task 未被改写，Git 历史和旧 blob SHA 冲突保护保持启用。");
+      return true;
+    } catch (error) {
+      setErrorMessage(error instanceof Error && error.message.startsWith("INVALID_CALENDAR")
+        ? "日程日期、时间或时区无效，未写入任何数据。"
+        : friendlyError(error));
+      return false;
+    } finally {
+      setSavingCalendarEventId(null);
+    }
+  }
+
+  async function updateCalendarEventLifecycle(item: SyncedCalendarEvent, operation: "cancel" | "reopen") {
+    const adapter = adapterRef.current;
+    if (!adapter || !connection || savingCalendarEvent || savingCalendarEventId || online === false) return;
+    setSavingCalendarEventId(item.record.id);
+    setErrorMessage("");
+    setStatusMessage("");
+    const updated = setCalendarEventStatus(item.record, operation === "cancel" ? "cancelled" : "confirmed");
+    try {
+      const result = await adapter.writeText({
+        path: item.path,
+        text: serializeRecord(updated),
+        message: `calendar: ${operation} ${item.record.id}`,
+        expectedBlobSha: item.blobSha,
+      });
+      setCalendarEventFiles((current) => current.map((candidate) => candidate.record.id === item.record.id
+        ? { record: updated, path: result.path, blobSha: result.blobSha }
+        : candidate));
+      setStatusMessage(operation === "cancel"
+        ? "日程已取消；记录和 Git 历史仍保留，可从“已取消”视图恢复。"
+        : "日程已恢复为已安排；关联 Task 的状态、DDL 和耗时均未改写。");
+    } catch (error) {
+      setErrorMessage(friendlyError(error));
+    } finally {
+      setSavingCalendarEventId(null);
+    }
+  }
+
+  async function updateCalendarEventDeletion(item: SyncedCalendarEvent, operation: "trash" | "restore") {
+    const adapter = adapterRef.current;
+    if (!adapter || !connection || savingCalendarEvent || savingCalendarEventId || online === false) return;
+    setSavingCalendarEventId(item.record.id);
+    setErrorMessage("");
+    setStatusMessage("");
+    const timestamp = new Date().toISOString();
+    const updated = setWorkspaceRecordDeleted(item.record, operation === "trash" ? timestamp : null, timestamp);
+    try {
+      const result = await adapter.writeText({
+        path: item.path,
+        text: serializeRecord(updated),
+        message: `calendar: ${operation} ${item.record.id}`,
+        expectedBlobSha: item.blobSha,
+      });
+      setCalendarEventFiles((current) => current.map((candidate) => candidate.record.id === item.record.id
+        ? { record: updated, path: result.path, blobSha: result.blobSha }
+        : candidate));
+      setStatusMessage(operation === "trash"
+        ? "日程已移到回收站；原状态和 Git 历史均保留，可随时恢复。"
+        : "日程已从回收站恢复到原状态；关联 Task 未被改写。");
+    } catch (error) {
+      setErrorMessage(friendlyError(error));
+    } finally {
+      setSavingCalendarEventId(null);
     }
   }
 
@@ -1675,7 +1778,11 @@ export default function GitHubWorkspacePage() {
         taskFiles={taskFiles}
         loading={loadingCalendarEvents}
         saving={savingCalendarEvent}
+        savingEventId={savingCalendarEventId}
         onCreate={saveCalendarEvent}
+        onEdit={saveCalendarEventEdit}
+        onLifecycleChange={updateCalendarEventLifecycle}
+        onDeletionChange={updateCalendarEventDeletion}
         onRefresh={() => loadCalendarEvents()}
       />
 
