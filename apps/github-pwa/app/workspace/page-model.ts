@@ -5,6 +5,7 @@ import type { TaskCategory, TaskPriority, TaskRecord } from "../../../../src/lib
 import type { ProjectRecord } from "../../../../src/lib/github-data/projects";
 import type { ProjectPhaseRecord } from "../../../../src/lib/github-data/project-phases";
 import type { MilestoneRecord } from "../../../../src/lib/github-data/milestones";
+import type { ProjectNoteRecord } from "../../../../src/lib/github-data/project-notes";
 
 export type Connection = {
   repository: string;
@@ -49,6 +50,12 @@ export type SyncedMilestone = {
   blobSha: string;
 };
 
+export type SyncedProjectNote = {
+  record: ProjectNoteRecord;
+  path: string;
+  blobSha: string;
+};
+
 export type AuthAvailability = "checking" | "unavailable" | "configured";
 export type ConnectionMethod = "github-app" | "personal-token";
 
@@ -62,6 +69,7 @@ export type PortabilityResult = {
   projects: number;
   projectPhases: number;
   milestones: number;
+  projectNotes: number;
   errors: ExportInspectionIssue[];
   warnings: ExportInspectionIssue[];
 };

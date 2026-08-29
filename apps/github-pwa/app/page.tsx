@@ -52,6 +52,7 @@ import {
 } from "../../../src/lib/github-data/projects";
 import { createProjectPhaseData } from "../../../src/lib/github-data/project-phases";
 import { createMilestoneData, setMilestoneStatus } from "../../../src/lib/github-data/milestones";
+import { createProjectNoteData, updateProjectNoteDetails, type ProjectNoteEditableFields } from "../../../src/lib/github-data/project-notes";
 import {
   archivedTasks,
   cancelledTasks,
@@ -84,6 +85,7 @@ import {
   type SyncedProject,
   type SyncedProjectPhase,
   type SyncedMilestone,
+  type SyncedProjectNote,
   type SyncedTask,
 } from "./workspace/page-model";
 import { useOnlineStatus } from "./workspace/use-online-status";
@@ -134,6 +136,8 @@ export default function GitHubWorkspacePage() {
   const [savingProjectPhaseProjectId, setSavingProjectPhaseProjectId] = useState<string | null>(null);
   const [savingMilestoneProjectId, setSavingMilestoneProjectId] = useState<string | null>(null);
   const [savingMilestoneId, setSavingMilestoneId] = useState<string | null>(null);
+  const [savingProjectNoteProjectId, setSavingProjectNoteProjectId] = useState<string | null>(null);
+  const [savingProjectNoteId, setSavingProjectNoteId] = useState<string | null>(null);
   const [dashboardDirty, setDashboardDirty] = useState(false);
   const [editingDashboard, setEditingDashboard] = useState(false);
   const [savingDashboard, setSavingDashboard] = useState(false);
@@ -166,6 +170,8 @@ export default function GitHubWorkspacePage() {
     setProjectPhaseFiles,
     milestoneFiles,
     setMilestoneFiles,
+    projectNoteFiles,
+    setProjectNoteFiles,
     dashboardLayout,
     setDashboardLayout,
     dashboardBlobSha,
@@ -175,12 +181,14 @@ export default function GitHubWorkspacePage() {
     loadingProjects,
     loadingProjectPhases,
     loadingMilestones,
+    loadingProjectNotes,
     loadingDashboard,
     loadRecentCaptures,
     loadTasks,
     loadProjects,
     loadProjectPhases,
     loadMilestones,
+    loadProjectNotes,
     loadDashboardLayout,
     clearCollections,
   } = useWorkspaceCollections({ adapterRef, setErrorMessage, setDashboardClean });
@@ -199,6 +207,7 @@ export default function GitHubWorkspacePage() {
     loadProjects,
     loadProjectPhases,
     loadMilestones,
+    loadProjectNotes,
   });
 
 
@@ -370,6 +379,7 @@ export default function GitHubWorkspacePage() {
         loadProjects(opened.adapter),
         loadProjectPhases(opened.adapter),
         loadMilestones(opened.adapter),
+        loadProjectNotes(opened.adapter),
       ]);
     } catch (error) {
       adapterRef.current = null;
@@ -809,6 +819,71 @@ export default function GitHubWorkspacePage() {
     }
   }
 
+  async function saveProjectNote(project: SyncedProject, details: ProjectNoteEditableFields) {
+    const adapter = adapterRef.current;
+    if (!adapter || !connection || savingProjectNoteProjectId || online === false) return false;
+    setSavingProjectNoteProjectId(project.record.id);
+    setErrorMessage("");
+    setStatusMessage("");
+    const timestamp = new Date().toISOString();
+    const timePart = timestamp.replaceAll(/\D/g, "").slice(0, 17);
+    const id = `project_note_${timePart}_${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`;
+    try {
+      const record = createWorkspaceRecord({
+        entityType: "project_note",
+        id,
+        ownerId: connection.ownerId,
+        timestamp,
+        data: createProjectNoteData({
+          projectId: project.record.id,
+          title: details.title,
+          bodyMarkdown: details.body_markdown,
+          noteDate: details.note_date,
+        }),
+      });
+      const result = await adapter.writeText({
+        path: recordPath("project_note", id),
+        text: serializeRecord(record),
+        message: `project note: create ${id}`,
+      });
+      setProjectNoteFiles((current) => [{ record, path: result.path, blobSha: result.blobSha }, ...current]);
+      setStatusMessage("项目 Note 已保存为独立 Markdown 数据记录；项目本体没有被改写。");
+      return true;
+    } catch (error) {
+      setErrorMessage(friendlyError(error));
+      return false;
+    } finally {
+      setSavingProjectNoteProjectId(null);
+    }
+  }
+
+  async function saveProjectNoteEdit(item: SyncedProjectNote, details: ProjectNoteEditableFields) {
+    const adapter = adapterRef.current;
+    if (!adapter || !connection || savingProjectNoteId || online === false) return false;
+    setSavingProjectNoteId(item.record.id);
+    setErrorMessage("");
+    setStatusMessage("");
+    try {
+      const updated = updateProjectNoteDetails(item.record, details);
+      const result = await adapter.writeText({
+        path: item.path,
+        text: serializeRecord(updated),
+        message: `project note: edit ${item.record.id}`,
+        expectedBlobSha: item.blobSha,
+      });
+      setProjectNoteFiles((current) => current.map((candidate) => candidate.record.id === item.record.id
+        ? { record: updated, path: result.path, blobSha: result.blobSha }
+        : candidate));
+      setStatusMessage("项目 Note 已更新；旧 blob SHA 冲突保护和 Git 历史均已保留。");
+      return true;
+    } catch (error) {
+      setErrorMessage(friendlyError(error));
+      return false;
+    } finally {
+      setSavingProjectNoteId(null);
+    }
+  }
+
   async function updateProjectDeletion(item: SyncedProject, operation: "trash" | "restore") {
     const adapter = adapterRef.current;
     if (!adapter || !connection || savingProjectId || online === false) return;
@@ -1026,6 +1101,17 @@ export default function GitHubWorkspacePage() {
     }
   }
 
+  async function listProjectNoteFiles(adapter: GitHubContentsAdapter) {
+    try {
+      return (await adapter.listDirectory("data/project-notes"))
+        .filter((item) => item.type === "file" && item.name.endsWith(".json"))
+        .sort((left, right) => left.path.localeCompare(right.path));
+    } catch (error) {
+      if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") return [];
+      throw error;
+    }
+  }
+
   async function downloadPortableExport() {
     const adapter = adapterRef.current;
     if (!adapter || !connection || exporting || online === false) return;
@@ -1083,6 +1169,14 @@ export default function GitHubWorkspacePage() {
           milestoneCandidates.slice(index, index + batchSize).map((item) => adapter.readText(item.path)),
         ));
       }
+      const projectNoteCandidates = await listProjectNoteFiles(adapter);
+      const projectNoteFiles = [];
+      for (let index = 0; index < projectNoteCandidates.length; index += batchSize) {
+        setExportProgress(`正在读取 ProjectNote ${Math.min(index + batchSize, projectNoteCandidates.length)} / ${projectNoteCandidates.length}…`);
+        projectNoteFiles.push(...await Promise.all(
+          projectNoteCandidates.slice(index, index + batchSize).map((item) => adapter.readText(item.path)),
+        ));
+      }
 
       setExportProgress("正在生成 SHA-256 manifest…");
       const generatedAt = new Date().toISOString();
@@ -1096,6 +1190,7 @@ export default function GitHubWorkspacePage() {
         projectFiles,
         projectPhaseFiles,
         milestoneFiles,
+        projectNoteFiles,
         generatedAt,
       });
       const inspection = await inspectPortableWorkspaceExport(portableExport);
@@ -1123,6 +1218,7 @@ export default function GitHubWorkspacePage() {
         projects: inspection.counts.projects,
         projectPhases: inspection.counts.projectPhases,
         milestones: inspection.counts.milestones,
+        projectNotes: inspection.counts.projectNotes,
         errors: inspection.errors,
         warnings: inspection.warnings,
       });
@@ -1136,6 +1232,7 @@ export default function GitHubWorkspacePage() {
         projects: inspection.counts.projects,
         projectPhases: inspection.counts.projectPhases,
         milestones: inspection.counts.milestones,
+        projectNotes: inspection.counts.projectNotes,
         errors: inspection.errors,
         warnings: inspection.warnings,
       });
@@ -1177,6 +1274,7 @@ export default function GitHubWorkspacePage() {
           projects: 0,
           projectPhases: 0,
           milestones: 0,
+          projectNotes: 0,
           errors: [{ code: "EXPORT_TOO_LARGE", message: "当前预检仅接受 50 MB 以内的 JSON 文件。" }],
           warnings: [],
         });
@@ -1194,6 +1292,7 @@ export default function GitHubWorkspacePage() {
         projects: inspection.counts.projects,
         projectPhases: inspection.counts.projectPhases,
         milestones: inspection.counts.milestones,
+        projectNotes: inspection.counts.projectNotes,
         errors: inspection.errors,
         warnings: inspection.warnings,
       });
@@ -1212,6 +1311,7 @@ export default function GitHubWorkspacePage() {
         projects: 0,
         projectPhases: 0,
         milestones: 0,
+        projectNotes: 0,
         errors: [{ code: "INVALID_JSON", message: "文件不是有效的 JSON，未执行任何恢复操作。" }],
         warnings: [],
       });
@@ -1402,6 +1502,7 @@ export default function GitHubWorkspacePage() {
         projectFiles={projectFiles}
         projectPhaseFiles={projectPhaseFiles}
         milestoneFiles={milestoneFiles}
+        projectNoteFiles={projectNoteFiles}
         currentProjectFiles={currentProjectFiles}
         completedProjectFiles={completedProjectFiles}
         cancelledProjectFiles={cancelledProjectFiles}
@@ -1413,11 +1514,15 @@ export default function GitHubWorkspacePage() {
         loadingProjects={loadingProjects}
         loadingProjectPhases={loadingProjectPhases}
         loadingMilestones={loadingMilestones}
+        loadingProjectNotes={loadingProjectNotes}
         savingProject={savingProject}
         savingProjectId={savingProjectId}
         savingProjectPhaseProjectId={savingProjectPhaseProjectId}
         savingMilestoneProjectId={savingMilestoneProjectId}
         savingMilestoneId={savingMilestoneId}
+        savingProjectNoteProjectId={savingProjectNoteProjectId}
+        savingProjectNoteId={savingProjectNoteId}
+        currentDate={currentTaskDate}
         onProjectNameChange={setProjectName}
         onProjectTargetDateChange={setProjectTargetDate}
         onCreateProject={saveProject}
@@ -1429,7 +1534,9 @@ export default function GitHubWorkspacePage() {
         onSetCurrentPhase={setCurrentProjectPhase}
         onCreateMilestone={saveMilestone}
         onMilestoneLifecycle={updateMilestoneLifecycle}
-        onRefresh={() => Promise.all([loadProjects(), loadProjectPhases(), loadMilestones()])}
+        onCreateProjectNote={saveProjectNote}
+        onEditProjectNote={saveProjectNoteEdit}
+        onRefresh={() => Promise.all([loadProjects(), loadProjectPhases(), loadMilestones(), loadProjectNotes()])}
       />
 
 

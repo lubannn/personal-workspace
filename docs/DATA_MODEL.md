@@ -186,6 +186,8 @@ Milestone 使用 `open`、`completed`、`cancelled` 三种状态；只有 `compl
 - `id`, `project_id`, `title`, `body_markdown`, `note_date`
 - 通用字段
 
+ProjectNote 作为 `data/project-notes/<id>.json` 中的独立 canonical 记录保存，正文为开放 Markdown 字段；编辑沿用同路径 blob SHA 冲突保护与领域版本递增。首个切片开放创建、查看和编辑，不提供删除，避免形成无法从界面恢复的半套回收站。
+
 ### ActivityEvent
 
 - `id`, `owner_id`, `entity_type`, `entity_id`
