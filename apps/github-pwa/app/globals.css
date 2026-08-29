@@ -219,7 +219,8 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .calendar-heading { align-items: end; }
 .calendar-subtitle { max-width: 650px; margin: 7px 0 0; color: var(--muted); font-size: 11px; line-height: 1.6; }
 .calendar-header-actions { display: flex; align-items: end; gap: 10px; }
-.calendar-view-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+.calendar-view-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 18px; margin-top: 18px; }
+.calendar-view-actions, .calendar-period-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .calendar-header-actions label, .calendar-create-form label, .calendar-edit-form label { display: grid; gap: 6px; color: var(--muted); font-size: 9px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
 .calendar-header-actions input, .calendar-create-form input, .calendar-create-form select, .calendar-edit-form input, .calendar-edit-form select { min-width: 0; height: 40px; border: 1px solid var(--line); border-radius: 9px; padding: 0 10px; background: white; color: var(--ink); outline: none; }
 .calendar-header-actions input:focus, .calendar-create-form input:focus, .calendar-create-form select:focus, .calendar-edit-form input:focus, .calendar-edit-form select:focus { border-color: var(--accent); }
@@ -230,13 +231,14 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .calendar-title-field, .calendar-task-field, .calendar-form-actions { grid-column: 1 / -1; }
 .calendar-form-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .calendar-form-actions small, .calendar-day-list header span, .calendar-day-list li small { color: var(--muted); font-size: 10px; }
-.calendar-day-list > header { display: flex; justify-content: space-between; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+.calendar-day-list > header { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 12px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
 .calendar-day-list ol { margin: 0; padding: 0; list-style: none; }
 .calendar-day-list li { display: grid; grid-template-columns: 88px minmax(0, 1fr) auto; gap: 12px; align-items: start; padding: 12px 0; border-bottom: 1px solid var(--line); }
 .calendar-day-list li:last-child { border-bottom: 0; }
 .calendar-day-list time, .calendar-day-list code { font: 10px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--soft); }
 .calendar-day-list li div { display: grid; gap: 3px; min-width: 0; }
 .calendar-day-list li strong { overflow-wrap: anywhere; font: 500 13px/1.45 ui-serif, Georgia, "Songti SC", serif; }
+.calendar-range-list li { grid-template-columns: 122px minmax(0, 1fr) auto; }
 .calendar-event-actions { min-width: 84px; justify-items: end; }
 .calendar-event-actions .text-button { padding: 2px 0; font-size: 9px; }
 .calendar-event-actions .calendar-destructive-button { color: #7a4138; }
@@ -348,7 +350,7 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
   .dashboard-widget.size-compact, .dashboard-widget.size-standard, .dashboard-widget.size-wide { grid-column: 1; }
   .dashboard-editor-footer { align-items: flex-start; flex-direction: column; }
   .calendar-header-actions { align-items: stretch; flex-direction: column; }
-  .calendar-view-actions { justify-content: flex-start; }
+  .calendar-view-toolbar { align-items: flex-start; flex-direction: column; }
   .calendar-grid { grid-template-columns: 1fr; }
   .calendar-edit-actions .primary-button { width: auto; }
   .portability-grid { grid-template-columns: 1fr; }
@@ -408,6 +410,8 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
   .calendar-title-field, .calendar-task-field, .calendar-form-actions { grid-column: 1; }
   .calendar-form-actions { align-items: stretch; flex-direction: column; }
   .calendar-day-list li { grid-template-columns: 70px minmax(0, 1fr); gap: 8px; }
+  .calendar-range-list li { grid-template-columns: 1fr; }
+  .calendar-range-list .calendar-event-actions { grid-column: 1; }
   .calendar-event-actions { grid-column: 2; justify-items: start; }
   .calendar-edit-form { grid-template-columns: 1fr; }
   .calendar-edit-title, .calendar-edit-task, .calendar-edit-actions { grid-column: 1; }

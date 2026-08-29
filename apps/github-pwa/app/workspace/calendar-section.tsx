@@ -3,9 +3,11 @@
 import { useMemo, useState, type FormEvent } from "react";
 
 import {
-  calendarEventsForDate,
-  cancelledCalendarEventsForDate,
-  trashedCalendarEventsForDate,
+  calendarDateRange,
+  calendarEventsForRange,
+  cancelledCalendarEventsForRange,
+  trashedCalendarEventsForRange,
+  type CalendarRangeView,
   type CalendarEventType,
 } from "../../../../src/lib/github-data/calendar-events";
 import { openTasks } from "../../../../src/lib/github-data/tasks";
@@ -39,6 +41,7 @@ type Props = {
 export function CalendarSection({ connection, online, todayDate, eventFiles, taskFiles, loading, saving, savingEventId, onCreate, onEdit, onLifecycleChange, onDeletionChange, onRefresh }: Props) {
   const [selectedDate, setSelectedDate] = useState(todayDate);
   const [eventView, setEventView] = useState<"scheduled" | "cancelled" | "trash">("scheduled");
+  const [periodView, setPeriodView] = useState<CalendarRangeView>("day");
   const [title, setTitle] = useState("");
   const [eventType, setEventType] = useState<CalendarEventType>("time_block");
   const [startTime, setStartTime] = useState("09:00");
@@ -51,12 +54,13 @@ export function CalendarSection({ connection, online, todayDate, eventFiles, tas
   const [editStartTime, setEditStartTime] = useState("09:00");
   const [editEndTime, setEditEndTime] = useState("10:00");
   const [editLinkedTaskId, setEditLinkedTaskId] = useState("");
+  const dateRange = useMemo(() => calendarDateRange(selectedDate, periodView), [selectedDate, periodView]);
   const events = useMemo(() => {
     const records = eventFiles.map((item) => item.record);
-    if (eventView === "cancelled") return cancelledCalendarEventsForDate(records, selectedDate);
-    if (eventView === "trash") return trashedCalendarEventsForDate(records, selectedDate);
-    return calendarEventsForDate(records, selectedDate);
-  }, [eventFiles, eventView, selectedDate]);
+    if (eventView === "cancelled") return cancelledCalendarEventsForRange(records, dateRange.startDate, dateRange.endDate);
+    if (eventView === "trash") return trashedCalendarEventsForRange(records, dateRange.startDate, dateRange.endDate);
+    return calendarEventsForRange(records, dateRange.startDate, dateRange.endDate);
+  }, [dateRange, eventFiles, eventView]);
   const eventItems = useMemo(() => new Map(eventFiles.map((item) => [item.record.id, item])), [eventFiles]);
   const openTaskRecords = useMemo(() => openTasks(taskFiles.map((item) => item.record)).filter((record) => record.data.parent_task_id === null), [taskFiles]);
   const linkableTaskRecords = useMemo(() => taskFiles.map((item) => item.record).filter((record) => record.deleted_at === null), [taskFiles]);
@@ -65,12 +69,16 @@ export function CalendarSection({ connection, online, todayDate, eventFiles, tas
   const invalidEditRange = editStartTime >= editEndTime;
   const operationBusy = saving || savingEventId !== null;
   const calendarBusy = operationBusy || editingEventId !== null;
-  const viewTitle = eventView === "cancelled" ? "已取消" : eventView === "trash" ? "回收站" : selectedDate === todayDate ? "今天" : selectedDate;
+  const periodLabel = periodView === "day"
+    ? selectedDate === todayDate ? "今天" : selectedDate
+    : periodView === "week" ? "周视图" : `${selectedDate.slice(0, 7)} 月视图`;
+  const viewTitle = eventView === "cancelled" ? `已取消 · ${periodLabel}` : eventView === "trash" ? `回收站 · ${periodLabel}` : periodLabel;
+  const periodNoun = periodView === "day" ? "这一天" : periodView === "week" ? "这一周" : "这个月";
   const emptyMessage = eventView === "cancelled"
-    ? "这一天没有已取消的日程。"
+    ? `${periodNoun}没有已取消的日程。`
     : eventView === "trash"
-      ? "这一天的回收站是空的。"
-      : "这一天还没有日程或时间块。";
+      ? `${periodNoun}的回收站是空的。`
+      : `${periodNoun}还没有日程或时间块。`;
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -113,15 +121,22 @@ export function CalendarSection({ connection, online, todayDate, eventFiles, tas
           <p className="calendar-subtitle">时间块可以引用 Task，但不会改写 Task 的截止日期、状态或耗时事实。</p>
         </div>
         <div className="calendar-header-actions">
-          <label>查看日期<input type="date" value={selectedDate} onChange={(event) => { setSelectedDate(event.target.value); setEditingEventId(null); }} disabled={calendarBusy} /></label>
+          <label>定位日期<input type="date" value={selectedDate} onChange={(event) => { if (event.target.value) setSelectedDate(event.target.value); setEditingEventId(null); }} disabled={calendarBusy} /></label>
           <button className="secondary-button" type="button" onClick={onRefresh} disabled={!connection || loading || calendarBusy}>{loading ? "读取中…" : "从 GitHub 刷新"}</button>
         </div>
       </div>
 
-      <div className="calendar-view-actions" aria-label="Calendar 视图">
-        <button className={`view-button ${eventView === "scheduled" ? "active" : ""}`} type="button" aria-pressed={eventView === "scheduled"} onClick={() => { setEventView("scheduled"); setEditingEventId(null); }} disabled={calendarBusy}>已安排</button>
-        <button className={`view-button ${eventView === "cancelled" ? "active" : ""}`} type="button" aria-pressed={eventView === "cancelled"} onClick={() => { setEventView("cancelled"); setEditingEventId(null); }} disabled={calendarBusy}>已取消</button>
-        <button className={`view-button ${eventView === "trash" ? "active" : ""}`} type="button" aria-pressed={eventView === "trash"} onClick={() => { setEventView("trash"); setEditingEventId(null); }} disabled={calendarBusy}>回收站</button>
+      <div className="calendar-view-toolbar">
+        <div className="calendar-view-actions" aria-label="Calendar 状态视图">
+          <button className={`view-button ${eventView === "scheduled" ? "active" : ""}`} type="button" aria-pressed={eventView === "scheduled"} onClick={() => { setEventView("scheduled"); setEditingEventId(null); }} disabled={calendarBusy}>已安排</button>
+          <button className={`view-button ${eventView === "cancelled" ? "active" : ""}`} type="button" aria-pressed={eventView === "cancelled"} onClick={() => { setEventView("cancelled"); setEditingEventId(null); }} disabled={calendarBusy}>已取消</button>
+          <button className={`view-button ${eventView === "trash" ? "active" : ""}`} type="button" aria-pressed={eventView === "trash"} onClick={() => { setEventView("trash"); setEditingEventId(null); }} disabled={calendarBusy}>回收站</button>
+        </div>
+        <div className="calendar-period-actions" aria-label="Calendar 时间范围">
+          <button className={`view-button ${periodView === "day" ? "active" : ""}`} type="button" aria-pressed={periodView === "day"} onClick={() => setPeriodView("day")} disabled={calendarBusy}>日</button>
+          <button className={`view-button ${periodView === "week" ? "active" : ""}`} type="button" aria-pressed={periodView === "week"} onClick={() => setPeriodView("week")} disabled={calendarBusy}>周</button>
+          <button className={`view-button ${periodView === "month" ? "active" : ""}`} type="button" aria-pressed={periodView === "month"} onClick={() => setPeriodView("month")} disabled={calendarBusy}>月</button>
+        </div>
       </div>
 
       <div className="calendar-grid">
@@ -142,8 +157,8 @@ export function CalendarSection({ connection, online, todayDate, eventFiles, tas
           </div>
         </form>
 
-        <div className="calendar-day-list">
-          <header><strong>{viewTitle}</strong><span>{selectedDate} · {events.length} 项</span></header>
+        <div className={`calendar-day-list ${periodView === "day" ? "" : "calendar-range-list"}`}>
+          <header><strong>{viewTitle}</strong><span>{formatDateRange(dateRange.startDate, dateRange.endDate)} · {events.length} 项</span></header>
           {!connection ? <p className="empty-note">连接后显示 Private 仓库中的日程。</p>
             : loading && eventFiles.length === 0 ? <p className="empty-note">正在读取日程…</p>
               : events.length === 0 ? <p className="empty-note">{emptyMessage}</p>
@@ -177,7 +192,7 @@ export function CalendarSection({ connection, online, todayDate, eventFiles, tas
                     </li>
                   ) : (
                     <li key={record.id}>
-                      <time>{formatEventTime(record.data.start_at, record.data.end_at, record.data.timezone)}</time>
+                      <time>{periodView === "day" ? "" : `${record.data.local_start_date.slice(5)} · `}{formatEventTime(record.data.start_at, record.data.end_at, record.data.timezone)}</time>
                       <div className="calendar-event-copy"><strong>{record.data.title}</strong><small>{record.data.event_type === "time_block" ? "时间块" : "日程"}{linkedTask ? ` · Task：${linkedTask}` : record.data.linked_entity_id ? " · Task 引用当前不可用" : ""}</small></div>
                       <div className="calendar-event-actions">
                         <code>v{record.version}</code>
@@ -209,4 +224,8 @@ function formatEventInputTime(value: string, timezone: string) {
   const parts = new Intl.DateTimeFormat("en-GB", { timeZone: timezone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date(value));
   const read = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value;
   return `${read("hour")}:${read("minute")}`;
+}
+
+function formatDateRange(startDate: string, endDate: string) {
+  return startDate === endDate ? startDate : `${startDate} — ${endDate}`;
 }

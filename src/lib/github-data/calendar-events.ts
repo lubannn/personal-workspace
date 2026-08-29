@@ -1,6 +1,7 @@
 import { parseRecord, updateWorkspaceRecord, type WorkspaceRecord } from "./protocol";
 
 export type CalendarEventType = "event" | "time_block";
+export type CalendarRangeView = "day" | "week" | "month";
 
 export type CalendarEventData = {
   calendar_id: "internal-default";
@@ -169,25 +170,64 @@ export function setCalendarEventStatus(
 }
 
 export function calendarEventsForDate(records: CalendarEventRecord[], localDate: string) {
-  return eventsForDate(records, localDate, (record) => record.deleted_at === null && record.data.status === "confirmed");
+  return calendarEventsForRange(records, localDate, localDate);
 }
 
 export function cancelledCalendarEventsForDate(records: CalendarEventRecord[], localDate: string) {
-  return eventsForDate(records, localDate, (record) => record.deleted_at === null && record.data.status === "cancelled");
+  return cancelledCalendarEventsForRange(records, localDate, localDate);
 }
 
 export function trashedCalendarEventsForDate(records: CalendarEventRecord[], localDate: string) {
-  return eventsForDate(records, localDate, (record) => record.deleted_at !== null);
+  return trashedCalendarEventsForRange(records, localDate, localDate);
 }
 
-function eventsForDate(
+export function calendarEventsForRange(records: CalendarEventRecord[], startDate: string, endDate: string) {
+  return eventsForRange(records, startDate, endDate, (record) => record.deleted_at === null && record.data.status === "confirmed");
+}
+
+export function cancelledCalendarEventsForRange(records: CalendarEventRecord[], startDate: string, endDate: string) {
+  return eventsForRange(records, startDate, endDate, (record) => record.deleted_at === null && record.data.status === "cancelled");
+}
+
+export function trashedCalendarEventsForRange(records: CalendarEventRecord[], startDate: string, endDate: string) {
+  return eventsForRange(records, startDate, endDate, (record) => record.deleted_at !== null);
+}
+
+export function calendarDateRange(localDate: string, view: CalendarRangeView) {
+  if (!isValidDateOnly(localDate)) throw new Error("INVALID_CALENDAR_DATE_RANGE");
+  if (view === "day") return { startDate: localDate, endDate: localDate };
+  const anchor = new Date(`${localDate}T00:00:00Z`);
+  if (view === "week") {
+    const mondayOffset = (anchor.getUTCDay() + 6) % 7;
+    return {
+      startDate: shiftLocalDate(anchor, -mondayOffset),
+      endDate: shiftLocalDate(anchor, 6 - mondayOffset),
+    };
+  }
+  const year = anchor.getUTCFullYear();
+  const month = anchor.getUTCMonth();
+  return {
+    startDate: new Date(Date.UTC(year, month, 1)).toISOString().slice(0, 10),
+    endDate: new Date(Date.UTC(year, month + 1, 0)).toISOString().slice(0, 10),
+  };
+}
+
+function eventsForRange(
   records: CalendarEventRecord[],
-  localDate: string,
+  startDate: string,
+  endDate: string,
   predicate: (record: CalendarEventRecord) => boolean,
 ) {
+  if (!isValidDateOnly(startDate) || !isValidDateOnly(endDate) || endDate < startDate) {
+    throw new Error("INVALID_CALENDAR_DATE_RANGE");
+  }
   return records
-    .filter((record) => predicate(record) && record.data.local_start_date <= localDate && record.data.local_end_date >= localDate)
+    .filter((record) => predicate(record) && record.data.local_start_date <= endDate && record.data.local_end_date >= startDate)
     .sort((left, right) => left.data.start_at.localeCompare(right.data.start_at) || left.created_at.localeCompare(right.created_at));
+}
+
+function shiftLocalDate(value: Date, days: number) {
+  return new Date(value.getTime() + days * 86_400_000).toISOString().slice(0, 10);
 }
 
 function timezoneOffsetMilliseconds(value: Date, timezone: string) {
