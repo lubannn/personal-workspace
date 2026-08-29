@@ -1,4 +1,4 @@
-import { parseRecord, type WorkspaceRecord } from "./protocol";
+import { parseRecord, updateWorkspaceRecord, type WorkspaceRecord } from "./protocol";
 
 export type CalendarEventType = "event" | "time_block";
 
@@ -25,6 +25,15 @@ export type CalendarEventData = {
 };
 
 export type CalendarEventRecord = WorkspaceRecord<CalendarEventData>;
+export type CalendarEventEditableFields = {
+  title: string;
+  eventType: CalendarEventType;
+  startAt: string;
+  endAt: string;
+  timezone: string;
+  localDate: string;
+  linkedTaskId: string | null;
+};
 
 function isStableId(value: unknown): value is string {
   return typeof value === "string" && /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/.test(value);
@@ -126,9 +135,58 @@ export function createCalendarEventData(input: {
   return data;
 }
 
+export function updateCalendarEventDetails(
+  current: CalendarEventRecord,
+  fields: CalendarEventEditableFields,
+  timestamp = new Date().toISOString(),
+) {
+  if (Number.isNaN(Date.parse(timestamp))) throw new Error("INVALID_CALENDAR_EVENT_DETAILS");
+  const linkedTaskId = fields.linkedTaskId || null;
+  const data: CalendarEventData = {
+    ...current.data,
+    title: fields.title.trim(),
+    event_type: fields.eventType,
+    start_at: fields.startAt,
+    end_at: fields.endAt,
+    timezone: fields.timezone,
+    all_day: false,
+    local_start_date: fields.localDate,
+    local_end_date: fields.localDate,
+    linked_entity_type: linkedTaskId ? "task" : null,
+    linked_entity_id: linkedTaskId,
+  };
+  if (!isValidData(data)) throw new Error("INVALID_CALENDAR_EVENT_DETAILS");
+  return updateWorkspaceRecord(current, data, timestamp);
+}
+
+export function setCalendarEventStatus(
+  current: CalendarEventRecord,
+  status: CalendarEventData["status"],
+  timestamp = new Date().toISOString(),
+) {
+  if (Number.isNaN(Date.parse(timestamp))) throw new Error("INVALID_CALENDAR_EVENT_STATUS");
+  return updateWorkspaceRecord(current, { ...current.data, status }, timestamp);
+}
+
 export function calendarEventsForDate(records: CalendarEventRecord[], localDate: string) {
+  return eventsForDate(records, localDate, (record) => record.deleted_at === null && record.data.status === "confirmed");
+}
+
+export function cancelledCalendarEventsForDate(records: CalendarEventRecord[], localDate: string) {
+  return eventsForDate(records, localDate, (record) => record.deleted_at === null && record.data.status === "cancelled");
+}
+
+export function trashedCalendarEventsForDate(records: CalendarEventRecord[], localDate: string) {
+  return eventsForDate(records, localDate, (record) => record.deleted_at !== null);
+}
+
+function eventsForDate(
+  records: CalendarEventRecord[],
+  localDate: string,
+  predicate: (record: CalendarEventRecord) => boolean,
+) {
   return records
-    .filter((record) => record.deleted_at === null && record.data.status !== "cancelled" && record.data.local_start_date <= localDate && record.data.local_end_date >= localDate)
+    .filter((record) => predicate(record) && record.data.local_start_date <= localDate && record.data.local_end_date >= localDate)
     .sort((left, right) => left.data.start_at.localeCompare(right.data.start_at) || left.created_at.localeCompare(right.created_at));
 }
 
