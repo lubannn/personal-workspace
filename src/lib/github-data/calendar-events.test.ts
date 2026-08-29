@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { calendarEventsForDate, cancelledCalendarEventsForDate, createCalendarEventData, localDateTimeToIso, parseCalendarEventRecord, setCalendarEventStatus, trashedCalendarEventsForDate, updateCalendarEventDetails } from "./calendar-events";
+import { calendarDateRange, calendarEventsForDate, calendarEventsForRange, cancelledCalendarEventsForDate, createCalendarEventData, localDateTimeToIso, parseCalendarEventRecord, setCalendarEventStatus, trashedCalendarEventsForDate, updateCalendarEventDetails } from "./calendar-events";
 import { createWorkspaceRecord, serializeRecord, setWorkspaceRecordDeleted } from "./protocol";
 
 function event(id: string, localDate = "2026-08-29", startTime = "09:00") {
@@ -74,6 +74,22 @@ describe("GitHub calendar event records", () => {
     expect(calendarEventsForDate(records, "2026-08-29").map((record) => record.id)).toEqual(["calendar_event_confirmed"]);
     expect(cancelledCalendarEventsForDate(records, "2026-08-29").map((record) => record.id)).toEqual(["calendar_event_cancelled"]);
     expect(trashedCalendarEventsForDate(records, "2026-08-29").map((record) => record.id)).toEqual(["calendar_event_trashed"]);
+  });
+
+  it("derives Monday-based week and calendar-month date ranges without browser timezone drift", () => {
+    expect(calendarDateRange("2026-08-29", "day")).toEqual({ startDate: "2026-08-29", endDate: "2026-08-29" });
+    expect(calendarDateRange("2026-08-29", "week")).toEqual({ startDate: "2026-08-24", endDate: "2026-08-30" });
+    expect(calendarDateRange("2026-08-29", "month")).toEqual({ startDate: "2026-08-01", endDate: "2026-08-31" });
+    expect(() => calendarDateRange("2026-02-30", "week")).toThrow("INVALID_CALENDAR_DATE_RANGE");
+  });
+
+  it("lists only events overlapping a selected local-date range", () => {
+    expect(calendarEventsForRange([
+      event("calendar_event_before", "2026-08-23"),
+      event("calendar_event_start", "2026-08-24"),
+      event("calendar_event_end", "2026-08-30"),
+      event("calendar_event_after", "2026-08-31"),
+    ], "2026-08-24", "2026-08-30").map((record) => record.id)).toEqual(["calendar_event_start", "calendar_event_end"]);
   });
 
   it("rejects invalid ranges and unstable linked Task IDs", () => {

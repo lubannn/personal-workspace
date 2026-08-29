@@ -242,7 +242,7 @@ ActivityEvent 服务于时间线和报告事实；安全审计使用单独的 Au
 
 内部 Calendar 首个切片使用保留的 `calendar_id = internal-default`，每条事件保存为 `data/calendar-events/<id>.json`。当前只开放单日、非重复、非全天且带明确起止时间的 `event` / `time_block`；时间同时保存 UTC instant、IANA timezone 和本地日期，避免跨设备把墙上时间误当成浏览器本地时区。
 
-CalendarEvent 可以通过 `linked_entity_type = task` 和 `linked_entity_id` 引用 Task，但事件写入是独立 Git 提交，绝不改写 Task 的 DDL、状态或耗时。开放导出会验证引用的 Task 同包存在。现已开放带版本递增和旧 blob SHA 冲突保护的编辑、取消/恢复，以及保留原状态的软删除/恢复；永久删除、提醒、重复、全天事件和外部同步在各自规则完成前不开放。
+CalendarEvent 可以通过 `linked_entity_type = task` 和 `linked_entity_id` 引用 Task，但事件写入是独立 Git 提交，绝不改写 Task 的 DDL、状态或耗时。开放导出会验证引用的 Task 同包存在。日/周/月读取视图都从同一批 canonical 记录按本地日期范围派生，不另存 projection；现已开放带版本递增和旧 blob SHA 冲突保护的编辑、取消/恢复，以及保留原状态的软删除/恢复。永久删除、提醒、重复、全天事件和外部同步在各自规则完成前不开放。
 
 ## 8. Journal 与 Obsidian
 
