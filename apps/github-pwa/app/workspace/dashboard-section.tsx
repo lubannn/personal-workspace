@@ -1,7 +1,8 @@
 "use client";
 
 import type { DashboardLayout, DashboardWidgetConfig, DashboardWidgetSize } from "../../../../src/lib/github-data/dashboard-layout";
-import { formatTaskDue, type Connection, type SavedCapture, type SyncedTask } from "./page-model";
+import { projectMilestoneProgress, projectTaskProgress } from "../../../../src/lib/github-data/projects";
+import { formatTaskDue, type Connection, type SavedCapture, type SyncedMilestone, type SyncedProject, type SyncedTask } from "./page-model";
 
 type WidgetDefinition = { eyebrow: string; title: string; empty: string };
 
@@ -9,7 +10,7 @@ const WIDGETS: Record<string, WidgetDefinition> = {
   today_schedule: { eyebrow: "Calendar", title: "今日日程", empty: "Calendar 模块接入后，这里显示今天的时间块。" },
   today_tasks: { eyebrow: "Tasks", title: "今日待办", empty: "Tasks 模块接入后，这里显示今天最重要的行动。" },
   quick_capture: { eyebrow: "Quick Capture", title: "随手记下一件事", empty: "" },
-  project_progress: { eyebrow: "Projects", title: "项目进度", empty: "Projects 模块接入后，这里显示阶段、进度与风险。" },
+  project_progress: { eyebrow: "Projects", title: "项目进度", empty: "连接后显示进行中项目的任务事实进度。" },
   learning_today: { eyebrow: "Learning", title: "今日学习", empty: "Learning 模块接入后，这里显示语言、乐器和运动学习任务。" },
   exercise_today: { eyebrow: "Health", title: "今日运动", empty: "Health 数据经确认后，这里生成当天运动建议。" },
   recent_journal: { eyebrow: "Journal", title: "最近日记", empty: "Journal 模块接入后，这里只显示克制的最近摘要。" },
@@ -33,7 +34,12 @@ type Props = {
   savingCapture: boolean;
   savedCapture: SavedCapture | null;
   todayTasks: SyncedTask[];
+  currentProjects: SyncedProject[];
+  projectTasks: SyncedTask[];
+  projectMilestones: SyncedMilestone[];
   loadingTasks: boolean;
+  loadingProjects: boolean;
+  loadingMilestones: boolean;
   savingTaskId: string | null;
   currentTaskDate: string;
   onToggleEditing: () => void;
@@ -48,7 +54,7 @@ type Props = {
 };
 
 export function DashboardSection(props: Props) {
-  const { connection, online, dashboardLayout, dashboardBlobSha, dashboardDirty, editingDashboard, loadingDashboard, savingDashboard, visibleWidgets, hiddenWidgets, capture, savingCapture, savedCapture, todayTasks, loadingTasks, savingTaskId, currentTaskDate, onToggleEditing, onRefresh, onSaveLayout, onWidgetChange, onWidgetResize, onReset, onCaptureChange, onSaveCapture, onCompleteTask } = props;
+  const { connection, online, dashboardLayout, dashboardBlobSha, dashboardDirty, editingDashboard, loadingDashboard, savingDashboard, visibleWidgets, hiddenWidgets, capture, savingCapture, savedCapture, todayTasks, currentProjects, projectTasks, projectMilestones, loadingTasks, loadingProjects, loadingMilestones, savingTaskId, currentTaskDate, onToggleEditing, onRefresh, onSaveLayout, onWidgetChange, onWidgetResize, onReset, onCaptureChange, onSaveCapture, onCompleteTask } = props;
   return (
     <section className="dashboard-card" aria-labelledby="dashboard-title">
       <div className="card-heading dashboard-heading">
@@ -100,6 +106,27 @@ export function DashboardSection(props: Props) {
                         : <ul>{todayTasks.slice(0, 4).map((item) => <li key={item.record.id}><button type="button" aria-label={`完成任务：${item.record.data.title}`} onClick={() => onCompleteTask(item)} disabled={Boolean(savingTaskId) || online === false}>○</button><span>{item.record.data.title}</span><small>{formatTaskDue(item.record.data.due_at, currentTaskDate)}</small></li>)}</ul>}
                   {todayTasks.length > 4 ? <p className="task-overflow-note">另有 {todayTasks.length - 4} 项，请在任务清单查看。</p> : null}
                 </div>
+              ) : widget.widget_type === "project_progress" ? (
+                <div className="dashboard-project-widget">
+                  {!connection ? <p className="widget-empty">连接 Private 数据仓库后显示项目进度。</p>
+                    : loadingProjects || loadingMilestones ? <p className="widget-empty">正在读取项目进度…</p>
+                      : currentProjects.length === 0 ? <p className="widget-empty">还没有进行中的项目。</p>
+                        : <ul>{currentProjects.slice(0, 3).map((item) => {
+                          const progress = item.record.data.progress_mode === "milestones"
+                            ? projectMilestoneProgress(item.record.id, projectMilestones.map((milestone) => milestone.record))
+                            : item.record.data.progress_mode === "manual"
+                              ? { completed: 0, total: 0, percent: item.record.data.manual_progress_percent ?? 0 }
+                              : projectTaskProgress(item.record.id, projectTasks.map((task) => task.record));
+                          const progressSource = item.record.data.progress_mode === "milestones" ? "里程碑" : item.record.data.progress_mode === "manual" ? "手动" : "任务";
+                          const progressSummary = item.record.data.progress_mode === "manual" ? `${progress.percent}%` : `${progress.completed} / ${progress.total} · ${progress.percent}%`;
+                          return <li key={item.record.id}>
+                            <div><strong>{item.record.data.name}</strong><small>{projectDashboardMeta(item)}</small></div>
+                            <div className="dashboard-project-progress" aria-label={`${progressSource}进度 ${progress.percent}%`}><i style={{ width: `${progress.percent}%` }} /></div>
+                            <span>{progressSource} · {progressSummary}</span>
+                          </li>;
+                        })}</ul>}
+                  {currentProjects.length > 3 ? <p className="task-overflow-note">另有 {currentProjects.length - 3} 个项目，请在项目区查看。</p> : null}
+                </div>
               ) : <p className="widget-empty">{definition.empty}</p>}
             </article>
           );
@@ -113,4 +140,9 @@ export function DashboardSection(props: Props) {
       ) : null}
     </section>
   );
+}
+
+function projectDashboardMeta(item: SyncedProject) {
+  const status = item.record.data.status === "on_hold" ? "暂停" : item.record.data.status === "planned" ? "计划中" : "进行中";
+  return item.record.data.target_date ? `${status} · 目标 ${item.record.data.target_date}` : `${status} · 未设目标日期`;
 }

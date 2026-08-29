@@ -10,8 +10,11 @@ import {
   type DashboardLayout,
 } from "../../../../src/lib/github-data/dashboard-layout";
 import { parseTaskRecord } from "../../../../src/lib/github-data/tasks";
+import { parseProjectRecord } from "../../../../src/lib/github-data/projects";
+import { parseProjectPhaseRecord } from "../../../../src/lib/github-data/project-phases";
+import { parseMilestoneRecord } from "../../../../src/lib/github-data/milestones";
 import { parseCaptureRecord } from "../../../../src/lib/github-data/workspace";
-import { friendlyError, type SyncedCapture, type SyncedTask } from "./page-model";
+import { friendlyError, type SyncedCapture, type SyncedMilestone, type SyncedProject, type SyncedProjectPhase, type SyncedTask } from "./page-model";
 
 type Options = {
   adapterRef: MutableRefObject<GitHubContentsAdapter | null>;
@@ -22,10 +25,16 @@ type Options = {
 export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashboardClean }: Options) {
   const [captureFiles, setCaptureFiles] = useState<SyncedCapture[]>([]);
   const [taskFiles, setTaskFiles] = useState<SyncedTask[]>([]);
+  const [projectFiles, setProjectFiles] = useState<SyncedProject[]>([]);
+  const [projectPhaseFiles, setProjectPhaseFiles] = useState<SyncedProjectPhase[]>([]);
+  const [milestoneFiles, setMilestoneFiles] = useState<SyncedMilestone[]>([]);
   const [dashboardLayout, setDashboardLayout] = useState<DashboardLayout | null>(null);
   const [dashboardBlobSha, setDashboardBlobSha] = useState<string | null>(null);
   const [loadingCaptures, setLoadingCaptures] = useState(false);
   const [loadingTasks, setLoadingTasks] = useState(false);
+  const [loadingProjects, setLoadingProjects] = useState(false);
+  const [loadingProjectPhases, setLoadingProjectPhases] = useState(false);
+  const [loadingMilestones, setLoadingMilestones] = useState(false);
   const [loadingDashboard, setLoadingDashboard] = useState(false);
 
   const loadRecentCaptures = useCallback(async (adapter = adapterRef.current) => {
@@ -104,6 +113,120 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     }
   }, [adapterRef, setErrorMessage]);
 
+  const loadProjects = useCallback(async (adapter = adapterRef.current) => {
+    if (!adapter) return;
+    setLoadingProjects(true);
+    setErrorMessage("");
+    try {
+      let items;
+      try {
+        items = await adapter.listDirectory("data/projects");
+      } catch (error) {
+        if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") {
+          setProjectFiles([]);
+          return;
+        }
+        throw error;
+      }
+      const candidates = items
+        .filter((item) => item.type === "file" && item.name.endsWith(".json"))
+        .sort((left, right) => right.name.localeCompare(left.name));
+      const records: SyncedProject[] = [];
+      const batchSize = 6;
+      for (let index = 0; index < candidates.length; index += batchSize) {
+        records.push(...(await Promise.all(candidates.slice(index, index + batchSize).map(async (item) => {
+          try {
+            const file = await adapter.readText(item.path);
+            return { record: parseProjectRecord(file.text), path: file.path, blobSha: file.blobSha };
+          } catch {
+            return null;
+          }
+        }))).filter((item): item is SyncedProject => item !== null));
+      }
+      setProjectFiles(records);
+    } catch (error) {
+      setErrorMessage(friendlyError(error));
+    } finally {
+      setLoadingProjects(false);
+    }
+  }, [adapterRef, setErrorMessage]);
+
+  const loadProjectPhases = useCallback(async (adapter = adapterRef.current) => {
+    if (!adapter) return;
+    setLoadingProjectPhases(true);
+    setErrorMessage("");
+    try {
+      let items;
+      try {
+        items = await adapter.listDirectory("data/project-phases");
+      } catch (error) {
+        if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") {
+          setProjectPhaseFiles([]);
+          return;
+        }
+        throw error;
+      }
+      const candidates = items
+        .filter((item) => item.type === "file" && item.name.endsWith(".json"))
+        .sort((left, right) => right.name.localeCompare(left.name));
+      const records: SyncedProjectPhase[] = [];
+      const batchSize = 6;
+      for (let index = 0; index < candidates.length; index += batchSize) {
+        records.push(...(await Promise.all(candidates.slice(index, index + batchSize).map(async (item) => {
+          try {
+            const file = await adapter.readText(item.path);
+            return { record: parseProjectPhaseRecord(file.text), path: file.path, blobSha: file.blobSha };
+          } catch {
+            return null;
+          }
+        }))).filter((item): item is SyncedProjectPhase => item !== null));
+      }
+      setProjectPhaseFiles(records);
+    } catch (error) {
+      setErrorMessage(friendlyError(error));
+    } finally {
+      setLoadingProjectPhases(false);
+    }
+  }, [adapterRef, setErrorMessage]);
+
+  const loadMilestones = useCallback(async (adapter = adapterRef.current) => {
+    if (!adapter) return;
+    setLoadingMilestones(true);
+    setErrorMessage("");
+    try {
+      let items;
+      try {
+        items = await adapter.listDirectory("data/milestones");
+      } catch (error) {
+        if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") {
+          setMilestoneFiles([]);
+          return;
+        }
+        throw error;
+      }
+      const candidates = items
+        .filter((item) => item.type === "file" && item.name.endsWith(".json"))
+        .sort((left, right) => right.name.localeCompare(left.name));
+      const records: SyncedMilestone[] = [];
+      const batchSize = 6;
+      for (let index = 0; index < candidates.length; index += batchSize) {
+        records.push(...(await Promise.all(candidates.slice(index, index + batchSize).map(async (item) => {
+          try {
+            const file = await adapter.readText(item.path);
+            return { record: parseMilestoneRecord(file.text), path: file.path, blobSha: file.blobSha };
+          } catch {
+            return null;
+          }
+        }))).filter((item): item is SyncedMilestone => item !== null));
+      }
+      setMilestoneFiles(records);
+    } catch (error) {
+      setErrorMessage(friendlyError(error));
+    } finally {
+      setLoadingMilestones(false);
+    }
+  }, [adapterRef, setErrorMessage]);
+
   const loadDashboardLayout = useCallback(async (
     adapter = adapterRef.current,
     ownerId?: string,
@@ -136,6 +259,9 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
   function clearCollections() {
     setCaptureFiles([]);
     setTaskFiles([]);
+    setProjectFiles([]);
+    setProjectPhaseFiles([]);
+    setMilestoneFiles([]);
     setDashboardLayout(null);
     setDashboardBlobSha(null);
   }
@@ -145,15 +271,27 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     setCaptureFiles,
     taskFiles,
     setTaskFiles,
+    projectFiles,
+    setProjectFiles,
+    projectPhaseFiles,
+    setProjectPhaseFiles,
+    milestoneFiles,
+    setMilestoneFiles,
     dashboardLayout,
     setDashboardLayout,
     dashboardBlobSha,
     setDashboardBlobSha,
     loadingCaptures,
     loadingTasks,
+    loadingProjects,
+    loadingProjectPhases,
+    loadingMilestones,
     loadingDashboard,
     loadRecentCaptures,
     loadTasks,
+    loadProjects,
+    loadProjectPhases,
+    loadMilestones,
     loadDashboardLayout,
     clearCollections,
   };

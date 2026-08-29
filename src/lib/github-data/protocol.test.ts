@@ -19,6 +19,8 @@ describe("GitHub data protocol", () => {
       timestamp: "2026-08-25T00:00:00.000Z",
     });
     expect(recordPath("capture", record.id)).toBe("data/captures/capture_01.json");
+    expect(recordPath("project_phase", "phase_01")).toBe("data/project-phases/phase_01.json");
+    expect(recordPath("milestone", "milestone_01")).toBe("data/milestones/milestone_01.json");
     expect(parseRecord(serializeRecord(record))).toEqual(record);
 
     const updated = updateWorkspaceRecord(record, { raw_text: "更新后的内容" }, "2026-08-25T01:00:00.000Z");

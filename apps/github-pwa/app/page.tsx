@@ -39,6 +39,20 @@ import {
   newestTrashedCaptures,
 } from "../../../src/lib/github-data/workspace";
 import {
+  archivedProjects,
+  cancelledProjects,
+  completedProjects,
+  createProjectData,
+  currentProjects,
+  setProjectStatus,
+  trashedProjects,
+  updateProjectDetails,
+  updateProjectCurrentPhase,
+  type ProjectEditableFields,
+} from "../../../src/lib/github-data/projects";
+import { createProjectPhaseData } from "../../../src/lib/github-data/project-phases";
+import { createMilestoneData, setMilestoneStatus } from "../../../src/lib/github-data/milestones";
+import {
   archivedTasks,
   cancelledTasks,
   completedTasks,
@@ -67,6 +81,9 @@ import {
   type PortabilityResult,
   type SavedCapture,
   type SyncedCapture,
+  type SyncedProject,
+  type SyncedProjectPhase,
+  type SyncedMilestone,
   type SyncedTask,
 } from "./workspace/page-model";
 import { useOnlineStatus } from "./workspace/use-online-status";
@@ -76,6 +93,7 @@ import { CaptureInboxSection } from "./workspace/capture-inbox-section";
 import { DashboardSection } from "./workspace/dashboard-section";
 import { AuthSection } from "./workspace/auth-section";
 import { PortabilitySection } from "./workspace/portability-section";
+import { ProjectsSection } from "./workspace/projects-section";
 import { ReadinessSection } from "./workspace/readiness-section";
 import { TasksSection } from "./workspace/tasks-section";
 
@@ -103,10 +121,19 @@ export default function GitHubWorkspacePage() {
   const [taskTitle, setTaskTitle] = useState("");
   const [taskCategory, setTaskCategory] = useState<TaskCategory>("work");
   const [taskPriority, setTaskPriority] = useState<TaskPriority>("medium");
+  const [taskProjectId, setTaskProjectId] = useState("");
   const [taskDueDate, setTaskDueDate] = useState(() => localDateInTimezone("Asia/Shanghai"));
   const [taskView, setTaskView] = useState<"open" | "done" | "cancelled" | "archived" | "trash">("open");
   const [savingTask, setSavingTask] = useState(false);
   const [savingTaskId, setSavingTaskId] = useState<string | null>(null);
+  const [projectName, setProjectName] = useState("");
+  const [projectTargetDate, setProjectTargetDate] = useState("");
+  const [projectView, setProjectView] = useState<"current" | "completed" | "cancelled" | "archived" | "trash">("current");
+  const [savingProject, setSavingProject] = useState(false);
+  const [savingProjectId, setSavingProjectId] = useState<string | null>(null);
+  const [savingProjectPhaseProjectId, setSavingProjectPhaseProjectId] = useState<string | null>(null);
+  const [savingMilestoneProjectId, setSavingMilestoneProjectId] = useState<string | null>(null);
+  const [savingMilestoneId, setSavingMilestoneId] = useState<string | null>(null);
   const [dashboardDirty, setDashboardDirty] = useState(false);
   const [editingDashboard, setEditingDashboard] = useState(false);
   const [savingDashboard, setSavingDashboard] = useState(false);
@@ -133,15 +160,27 @@ export default function GitHubWorkspacePage() {
     setCaptureFiles,
     taskFiles,
     setTaskFiles,
+    projectFiles,
+    setProjectFiles,
+    projectPhaseFiles,
+    setProjectPhaseFiles,
+    milestoneFiles,
+    setMilestoneFiles,
     dashboardLayout,
     setDashboardLayout,
     dashboardBlobSha,
     setDashboardBlobSha,
     loadingCaptures,
     loadingTasks,
+    loadingProjects,
+    loadingProjectPhases,
+    loadingMilestones,
     loadingDashboard,
     loadRecentCaptures,
     loadTasks,
+    loadProjects,
+    loadProjectPhases,
+    loadMilestones,
     loadDashboardLayout,
     clearCollections,
   } = useWorkspaceCollections({ adapterRef, setErrorMessage, setDashboardClean });
@@ -157,6 +196,9 @@ export default function GitHubWorkspacePage() {
     loadRecentCaptures,
     loadDashboardLayout,
     loadTasks,
+    loadProjects,
+    loadProjectPhases,
+    loadMilestones,
   });
 
 
@@ -224,6 +266,23 @@ export default function GitHubWorkspacePage() {
     archived: archivedTaskFiles,
     trash: trashedTaskFiles,
   }[taskView];
+  const currentProjectFiles = useMemo(() => {
+    const byId = new Map(projectFiles.map((item) => [item.record.id, item]));
+    return currentProjects(projectFiles.map((item) => item.record))
+      .map((record) => byId.get(record.id))
+      .filter((item): item is SyncedProject => Boolean(item));
+  }, [projectFiles]);
+  const completedProjectFiles = useMemo(() => selectSyncedProjects(projectFiles, completedProjects), [projectFiles]);
+  const cancelledProjectFiles = useMemo(() => selectSyncedProjects(projectFiles, cancelledProjects), [projectFiles]);
+  const archivedProjectFiles = useMemo(() => selectSyncedProjects(projectFiles, archivedProjects), [projectFiles]);
+  const trashedProjectFiles = useMemo(() => selectSyncedProjects(projectFiles, trashedProjects), [projectFiles]);
+  const visibleProjectFiles = {
+    current: currentProjectFiles,
+    completed: completedProjectFiles,
+    cancelled: cancelledProjectFiles,
+    archived: archivedProjectFiles,
+    trash: trashedProjectFiles,
+  }[projectView];
   const displayedDashboardLayout = useMemo(
     () => dashboardLayout ?? createDefaultDashboardLayout("preview", "1970-01-01T00:00:00.000Z"),
     [dashboardLayout],
@@ -308,6 +367,9 @@ export default function GitHubWorkspacePage() {
         loadRecentCaptures(opened.adapter),
         loadDashboardLayout(opened.adapter, opened.connection.ownerId),
         loadTasks(opened.adapter),
+        loadProjects(opened.adapter),
+        loadProjectPhases(opened.adapter),
+        loadMilestones(opened.adapter),
       ]);
     } catch (error) {
       adapterRef.current = null;
@@ -327,6 +389,10 @@ export default function GitHubWorkspacePage() {
     setCapture("");
     clearCollections();
     setTaskTitle("");
+    setTaskProjectId("");
+    setProjectName("");
+    setProjectTargetDate("");
+    setProjectView("current");
     setTaskView("open");
     setCaptureView("inbox");
     setDashboardDirty(false);
@@ -471,7 +537,7 @@ export default function GitHubWorkspacePage() {
     const data: TaskData = {
       title,
       category: taskCategory,
-      project_id: null,
+      project_id: taskProjectId || null,
       parent_task_id: null,
       status: "todo",
       priority: taskPriority,
@@ -509,6 +575,266 @@ export default function GitHubWorkspacePage() {
       setErrorMessage(friendlyError(error));
     } finally {
       setSavingTask(false);
+    }
+  }
+
+  async function saveProject(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const adapter = adapterRef.current;
+    if (!adapter || !connection || !projectName.trim() || savingProject || online === false) return;
+    setSavingProject(true);
+    setErrorMessage("");
+    setStatusMessage("");
+    const timestamp = new Date().toISOString();
+    const timePart = timestamp.replaceAll(/\D/g, "").slice(0, 17);
+    const id = `project_${timePart}_${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`;
+    try {
+      const record = createWorkspaceRecord({
+        entityType: "project",
+        id,
+        ownerId: connection.ownerId,
+        timestamp,
+        data: createProjectData(projectName, projectTargetDate || null),
+      });
+      const result = await adapter.writeText({
+        path: recordPath("project", id),
+        text: serializeRecord(record),
+        message: `project: create ${id}`,
+      });
+      setProjectName("");
+      setProjectTargetDate("");
+      setProjectFiles((current) => [{ record, path: result.path, blobSha: result.blobSha }, ...current]);
+      setProjectView("current");
+      setStatusMessage("项目已保存；进度将按未删除、未取消、未归档的关联任务事实计算。");
+    } catch (error) {
+      setErrorMessage(friendlyError(error));
+    } finally {
+      setSavingProject(false);
+    }
+  }
+
+  async function updateProjectLifecycle(
+    item: SyncedProject,
+    operation: "pause" | "resume" | "complete" | "reopen" | "cancel" | "archive",
+  ) {
+    const adapter = adapterRef.current;
+    if (!adapter || !connection || savingProjectId || online === false) return;
+    setSavingProjectId(item.record.id);
+    setErrorMessage("");
+    setStatusMessage("");
+    const nextStatus = {
+      pause: "on_hold",
+      resume: "active",
+      complete: "completed",
+      reopen: "active",
+      cancel: "cancelled",
+      archive: "archived",
+    } as const;
+    const updated = setProjectStatus(item.record, nextStatus[operation]);
+    try {
+      const result = await adapter.writeText({
+        path: item.path,
+        text: serializeRecord(updated),
+        message: `project: ${operation} ${item.record.id}`,
+        expectedBlobSha: item.blobSha,
+      });
+      setProjectFiles((current) => current.map((candidate) => candidate.record.id === item.record.id
+        ? { record: updated, path: result.path, blobSha: result.blobSha }
+        : candidate));
+      if (taskProjectId === item.record.id && !["active", "planned", "on_hold"].includes(updated.data.status)) setTaskProjectId("");
+      setStatusMessage({
+        pause: "项目已暂停；关联任务保持原状态。",
+        resume: "项目已恢复进行；关联任务关系保持不变。",
+        complete: "项目已完成；完成时间和 Git 历史已保留。",
+        reopen: "项目已重新打开；完成时间已清空，历史版本仍保留。",
+        cancel: "项目已取消；关联任务没有被自动取消。",
+        archive: "项目已归档；关联任务和 Git 历史保持不变。",
+      }[operation]);
+    } catch (error) {
+      setErrorMessage(friendlyError(error));
+    } finally {
+      setSavingProjectId(null);
+    }
+  }
+
+  async function saveProjectEdit(item: SyncedProject, details: ProjectEditableFields) {
+    const adapter = adapterRef.current;
+    if (!adapter || !connection || savingProjectId || online === false) return false;
+    setSavingProjectId(item.record.id);
+    setErrorMessage("");
+    setStatusMessage("");
+    try {
+      const updated = updateProjectDetails(item.record, details);
+      const result = await adapter.writeText({
+        path: item.path,
+        text: serializeRecord(updated),
+        message: `project: edit ${item.record.id}`,
+        expectedBlobSha: item.blobSha,
+      });
+      setProjectFiles((current) => current.map((candidate) => candidate.record.id === item.record.id
+        ? { record: updated, path: result.path, blobSha: result.blobSha }
+        : candidate));
+      setStatusMessage("项目基本信息与进度口径已保存；生命周期和 Git 历史保持不变。");
+      return true;
+    } catch (error) {
+      setErrorMessage(friendlyError(error));
+      return false;
+    } finally {
+      setSavingProjectId(null);
+    }
+  }
+
+  async function saveProjectPhase(project: SyncedProject, rawName: string) {
+    const adapter = adapterRef.current;
+    if (!adapter || !connection || savingProjectPhaseProjectId || online === false) return false;
+    setSavingProjectPhaseProjectId(project.record.id);
+    setErrorMessage("");
+    setStatusMessage("");
+    const timestamp = new Date().toISOString();
+    const timePart = timestamp.replaceAll(/\D/g, "").slice(0, 17);
+    const id = `phase_${timePart}_${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`;
+    const projectPhases = projectPhaseFiles.filter((item) => item.record.deleted_at === null && item.record.data.project_id === project.record.id);
+    const sortOrder = projectPhases.reduce((maximum, item) => Math.max(maximum, item.record.data.sort_order), 0) + 10;
+    try {
+      const record = createWorkspaceRecord({
+        entityType: "project_phase",
+        id,
+        ownerId: connection.ownerId,
+        timestamp,
+        data: createProjectPhaseData({ projectId: project.record.id, name: rawName, sortOrder, timestamp }),
+      });
+      const result = await adapter.writeText({
+        path: recordPath("project_phase", id),
+        text: serializeRecord(record),
+        message: `project phase: create ${id}`,
+      });
+      setProjectPhaseFiles((current) => [...current, { record, path: result.path, blobSha: result.blobSha }]);
+      setStatusMessage("项目阶段已保存；选择“设为当前”后才会更新 Project 引用。");
+      return true;
+    } catch (error) {
+      setErrorMessage(friendlyError(error));
+      return false;
+    } finally {
+      setSavingProjectPhaseProjectId(null);
+    }
+  }
+
+  async function setCurrentProjectPhase(project: SyncedProject, phase: SyncedProjectPhase) {
+    const adapter = adapterRef.current;
+    if (!adapter || !connection || savingProjectId || online === false || phase.record.data.project_id !== project.record.id) return;
+    setSavingProjectId(project.record.id);
+    setErrorMessage("");
+    setStatusMessage("");
+    try {
+      const updated = updateProjectCurrentPhase(project.record, phase.record.id);
+      const result = await adapter.writeText({
+        path: project.path,
+        text: serializeRecord(updated),
+        message: `project: set current phase ${project.record.id}`,
+        expectedBlobSha: project.blobSha,
+      });
+      setProjectFiles((current) => current.map((candidate) => candidate.record.id === project.record.id
+        ? { record: updated, path: result.path, blobSha: result.blobSha }
+        : candidate));
+      setStatusMessage(`当前阶段已切换为“${phase.record.data.name}”；阶段文件和 Project 引用均保留独立历史。`);
+    } catch (error) {
+      setErrorMessage(friendlyError(error));
+    } finally {
+      setSavingProjectId(null);
+    }
+  }
+
+  async function saveMilestone(project: SyncedProject, rawTitle: string, targetDate: string) {
+    const adapter = adapterRef.current;
+    if (!adapter || !connection || savingMilestoneProjectId || online === false) return false;
+    setSavingMilestoneProjectId(project.record.id);
+    setErrorMessage("");
+    setStatusMessage("");
+    const timestamp = new Date().toISOString();
+    const timePart = timestamp.replaceAll(/\D/g, "").slice(0, 17);
+    const id = `milestone_${timePart}_${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`;
+    const projectMilestones = milestoneFiles.filter((item) => item.record.deleted_at === null && item.record.data.project_id === project.record.id);
+    const sortOrder = projectMilestones.reduce((maximum, item) => Math.max(maximum, item.record.data.sort_order), 0) + 10;
+    try {
+      const record = createWorkspaceRecord({
+        entityType: "milestone",
+        id,
+        ownerId: connection.ownerId,
+        timestamp,
+        data: createMilestoneData({ projectId: project.record.id, title: rawTitle, targetDate: targetDate || null, sortOrder }),
+      });
+      const result = await adapter.writeText({
+        path: recordPath("milestone", id),
+        text: serializeRecord(record),
+        message: `milestone: create ${id}`,
+      });
+      setMilestoneFiles((current) => [...current, { record, path: result.path, blobSha: result.blobSha }]);
+      setStatusMessage("里程碑已保存；项目进度仍按关联任务事实计算。");
+      return true;
+    } catch (error) {
+      setErrorMessage(friendlyError(error));
+      return false;
+    } finally {
+      setSavingMilestoneProjectId(null);
+    }
+  }
+
+  async function updateMilestoneLifecycle(item: SyncedMilestone, operation: "complete" | "reopen" | "cancel") {
+    const adapter = adapterRef.current;
+    if (!adapter || !connection || savingMilestoneId || online === false) return;
+    setSavingMilestoneId(item.record.id);
+    setErrorMessage("");
+    setStatusMessage("");
+    const nextStatus = { complete: "completed", reopen: "open", cancel: "cancelled" } as const;
+    const updated = setMilestoneStatus(item.record, nextStatus[operation]);
+    try {
+      const result = await adapter.writeText({
+        path: item.path,
+        text: serializeRecord(updated),
+        message: `milestone: ${operation} ${item.record.id}`,
+        expectedBlobSha: item.blobSha,
+      });
+      setMilestoneFiles((current) => current.map((candidate) => candidate.record.id === item.record.id
+        ? { record: updated, path: result.path, blobSha: result.blobSha }
+        : candidate));
+      setStatusMessage({
+        complete: "里程碑已完成；完成时间与 Git 历史已保留。",
+        reopen: "里程碑已重新打开；完成时间已清空，历史版本仍保留。",
+        cancel: "里程碑已取消；项目和关联任务没有被自动修改。",
+      }[operation]);
+    } catch (error) {
+      setErrorMessage(friendlyError(error));
+    } finally {
+      setSavingMilestoneId(null);
+    }
+  }
+
+  async function updateProjectDeletion(item: SyncedProject, operation: "trash" | "restore") {
+    const adapter = adapterRef.current;
+    if (!adapter || !connection || savingProjectId || online === false) return;
+    setSavingProjectId(item.record.id);
+    setErrorMessage("");
+    setStatusMessage("");
+    const timestamp = new Date().toISOString();
+    const updated = setWorkspaceRecordDeleted(item.record, operation === "trash" ? timestamp : null, timestamp);
+    try {
+      const result = await adapter.writeText({
+        path: item.path,
+        text: serializeRecord(updated),
+        message: `project: ${operation} ${item.record.id}`,
+        expectedBlobSha: item.blobSha,
+      });
+      setProjectFiles((current) => current.map((candidate) => candidate.record.id === item.record.id
+        ? { record: updated, path: result.path, blobSha: result.blobSha }
+        : candidate));
+      if (operation === "trash" && taskProjectId === item.record.id) setTaskProjectId("");
+      setStatusMessage(operation === "trash"
+        ? "项目已移到回收站；关联任务只会暂时显示为项目不可用，不会被删除。"
+        : "项目已从回收站恢复；关联任务关系会自动重新显示。");
+    } catch (error) {
+      setErrorMessage(friendlyError(error));
+    } finally {
+      setSavingProjectId(null);
     }
   }
 
@@ -667,6 +993,39 @@ export default function GitHubWorkspacePage() {
     }
   }
 
+  async function listProjectFiles(adapter: GitHubContentsAdapter) {
+    try {
+      return (await adapter.listDirectory("data/projects"))
+        .filter((item) => item.type === "file" && item.name.endsWith(".json"))
+        .sort((left, right) => left.path.localeCompare(right.path));
+    } catch (error) {
+      if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") return [];
+      throw error;
+    }
+  }
+
+  async function listProjectPhaseFiles(adapter: GitHubContentsAdapter) {
+    try {
+      return (await adapter.listDirectory("data/project-phases"))
+        .filter((item) => item.type === "file" && item.name.endsWith(".json"))
+        .sort((left, right) => left.path.localeCompare(right.path));
+    } catch (error) {
+      if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") return [];
+      throw error;
+    }
+  }
+
+  async function listMilestoneFiles(adapter: GitHubContentsAdapter) {
+    try {
+      return (await adapter.listDirectory("data/milestones"))
+        .filter((item) => item.type === "file" && item.name.endsWith(".json"))
+        .sort((left, right) => left.path.localeCompare(right.path));
+    } catch (error) {
+      if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") return [];
+      throw error;
+    }
+  }
+
   async function downloadPortableExport() {
     const adapter = adapterRef.current;
     if (!adapter || !connection || exporting || online === false) return;
@@ -700,6 +1059,30 @@ export default function GitHubWorkspacePage() {
           taskCandidates.slice(index, index + batchSize).map((item) => adapter.readText(item.path)),
         ));
       }
+      const projectCandidates = await listProjectFiles(adapter);
+      const projectFiles = [];
+      for (let index = 0; index < projectCandidates.length; index += batchSize) {
+        setExportProgress(`正在读取 Project ${Math.min(index + batchSize, projectCandidates.length)} / ${projectCandidates.length}…`);
+        projectFiles.push(...await Promise.all(
+          projectCandidates.slice(index, index + batchSize).map((item) => adapter.readText(item.path)),
+        ));
+      }
+      const projectPhaseCandidates = await listProjectPhaseFiles(adapter);
+      const projectPhaseFiles = [];
+      for (let index = 0; index < projectPhaseCandidates.length; index += batchSize) {
+        setExportProgress(`正在读取 ProjectPhase ${Math.min(index + batchSize, projectPhaseCandidates.length)} / ${projectPhaseCandidates.length}…`);
+        projectPhaseFiles.push(...await Promise.all(
+          projectPhaseCandidates.slice(index, index + batchSize).map((item) => adapter.readText(item.path)),
+        ));
+      }
+      const milestoneCandidates = await listMilestoneFiles(adapter);
+      const milestoneFiles = [];
+      for (let index = 0; index < milestoneCandidates.length; index += batchSize) {
+        setExportProgress(`正在读取 Milestone ${Math.min(index + batchSize, milestoneCandidates.length)} / ${milestoneCandidates.length}…`);
+        milestoneFiles.push(...await Promise.all(
+          milestoneCandidates.slice(index, index + batchSize).map((item) => adapter.readText(item.path)),
+        ));
+      }
 
       setExportProgress("正在生成 SHA-256 manifest…");
       const generatedAt = new Date().toISOString();
@@ -710,6 +1093,9 @@ export default function GitHubWorkspacePage() {
         captureFiles,
         dashboardLayoutFile,
         taskFiles,
+        projectFiles,
+        projectPhaseFiles,
+        milestoneFiles,
         generatedAt,
       });
       const inspection = await inspectPortableWorkspaceExport(portableExport);
@@ -734,6 +1120,9 @@ export default function GitHubWorkspacePage() {
         captures: inspection.counts.captures,
         dashboardLayouts: inspection.counts.dashboardLayouts,
         tasks: inspection.counts.tasks,
+        projects: inspection.counts.projects,
+        projectPhases: inspection.counts.projectPhases,
+        milestones: inspection.counts.milestones,
         errors: inspection.errors,
         warnings: inspection.warnings,
       });
@@ -744,6 +1133,9 @@ export default function GitHubWorkspacePage() {
         captures: inspection.counts.captures,
         dashboardLayouts: inspection.counts.dashboardLayouts,
         tasks: inspection.counts.tasks,
+        projects: inspection.counts.projects,
+        projectPhases: inspection.counts.projectPhases,
+        milestones: inspection.counts.milestones,
         errors: inspection.errors,
         warnings: inspection.warnings,
       });
@@ -782,6 +1174,9 @@ export default function GitHubWorkspacePage() {
           captures: 0,
           dashboardLayouts: 0,
           tasks: 0,
+          projects: 0,
+          projectPhases: 0,
+          milestones: 0,
           errors: [{ code: "EXPORT_TOO_LARGE", message: "当前预检仅接受 50 MB 以内的 JSON 文件。" }],
           warnings: [],
         });
@@ -796,6 +1191,9 @@ export default function GitHubWorkspacePage() {
         captures: inspection.counts.captures,
         dashboardLayouts: inspection.counts.dashboardLayouts,
         tasks: inspection.counts.tasks,
+        projects: inspection.counts.projects,
+        projectPhases: inspection.counts.projectPhases,
+        milestones: inspection.counts.milestones,
         errors: inspection.errors,
         warnings: inspection.warnings,
       });
@@ -811,6 +1209,9 @@ export default function GitHubWorkspacePage() {
         captures: 0,
         dashboardLayouts: 0,
         tasks: 0,
+        projects: 0,
+        projectPhases: 0,
+        milestones: 0,
         errors: [{ code: "INVALID_JSON", message: "文件不是有效的 JSON，未执行任何恢复操作。" }],
         warnings: [],
       });
@@ -973,7 +1374,12 @@ export default function GitHubWorkspacePage() {
         savingCapture={saving}
         savedCapture={savedCapture}
         todayTasks={todayTaskFiles}
+        currentProjects={currentProjectFiles}
+        projectTasks={taskFiles}
+        projectMilestones={milestoneFiles}
         loadingTasks={loadingTasks}
+        loadingProjects={loadingProjects}
+        loadingMilestones={loadingMilestones}
         savingTaskId={savingTaskId}
         currentTaskDate={currentTaskDate}
         onToggleEditing={() => setEditingDashboard((current) => !current)}
@@ -988,15 +1394,57 @@ export default function GitHubWorkspacePage() {
       />
 
 
+      <ProjectsSection
+        connection={connection}
+        online={online}
+        projectName={projectName}
+        projectTargetDate={projectTargetDate}
+        projectFiles={projectFiles}
+        projectPhaseFiles={projectPhaseFiles}
+        milestoneFiles={milestoneFiles}
+        currentProjectFiles={currentProjectFiles}
+        completedProjectFiles={completedProjectFiles}
+        cancelledProjectFiles={cancelledProjectFiles}
+        archivedProjectFiles={archivedProjectFiles}
+        trashedProjectFiles={trashedProjectFiles}
+        visibleProjectFiles={visibleProjectFiles}
+        projectView={projectView}
+        taskFiles={taskFiles}
+        loadingProjects={loadingProjects}
+        loadingProjectPhases={loadingProjectPhases}
+        loadingMilestones={loadingMilestones}
+        savingProject={savingProject}
+        savingProjectId={savingProjectId}
+        savingProjectPhaseProjectId={savingProjectPhaseProjectId}
+        savingMilestoneProjectId={savingMilestoneProjectId}
+        savingMilestoneId={savingMilestoneId}
+        onProjectNameChange={setProjectName}
+        onProjectTargetDateChange={setProjectTargetDate}
+        onCreateProject={saveProject}
+        onProjectViewChange={setProjectView}
+        onLifecycleChange={updateProjectLifecycle}
+        onDeletionChange={updateProjectDeletion}
+        onEditProject={saveProjectEdit}
+        onCreatePhase={saveProjectPhase}
+        onSetCurrentPhase={setCurrentProjectPhase}
+        onCreateMilestone={saveMilestone}
+        onMilestoneLifecycle={updateMilestoneLifecycle}
+        onRefresh={() => Promise.all([loadProjects(), loadProjectPhases(), loadMilestones()])}
+      />
+
+
       <TasksSection
         connection={connection}
         online={online}
         taskTitle={taskTitle}
         taskCategory={taskCategory}
         taskPriority={taskPriority}
+        taskProjectId={taskProjectId}
         taskDueDate={taskDueDate}
         taskView={taskView}
         taskFiles={taskFiles}
+        projectFiles={projectFiles}
+        selectableProjectFiles={currentProjectFiles}
         openTaskFiles={openTaskFiles}
         completedTaskFiles={completedTaskFiles}
         cancelledTaskFiles={cancelledTaskFiles}
@@ -1010,6 +1458,7 @@ export default function GitHubWorkspacePage() {
         onTaskTitleChange={setTaskTitle}
         onTaskCategoryChange={setTaskCategory}
         onTaskPriorityChange={setTaskPriority}
+        onTaskProjectIdChange={setTaskProjectId}
         onTaskDueDateChange={setTaskDueDate}
         onTaskViewChange={setTaskView}
         onCreateTask={saveTask}
@@ -1072,4 +1521,14 @@ export default function GitHubWorkspacePage() {
       </footer>
     </main>
   );
+}
+
+function selectSyncedProjects(
+  projectFiles: SyncedProject[],
+  select: (records: SyncedProject["record"][]) => SyncedProject["record"][],
+) {
+  const byId = new Map(projectFiles.map((item) => [item.record.id, item]));
+  return select(projectFiles.map((item) => item.record))
+    .map((record) => byId.get(record.id))
+    .filter((item): item is SyncedProject => Boolean(item));
 }

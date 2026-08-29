@@ -2,6 +2,9 @@ import { GitHubContentsAdapter, GitHubDataError } from "../../../../src/lib/gith
 import type { ExportInspectionIssue } from "../../../../src/lib/github-data/portable-export";
 import { parseWorkspaceDescriptor, type CaptureRecord } from "../../../../src/lib/github-data/workspace";
 import type { TaskCategory, TaskPriority, TaskRecord } from "../../../../src/lib/github-data/tasks";
+import type { ProjectRecord } from "../../../../src/lib/github-data/projects";
+import type { ProjectPhaseRecord } from "../../../../src/lib/github-data/project-phases";
+import type { MilestoneRecord } from "../../../../src/lib/github-data/milestones";
 
 export type Connection = {
   repository: string;
@@ -28,6 +31,24 @@ export type SyncedTask = {
   blobSha: string;
 };
 
+export type SyncedProject = {
+  record: ProjectRecord;
+  path: string;
+  blobSha: string;
+};
+
+export type SyncedProjectPhase = {
+  record: ProjectPhaseRecord;
+  path: string;
+  blobSha: string;
+};
+
+export type SyncedMilestone = {
+  record: MilestoneRecord;
+  path: string;
+  blobSha: string;
+};
+
 export type AuthAvailability = "checking" | "unavailable" | "configured";
 export type ConnectionMethod = "github-app" | "personal-token";
 
@@ -38,6 +59,9 @@ export type PortabilityResult = {
   captures: number;
   dashboardLayouts: number;
   tasks: number;
+  projects: number;
+  projectPhases: number;
+  milestones: number;
   errors: ExportInspectionIssue[];
   warnings: ExportInspectionIssue[];
 };
