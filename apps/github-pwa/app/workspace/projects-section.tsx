@@ -5,7 +5,8 @@ import { useState, type FormEvent } from "react";
 import { projectMilestoneProgress, projectTaskProgress, type ProjectEditableFields, type ProjectProgressMode } from "../../../../src/lib/github-data/projects";
 import { phasesForProject } from "../../../../src/lib/github-data/project-phases";
 import { milestonesForProject } from "../../../../src/lib/github-data/milestones";
-import type { Connection, SyncedMilestone, SyncedProject, SyncedProjectPhase, SyncedTask } from "./page-model";
+import { projectNotesForProject, type ProjectNoteEditableFields } from "../../../../src/lib/github-data/project-notes";
+import type { Connection, SyncedMilestone, SyncedProject, SyncedProjectNote, SyncedProjectPhase, SyncedTask } from "./page-model";
 
 type Props = {
   connection: Connection | null;
@@ -15,6 +16,7 @@ type Props = {
   projectFiles: SyncedProject[];
   projectPhaseFiles: SyncedProjectPhase[];
   milestoneFiles: SyncedMilestone[];
+  projectNoteFiles: SyncedProjectNote[];
   currentProjectFiles: SyncedProject[];
   completedProjectFiles: SyncedProject[];
   cancelledProjectFiles: SyncedProject[];
@@ -26,11 +28,15 @@ type Props = {
   loadingProjects: boolean;
   loadingProjectPhases: boolean;
   loadingMilestones: boolean;
+  loadingProjectNotes: boolean;
   savingProject: boolean;
   savingProjectId: string | null;
   savingProjectPhaseProjectId: string | null;
   savingMilestoneProjectId: string | null;
   savingMilestoneId: string | null;
+  savingProjectNoteProjectId: string | null;
+  savingProjectNoteId: string | null;
+  currentDate: string;
   onProjectNameChange: (value: string) => void;
   onProjectTargetDateChange: (value: string) => void;
   onCreateProject: (event: FormEvent<HTMLFormElement>) => void;
@@ -42,17 +48,20 @@ type Props = {
   onSetCurrentPhase: (project: SyncedProject, phase: SyncedProjectPhase) => void;
   onCreateMilestone: (project: SyncedProject, title: string, targetDate: string) => Promise<boolean>;
   onMilestoneLifecycle: (item: SyncedMilestone, operation: "complete" | "reopen" | "cancel") => void;
+  onCreateProjectNote: (project: SyncedProject, details: ProjectNoteEditableFields) => Promise<boolean>;
+  onEditProjectNote: (item: SyncedProjectNote, details: ProjectNoteEditableFields) => Promise<boolean>;
   onRefresh: () => void;
 };
 
 export function ProjectsSection(props: Props) {
   const {
-    connection, online, projectName, projectTargetDate, projectFiles, projectPhaseFiles, milestoneFiles, currentProjectFiles,
+    connection, online, projectName, projectTargetDate, projectFiles, projectPhaseFiles, milestoneFiles, projectNoteFiles, currentProjectFiles,
     completedProjectFiles, cancelledProjectFiles, archivedProjectFiles, trashedProjectFiles,
-    visibleProjectFiles, projectView, taskFiles, loadingProjects, loadingProjectPhases, loadingMilestones, savingProject, savingProjectId, savingProjectPhaseProjectId,
-    savingMilestoneProjectId, savingMilestoneId,
+    visibleProjectFiles, projectView, taskFiles, loadingProjects, loadingProjectPhases, loadingMilestones, loadingProjectNotes, savingProject, savingProjectId, savingProjectPhaseProjectId,
+    savingMilestoneProjectId, savingMilestoneId, savingProjectNoteProjectId, savingProjectNoteId, currentDate,
     onProjectNameChange, onProjectTargetDateChange, onCreateProject, onProjectViewChange,
-    onLifecycleChange, onDeletionChange, onEditProject, onCreatePhase, onSetCurrentPhase, onCreateMilestone, onMilestoneLifecycle, onRefresh,
+    onLifecycleChange, onDeletionChange, onEditProject, onCreatePhase, onSetCurrentPhase, onCreateMilestone, onMilestoneLifecycle,
+    onCreateProjectNote, onEditProjectNote, onRefresh,
   } = props;
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
@@ -65,13 +74,22 @@ export function ProjectsSection(props: Props) {
   const [milestoneProjectId, setMilestoneProjectId] = useState<string | null>(null);
   const [milestoneTitle, setMilestoneTitle] = useState("");
   const [milestoneTargetDate, setMilestoneTargetDate] = useState("");
-  const projectOperationBusy = savingProject || savingProjectId !== null || savingProjectPhaseProjectId !== null || savingMilestoneProjectId !== null || savingMilestoneId !== null;
-  const projectFormActive = editingProjectId !== null || phaseProjectId !== null || milestoneProjectId !== null;
+  const [noteProjectId, setNoteProjectId] = useState<string | null>(null);
+  const [noteTitle, setNoteTitle] = useState("");
+  const [noteBody, setNoteBody] = useState("");
+  const [noteDate, setNoteDate] = useState(currentDate);
+  const [editingProjectNoteId, setEditingProjectNoteId] = useState<string | null>(null);
+  const [editNoteTitle, setEditNoteTitle] = useState("");
+  const [editNoteBody, setEditNoteBody] = useState("");
+  const [editNoteDate, setEditNoteDate] = useState("");
+  const projectOperationBusy = savingProject || savingProjectId !== null || savingProjectPhaseProjectId !== null || savingMilestoneProjectId !== null || savingMilestoneId !== null || savingProjectNoteProjectId !== null || savingProjectNoteId !== null;
+  const projectFormActive = editingProjectId !== null || phaseProjectId !== null || milestoneProjectId !== null || noteProjectId !== null;
   const projectBusy = projectOperationBusy || projectFormActive;
 
   function beginEdit(item: SyncedProject) {
     setPhaseProjectId(null);
     setMilestoneProjectId(null);
+    setNoteProjectId(null);
     setEditingProjectId(item.record.id);
     setEditName(item.record.data.name);
     setEditDescription(item.record.data.description_markdown);
@@ -83,6 +101,7 @@ export function ProjectsSection(props: Props) {
   function beginPhaseManagement(item: SyncedProject) {
     setEditingProjectId(null);
     setMilestoneProjectId(null);
+    setNoteProjectId(null);
     setPhaseProjectId(item.record.id);
     setPhaseName("");
   }
@@ -90,9 +109,28 @@ export function ProjectsSection(props: Props) {
   function beginMilestoneManagement(item: SyncedProject) {
     setEditingProjectId(null);
     setPhaseProjectId(null);
+    setNoteProjectId(null);
     setMilestoneProjectId(item.record.id);
     setMilestoneTitle("");
     setMilestoneTargetDate("");
+  }
+
+  function beginNoteManagement(item: SyncedProject) {
+    setEditingProjectId(null);
+    setPhaseProjectId(null);
+    setMilestoneProjectId(null);
+    setNoteProjectId(item.record.id);
+    setEditingProjectNoteId(null);
+    setNoteTitle("");
+    setNoteBody("");
+    setNoteDate(currentDate);
+  }
+
+  function beginNoteEdit(item: SyncedProjectNote) {
+    setEditingProjectNoteId(item.record.id);
+    setEditNoteTitle(item.record.data.title);
+    setEditNoteBody(item.record.data.body_markdown);
+    setEditNoteDate(item.record.data.note_date);
   }
 
   async function submitPhase(event: FormEvent<HTMLFormElement>, item: SyncedProject) {
@@ -110,6 +148,24 @@ export function ProjectsSection(props: Props) {
       setMilestoneTitle("");
       setMilestoneTargetDate("");
     }
+  }
+
+  async function submitProjectNote(event: FormEvent<HTMLFormElement>, item: SyncedProject) {
+    event.preventDefault();
+    if (!noteTitle.trim() || !noteDate || savingProjectNoteProjectId || online === false) return;
+    const saved = await onCreateProjectNote(item, { title: noteTitle, body_markdown: noteBody, note_date: noteDate });
+    if (saved) {
+      setNoteTitle("");
+      setNoteBody("");
+      setNoteDate(currentDate);
+    }
+  }
+
+  async function submitProjectNoteEdit(event: FormEvent<HTMLFormElement>, item: SyncedProjectNote) {
+    event.preventDefault();
+    if (!editNoteTitle.trim() || !editNoteDate || savingProjectNoteId || online === false) return;
+    const saved = await onEditProjectNote(item, { title: editNoteTitle, body_markdown: editNoteBody, note_date: editNoteDate });
+    if (saved) setEditingProjectNoteId(null);
   }
 
   async function submitEdit(event: FormEvent<HTMLFormElement>, item: SyncedProject) {
@@ -131,7 +187,7 @@ export function ProjectsSection(props: Props) {
         <div>
           <p className="eyebrow">Phase 2 · Project foundation</p>
           <h2 id="projects-title">项目</h2>
-          <p className="projects-subtitle">项目与任务关联都写入 Private GitHub；当前进度只按关联任务事实计算。</p>
+          <p className="projects-subtitle">项目、阶段、里程碑和 Notes 都写入 Private GitHub；进度明确显示事实来源。</p>
         </div>
         <div className="project-view-actions" aria-label="项目视图与同步">
           <button className={`view-button ${projectView === "current" ? "active" : ""}`} type="button" aria-pressed={projectView === "current"} onClick={() => onProjectViewChange("current")} disabled={projectBusy}>进行中 {currentProjectFiles.length}</button>
@@ -174,6 +230,7 @@ export function ProjectsSection(props: Props) {
                 : `已完成 ${progress.completed} / 共 ${progress.total} · ${progress.percent}%`;
               const phases = syncedPhasesForProject(projectPhaseFiles, item.record.id);
               const milestones = syncedMilestonesForProject(milestoneFiles, item.record.id);
+              const projectNotes = syncedProjectNotesForProject(projectNoteFiles, item.record.id);
               const currentPhase = phases.find((phase) => phase.record.id === item.record.data.current_phase_id);
               return <li key={item.record.id}>
                 <div className="project-content">
@@ -249,6 +306,39 @@ export function ProjectsSection(props: Props) {
                             </span>
                           </li>)}</ul>}
                     </div> : null}
+                    {noteProjectId === item.record.id ? <div className="project-note-manager">
+                      <form onSubmit={(event) => submitProjectNote(event, item)}>
+                        <label>Note 标题
+                          <input value={noteTitle} onChange={(event) => setNoteTitle(event.target.value)} maxLength={300} autoFocus placeholder="例如：本周验收记录" disabled={savingProjectNoteProjectId === item.record.id} />
+                        </label>
+                        <label>记录日期
+                          <input type="date" value={noteDate} onChange={(event) => setNoteDate(event.target.value)} disabled={savingProjectNoteProjectId === item.record.id} />
+                        </label>
+                        <label className="project-note-body">Markdown 正文
+                          <textarea value={noteBody} onChange={(event) => setNoteBody(event.target.value)} maxLength={100000} rows={5} placeholder="事实、决策、问题和下一步…" disabled={savingProjectNoteProjectId === item.record.id} />
+                        </label>
+                        <div className="project-note-form-actions">
+                          <button className="primary-button" type="submit" disabled={!noteTitle.trim() || !noteDate || projectOperationBusy || online === false}>{savingProjectNoteProjectId === item.record.id ? "保存中…" : "创建 Note"}</button>
+                          <button className="secondary-button" type="button" onClick={() => setNoteProjectId(null)} disabled={projectOperationBusy}>完成管理</button>
+                        </div>
+                      </form>
+                      {loadingProjectNotes ? <small>正在读取 Project Notes…</small>
+                        : projectNotes.length === 0 ? <small>还没有 Project Note；正文会作为开放 Markdown 字段保存。</small>
+                          : <ul>{projectNotes.map((note) => <li key={note.record.id}>
+                            {editingProjectNoteId === note.record.id ? <form className="project-note-edit-form" onSubmit={(event) => submitProjectNoteEdit(event, note)}>
+                              <label>Note 标题<input value={editNoteTitle} onChange={(event) => setEditNoteTitle(event.target.value)} maxLength={300} autoFocus disabled={savingProjectNoteId === note.record.id} /></label>
+                              <label>记录日期<input type="date" value={editNoteDate} onChange={(event) => setEditNoteDate(event.target.value)} disabled={savingProjectNoteId === note.record.id} /></label>
+                              <label className="project-note-body">Markdown 正文<textarea value={editNoteBody} onChange={(event) => setEditNoteBody(event.target.value)} maxLength={100000} rows={5} disabled={savingProjectNoteId === note.record.id} /></label>
+                              <div className="project-note-form-actions">
+                                <button className="primary-button" type="submit" disabled={!editNoteTitle.trim() || !editNoteDate || projectOperationBusy || online === false}>{savingProjectNoteId === note.record.id ? "保存中…" : "保存 Note"}</button>
+                                <button className="secondary-button" type="button" onClick={() => setEditingProjectNoteId(null)} disabled={savingProjectNoteId === note.record.id}>放弃修改</button>
+                              </div>
+                            </form> : <>
+                              <details><summary><strong>{note.record.data.title}</strong><small>{note.record.data.note_date} · v{note.record.version}</small></summary><pre>{note.record.data.body_markdown || "（空正文）"}</pre></details>
+                              <button className="text-button" type="button" onClick={() => beginNoteEdit(note)} disabled={projectOperationBusy || online === false}>编辑 Note</button>
+                            </>}
+                          </li>)}</ul>}
+                    </div> : null}
                   </>}
                 </div>
                 <div className="project-row-actions">
@@ -258,6 +348,7 @@ export function ProjectsSection(props: Props) {
                       {projectView !== "archived" ? <button className="text-button" type="button" onClick={() => beginEdit(item)} disabled={projectBusy || online === false}>编辑</button> : null}
                       {projectView === "current" ? <button className="text-button" type="button" onClick={() => beginPhaseManagement(item)} disabled={projectBusy || online === false}>管理阶段</button> : null}
                       {projectView === "current" ? <button className="text-button" type="button" onClick={() => beginMilestoneManagement(item)} disabled={projectBusy || online === false}>管理里程碑</button> : null}
+                      {projectView !== "archived" ? <button className="text-button" type="button" onClick={() => beginNoteManagement(item)} disabled={projectBusy || online === false}>管理 Notes</button> : null}
                       {projectView === "current" ? <button className="text-button" type="button" onClick={() => onLifecycleChange(item, item.record.data.status === "on_hold" ? "resume" : "pause")} disabled={projectBusy || online === false}>{item.record.data.status === "on_hold" ? "恢复进行" : "暂停"}</button> : null}
                       {projectView === "current" ? <button className="text-button" type="button" onClick={() => onLifecycleChange(item, "complete")} disabled={projectBusy || online === false}>完成</button> : <button className="text-button" type="button" onClick={() => onLifecycleChange(item, "reopen")} disabled={projectBusy || online === false}>重新打开</button>}
                       {projectView === "current" ? <button className="text-button project-destructive-button" type="button" onClick={() => onLifecycleChange(item, "cancel")} disabled={projectBusy || online === false}>取消项目</button> : null}
@@ -301,4 +392,11 @@ function syncedMilestonesForProject(milestoneFiles: SyncedMilestone[], projectId
   return milestonesForProject(milestoneFiles.map((item) => item.record), projectId)
     .map((record) => byId.get(record.id))
     .filter((item): item is SyncedMilestone => Boolean(item));
+}
+
+function syncedProjectNotesForProject(projectNoteFiles: SyncedProjectNote[], projectId: string) {
+  const byId = new Map(projectNoteFiles.map((item) => [item.record.id, item]));
+  return projectNotesForProject(projectNoteFiles.map((item) => item.record), projectId)
+    .map((record) => byId.get(record.id))
+    .filter((item): item is SyncedProjectNote => Boolean(item));
 }

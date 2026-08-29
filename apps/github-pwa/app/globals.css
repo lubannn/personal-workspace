@@ -191,6 +191,22 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .project-phase-manager > ul strong, .project-milestone-manager > ul strong { overflow-wrap: anywhere; font: 500 12px/1.4 ui-serif, Georgia, "Songti SC", serif; }
 .project-phase-manager em { color: var(--accent); font-size: 9px; font-style: normal; font-weight: 700; }
 .project-milestone-actions { display: flex; align-items: center; gap: 10px; }
+.project-note-manager { margin-top: 7px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: rgba(255,255,255,.42); }
+.project-note-manager > form, .project-note-edit-form { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(130px, .4fr); gap: 8px; }
+.project-note-manager label { display: grid; gap: 6px; color: var(--muted); font-size: 9px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.project-note-manager input, .project-note-manager textarea { min-width: 0; width: 100%; border: 1px solid var(--line); border-radius: 9px; padding: 0 10px; background: white; color: var(--ink); outline: none; }
+.project-note-manager input { height: 40px; }
+.project-note-manager textarea { min-height: 112px; padding-block: 10px; resize: vertical; font: inherit; line-height: 1.55; }
+.project-note-manager input:focus, .project-note-manager textarea:focus { border-color: var(--accent); }
+.project-note-body, .project-note-form-actions { grid-column: 1 / -1; }
+.project-note-form-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.project-note-manager > ul { margin: 12px 0 0; padding: 0; list-style: none; }
+.project-note-manager > ul > li { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line); }
+.project-note-manager details { min-width: 0; }
+.project-note-manager summary { display: grid; gap: 3px; cursor: pointer; }
+.project-note-manager summary strong { overflow-wrap: anywhere; font: 500 12px/1.4 ui-serif, Georgia, "Songti SC", serif; }
+.project-note-manager pre { max-height: 260px; overflow: auto; margin: 9px 0 0; padding: 10px; border-radius: 8px; background: rgba(255,255,255,.58); color: var(--soft); font: 11px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.project-note-edit-form { grid-column: 1 / -1; }
 .project-row-actions { min-width: 126px; display: grid; justify-items: end; gap: 7px; }
 .project-item-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 3px 10px; }
 .project-row-actions .text-button { padding: 2px 0; font-size: 10px; }
@@ -310,6 +326,7 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
   .project-edit-form .project-edit-name { grid-column: 1 / -1; }
   .project-phase-manager > form, .project-milestone-manager > form { grid-template-columns: 1fr 1fr; }
   .project-phase-manager > form label, .project-milestone-manager > form label:first-child { grid-column: 1 / -1; }
+  .project-note-manager > form, .project-note-edit-form { grid-template-columns: 1fr 1fr; }
   .task-edit-form .task-edit-title { grid-column: 1 / -1; }
   .recent-list li { grid-template-columns: 1fr auto; gap: 9px 15px; }
   .recent-list p { grid-column: 1 / -1; grid-row: 2; }
@@ -338,6 +355,10 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
   .project-phase-manager > form, .project-milestone-manager > form { grid-template-columns: 1fr; }
   .project-phase-manager > form label, .project-milestone-manager > form label:first-child { grid-column: 1; }
   .project-phase-manager > form button, .project-milestone-manager > form button { width: 100%; }
+  .project-note-manager > form, .project-note-edit-form { grid-template-columns: 1fr; }
+  .project-note-body, .project-note-form-actions { grid-column: 1; }
+  .project-note-form-actions button { width: 100%; }
+  .project-note-manager > ul > li { grid-template-columns: 1fr; }
   .task-row-actions { grid-column: 2; min-width: 0; justify-items: start; }
   .task-item-actions { justify-content: flex-start; }
   .task-list li.subtask { padding-left: 12px; }

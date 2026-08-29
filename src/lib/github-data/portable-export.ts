@@ -4,6 +4,7 @@ import { recordPath } from "./protocol";
 import { parseProjectRecord } from "./projects";
 import { parseProjectPhaseRecord } from "./project-phases";
 import { parseMilestoneRecord } from "./milestones";
+import { parseProjectNoteRecord } from "./project-notes";
 import { parseTaskRecord } from "./tasks";
 import { parseCaptureRecord, parseWorkspaceDescriptor, type WorkspaceDescriptor } from "./workspace";
 
@@ -33,7 +34,7 @@ export type PortableWorkspaceExport = {
   manifest: {
     schema_version: 1;
     scope: {
-      modules: Array<"workspace" | "captures" | "dashboard_layout" | "tasks" | "projects" | "project_phases" | "milestones">;
+      modules: Array<"workspace" | "captures" | "dashboard_layout" | "tasks" | "projects" | "project_phases" | "milestones" | "project_notes">;
       complete: true;
     };
     counts: {
@@ -44,6 +45,7 @@ export type PortableWorkspaceExport = {
       projects: number;
       project_phases: number;
       milestones: number;
+      project_notes: number;
     };
     files: PortableExportManifestFile[];
   };
@@ -69,6 +71,7 @@ export type ExportInspection = {
     projects: number;
     projectPhases: number;
     milestones: number;
+    projectNotes: number;
   };
   errors: ExportInspectionIssue[];
   warnings: ExportInspectionIssue[];
@@ -97,6 +100,7 @@ export async function buildPortableWorkspaceExport(input: {
   projectFiles?: GitHubStoredFile[];
   projectPhaseFiles?: GitHubStoredFile[];
   milestoneFiles?: GitHubStoredFile[];
+  projectNoteFiles?: GitHubStoredFile[];
   generatedAt?: string;
 }): Promise<PortableWorkspaceExport> {
   const dashboardLayoutFiles = input.dashboardLayoutFile ? [input.dashboardLayoutFile] : [];
@@ -104,7 +108,8 @@ export async function buildPortableWorkspaceExport(input: {
   const projectFiles = input.projectFiles ?? [];
   const projectPhaseFiles = input.projectPhaseFiles ?? [];
   const milestoneFiles = input.milestoneFiles ?? [];
-  const files = [input.workspaceFile, ...input.captureFiles, ...dashboardLayoutFiles, ...taskFiles, ...projectFiles, ...projectPhaseFiles, ...milestoneFiles]
+  const projectNoteFiles = input.projectNoteFiles ?? [];
+  const files = [input.workspaceFile, ...input.captureFiles, ...dashboardLayoutFiles, ...taskFiles, ...projectFiles, ...projectPhaseFiles, ...milestoneFiles, ...projectNoteFiles]
     .map((file) => ({ ...file }))
     .sort((left, right) => left.path.localeCompare(right.path));
   const manifestFiles = await Promise.all(files.map(async (file) => ({
@@ -121,7 +126,7 @@ export async function buildPortableWorkspaceExport(input: {
     source: { repository: input.repository, branch: input.branch },
     manifest: {
       schema_version: 1,
-      scope: { modules: ["workspace", "captures", "dashboard_layout", "tasks", "projects", "project_phases", "milestones"], complete: true },
+      scope: { modules: ["workspace", "captures", "dashboard_layout", "tasks", "projects", "project_phases", "milestones", "project_notes"], complete: true },
       counts: {
         files: files.length,
         captures: input.captureFiles.length,
@@ -130,6 +135,7 @@ export async function buildPortableWorkspaceExport(input: {
         projects: projectFiles.length,
         project_phases: projectPhaseFiles.length,
         milestones: milestoneFiles.length,
+        project_notes: projectNoteFiles.length,
       },
       files: manifestFiles,
     },
@@ -163,7 +169,7 @@ export async function inspectPortableWorkspaceExport(value: unknown): Promise<Ex
     generatedAt: null,
     repository: null,
     workspace: null,
-    counts: { files: 0, captures: 0, dashboardLayouts: 0, tasks: 0, projects: 0, projectPhases: 0, milestones: 0 },
+    counts: { files: 0, captures: 0, dashboardLayouts: 0, tasks: 0, projects: 0, projectPhases: 0, milestones: 0, projectNotes: 0 },
     errors,
     warnings,
   };
@@ -430,6 +436,34 @@ export async function inspectPortableWorkspaceExport(value: unknown): Promise<Ex
     errors.push({ code: "MILESTONE_COUNT_MISMATCH", message: "Milestone 数量与 manifest 不一致。" });
   }
 
+  const projectNoteIds = new Set<string>();
+  const projectNoteFiles = validPayloadFiles.filter((file) => file.path.startsWith("data/project-notes/"));
+  result.counts.projectNotes = projectNoteFiles.length;
+  for (const file of projectNoteFiles) {
+    try {
+      const record = parseProjectNoteRecord(file.content);
+      if (result.workspace && record.owner_id !== result.workspace.owner_id) {
+        errors.push({ code: "OWNER_MISMATCH", message: "ProjectNote 的 owner_id 与 workspace 不一致。", path: file.path });
+      }
+      if (recordPath("project_note", record.id) !== file.path) {
+        errors.push({ code: "PROJECT_NOTE_PATH_MISMATCH", message: "ProjectNote 的 ID 与文件路径不一致。", path: file.path });
+      }
+      if (projectNoteIds.has(record.id)) {
+        errors.push({ code: "DUPLICATE_PROJECT_NOTE_ID", message: "导出包中存在重复 ProjectNote ID。", path: file.path });
+      }
+      projectNoteIds.add(record.id);
+      if (!projectIds.has(record.data.project_id)) {
+        errors.push({ code: "PROJECT_NOTE_PROJECT_MISSING", message: "ProjectNote 引用的 Project 不在导出包中。", path: file.path });
+      }
+    } catch {
+      errors.push({ code: "INVALID_PROJECT_NOTE_RECORD", message: "ProjectNote 文件无法通过结构校验。", path: file.path });
+    }
+  }
+  const rawProjectNoteCount = manifestCounts?.project_notes;
+  if ((rawProjectNoteCount !== undefined || projectNoteFiles.length > 0) && rawProjectNoteCount !== projectNoteFiles.length) {
+    errors.push({ code: "PROJECT_NOTE_COUNT_MISMATCH", message: "ProjectNote 数量与 manifest 不一致。" });
+  }
+
   const supportedPaths = new Set(["workspace.json", DASHBOARD_LAYOUT_PATH]);
   const unexpectedFiles = validPayloadFiles.filter((file) => (
     !supportedPaths.has(file.path)
@@ -438,6 +472,7 @@ export async function inspectPortableWorkspaceExport(value: unknown): Promise<Ex
     && !file.path.startsWith("data/projects/")
     && !file.path.startsWith("data/project-phases/")
     && !file.path.startsWith("data/milestones/")
+    && !file.path.startsWith("data/project-notes/")
   ));
   for (const file of unexpectedFiles) {
     errors.push({ code: "UNEXPECTED_FILE", message: "当前版本不支持此导出路径。", path: file.path });
