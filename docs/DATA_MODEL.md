@@ -196,6 +196,10 @@ ProjectNote 作为 `data/project-notes/<id>.json` 中的独立 canonical 记录�
 
 ActivityEvent 服务于时间线和报告事实；安全审计使用单独的 AuditEvent。
 
+首个 Project Activity 切片把每条事件保存为 `data/activity-events/<id>.json` 中独立的 canonical 记录，并强制保持 `version = 1`、`deleted_at = null`，不提供编辑或删除入口。时间线只从这一版本上线后的用户操作开始追加，不根据 Git 历史回填旧事件；没有 ActivityEvent 不代表对应领域事实不存在。
+
+当前 GitHub Contents 适配器不能把领域记录和 ActivityEvent 合并成同一原子写入，因此顺序固定为“先提交领域记录，再追加 ActivityEvent”。若第二步失败，页面明确提示主操作已成功但时间线缺失；领域记录和 Git 历史仍是事实权威。ActivityEvent 是产品时间线与报告素材，不承担安全审计职责。
+
 ### ReportDraft
 
 - `id`, `owner_id`, `report_type`：weekly、monthly、custom
@@ -455,7 +459,8 @@ User
  ├─ Project ─┬─ ProjectPhase
  │           ├─ Milestone
  │           ├─ Task
- │           └─ ProjectNote
+ │           ├─ ProjectNote
+ │           └─ ActivityEvent
  ├─ Calendar ─ CalendarEvent ─ Reminder
  ├─ JournalEntry ─┬─ JournalSegment
  │                ├─ JournalRevision

@@ -32,11 +32,12 @@ type Options = {
   loadProjectPhases: (adapter: GitHubContentsAdapter) => Promise<void>;
   loadMilestones: (adapter: GitHubContentsAdapter) => Promise<void>;
   loadProjectNotes: (adapter: GitHubContentsAdapter) => Promise<void>;
+  loadActivityEvents: (adapter: GitHubContentsAdapter) => Promise<void>;
 };
 
 export function useGitHubAppBootstrap(options: Options) {
   const started = useRef(false);
-  const { adapterRef, setConnection, setConnectionMethod, setAuthAvailability, setConnecting, setErrorMessage, setStatusMessage, loadRecentCaptures, loadDashboardLayout, loadTasks, loadProjects, loadProjectPhases, loadMilestones, loadProjectNotes } = options;
+  const { adapterRef, setConnection, setConnectionMethod, setAuthAvailability, setConnecting, setErrorMessage, setStatusMessage, loadRecentCaptures, loadDashboardLayout, loadTasks, loadProjects, loadProjectPhases, loadMilestones, loadProjectNotes, loadActivityEvents } = options;
 
   useEffect(() => {
     if (started.current) return;
@@ -66,7 +67,7 @@ export function useGitHubAppBootstrap(options: Options) {
         setConnection(opened.connection);
         setConnectionMethod("github-app");
         setStatusMessage(`已通过 GitHub App 登录${status.login ? `（${status.login}）` : ""}，访问令牌仅保留在当前页面内存中。`);
-        await Promise.all([loadRecentCaptures(opened.adapter), loadDashboardLayout(opened.adapter, opened.connection.ownerId), loadTasks(opened.adapter), loadProjects(opened.adapter), loadProjectPhases(opened.adapter), loadMilestones(opened.adapter), loadProjectNotes(opened.adapter)]);
+        await Promise.all([loadRecentCaptures(opened.adapter), loadDashboardLayout(opened.adapter, opened.connection.ownerId), loadTasks(opened.adapter), loadProjects(opened.adapter), loadProjectPhases(opened.adapter), loadMilestones(opened.adapter), loadProjectNotes(opened.adapter), loadActivityEvents(opened.adapter)]);
       } catch (error) {
         adapterRef.current = null;
         setConnection(null);
@@ -79,5 +80,5 @@ export function useGitHubAppBootstrap(options: Options) {
     }
 
     void bootstrap();
-  }, [adapterRef, loadDashboardLayout, loadMilestones, loadProjectNotes, loadProjectPhases, loadProjects, loadRecentCaptures, loadTasks, setAuthAvailability, setConnecting, setConnection, setConnectionMethod, setErrorMessage, setStatusMessage]);
+  }, [adapterRef, loadActivityEvents, loadDashboardLayout, loadMilestones, loadProjectNotes, loadProjectPhases, loadProjects, loadRecentCaptures, loadTasks, setAuthAvailability, setConnecting, setConnection, setConnectionMethod, setErrorMessage, setStatusMessage]);
 }

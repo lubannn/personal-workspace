@@ -53,6 +53,7 @@ import {
 import { createProjectPhaseData } from "../../../src/lib/github-data/project-phases";
 import { createMilestoneData, setMilestoneStatus } from "../../../src/lib/github-data/milestones";
 import { createProjectNoteData, updateProjectNoteDetails, type ProjectNoteEditableFields } from "../../../src/lib/github-data/project-notes";
+import { createActivityEventData, type ActivityChangeSummary } from "../../../src/lib/github-data/activity-events";
 import {
   archivedTasks,
   cancelledTasks,
@@ -172,6 +173,8 @@ export default function GitHubWorkspacePage() {
     setMilestoneFiles,
     projectNoteFiles,
     setProjectNoteFiles,
+    activityEventFiles,
+    setActivityEventFiles,
     dashboardLayout,
     setDashboardLayout,
     dashboardBlobSha,
@@ -182,6 +185,7 @@ export default function GitHubWorkspacePage() {
     loadingProjectPhases,
     loadingMilestones,
     loadingProjectNotes,
+    loadingActivityEvents,
     loadingDashboard,
     loadRecentCaptures,
     loadTasks,
@@ -189,6 +193,7 @@ export default function GitHubWorkspacePage() {
     loadProjectPhases,
     loadMilestones,
     loadProjectNotes,
+    loadActivityEvents,
     loadDashboardLayout,
     clearCollections,
   } = useWorkspaceCollections({ adapterRef, setErrorMessage, setDashboardClean });
@@ -208,6 +213,7 @@ export default function GitHubWorkspacePage() {
     loadProjectPhases,
     loadMilestones,
     loadProjectNotes,
+    loadActivityEvents,
   });
 
 
@@ -380,6 +386,7 @@ export default function GitHubWorkspacePage() {
         loadProjectPhases(opened.adapter),
         loadMilestones(opened.adapter),
         loadProjectNotes(opened.adapter),
+        loadActivityEvents(opened.adapter),
       ]);
     } catch (error) {
       adapterRef.current = null;
@@ -615,11 +622,55 @@ export default function GitHubWorkspacePage() {
       setProjectTargetDate("");
       setProjectFiles((current) => [{ record, path: result.path, blobSha: result.blobSha }, ...current]);
       setProjectView("current");
+      await appendProjectActivity({ projectId: id, eventType: "project.created", changeSummary: { name: record.data.name, status: record.data.status }, sourceRef: id, timestamp });
       setStatusMessage("项目已保存；进度将按未删除、未取消、未归档的关联任务事实计算。");
     } catch (error) {
       setErrorMessage(friendlyError(error));
     } finally {
       setSavingProject(false);
+    }
+  }
+
+  async function appendProjectActivity(input: {
+    projectId: string;
+    eventType: string;
+    changeSummary: ActivityChangeSummary;
+    sourceRef?: string | null;
+    timestamp?: string;
+  }) {
+    const adapter = adapterRef.current;
+    if (!adapter || !connection) {
+      setErrorMessage("主操作已成功，但当前连接已失效，Activity Log 未写入；Git 历史仍保留主操作事实。");
+      return false;
+    }
+    const timestamp = input.timestamp ?? new Date().toISOString();
+    const timePart = timestamp.replaceAll(/\D/g, "").slice(0, 17);
+    const id = `activity_${timePart}_${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`;
+    try {
+      const record = createWorkspaceRecord({
+        entityType: "activity_event",
+        id,
+        ownerId: connection.ownerId,
+        timestamp,
+        data: createActivityEventData({
+          projectId: input.projectId,
+          eventType: input.eventType,
+          occurredAt: timestamp,
+          actorId: connection.ownerId,
+          changeSummary: input.changeSummary,
+          sourceRef: input.sourceRef,
+        }),
+      });
+      const result = await adapter.writeText({
+        path: recordPath("activity_event", id),
+        text: serializeRecord(record),
+        message: `activity: ${input.eventType} ${input.projectId}`,
+      });
+      setActivityEventFiles((current) => [{ record, path: result.path, blobSha: result.blobSha }, ...current]);
+      return true;
+    } catch (error) {
+      setErrorMessage(`主操作已成功，但 Activity Log 未写入：${friendlyError(error)} Git 历史仍保留主操作事实。`);
+      return false;
     }
   }
 
@@ -652,6 +703,7 @@ export default function GitHubWorkspacePage() {
         ? { record: updated, path: result.path, blobSha: result.blobSha }
         : candidate));
       if (taskProjectId === item.record.id && !["active", "planned", "on_hold"].includes(updated.data.status)) setTaskProjectId("");
+      await appendProjectActivity({ projectId: item.record.id, eventType: "project.status_changed", changeSummary: { from: item.record.data.status, to: updated.data.status }, sourceRef: item.record.id, timestamp: updated.updated_at });
       setStatusMessage({
         pause: "项目已暂停；关联任务保持原状态。",
         resume: "项目已恢复进行；关联任务关系保持不变。",
@@ -684,6 +736,7 @@ export default function GitHubWorkspacePage() {
       setProjectFiles((current) => current.map((candidate) => candidate.record.id === item.record.id
         ? { record: updated, path: result.path, blobSha: result.blobSha }
         : candidate));
+      await appendProjectActivity({ projectId: item.record.id, eventType: "project.updated", changeSummary: { name: updated.data.name, start_date: updated.data.start_date, target_date: updated.data.target_date, progress_mode: updated.data.progress_mode }, sourceRef: item.record.id, timestamp: updated.updated_at });
       setStatusMessage("项目基本信息与进度口径已保存；生命周期和 Git 历史保持不变。");
       return true;
     } catch (error) {
@@ -719,6 +772,7 @@ export default function GitHubWorkspacePage() {
         message: `project phase: create ${id}`,
       });
       setProjectPhaseFiles((current) => [...current, { record, path: result.path, blobSha: result.blobSha }]);
+      await appendProjectActivity({ projectId: project.record.id, eventType: "project_phase.created", changeSummary: { name: record.data.name, sort_order: record.data.sort_order }, sourceRef: id, timestamp });
       setStatusMessage("项目阶段已保存；选择“设为当前”后才会更新 Project 引用。");
       return true;
     } catch (error) {
@@ -746,6 +800,7 @@ export default function GitHubWorkspacePage() {
       setProjectFiles((current) => current.map((candidate) => candidate.record.id === project.record.id
         ? { record: updated, path: result.path, blobSha: result.blobSha }
         : candidate));
+      await appendProjectActivity({ projectId: project.record.id, eventType: "project.phase_changed", changeSummary: { from: project.record.data.current_phase_id, to: phase.record.id, phase_name: phase.record.data.name }, sourceRef: phase.record.id, timestamp: updated.updated_at });
       setStatusMessage(`当前阶段已切换为“${phase.record.data.name}”；阶段文件和 Project 引用均保留独立历史。`);
     } catch (error) {
       setErrorMessage(friendlyError(error));
@@ -779,6 +834,7 @@ export default function GitHubWorkspacePage() {
         message: `milestone: create ${id}`,
       });
       setMilestoneFiles((current) => [...current, { record, path: result.path, blobSha: result.blobSha }]);
+      await appendProjectActivity({ projectId: project.record.id, eventType: "milestone.created", changeSummary: { title: record.data.title, target_date: record.data.target_date, weight: record.data.weight }, sourceRef: id, timestamp });
       setStatusMessage("里程碑已保存；项目进度仍按关联任务事实计算。");
       return true;
     } catch (error) {
@@ -807,6 +863,7 @@ export default function GitHubWorkspacePage() {
       setMilestoneFiles((current) => current.map((candidate) => candidate.record.id === item.record.id
         ? { record: updated, path: result.path, blobSha: result.blobSha }
         : candidate));
+      await appendProjectActivity({ projectId: item.record.data.project_id, eventType: "milestone.status_changed", changeSummary: { title: item.record.data.title, from: item.record.data.status, to: updated.data.status }, sourceRef: item.record.id, timestamp: updated.updated_at });
       setStatusMessage({
         complete: "里程碑已完成；完成时间与 Git 历史已保留。",
         reopen: "里程碑已重新打开；完成时间已清空，历史版本仍保留。",
@@ -847,6 +904,7 @@ export default function GitHubWorkspacePage() {
         message: `project note: create ${id}`,
       });
       setProjectNoteFiles((current) => [{ record, path: result.path, blobSha: result.blobSha }, ...current]);
+      await appendProjectActivity({ projectId: project.record.id, eventType: "project_note.created", changeSummary: { title: record.data.title, note_date: record.data.note_date }, sourceRef: id, timestamp });
       setStatusMessage("项目 Note 已保存为独立 Markdown 数据记录；项目本体没有被改写。");
       return true;
     } catch (error) {
@@ -874,6 +932,7 @@ export default function GitHubWorkspacePage() {
       setProjectNoteFiles((current) => current.map((candidate) => candidate.record.id === item.record.id
         ? { record: updated, path: result.path, blobSha: result.blobSha }
         : candidate));
+      await appendProjectActivity({ projectId: item.record.data.project_id, eventType: "project_note.updated", changeSummary: { title: updated.data.title, note_date: updated.data.note_date }, sourceRef: item.record.id, timestamp: updated.updated_at });
       setStatusMessage("项目 Note 已更新；旧 blob SHA 冲突保护和 Git 历史均已保留。");
       return true;
     } catch (error) {
@@ -903,6 +962,7 @@ export default function GitHubWorkspacePage() {
         ? { record: updated, path: result.path, blobSha: result.blobSha }
         : candidate));
       if (operation === "trash" && taskProjectId === item.record.id) setTaskProjectId("");
+      await appendProjectActivity({ projectId: item.record.id, eventType: operation === "trash" ? "project.trashed" : "project.restored", changeSummary: { deleted_at: updated.deleted_at }, sourceRef: item.record.id, timestamp: updated.updated_at });
       setStatusMessage(operation === "trash"
         ? "项目已移到回收站；关联任务只会暂时显示为项目不可用，不会被删除。"
         : "项目已从回收站恢复；关联任务关系会自动重新显示。");
@@ -1112,6 +1172,17 @@ export default function GitHubWorkspacePage() {
     }
   }
 
+  async function listActivityEventFiles(adapter: GitHubContentsAdapter) {
+    try {
+      return (await adapter.listDirectory("data/activity-events"))
+        .filter((item) => item.type === "file" && item.name.endsWith(".json"))
+        .sort((left, right) => left.path.localeCompare(right.path));
+    } catch (error) {
+      if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") return [];
+      throw error;
+    }
+  }
+
   async function downloadPortableExport() {
     const adapter = adapterRef.current;
     if (!adapter || !connection || exporting || online === false) return;
@@ -1177,6 +1248,14 @@ export default function GitHubWorkspacePage() {
           projectNoteCandidates.slice(index, index + batchSize).map((item) => adapter.readText(item.path)),
         ));
       }
+      const activityEventCandidates = await listActivityEventFiles(adapter);
+      const activityEventFiles = [];
+      for (let index = 0; index < activityEventCandidates.length; index += batchSize) {
+        setExportProgress(`正在读取 ActivityEvent ${Math.min(index + batchSize, activityEventCandidates.length)} / ${activityEventCandidates.length}…`);
+        activityEventFiles.push(...await Promise.all(
+          activityEventCandidates.slice(index, index + batchSize).map((item) => adapter.readText(item.path)),
+        ));
+      }
 
       setExportProgress("正在生成 SHA-256 manifest…");
       const generatedAt = new Date().toISOString();
@@ -1191,6 +1270,7 @@ export default function GitHubWorkspacePage() {
         projectPhaseFiles,
         milestoneFiles,
         projectNoteFiles,
+        activityEventFiles,
         generatedAt,
       });
       const inspection = await inspectPortableWorkspaceExport(portableExport);
@@ -1219,6 +1299,7 @@ export default function GitHubWorkspacePage() {
         projectPhases: inspection.counts.projectPhases,
         milestones: inspection.counts.milestones,
         projectNotes: inspection.counts.projectNotes,
+        activityEvents: inspection.counts.activityEvents,
         errors: inspection.errors,
         warnings: inspection.warnings,
       });
@@ -1233,6 +1314,7 @@ export default function GitHubWorkspacePage() {
         projectPhases: inspection.counts.projectPhases,
         milestones: inspection.counts.milestones,
         projectNotes: inspection.counts.projectNotes,
+        activityEvents: inspection.counts.activityEvents,
         errors: inspection.errors,
         warnings: inspection.warnings,
       });
@@ -1275,6 +1357,7 @@ export default function GitHubWorkspacePage() {
           projectPhases: 0,
           milestones: 0,
           projectNotes: 0,
+          activityEvents: 0,
           errors: [{ code: "EXPORT_TOO_LARGE", message: "当前预检仅接受 50 MB 以内的 JSON 文件。" }],
           warnings: [],
         });
@@ -1293,6 +1376,7 @@ export default function GitHubWorkspacePage() {
         projectPhases: inspection.counts.projectPhases,
         milestones: inspection.counts.milestones,
         projectNotes: inspection.counts.projectNotes,
+        activityEvents: inspection.counts.activityEvents,
         errors: inspection.errors,
         warnings: inspection.warnings,
       });
@@ -1312,6 +1396,7 @@ export default function GitHubWorkspacePage() {
         projectPhases: 0,
         milestones: 0,
         projectNotes: 0,
+        activityEvents: 0,
         errors: [{ code: "INVALID_JSON", message: "文件不是有效的 JSON，未执行任何恢复操作。" }],
         warnings: [],
       });
@@ -1503,6 +1588,7 @@ export default function GitHubWorkspacePage() {
         projectPhaseFiles={projectPhaseFiles}
         milestoneFiles={milestoneFiles}
         projectNoteFiles={projectNoteFiles}
+        activityEventFiles={activityEventFiles}
         currentProjectFiles={currentProjectFiles}
         completedProjectFiles={completedProjectFiles}
         cancelledProjectFiles={cancelledProjectFiles}
@@ -1515,6 +1601,7 @@ export default function GitHubWorkspacePage() {
         loadingProjectPhases={loadingProjectPhases}
         loadingMilestones={loadingMilestones}
         loadingProjectNotes={loadingProjectNotes}
+        loadingActivityEvents={loadingActivityEvents}
         savingProject={savingProject}
         savingProjectId={savingProjectId}
         savingProjectPhaseProjectId={savingProjectPhaseProjectId}
@@ -1536,7 +1623,7 @@ export default function GitHubWorkspacePage() {
         onMilestoneLifecycle={updateMilestoneLifecycle}
         onCreateProjectNote={saveProjectNote}
         onEditProjectNote={saveProjectNoteEdit}
-        onRefresh={() => Promise.all([loadProjects(), loadProjectPhases(), loadMilestones(), loadProjectNotes()])}
+        onRefresh={() => Promise.all([loadProjects(), loadProjectPhases(), loadMilestones(), loadProjectNotes(), loadActivityEvents()])}
       />
 
 
