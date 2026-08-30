@@ -107,6 +107,7 @@ import { PortabilitySection } from "./workspace/portability-section";
 import { ProjectsSection } from "./workspace/projects-section";
 import { CalendarSection, type CalendarEventFields } from "./workspace/calendar-section";
 import { ReadinessSection } from "./workspace/readiness-section";
+import { ReportsSection } from "./workspace/reports-section";
 import { TasksSection } from "./workspace/tasks-section";
 
 export default function GitHubWorkspacePage() {
@@ -1951,6 +1952,19 @@ export default function GitHubWorkspacePage() {
         onDeletionChange={updateTaskDeletion}
         onEditTask={saveTaskEdit}
         onCreateSubtask={saveSubtask}
+      />
+
+
+      <ReportsSection
+        connection={connection}
+        todayDate={currentTaskDate}
+        taskFiles={taskFiles}
+        projectFiles={projectFiles}
+        milestoneFiles={milestoneFiles}
+        calendarEventFiles={calendarEventFiles}
+        activityEventFiles={activityEventFiles}
+        loading={loadingTasks || loadingProjects || loadingMilestones || loadingCalendarEvents || loadingActivityEvents}
+        onRefresh={() => void Promise.all([loadTasks(), loadProjects(), loadMilestones(), loadCalendarEvents(), loadActivityEvents()])}
       />
 
 
