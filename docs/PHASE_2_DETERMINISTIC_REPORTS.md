@@ -28,6 +28,13 @@ CSV 使用 UTF-8 BOM 与 CRLF，面向 Excel 等表格工具。每行包含：
 
 所有单元格均使用双引号并转义内部双引号；以 `=`, `+`, `-`, `@` 开头的值会增加前导单引号，防止表格公式注入。复杂正文不会被塞入 CSV；`details` 只保存短的确定性关联或进度来源。
 
+第三个切片补充按实体导出：
+
+- Tasks CSV 覆盖当前读取到的全部 Task，包括软删除记录、完整 envelope、Project/父子关系、生命周期、计划时间、DDL、耗时、tags JSON 和 Private notes Markdown；
+- Projects CSV 覆盖全部 Project，包括完整 envelope、生命周期、阶段引用、日期、原始 progress mode 与带来源的派生进度；
+- 两者都按 canonical ID 稳定排序，并保留 `source_path`；多行 Markdown 由标准 CSV quoting 保真；
+- Time Entry 实体尚未上线，因此不提供伪造的空 CSV。
+
 ## 3. 隐私与失败语义
 
 - 生成和下载只在当前浏览器执行；Worker、AI 服务和 Public 代码仓库不接收 Private 正文。
@@ -36,6 +43,7 @@ CSV 使用 UTF-8 BOM 与 CRLF，面向 Excel 等表格工具。每行包含：
 - 复制或 Markdown 下载失败同样不改变数据；草稿不会自动保存、审批或发送。
 - 被软删除、已取消或已归档的领域记录不会作为当前报告事实展示；Git 历史仍可能保留旧正文。
 - Task 的“实际耗时”只汇总现有 `actual_duration_minutes`；没有 Time Entry 时不能伪称为自动计时事实。
+- Tasks/Projects CSV 可能包含软删除记录和 Private Markdown 正文，下载后的文件由用户自行安全保管。
 
 ## 4. 明确未开放
 
