@@ -78,6 +78,7 @@ import {
   type TaskEditableFields,
   type TaskPriority,
 } from "../../../src/lib/github-data/tasks";
+import { createTimeEntryData } from "../../../src/lib/github-data/time-entries";
 import {
   DEFAULT_OWNER,
   DEFAULT_REPOSITORY,
@@ -99,6 +100,7 @@ import {
   type SyncedProjectNote,
   type SyncedReportDraft,
   type SyncedTask,
+  type SyncedTimeEntry,
 } from "./workspace/page-model";
 import { useOnlineStatus } from "./workspace/use-online-status";
 import { useWorkspaceCollections } from "./workspace/use-workspace-collections";
@@ -112,6 +114,7 @@ import { CalendarSection, type CalendarEventFields } from "./workspace/calendar-
 import { ReadinessSection } from "./workspace/readiness-section";
 import { ReportsSection } from "./workspace/reports-section";
 import { TasksSection } from "./workspace/tasks-section";
+import { TimeEntriesSection } from "./workspace/time-entries-section";
 
 export default function GitHubWorkspacePage() {
   const adapterRef = useRef<GitHubContentsAdapter | null>(null);
@@ -141,6 +144,8 @@ export default function GitHubWorkspacePage() {
   const [taskDueDateOverride, setTaskDueDate] = useState<string | null>(null);
   const [taskView, setTaskView] = useState<"open" | "done" | "cancelled" | "archived" | "trash">("open");
   const [savingTask, setSavingTask] = useState(false);
+  const [savingTimeEntry, setSavingTimeEntry] = useState(false);
+  const [savingTimeEntryId, setSavingTimeEntryId] = useState<string | null>(null);
   const [savingReportDraft, setSavingReportDraft] = useState(false);
   const [savingTaskId, setSavingTaskId] = useState<string | null>(null);
   const [projectName, setProjectName] = useState("");
@@ -182,6 +187,8 @@ export default function GitHubWorkspacePage() {
     setCaptureFiles,
     taskFiles,
     setTaskFiles,
+    timeEntryFiles,
+    setTimeEntryFiles,
     projectFiles,
     setProjectFiles,
     projectPhaseFiles,
@@ -204,6 +211,7 @@ export default function GitHubWorkspacePage() {
     setDashboardBlobSha,
     loadingCaptures,
     loadingTasks,
+    loadingTimeEntries,
     loadingProjects,
     loadingProjectPhases,
     loadingMilestones,
@@ -215,6 +223,7 @@ export default function GitHubWorkspacePage() {
     loadingDashboard,
     loadRecentCaptures,
     loadTasks,
+    loadTimeEntries,
     loadProjects,
     loadProjectPhases,
     loadMilestones,
@@ -238,6 +247,7 @@ export default function GitHubWorkspacePage() {
     loadRecentCaptures,
     loadDashboardLayout,
     loadTasks,
+    loadTimeEntries,
     loadProjects,
     loadProjectPhases,
     loadMilestones,
@@ -423,6 +433,7 @@ export default function GitHubWorkspacePage() {
         loadRecentCaptures(opened.adapter),
         loadDashboardLayout(opened.adapter, opened.connection.ownerId),
         loadTasks(opened.adapter),
+        loadTimeEntries(opened.adapter),
         loadProjects(opened.adapter),
         loadProjectPhases(opened.adapter),
         loadMilestones(opened.adapter),
@@ -1239,42 +1250,6 @@ export default function GitHubWorkspacePage() {
     }
   }
 
-  async function saveReportDraft(report: DeterministicReport, audience: DeterministicReportAudience, markdown: string) {
-    const adapter = adapterRef.current;
-    if (!adapter || !connection || savingReportDraft || online === false) return false;
-    setSavingReportDraft(true);
-    setErrorMessage("");
-    setStatusMessage("");
-    const timestamp = new Date().toISOString();
-    const timePart = timestamp.replaceAll(/\D/g, "").slice(0, 17);
-    const id = `report_draft_${timePart}_${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`;
-    try {
-      const record = createWorkspaceRecord({
-        entityType: "report_draft",
-        id,
-        ownerId: connection.ownerId,
-        timestamp,
-        data: createReportDraftData(report, audience, markdown),
-      });
-      const result = await adapter.writeText({
-        path: recordPath("report_draft", id),
-        text: serializeRecord(record),
-        message: `report: save draft ${id}`,
-      });
-      const saved: SyncedReportDraft = { record, path: result.path, blobSha: result.blobSha };
-      setReportDraftFiles((current) => [saved, ...current]);
-      setStatusMessage("ReportDraft 已保存为新的不可变事实快照；旧草稿没有被覆盖，也没有调用 AI 或自动发送。");
-      return true;
-    } catch (error) {
-      setErrorMessage(error instanceof Error && error.message.startsWith("INVALID_REPORT_DRAFT")
-        ? "报告草稿或事实快照无效，未写入任何数据。"
-        : friendlyError(error));
-      return false;
-    } finally {
-      setSavingReportDraft(false);
-    }
-  }
-
   async function saveSubtask(parent: SyncedTask, rawTitle: string) {
     const adapter = adapterRef.current;
     if (!adapter || !connection || savingTaskId || online === false) return false;
@@ -1369,6 +1344,76 @@ export default function GitHubWorkspacePage() {
     }
   }
 
+  async function saveReportDraft(report: DeterministicReport, audience: DeterministicReportAudience, markdown: string) {
+    const adapter = adapterRef.current;
+    if (!adapter || !connection || savingReportDraft || online === false) return false;
+    setSavingReportDraft(true);
+    setErrorMessage("");
+    setStatusMessage("");
+    const timestamp = new Date().toISOString();
+    const timePart = timestamp.replaceAll(/\D/g, "").slice(0, 17);
+    const id = `report_draft_${timePart}_${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`;
+    try {
+      const record = createWorkspaceRecord({
+        entityType: "report_draft",
+        id,
+        ownerId: connection.ownerId,
+        timestamp,
+        data: createReportDraftData(report, audience, markdown),
+      });
+      const result = await adapter.writeText({
+        path: recordPath("report_draft", id),
+        text: serializeRecord(record),
+        message: `report: save draft ${id}`,
+      });
+      const saved: SyncedReportDraft = { record, path: result.path, blobSha: result.blobSha };
+      setReportDraftFiles((current) => [saved, ...current]);
+      setStatusMessage("ReportDraft 已保存为新的不可变事实快照；旧草稿没有被覆盖，也没有调用 AI 或自动发送。");
+      return true;
+    } catch (error) {
+      setErrorMessage(error instanceof Error && error.message.startsWith("INVALID_REPORT_DRAFT")
+        ? "报告草稿或事实快照无效，未写入任何数据。"
+        : friendlyError(error));
+      return false;
+    } finally {
+      setSavingReportDraft(false);
+    }
+  }
+
+  async function saveTimeEntry(fields: { taskId: string; localDate: string; durationMinutes: number; notesMarkdown: string }) {
+    const adapter = adapterRef.current;
+    if (!adapter || !connection || savingTimeEntry || online === false) return false;
+    const task = taskFiles.find((item) => item.record.id === fields.taskId && item.record.deleted_at === null);
+    if (!task) { setErrorMessage("关联 Task 已不可用，请刷新后重新选择；未写入 Time Entry。"); return false; }
+    setSavingTimeEntry(true); setErrorMessage(""); setStatusMessage("");
+    const timestamp = new Date().toISOString();
+    const id = `time_entry_${timestamp.replaceAll(/\D/g, "").slice(0, 17)}_${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`;
+    try {
+      const record = createWorkspaceRecord({ entityType: "time_entry", id, ownerId: connection.ownerId, timestamp, data: createTimeEntryData({ taskId: task.record.id, projectId: task.record.data.project_id, localDate: fields.localDate, timezone: connection.timezone, durationMinutes: fields.durationMinutes, notesMarkdown: fields.notesMarkdown }) });
+      const result = await adapter.writeText({ path: recordPath("time_entry", id), text: serializeRecord(record), message: `time: create ${id}` });
+      setTimeEntryFiles((current) => [{ record, path: result.path, blobSha: result.blobSha }, ...current]);
+      setStatusMessage("Time Entry 已保存；Task 的人工实际耗时未被改写，报告会单独汇总可追溯时长。");
+      return true;
+    } catch (error) {
+      setErrorMessage(error instanceof Error && error.message.startsWith("INVALID_TIME_ENTRY") ? "日期、时长或关联无效，未写入 Time Entry。" : friendlyError(error));
+      return false;
+    } finally { setSavingTimeEntry(false); }
+  }
+
+  async function updateTimeEntryDeletion(item: SyncedTimeEntry, operation: "trash" | "restore") {
+    const adapter = adapterRef.current;
+    if (!adapter || !connection || savingTimeEntryId || online === false) return;
+    setSavingTimeEntryId(item.record.id); setErrorMessage(""); setStatusMessage("");
+    const timestamp = new Date().toISOString();
+    const updated = setWorkspaceRecordDeleted(item.record, operation === "trash" ? timestamp : null, timestamp);
+    try {
+      const result = await adapter.writeText({ path: item.path, text: serializeRecord(updated), message: `time: ${operation} ${item.record.id}`, expectedBlobSha: item.blobSha });
+      setTimeEntryFiles((current) => current.map((candidate) => candidate.record.id === item.record.id ? { record: updated, path: result.path, blobSha: result.blobSha } : candidate));
+      setStatusMessage(operation === "trash" ? "Time Entry 已移到回收站；报告不再计入，可随时恢复。" : "Time Entry 已恢复；报告会重新计入该条事实。");
+    } catch (error) { setErrorMessage(friendlyError(error)); }
+    finally { setSavingTimeEntryId(null); }
+  }
+
   async function listCaptureFiles(adapter: GitHubContentsAdapter) {
     try {
       return (await adapter.listDirectory("data/captures"))
@@ -1389,6 +1434,11 @@ export default function GitHubWorkspacePage() {
       if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") return [];
       throw error;
     }
+  }
+
+  async function listTimeEntryFiles(adapter: GitHubContentsAdapter) {
+    try { return (await adapter.listDirectory("data/time-entries")).filter((item) => item.type === "file" && item.name.endsWith(".json")).sort((left, right) => left.path.localeCompare(right.path)); }
+    catch (error) { if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") return []; throw error; }
   }
 
   async function listProjectFiles(adapter: GitHubContentsAdapter) {
@@ -1512,6 +1562,12 @@ export default function GitHubWorkspacePage() {
           taskCandidates.slice(index, index + batchSize).map((item) => adapter.readText(item.path)),
         ));
       }
+      const timeEntryCandidates = await listTimeEntryFiles(adapter);
+      const timeEntryExportFiles = [];
+      for (let index = 0; index < timeEntryCandidates.length; index += batchSize) {
+        setExportProgress(`正在读取 TimeEntry ${Math.min(index + batchSize, timeEntryCandidates.length)} / ${timeEntryCandidates.length}…`);
+        timeEntryExportFiles.push(...await Promise.all(timeEntryCandidates.slice(index, index + batchSize).map((item) => adapter.readText(item.path))));
+      }
       const projectCandidates = await listProjectFiles(adapter);
       const projectFiles = [];
       for (let index = 0; index < projectCandidates.length; index += batchSize) {
@@ -1586,6 +1642,7 @@ export default function GitHubWorkspacePage() {
         captureFiles,
         dashboardLayoutFile,
         taskFiles,
+        timeEntryFiles: timeEntryExportFiles,
         projectFiles,
         projectPhaseFiles,
         milestoneFiles,
@@ -1618,6 +1675,7 @@ export default function GitHubWorkspacePage() {
         captures: inspection.counts.captures,
         dashboardLayouts: inspection.counts.dashboardLayouts,
         tasks: inspection.counts.tasks,
+        timeEntries: inspection.counts.timeEntries,
         projects: inspection.counts.projects,
         projectPhases: inspection.counts.projectPhases,
         milestones: inspection.counts.milestones,
@@ -1636,6 +1694,7 @@ export default function GitHubWorkspacePage() {
         captures: inspection.counts.captures,
         dashboardLayouts: inspection.counts.dashboardLayouts,
         tasks: inspection.counts.tasks,
+        timeEntries: inspection.counts.timeEntries,
         projects: inspection.counts.projects,
         projectPhases: inspection.counts.projectPhases,
         milestones: inspection.counts.milestones,
@@ -1682,6 +1741,7 @@ export default function GitHubWorkspacePage() {
           captures: 0,
           dashboardLayouts: 0,
           tasks: 0,
+          timeEntries: 0,
           projects: 0,
           projectPhases: 0,
           milestones: 0,
@@ -1704,6 +1764,7 @@ export default function GitHubWorkspacePage() {
         captures: inspection.counts.captures,
         dashboardLayouts: inspection.counts.dashboardLayouts,
         tasks: inspection.counts.tasks,
+        timeEntries: inspection.counts.timeEntries,
         projects: inspection.counts.projects,
         projectPhases: inspection.counts.projectPhases,
         milestones: inspection.counts.milestones,
@@ -1727,6 +1788,7 @@ export default function GitHubWorkspacePage() {
         captures: 0,
         dashboardLayouts: 0,
         tasks: 0,
+        timeEntries: 0,
         projects: 0,
         projectPhases: 0,
         milestones: 0,
@@ -2026,6 +2088,22 @@ export default function GitHubWorkspacePage() {
       />
 
 
+      <TimeEntriesSection
+        connection={connection}
+        online={online}
+        todayDate={currentTaskDate}
+        taskFiles={taskFiles}
+        projectFiles={projectFiles}
+        timeEntryFiles={timeEntryFiles}
+        loading={loadingTimeEntries}
+        saving={savingTimeEntry}
+        savingId={savingTimeEntryId}
+        onCreate={saveTimeEntry}
+        onDeletionChange={updateTimeEntryDeletion}
+        onRefresh={() => loadTimeEntries()}
+      />
+
+
       <ReportsSection
         connection={connection}
         todayDate={currentTaskDate}
@@ -2034,10 +2112,11 @@ export default function GitHubWorkspacePage() {
         milestoneFiles={milestoneFiles}
         calendarEventFiles={calendarEventFiles}
         activityEventFiles={activityEventFiles}
+        timeEntryFiles={timeEntryFiles}
         reportDraftFiles={reportDraftFiles}
-        loading={loadingTasks || loadingProjects || loadingMilestones || loadingCalendarEvents || loadingActivityEvents || loadingReportDrafts}
+        loading={loadingTasks || loadingTimeEntries || loadingProjects || loadingMilestones || loadingCalendarEvents || loadingActivityEvents || loadingReportDrafts}
         savingDraft={savingReportDraft}
-        onRefresh={() => void Promise.all([loadTasks(), loadProjects(), loadMilestones(), loadCalendarEvents(), loadActivityEvents(), loadReportDrafts()])}
+        onRefresh={() => void Promise.all([loadTasks(), loadTimeEntries(), loadProjects(), loadMilestones(), loadCalendarEvents(), loadActivityEvents(), loadReportDrafts()])}
         onSaveDraft={saveReportDraft}
       />
 

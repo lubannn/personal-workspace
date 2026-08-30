@@ -1,14 +1,16 @@
 import { describe, expect, it } from "vitest";
 
-import { entityCsvFileName, serializeProjectsCsv, serializeTasksCsv } from "./entity-csv-export";
+import { entityCsvFileName, serializeProjectsCsv, serializeTasksCsv, serializeTimeEntriesCsv } from "./entity-csv-export";
 import type { MilestoneRecord } from "./milestones";
 import type { ProjectRecord } from "./projects";
 import type { TaskRecord } from "./tasks";
+import type { TimeEntryRecord } from "./time-entries";
 
 const base = { schema_version: 1 as const, owner_id: "owner_1", version: 2, created_at: "2026-08-01T00:00:00.000Z", updated_at: "2026-08-30T00:00:00.000Z", deleted_at: null };
 const task = (id: string, title: string, status: "todo" | "done" = "todo"): TaskRecord => ({ ...base, entity_type: "task", id, data: { title, category: "work", project_id: "project_1", parent_task_id: null, status, priority: "high", planned_start_at: null, planned_end_at: null, due_at: "2026-09-01", due_timezone: "Asia/Shanghai", is_due_date_only: true, estimated_duration_minutes: 30, actual_duration_minutes: status === "done" ? 25 : null, tags: ["export", "周报"], notes_markdown: "第一行,\n第二行 \"引用\"", completed_at: status === "done" ? "2026-08-30T01:00:00.000Z" : null, cancelled_at: null } });
 const project: ProjectRecord = { ...base, entity_type: "project", id: "project_1", data: { name: "=Nexus", description_markdown: "Private,\n说明", status: "active", current_phase_id: null, start_date: "2026-08-01", target_date: "2026-09-30", completed_at: null, progress_mode: "tasks", manual_progress_percent: null, visibility_classification: "confidential" } };
 const milestone: MilestoneRecord = { ...base, entity_type: "milestone", id: "milestone_1", data: { project_id: "project_1", title: "M1", description: "", target_date: null, status: "open", weight: 1, completed_at: null, sort_order: 0 } };
+const timeEntry: TimeEntryRecord = { ...base, entity_type: "time_entry", id: "time_entry_1", data: { task_id: "task_a", project_id: "project_1", local_date: "2026-08-30", timezone: "Asia/Shanghai", started_at: null, ended_at: null, duration_minutes: 45, entry_method: "manual_duration", notes_markdown: "=专注,\n完成验收", source_ref: null } };
 
 describe("entity CSV export", () => {
   it("exports every Task field in stable ID order and safely quotes multiline private text", () => {
@@ -30,9 +32,17 @@ describe("entity CSV export", () => {
     expect(csv).toContain('"Private,\n说明"');
   });
 
+  it("exports Time Entry facts without inventing clock times and neutralizes private notes", () => {
+    const csv = serializeTimeEntriesCsv([timeEntry]);
+    expect(csv).toContain('"data/time-entries/time_entry_1.json"');
+    expect(csv).toContain('"2026-08-30","Asia/Shanghai","","","45","manual_duration"');
+    expect(csv).toContain('"\'=专注,\n完成验收"');
+  });
+
   it("uses deterministic entity filenames and rejects invalid dates", () => {
     expect(entityCsvFileName("tasks", "2026-08-30")).toBe("personal-workspace-tasks-2026-08-30.csv");
     expect(entityCsvFileName("projects", "2026-08-30")).toBe("personal-workspace-projects-2026-08-30.csv");
+    expect(entityCsvFileName("time-entries", "2026-08-30")).toBe("personal-workspace-time-entries-2026-08-30.csv");
     expect(() => entityCsvFileName("tasks", "2026-99-99")).toThrow("INVALID_ENTITY_CSV_DATE");
     expect(() => entityCsvFileName("tasks", "2026-02-31")).toThrow("INVALID_ENTITY_CSV_DATE");
   });

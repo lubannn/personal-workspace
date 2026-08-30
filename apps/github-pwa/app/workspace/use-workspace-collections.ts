@@ -10,6 +10,7 @@ import {
   type DashboardLayout,
 } from "../../../../src/lib/github-data/dashboard-layout";
 import { parseTaskRecord } from "../../../../src/lib/github-data/tasks";
+import { parseTimeEntryRecord } from "../../../../src/lib/github-data/time-entries";
 import { parseProjectRecord } from "../../../../src/lib/github-data/projects";
 import { parseProjectPhaseRecord } from "../../../../src/lib/github-data/project-phases";
 import { parseMilestoneRecord } from "../../../../src/lib/github-data/milestones";
@@ -19,7 +20,7 @@ import { parseActivityEventRecord } from "../../../../src/lib/github-data/activi
 import { parseCalendarEventRecord } from "../../../../src/lib/github-data/calendar-events";
 import { parseReportDraftRecord } from "../../../../src/lib/github-data/report-drafts";
 import { parseCaptureRecord } from "../../../../src/lib/github-data/workspace";
-import { friendlyError, type SyncedActivityEvent, type SyncedCalendarEvent, type SyncedCapture, type SyncedMilestone, type SyncedProject, type SyncedProjectFileReference, type SyncedProjectNote, type SyncedProjectPhase, type SyncedReportDraft, type SyncedTask } from "./page-model";
+import { friendlyError, type SyncedActivityEvent, type SyncedCalendarEvent, type SyncedCapture, type SyncedMilestone, type SyncedProject, type SyncedProjectFileReference, type SyncedProjectNote, type SyncedProjectPhase, type SyncedReportDraft, type SyncedTask, type SyncedTimeEntry } from "./page-model";
 
 type Options = {
   adapterRef: MutableRefObject<GitHubContentsAdapter | null>;
@@ -30,6 +31,7 @@ type Options = {
 export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashboardClean }: Options) {
   const [captureFiles, setCaptureFiles] = useState<SyncedCapture[]>([]);
   const [taskFiles, setTaskFiles] = useState<SyncedTask[]>([]);
+  const [timeEntryFiles, setTimeEntryFiles] = useState<SyncedTimeEntry[]>([]);
   const [projectFiles, setProjectFiles] = useState<SyncedProject[]>([]);
   const [projectPhaseFiles, setProjectPhaseFiles] = useState<SyncedProjectPhase[]>([]);
   const [milestoneFiles, setMilestoneFiles] = useState<SyncedMilestone[]>([]);
@@ -42,6 +44,7 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
   const [dashboardBlobSha, setDashboardBlobSha] = useState<string | null>(null);
   const [loadingCaptures, setLoadingCaptures] = useState(false);
   const [loadingTasks, setLoadingTasks] = useState(false);
+  const [loadingTimeEntries, setLoadingTimeEntries] = useState(false);
   const [loadingProjects, setLoadingProjects] = useState(false);
   const [loadingProjectPhases, setLoadingProjectPhases] = useState(false);
   const [loadingMilestones, setLoadingMilestones] = useState(false);
@@ -126,6 +129,30 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     } finally {
       setLoadingTasks(false);
     }
+  }, [adapterRef, setErrorMessage]);
+
+  const loadTimeEntries = useCallback(async (adapter = adapterRef.current) => {
+    if (!adapter) return;
+    setLoadingTimeEntries(true);
+    setErrorMessage("");
+    try {
+      let items;
+      try { items = await adapter.listDirectory("data/time-entries"); }
+      catch (error) {
+        if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") { setTimeEntryFiles([]); return; }
+        throw error;
+      }
+      const candidates = items.filter((item) => item.type === "file" && item.name.endsWith(".json")).sort((left, right) => right.name.localeCompare(left.name));
+      const records: SyncedTimeEntry[] = [];
+      for (let index = 0; index < candidates.length; index += 6) {
+        records.push(...(await Promise.all(candidates.slice(index, index + 6).map(async (item) => {
+          try { const file = await adapter.readText(item.path); return { record: parseTimeEntryRecord(file.text), path: file.path, blobSha: file.blobSha }; }
+          catch { return null; }
+        }))).filter((item): item is SyncedTimeEntry => item !== null));
+      }
+      setTimeEntryFiles(records);
+    } catch (error) { setErrorMessage(friendlyError(error)); }
+    finally { setLoadingTimeEntries(false); }
   }, [adapterRef, setErrorMessage]);
 
   const loadProjects = useCallback(async (adapter = adapterRef.current) => {
@@ -462,6 +489,7 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
   function clearCollections() {
     setCaptureFiles([]);
     setTaskFiles([]);
+    setTimeEntryFiles([]);
     setProjectFiles([]);
     setProjectPhaseFiles([]);
     setMilestoneFiles([]);
@@ -479,6 +507,8 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     setCaptureFiles,
     taskFiles,
     setTaskFiles,
+    timeEntryFiles,
+    setTimeEntryFiles,
     projectFiles,
     setProjectFiles,
     projectPhaseFiles,
@@ -501,6 +531,7 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     setDashboardBlobSha,
     loadingCaptures,
     loadingTasks,
+    loadingTimeEntries,
     loadingProjects,
     loadingProjectPhases,
     loadingMilestones,
@@ -512,6 +543,7 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     loadingDashboard,
     loadRecentCaptures,
     loadTasks,
+    loadTimeEntries,
     loadProjects,
     loadProjectPhases,
     loadMilestones,

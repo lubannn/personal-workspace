@@ -142,7 +142,7 @@ GitHub-backed canonical 路径为 `data/tasks/<task_id>.json`。每个任务是�
 - `planned_end_at >= planned_start_at`。
 - 完成状态应有 `completed_at`；离开完成状态时保留事件历史，但当前字段清空或重置需有明确规则。
 - MVP UI 仅创建一层子任务，数据库禁止自引用和循环。
-- `actual_duration_minutes` 可由 TimeEntry 汇总，同时允许记录人工覆盖值及覆盖原因。
+- 当前 `actual_duration_minutes` 是 Task 上的独立人工事实；Time Entry 单独汇总和展示，禁止自动回写或双算。若未来开放派生或覆盖，必须同时保存来源与覆盖原因。
 - Phase 2A 首个切片只开放创建、今日/逾期聚合、完成和恢复；其余已定义字段保持可导出结构，后续按切片开放 UI。
 
 ### TaskCategory
@@ -152,8 +152,12 @@ GitHub-backed canonical 路径为 `data/tasks/<task_id>.json`。每个任务是�
 ### TimeEntry
 
 - `id`, `owner_id`, `task_id`, `project_id`
-- `started_at`, `ended_at`, `duration_minutes`
-- `entry_method`, `notes`, `source_ref`
+- `local_date`, `timezone`, `started_at`, `ended_at`, `duration_minutes`
+- `entry_method`, `notes_markdown`, `source_ref`
+
+Phase 2 首个 Time Entry 切片保存到 `data/time-entries/<id>.json`，只开放 `entry_method = manual_duration`。用户明确选择 workspace 本地日期和分钟数；因为没有自动计时事实，`started_at` 与 `ended_at` 保持 `null`，禁止伪造时钟时间。记录冻结创建时 Task 的 `project_id`，但不改写 Task 的 `actual_duration_minutes`。支持带旧 blob SHA 的软删除与恢复，暂不开放编辑、运行中计时器或后台计时。
+
+报告把 Task 上的人工实际耗时与 Time Entry 汇总分开显示，禁止双算。Time Entry 已进入周期事实、ReportDraft 快照、独立 CSV、portable export、inspection、隔离 restore 与 migration dry-run；inspection 要求引用的 Task 和可选 Project 同包存在。
 
 ## 6. Project 与报告
 
@@ -222,7 +226,7 @@ ActivityEvent 服务于时间线和报告事实；安全审计使用单独的 Au
 
 保存事实快照，避免后续任务变化导致旧报告不可解释。
 
-Phase 2 已把 `ReportDraft` 作为 `data/report-drafts/<id>.json` 中的 canonical v1 记录开放。正式 PWA 仍只在浏览器内根据当前 Task、Project、Milestone、ActivityEvent 和 CalendarEvent 生成即时周/月事实预览；自然周为周一至周日，所有 instant 按 workspace IANA timezone 归属本地日期。只有用户明确点击“保存草稿”才会创建新记录，不自动写回、调用 AI 或发送。
+Phase 2 已把 `ReportDraft` 作为 `data/report-drafts/<id>.json` 中的 canonical v1 记录开放。正式 PWA 仍只在浏览器内根据当前 Task、Project、Milestone、ActivityEvent、CalendarEvent 和 TimeEntry 生成即时周/月事实预览；自然周为周一至周日，所有 instant 按 workspace IANA timezone 归属本地日期。只有用户明确点击“保存草稿”才会创建新记录，不自动写回、调用 AI 或发送。
 
 首个保存切片采用 create-only 不可变语义：每次保存都生成新 ID 和新文件，不编辑或覆盖旧草稿。`facts_snapshot_json.sources` 固化每条来源事实的 entity type、ID、record version、标题、时间、项目、状态、数值及有界 details；摘要计数和耗时也一并固化。因此即使源记录后续变化，旧报告仍可解释。随机 ID 路径碰撞由 GitHub create-only PUT 拒绝；未来若开放编辑或生命周期变更，必须携带旧 blob SHA。
 
@@ -516,7 +520,7 @@ User
 ## 16. 导出映射
 
 - JSON：每类实体单独集合，保留 ID、关系、schema version 和时间语义。
-- CSV：当前已实现周期事实、Tasks 与 Projects 浏览器内下载；按实体输出，保留 envelope、关系、source path 和软删除记录，复杂数组使用 JSON 字符串。Time Entry 尚未实现，因此没有对应 CSV。
+- CSV：当前已实现周期事实、Tasks、Projects 与 Time Entries 浏览器内下载；按实体输出，保留 envelope、关系、source path 和软删除记录，复杂数组使用 JSON 字符串。
 - Markdown：Journal、Project Notes、Reports 和可读摘要。
 - Attachments：保留原文件或可选择排除，始终输出 `attachments.csv/json` 清单与 SHA-256。
 - Manifest：导出版本、范围、计数、文件哈希、生成时间、时区和缺失项。

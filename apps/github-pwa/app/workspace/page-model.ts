@@ -2,6 +2,7 @@ import { GitHubContentsAdapter, GitHubDataError } from "../../../../src/lib/gith
 import type { ExportInspectionIssue } from "../../../../src/lib/github-data/portable-export";
 import { parseWorkspaceDescriptor, type CaptureRecord } from "../../../../src/lib/github-data/workspace";
 import type { TaskCategory, TaskPriority, TaskRecord } from "../../../../src/lib/github-data/tasks";
+import type { TimeEntryRecord } from "../../../../src/lib/github-data/time-entries";
 import type { ProjectRecord } from "../../../../src/lib/github-data/projects";
 import type { ProjectPhaseRecord } from "../../../../src/lib/github-data/project-phases";
 import type { MilestoneRecord } from "../../../../src/lib/github-data/milestones";
@@ -35,6 +36,8 @@ export type SyncedTask = {
   path: string;
   blobSha: string;
 };
+
+export type SyncedTimeEntry = { record: TimeEntryRecord; path: string; blobSha: string };
 
 export type SyncedProject = {
   record: ProjectRecord;
@@ -94,6 +97,7 @@ export type PortabilityResult = {
   captures: number;
   dashboardLayouts: number;
   tasks: number;
+  timeEntries: number;
   projects: number;
   projectPhases: number;
   milestones: number;

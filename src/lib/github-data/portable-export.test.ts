@@ -5,6 +5,7 @@ import { createDefaultDashboardLayout, serializeDashboardLayout } from "./dashbo
 import { createActivityEventData } from "./activity-events";
 import { createCalendarEventData, localDateTimeToIso } from "./calendar-events";
 import { createProjectFileReferenceData } from "./project-file-references";
+import { createTimeEntryData } from "./time-entries";
 import {
   buildPortableWorkspaceExport,
   inspectPortableWorkspaceExport,
@@ -180,6 +181,20 @@ async function sampleExport() {
       content_markdown: "# 周报\n", generation_method: "deterministic", ai_run_id: null, status: "draft",
     },
   }));
+  const timeEntryText = serializeRecord(createWorkspaceRecord({
+    entityType: "time_entry",
+    id: "time_entry_20260827020100000_abcd1234",
+    ownerId: "github_lubannn",
+    timestamp: "2026-08-27T02:01:00.000Z",
+    data: createTimeEntryData({
+      taskId: "task_20260827013000000_abcd1234",
+      projectId: null,
+      localDate: "2026-08-27",
+      timezone: "Asia/Shanghai",
+      durationMinutes: 45,
+      notesMarkdown: "完成迁移验收",
+    }),
+  }));
   return buildPortableWorkspaceExport({
     repository: "lubannn/personal-workspace-data",
     branch: "main",
@@ -188,6 +203,7 @@ async function sampleExport() {
     captureFiles: [storedFile("data/captures/capture_20260827010000000_abcd1234.json", captureText, "capture-blob")],
     dashboardLayoutFile: storedFile("config/dashboard-layout.json", dashboardText, "dashboard-blob"),
     taskFiles: [storedFile("data/tasks/task_20260827013000000_abcd1234.json", taskText, "task-blob")],
+    timeEntryFiles: [storedFile("data/time-entries/time_entry_20260827020100000_abcd1234.json", timeEntryText, "time-entry-blob")],
     projectFiles: [storedFile("data/projects/project_20260827014500000_abcd1234.json", projectText, "project-blob")],
     projectPhaseFiles: [storedFile("data/project-phases/phase_20260827015000000_abcd1234.json", projectPhaseText, "phase-blob")],
     milestoneFiles: [storedFile("data/milestones/milestone_20260827015500000_abcd1234.json", milestoneText, "milestone-blob")],
@@ -202,7 +218,7 @@ async function sampleExport() {
 describe("portable GitHub workspace export", () => {
   it("builds a deterministic manifest and passes restore preflight", async () => {
     const exported = await sampleExport();
-    expect(exported.manifest.counts).toEqual({ files: 12, captures: 1, dashboard_layouts: 1, tasks: 1, projects: 1, project_phases: 1, milestones: 1, project_notes: 1, project_file_references: 1, activity_events: 1, calendar_events: 1, report_drafts: 1 });
+    expect(exported.manifest.counts).toEqual({ files: 13, captures: 1, dashboard_layouts: 1, tasks: 1, time_entries: 1, projects: 1, project_phases: 1, milestones: 1, project_notes: 1, project_file_references: 1, activity_events: 1, calendar_events: 1, report_drafts: 1 });
     expect(exported.manifest.files.map((file) => file.path)).toEqual([
       "config/dashboard-layout.json",
       "data/activity-events/activity_20260827015800000_abcd1234.json",
@@ -215,6 +231,7 @@ describe("portable GitHub workspace export", () => {
       "data/projects/project_20260827014500000_abcd1234.json",
       "data/report-drafts/report_draft_20260827020000000_abcd1234.json",
       "data/tasks/task_20260827013000000_abcd1234.json",
+      "data/time-entries/time_entry_20260827020100000_abcd1234.json",
       "workspace.json",
     ]);
     expect(serializePortableWorkspaceExport(exported)).not.toContain("test-token");
@@ -222,7 +239,7 @@ describe("portable GitHub workspace export", () => {
     await expect(inspectPortableWorkspaceExport(exported)).resolves.toMatchObject({
       valid: true,
       repository: "lubannn/personal-workspace-data",
-      counts: { files: 12, captures: 1, dashboardLayouts: 1, tasks: 1, projects: 1, projectPhases: 1, milestones: 1, projectNotes: 1, projectFileReferences: 1, activityEvents: 1, calendarEvents: 1, reportDrafts: 1 },
+      counts: { files: 13, captures: 1, dashboardLayouts: 1, tasks: 1, timeEntries: 1, projects: 1, projectPhases: 1, milestones: 1, projectNotes: 1, projectFileReferences: 1, activityEvents: 1, calendarEvents: 1, reportDrafts: 1 },
       errors: [],
       workspace: { owner_id: "github_lubannn" },
     });
@@ -297,12 +314,14 @@ describe("portable GitHub workspace export", () => {
     exported.manifest.counts.tasks = 0;
     const inspection = await inspectPortableWorkspaceExport(exported);
     expect(inspection.errors.map((error) => error.code)).toContain("CALENDAR_EVENT_TASK_MISSING");
+    expect(inspection.errors.map((error) => error.code)).toContain("TIME_ENTRY_TASK_MISSING");
   });
 
   it("continues to accept version 1 exports created before dashboard layouts existed", async () => {
     const exported = await sampleExport();
     exported.files = exported.files.filter((file) => file.path !== "config/dashboard-layout.json");
     exported.files = exported.files.filter((file) => !file.path.startsWith("data/tasks/"));
+    exported.files = exported.files.filter((file) => !file.path.startsWith("data/time-entries/"));
     exported.files = exported.files.filter((file) => !file.path.startsWith("data/projects/"));
     exported.files = exported.files.filter((file) => !file.path.startsWith("data/project-phases/"));
     exported.files = exported.files.filter((file) => !file.path.startsWith("data/milestones/"));
@@ -313,6 +332,7 @@ describe("portable GitHub workspace export", () => {
     exported.files = exported.files.filter((file) => !file.path.startsWith("data/report-drafts/"));
     exported.manifest.files = exported.manifest.files.filter((file) => file.path !== "config/dashboard-layout.json");
     exported.manifest.files = exported.manifest.files.filter((file) => !file.path.startsWith("data/tasks/"));
+    exported.manifest.files = exported.manifest.files.filter((file) => !file.path.startsWith("data/time-entries/"));
     exported.manifest.files = exported.manifest.files.filter((file) => !file.path.startsWith("data/projects/"));
     exported.manifest.files = exported.manifest.files.filter((file) => !file.path.startsWith("data/project-phases/"));
     exported.manifest.files = exported.manifest.files.filter((file) => !file.path.startsWith("data/milestones/"));
@@ -325,7 +345,7 @@ describe("portable GitHub workspace export", () => {
     exported.manifest.counts = { files: 2, captures: 1 } as typeof exported.manifest.counts;
     await expect(inspectPortableWorkspaceExport(exported)).resolves.toMatchObject({
       valid: true,
-      counts: { files: 2, captures: 1, dashboardLayouts: 0, tasks: 0, projects: 0, projectPhases: 0, milestones: 0, projectNotes: 0, projectFileReferences: 0, activityEvents: 0, calendarEvents: 0, reportDrafts: 0 },
+      counts: { files: 2, captures: 1, dashboardLayouts: 0, tasks: 0, timeEntries: 0, projects: 0, projectPhases: 0, milestones: 0, projectNotes: 0, projectFileReferences: 0, activityEvents: 0, calendarEvents: 0, reportDrafts: 0 },
     });
   });
 });

@@ -4,6 +4,7 @@ import { projectMilestoneProgress, projectTaskProgress, type ProjectRecord } fro
 import type { ActivityEventRecord } from "./activity-events";
 import type { MilestoneRecord } from "./milestones";
 import type { TaskRecord } from "./tasks";
+import type { TimeEntryRecord } from "./time-entries";
 
 export type DeterministicReportType = "weekly" | "monthly";
 export type DeterministicReportAudience = "personal" | "manager";
@@ -26,7 +27,9 @@ export type DeterministicReport = {
   calendarEvents: CalendarEventRecord[];
   activityEvents: ActivityEventRecord[];
   projectSnapshots: ProjectReportSnapshot[];
+  timeEntries: TimeEntryRecord[];
   actualTaskMinutes: number;
+  trackedMinutes: number;
   scheduledMinutes: number;
 };
 
@@ -39,6 +42,7 @@ export function buildDeterministicReport(input: {
   milestones: MilestoneRecord[];
   calendarEvents: CalendarEventRecord[];
   activityEvents: ActivityEventRecord[];
+  timeEntries?: TimeEntryRecord[];
 }): DeterministicReport {
   assertTimezone(input.timezone);
   const range = calendarDateRange(input.anchorDate, input.reportType === "weekly" ? "week" : "month");
@@ -64,6 +68,8 @@ export function buildDeterministicReport(input: {
   const activityEvents = input.activityEvents
     .filter((record) => inPeriod(localDateForInstant(record.data.occurred_at, input.timezone)))
     .sort((left, right) => left.data.occurred_at.localeCompare(right.data.occurred_at) || left.id.localeCompare(right.id));
+  const timeEntries = (input.timeEntries ?? []).filter((record) => record.deleted_at === null && inPeriod(record.data.local_date))
+    .sort((left, right) => left.data.local_date.localeCompare(right.data.local_date) || left.created_at.localeCompare(right.created_at) || left.id.localeCompare(right.id));
   const projectSnapshots = input.projects
     .filter((record) => record.deleted_at === null && (
       record.data.status === "planned"
@@ -98,7 +104,9 @@ export function buildDeterministicReport(input: {
     calendarEvents,
     activityEvents,
     projectSnapshots,
+    timeEntries,
     actualTaskMinutes: completedTasks.reduce((sum, record) => sum + (record.data.actual_duration_minutes ?? 0), 0),
+    trackedMinutes: timeEntries.reduce((sum, record) => sum + record.data.duration_minutes, 0),
     scheduledMinutes: calendarEvents.reduce((sum, record) => sum + Math.round((Date.parse(record.data.end_at) - Date.parse(record.data.start_at)) / 60_000), 0),
   };
 }
@@ -124,6 +132,10 @@ export function serializeDeterministicReportCsv(report: DeterministicReport) {
   for (const record of report.activityEvents) rows.push([
     ...prefix, "project_activity", "activity_event", record.id, recordPath("activity_event", record.id), record.data.entity_id,
     localDateForInstant(record.data.occurred_at, report.timezone), record.data.event_type, record.data.event_type, "", serializeActivitySummary(record.data.change_summary_json),
+  ]);
+  for (const record of report.timeEntries) rows.push([
+    ...prefix, "time_entry", "time_entry", record.id, recordPath("time_entry", record.id), record.data.project_id ?? "",
+    record.data.local_date, "手工时间投入", record.data.entry_method, record.data.duration_minutes, `task_id=${record.data.task_id}`,
   ]);
   for (const snapshot of report.projectSnapshots) rows.push([
     ...prefix, "project_snapshot", "project", snapshot.record.id, recordPath("project", snapshot.record.id), snapshot.record.id,
@@ -155,6 +167,7 @@ export function renderDeterministicReportMarkdown(report: DeterministicReport, a
       `- 完成任务：${report.completedTasks.length}`,
       `- 完成里程碑：${report.completedMilestones.length}`,
       `- 手工实际耗时：${formatDuration(report.actualTaskMinutes)}`,
+      `- Time Entry：${report.timeEntries.length} 条 / ${formatDuration(report.trackedMinutes)}`,
       `- 已确认日程：${report.calendarEvents.length} 项 / ${formatDuration(report.scheduledMinutes)}`,
       `- Project Activity：${report.activityEvents.length}`, "",
       "## 完成事项", "",
@@ -167,6 +180,8 @@ export function renderDeterministicReportMarkdown(report: DeterministicReport, a
       ...markdownItems(report.calendarEvents.map((record) => `${markdownText(record.data.title)} — ${record.data.local_start_date} · ${record.data.event_type === "time_block" ? "时间块" : "日程"} · ${formatDuration(Math.round((Date.parse(record.data.end_at) - Date.parse(record.data.start_at)) / 60_000))} · \`calendar_event:${record.id}\``), "本周期没有已确认日程。"), "",
       "## Project Activity", "",
       ...markdownItems(report.activityEvents.map((record) => `${markdownText(record.data.event_type)} — ${localDateForInstant(record.data.occurred_at, report.timezone)} · \`project:${record.data.entity_id}\` · \`activity_event:${record.id}\``), "本周期没有 Project Activity。"), "",
+      "## 时间投入", "",
+      ...markdownItems(report.timeEntries.map((record) => `${record.data.local_date} — ${formatDuration(record.data.duration_minutes)} · \`task:${record.data.task_id}\` · \`time_entry:${record.id}\``), "本周期没有 Time Entry。"), "",
     );
   } else {
     lines.push(
@@ -180,6 +195,7 @@ export function renderDeterministicReportMarkdown(report: DeterministicReport, a
       ...markdownItems(report.projectSnapshots.map((snapshot) => `${markdownText(snapshot.record.data.name)} — ${snapshot.percent}% · ${progressSourceText(snapshot)} · ${projectStatusText(snapshot.record.data.status)} · \`project:${snapshot.record.id}\``), "当前没有进行中或本周期完成的项目。"), "",
       "## 时间投入", "",
       `- 手工实际耗时：${formatDuration(report.actualTaskMinutes)}`,
+      `- Time Entry：${report.timeEntries.length} 条 / ${formatDuration(report.trackedMinutes)}`,
       `- 已确认日程：${report.calendarEvents.length} 项 / ${formatDuration(report.scheduledMinutes)}`, "",
       "## 项目动态", "",
       ...markdownItems(report.activityEvents.map((record) => `${markdownText(record.data.event_type)} · ${localDateForInstant(record.data.occurred_at, report.timezone)} · \`project:${record.data.entity_id}\` · \`activity_event:${record.id}\``), "本周期没有 Project Activity。"), "",
