@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildDeterministicReport, deterministicReportFileName, serializeDeterministicReportCsv } from "./deterministic-reports";
+import { buildDeterministicReport, deterministicReportFileName, deterministicReportMarkdownFileName, renderDeterministicReportMarkdown, serializeDeterministicReportCsv } from "./deterministic-reports";
 import type { ActivityEventRecord } from "./activity-events";
 import type { CalendarEventRecord } from "./calendar-events";
 import type { MilestoneRecord } from "./milestones";
@@ -44,5 +44,26 @@ describe("deterministic reports", () => {
 
   it("rejects invalid report timezones", () => {
     expect(() => buildDeterministicReport({ reportType: "weekly", anchorDate: "2026-09-02", timezone: "Mars/Olympus", tasks: [], projects: [], milestones: [], calendarEvents: [], activityEvents: [] })).toThrow("INVALID_REPORT_TIMEZONE");
+  });
+
+  it("renders a traceable personal Markdown draft and escapes headings in facts", () => {
+    const report = buildDeterministicReport({ reportType: "weekly", anchorDate: "2026-09-02", timezone: "Asia/Shanghai", tasks: [task("task_markdown", "*发布* [v1]", "2026-09-01T01:00:00.000Z")], projects: [project], milestones: [milestone], calendarEvents: [calendarEvent], activityEvents: [activity] });
+    const markdown = renderDeterministicReportMarkdown(report, "personal");
+    expect(markdown).toContain("# 个人复盘周报");
+    expect(markdown).toContain("\\*发布\\* \\[v1\\]");
+    expect(markdown).toContain("`task:task_markdown`");
+    expect(markdown).toContain("`activity_event:activity_1`");
+    expect(markdown).toContain("未保存为 ReportDraft");
+    expect(deterministicReportMarkdownFileName(report, "personal")).toBe("personal-workspace-weekly-personal-2026-08-31-2026-09-06.md");
+  });
+
+  it("renders a concise manager facts draft without AI claims", () => {
+    const report = buildDeterministicReport({ reportType: "monthly", anchorDate: "2026-09-15", timezone: "Asia/Shanghai", tasks: [], projects: [project], milestones: [], calendarEvents: [], activityEvents: [] });
+    const markdown = renderDeterministicReportMarkdown(report, "manager");
+    expect(markdown).toContain("# 工作月报（事实草稿）");
+    expect(markdown).toContain("不包含 AI 推断");
+    expect(markdown).toContain("## 项目状态");
+    expect(markdown).toContain("`project:project_1`");
+    expect(markdown).not.toContain("## 已完成里程碑");
   });
 });

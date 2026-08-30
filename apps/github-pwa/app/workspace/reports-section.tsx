@@ -5,7 +5,10 @@ import { useMemo, useState } from "react";
 import {
   buildDeterministicReport,
   deterministicReportFileName,
+  deterministicReportMarkdownFileName,
+  renderDeterministicReportMarkdown,
   serializeDeterministicReportCsv,
+  type DeterministicReportAudience,
   type DeterministicReportType,
 } from "../../../../src/lib/github-data/deterministic-reports";
 import type { Connection, SyncedActivityEvent, SyncedCalendarEvent, SyncedMilestone, SyncedProject, SyncedTask } from "./page-model";
@@ -24,6 +27,8 @@ type Props = {
 
 export function ReportsSection({ connection, todayDate, taskFiles, projectFiles, milestoneFiles, calendarEventFiles, activityEventFiles, loading, onRefresh }: Props) {
   const [reportType, setReportType] = useState<DeterministicReportType>("weekly");
+  const [audience, setAudience] = useState<DeterministicReportAudience>("personal");
+  const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "failed">("idle");
   const [anchorDateOverride, setAnchorDate] = useState<string | null>(null);
   const anchorDate = anchorDateOverride ?? todayDate;
   const timezone = connection?.timezone ?? "Asia/Shanghai";
@@ -38,6 +43,7 @@ export function ReportsSection({ connection, todayDate, taskFiles, projectFiles,
     activityEvents: activityEventFiles.map((item) => item.record),
   }), [activityEventFiles, anchorDate, calendarEventFiles, milestoneFiles, projectFiles, reportType, taskFiles, timezone]);
   const factCount = report.completedTasks.length + report.completedMilestones.length + report.calendarEvents.length + report.activityEvents.length;
+  const markdown = useMemo(() => renderDeterministicReportMarkdown(report, audience), [audience, report]);
 
   function downloadCsv() {
     if (!connection) return;
@@ -47,6 +53,27 @@ export function ReportsSection({ connection, todayDate, taskFiles, projectFiles,
     link.download = deterministicReportFileName(report);
     link.click();
     window.setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
+
+  function downloadMarkdown() {
+    if (!connection) return;
+    const url = URL.createObjectURL(new Blob([markdown], { type: "text/markdown;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = deterministicReportMarkdownFileName(report, audience);
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
+
+  async function copyMarkdown() {
+    if (!connection) return;
+    try {
+      await navigator.clipboard.writeText(markdown);
+      setCopyStatus("copied");
+    } catch {
+      setCopyStatus("failed");
+    }
+    window.setTimeout(() => setCopyStatus("idle"), 2500);
   }
 
   return (
@@ -87,6 +114,24 @@ export function ReportsSection({ connection, todayDate, taskFiles, projectFiles,
           <ReportGroup title="日程与时间块" empty="本周期没有已确认日程。" items={report.calendarEvents.map((record) => ({ id: record.id, title: record.data.title, meta: `${record.data.local_start_date} · ${record.data.event_type === "time_block" ? "时间块" : "日程"}` }))} />
           <ReportGroup title="Project Activity" empty="本周期没有 Project Activity。" items={report.activityEvents.map((record) => ({ id: record.id, title: record.data.event_type, meta: `${localTimestamp(record.data.occurred_at, report.timezone)} · Project ${record.data.entity_id}` }))} />
         </div>
+
+        <article className="reports-draft">
+          <header>
+            <div><strong>Markdown 事实草稿</strong><span>即时生成 · 发送前人工复核</span></div>
+            <div className="reports-audience-actions" aria-label="报告草稿模板">
+              <button className="secondary-button" type="button" aria-pressed={audience === "personal"} onClick={() => { setAudience("personal"); setCopyStatus("idle"); }}>个人复盘版</button>
+              <button className="secondary-button" type="button" aria-pressed={audience === "manager"} onClick={() => { setAudience("manager"); setCopyStatus("idle"); }}>汇报版</button>
+            </div>
+          </header>
+          <pre>{markdown}</pre>
+          <footer>
+            <span role="status">{copyStatus === "copied" ? "已复制到剪贴板。" : copyStatus === "failed" ? "浏览器未允许剪贴板访问，请下载 Markdown。" : "草稿不会自动保存或发送。"}</span>
+            <div>
+              <button className="secondary-button" type="button" onClick={() => void copyMarkdown()}>复制 Markdown</button>
+              <button className="primary-button" type="button" onClick={downloadMarkdown}>下载 Markdown</button>
+            </div>
+          </footer>
+        </article>
 
         <div className="reports-export">
           <p><strong>CSV 边界</strong>：导出 {factCount} 条周期事实和 {report.projectSnapshots.length} 条项目快照，保留 source entity、ID 与 canonical path；公式前缀会被转义。文件只在当前浏览器生成。</p>

@@ -326,6 +326,15 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .report-fact-group li strong { overflow-wrap: anywhere; font: 500 12px/1.45 ui-serif, Georgia, "Songti SC", serif; }
 .report-fact-group li small, .report-fact-group li code { color: var(--muted); font-size: 9px; line-height: 1.5; }
 .report-fact-group li code { max-width: 135px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.reports-draft { margin-top: 12px; padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: rgba(255,255,255,.38); }
+.reports-draft > header, .reports-draft > footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.reports-draft > header > div:first-child { display: grid; gap: 3px; }
+.reports-draft > header strong { font: 500 14px/1.4 ui-serif, Georgia, "Songti SC", serif; }
+.reports-draft > header span, .reports-draft > footer > span { color: var(--muted); font-size: 9px; line-height: 1.5; }
+.reports-audience-actions, .reports-draft > footer > div { display: flex; flex-wrap: wrap; gap: 8px; }
+.reports-audience-actions button[aria-pressed="true"] { border-color: var(--ink); background: var(--ink); color: white; }
+.reports-draft pre { max-height: 420px; overflow: auto; margin: 14px 0; padding: 16px; border-radius: 11px; background: #f1eee6; color: var(--soft); font: 10px/1.65 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.reports-draft > footer .primary-button, .reports-draft > footer .secondary-button { min-height: 38px; padding-block: 9px; }
 .reports-export { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-top: 12px; padding: 16px; border-radius: 14px; background: #292923; color: white; }
 .reports-export p { max-width: 720px; margin: 0; color: #aaa9a1; font-size: 10px; line-height: 1.65; }
 .reports-export p strong { color: white; }
@@ -402,6 +411,7 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
   .reports-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .reports-grid { grid-template-columns: 1fr; }
   .reports-export { align-items: stretch; flex-direction: column; }
+  .reports-draft > header, .reports-draft > footer { align-items: stretch; flex-direction: column; }
   .project-create-form { grid-template-columns: 1fr 1fr; }
   .project-create-form label:first-child, .project-create-form button { grid-column: 1 / -1; }
   .project-create-form button { width: 100%; }
