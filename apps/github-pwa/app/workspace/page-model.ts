@@ -6,6 +6,7 @@ import type { ProjectRecord } from "../../../../src/lib/github-data/projects";
 import type { ProjectPhaseRecord } from "../../../../src/lib/github-data/project-phases";
 import type { MilestoneRecord } from "../../../../src/lib/github-data/milestones";
 import type { ProjectNoteRecord } from "../../../../src/lib/github-data/project-notes";
+import type { ProjectFileReferenceRecord } from "../../../../src/lib/github-data/project-file-references";
 import type { ActivityEventRecord } from "../../../../src/lib/github-data/activity-events";
 import type { CalendarEventRecord } from "../../../../src/lib/github-data/calendar-events";
 
@@ -58,6 +59,12 @@ export type SyncedProjectNote = {
   blobSha: string;
 };
 
+export type SyncedProjectFileReference = {
+  record: ProjectFileReferenceRecord;
+  path: string;
+  blobSha: string;
+};
+
 export type SyncedActivityEvent = {
   record: ActivityEventRecord;
   path: string;
@@ -84,6 +91,7 @@ export type PortabilityResult = {
   projectPhases: number;
   milestones: number;
   projectNotes: number;
+  projectFileReferences: number;
   activityEvents: number;
   calendarEvents: number;
   errors: ExportInspectionIssue[];

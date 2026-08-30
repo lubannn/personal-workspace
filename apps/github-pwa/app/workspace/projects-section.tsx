@@ -6,8 +6,9 @@ import { projectMilestoneProgress, projectTaskProgress, type ProjectEditableFiel
 import { phasesForProject } from "../../../../src/lib/github-data/project-phases";
 import { milestonesForProject } from "../../../../src/lib/github-data/milestones";
 import { projectNotesForProject, type ProjectNoteEditableFields } from "../../../../src/lib/github-data/project-notes";
+import { projectFileReferences, type ProjectFileReferenceFields } from "../../../../src/lib/github-data/project-file-references";
 import { activityEventsForProject } from "../../../../src/lib/github-data/activity-events";
-import type { Connection, SyncedActivityEvent, SyncedMilestone, SyncedProject, SyncedProjectNote, SyncedProjectPhase, SyncedTask } from "./page-model";
+import type { Connection, SyncedActivityEvent, SyncedMilestone, SyncedProject, SyncedProjectFileReference, SyncedProjectNote, SyncedProjectPhase, SyncedTask } from "./page-model";
 
 type Props = {
   connection: Connection | null;
@@ -18,6 +19,7 @@ type Props = {
   projectPhaseFiles: SyncedProjectPhase[];
   milestoneFiles: SyncedMilestone[];
   projectNoteFiles: SyncedProjectNote[];
+  projectFileReferenceFiles: SyncedProjectFileReference[];
   activityEventFiles: SyncedActivityEvent[];
   currentProjectFiles: SyncedProject[];
   completedProjectFiles: SyncedProject[];
@@ -31,6 +33,7 @@ type Props = {
   loadingProjectPhases: boolean;
   loadingMilestones: boolean;
   loadingProjectNotes: boolean;
+  loadingProjectFileReferences: boolean;
   loadingActivityEvents: boolean;
   savingProject: boolean;
   savingProjectId: string | null;
@@ -39,6 +42,7 @@ type Props = {
   savingMilestoneId: string | null;
   savingProjectNoteProjectId: string | null;
   savingProjectNoteId: string | null;
+  savingProjectFileReferenceProjectId: string | null;
   currentDate: string;
   onProjectNameChange: (value: string) => void;
   onProjectTargetDateChange: (value: string) => void;
@@ -53,18 +57,19 @@ type Props = {
   onMilestoneLifecycle: (item: SyncedMilestone, operation: "complete" | "reopen" | "cancel") => void;
   onCreateProjectNote: (project: SyncedProject, details: ProjectNoteEditableFields) => Promise<boolean>;
   onEditProjectNote: (item: SyncedProjectNote, details: ProjectNoteEditableFields) => Promise<boolean>;
+  onCreateProjectFileReference: (project: SyncedProject, fields: ProjectFileReferenceFields) => Promise<boolean>;
   onRefresh: () => void;
 };
 
 export function ProjectsSection(props: Props) {
   const {
-    connection, online, projectName, projectTargetDate, projectFiles, projectPhaseFiles, milestoneFiles, projectNoteFiles, activityEventFiles, currentProjectFiles,
+    connection, online, projectName, projectTargetDate, projectFiles, projectPhaseFiles, milestoneFiles, projectNoteFiles, projectFileReferenceFiles, activityEventFiles, currentProjectFiles,
     completedProjectFiles, cancelledProjectFiles, archivedProjectFiles, trashedProjectFiles,
-    visibleProjectFiles, projectView, taskFiles, loadingProjects, loadingProjectPhases, loadingMilestones, loadingProjectNotes, loadingActivityEvents, savingProject, savingProjectId, savingProjectPhaseProjectId,
-    savingMilestoneProjectId, savingMilestoneId, savingProjectNoteProjectId, savingProjectNoteId, currentDate,
+    visibleProjectFiles, projectView, taskFiles, loadingProjects, loadingProjectPhases, loadingMilestones, loadingProjectNotes, loadingProjectFileReferences, loadingActivityEvents, savingProject, savingProjectId, savingProjectPhaseProjectId,
+    savingMilestoneProjectId, savingMilestoneId, savingProjectNoteProjectId, savingProjectNoteId, savingProjectFileReferenceProjectId, currentDate,
     onProjectNameChange, onProjectTargetDateChange, onCreateProject, onProjectViewChange,
     onLifecycleChange, onDeletionChange, onEditProject, onCreatePhase, onSetCurrentPhase, onCreateMilestone, onMilestoneLifecycle,
-    onCreateProjectNote, onEditProjectNote, onRefresh,
+    onCreateProjectNote, onEditProjectNote, onCreateProjectFileReference, onRefresh,
   } = props;
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
@@ -86,8 +91,12 @@ export function ProjectsSection(props: Props) {
   const [editNoteBody, setEditNoteBody] = useState("");
   const [editNoteDate, setEditNoteDate] = useState("");
   const [activityProjectId, setActivityProjectId] = useState<string | null>(null);
-  const projectOperationBusy = savingProject || savingProjectId !== null || savingProjectPhaseProjectId !== null || savingMilestoneProjectId !== null || savingMilestoneId !== null || savingProjectNoteProjectId !== null || savingProjectNoteId !== null;
-  const projectFormActive = editingProjectId !== null || phaseProjectId !== null || milestoneProjectId !== null || noteProjectId !== null || activityProjectId !== null;
+  const [fileProjectId, setFileProjectId] = useState<string | null>(null);
+  const [fileTitle, setFileTitle] = useState("");
+  const [fileUrl, setFileUrl] = useState("");
+  const [filePurpose, setFilePurpose] = useState("");
+  const projectOperationBusy = savingProject || savingProjectId !== null || savingProjectPhaseProjectId !== null || savingMilestoneProjectId !== null || savingMilestoneId !== null || savingProjectNoteProjectId !== null || savingProjectNoteId !== null || savingProjectFileReferenceProjectId !== null;
+  const projectFormActive = editingProjectId !== null || phaseProjectId !== null || milestoneProjectId !== null || noteProjectId !== null || fileProjectId !== null || activityProjectId !== null;
   const projectBusy = projectOperationBusy || projectFormActive;
 
   function beginEdit(item: SyncedProject) {
@@ -95,6 +104,7 @@ export function ProjectsSection(props: Props) {
     setMilestoneProjectId(null);
     setNoteProjectId(null);
     setActivityProjectId(null);
+    setFileProjectId(null);
     setEditingProjectId(item.record.id);
     setEditName(item.record.data.name);
     setEditDescription(item.record.data.description_markdown);
@@ -139,7 +149,41 @@ export function ProjectsSection(props: Props) {
     setPhaseProjectId(null);
     setMilestoneProjectId(null);
     setNoteProjectId(null);
+    setFileProjectId(null);
     setActivityProjectId(item.record.id);
+  }
+
+  function beginFileManagement(item: SyncedProject) {
+    setEditingProjectId(null);
+    setPhaseProjectId(null);
+    setMilestoneProjectId(null);
+    setNoteProjectId(null);
+    setActivityProjectId(null);
+    setFileProjectId(item.record.id);
+    setFileTitle("");
+    setFileUrl("");
+    setFilePurpose("");
+  }
+
+  async function submitProjectFileReference(event: FormEvent<HTMLFormElement>, item: SyncedProject) {
+    event.preventDefault();
+    if (!fileTitle.trim() || !fileUrl.trim() || savingProjectFileReferenceProjectId || online === false) return;
+    const existing = projectFileReferences(item.record.id, projectFileReferenceFiles.map((file) => file.record));
+    const saved = await onCreateProjectFileReference(item, {
+      title: fileTitle,
+      source_url: fileUrl,
+      original_filename: null,
+      mime_type: null,
+      size_bytes: null,
+      sha256: null,
+      purpose: filePurpose,
+      sort_order: existing.length * 10 + 10,
+    });
+    if (saved) {
+      setFileTitle("");
+      setFileUrl("");
+      setFilePurpose("");
+    }
   }
 
   function beginNoteEdit(item: SyncedProjectNote) {
@@ -356,6 +400,28 @@ export function ProjectsSection(props: Props) {
                             </>}
                           </li>)}</ul>}
                     </div> : null}
+                    {fileProjectId === item.record.id ? <div className="project-note-manager">
+                      <form onSubmit={(event) => submitProjectFileReference(event, item)}>
+                        <label>显示名称
+                          <input value={fileTitle} onChange={(event) => setFileTitle(event.target.value)} maxLength={300} autoFocus placeholder="例如：需求文档" disabled={savingProjectFileReferenceProjectId === item.record.id} />
+                        </label>
+                        <label>HTTPS 文件地址
+                          <input type="url" value={fileUrl} onChange={(event) => setFileUrl(event.target.value)} maxLength={2000} placeholder="https://…" disabled={savingProjectFileReferenceProjectId === item.record.id} />
+                        </label>
+                        <label>用途
+                          <input value={filePurpose} onChange={(event) => setFilePurpose(event.target.value)} maxLength={500} placeholder="例如：需求基线或验收证据" disabled={savingProjectFileReferenceProjectId === item.record.id} />
+                        </label>
+                        <div className="project-note-form-actions">
+                          <button className="primary-button" type="submit" disabled={!fileTitle.trim() || !fileUrl.trim() || projectOperationBusy || online === false}>{savingProjectFileReferenceProjectId === item.record.id ? "保存中…" : "添加文件引用"}</button>
+                          <button className="secondary-button" type="button" onClick={() => setFileProjectId(null)} disabled={projectOperationBusy}>完成管理</button>
+                        </div>
+                      </form>
+                      {loadingProjectFileReferences ? <small>正在读取文件引用…</small>
+                        : projectFileReferences(item.record.id, projectFileReferenceFiles.map((file) => file.record)).length === 0 ? <small>还没有文件引用。当前切片只保存 HTTPS 地址和元数据，不复制外部文件正文。</small>
+                          : <ul>{projectFileReferences(item.record.id, projectFileReferenceFiles.map((file) => file.record)).map((reference) => <li key={reference.id}>
+                            <span><a href={reference.data.source_url} target="_blank" rel="noreferrer"><strong>{reference.data.title}</strong></a><small>{reference.data.purpose || "未填写用途"} · v{reference.version}</small></span>
+                          </li>)}</ul>}
+                    </div> : null}
                     {activityProjectId === item.record.id ? <div className="project-activity-manager">
                       <div><strong>Activity Log</strong><button className="secondary-button" type="button" onClick={() => setActivityProjectId(null)}>完成查看</button></div>
                       {loadingActivityEvents ? <small>正在读取 Activity Log…</small>
@@ -375,6 +441,7 @@ export function ProjectsSection(props: Props) {
                       {projectView === "current" ? <button className="text-button" type="button" onClick={() => beginPhaseManagement(item)} disabled={projectBusy || online === false}>管理阶段</button> : null}
                       {projectView === "current" ? <button className="text-button" type="button" onClick={() => beginMilestoneManagement(item)} disabled={projectBusy || online === false}>管理里程碑</button> : null}
                       {projectView !== "archived" ? <button className="text-button" type="button" onClick={() => beginNoteManagement(item)} disabled={projectBusy || online === false}>管理 Notes</button> : null}
+                      <button className="text-button" type="button" onClick={() => beginFileManagement(item)} disabled={projectBusy || online === false}>文件引用</button>
                       <button className="text-button" type="button" onClick={() => beginActivityManagement(item)} disabled={projectBusy}>Activity Log</button>
                       {projectView === "current" ? <button className="text-button" type="button" onClick={() => onLifecycleChange(item, item.record.data.status === "on_hold" ? "resume" : "pause")} disabled={projectBusy || online === false}>{item.record.data.status === "on_hold" ? "恢复进行" : "暂停"}</button> : null}
                       {projectView === "current" ? <button className="text-button" type="button" onClick={() => onLifecycleChange(item, "complete")} disabled={projectBusy || online === false}>完成</button> : <button className="text-button" type="button" onClick={() => onLifecycleChange(item, "reopen")} disabled={projectBusy || online === false}>重新打开</button>}
@@ -448,6 +515,7 @@ function activityEventLabel(eventType: string) {
     "milestone.status_changed": "更新里程碑状态",
     "project_note.created": "创建 Project Note",
     "project_note.updated": "更新 Project Note",
+    "project_file_reference.created": "添加项目文件引用",
   } as Record<string, string>)[eventType] ?? eventType;
 }
 
