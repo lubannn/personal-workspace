@@ -12,7 +12,7 @@ import {
   type DeterministicReportType,
 } from "../../../../src/lib/github-data/deterministic-reports";
 import { entityCsvFileName, serializeProjectsCsv, serializeTasksCsv } from "../../../../src/lib/github-data/entity-csv-export";
-import type { Connection, SyncedActivityEvent, SyncedCalendarEvent, SyncedMilestone, SyncedProject, SyncedTask } from "./page-model";
+import type { Connection, SyncedActivityEvent, SyncedCalendarEvent, SyncedMilestone, SyncedProject, SyncedReportDraft, SyncedTask } from "./page-model";
 
 type Props = {
   connection: Connection | null;
@@ -22,11 +22,14 @@ type Props = {
   milestoneFiles: SyncedMilestone[];
   calendarEventFiles: SyncedCalendarEvent[];
   activityEventFiles: SyncedActivityEvent[];
+  reportDraftFiles: SyncedReportDraft[];
   loading: boolean;
+  savingDraft: boolean;
   onRefresh: () => void;
+  onSaveDraft: (report: ReturnType<typeof buildDeterministicReport>, audience: DeterministicReportAudience, markdown: string) => Promise<boolean>;
 };
 
-export function ReportsSection({ connection, todayDate, taskFiles, projectFiles, milestoneFiles, calendarEventFiles, activityEventFiles, loading, onRefresh }: Props) {
+export function ReportsSection({ connection, todayDate, taskFiles, projectFiles, milestoneFiles, calendarEventFiles, activityEventFiles, reportDraftFiles, loading, savingDraft, onRefresh, onSaveDraft }: Props) {
   const [reportType, setReportType] = useState<DeterministicReportType>("weekly");
   const [audience, setAudience] = useState<DeterministicReportAudience>("personal");
   const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "failed">("idle");
@@ -81,7 +84,7 @@ export function ReportsSection({ connection, todayDate, taskFiles, projectFiles,
         <div>
           <p className="eyebrow">Phase 2 · Deterministic Reports</p>
           <h2 id="reports-title">周报与月报事实</h2>
-          <p className="reports-subtitle">直接从 Private canonical 记录生成可追溯事实；不调用 AI、不保存草稿，也不写回 GitHub。</p>
+          <p className="reports-subtitle">直接从 Private canonical 记录生成可追溯事实；不调用 AI。仅在你点击保存时创建不可变 ReportDraft。</p>
         </div>
         <div className="reports-header-actions">
           <label>定位日期<input type="date" value={anchorDate} onChange={(event) => setAnchorDate(event.target.value)} onInput={(event) => setAnchorDate(event.currentTarget.value)} disabled={!connection || loading} /></label>
@@ -124,12 +127,19 @@ export function ReportsSection({ connection, todayDate, taskFiles, projectFiles,
           </header>
           <pre>{markdown}</pre>
           <footer>
-            <span role="status">{copyStatus === "copied" ? "已复制到剪贴板。" : copyStatus === "failed" ? "浏览器未允许剪贴板访问，请下载 Markdown。" : "草稿不会自动保存或发送。"}</span>
+            <span role="status">{copyStatus === "copied" ? "已复制到剪贴板。" : copyStatus === "failed" ? "浏览器未允许剪贴板访问，请下载 Markdown。" : "不会自动保存或发送；保存会创建新的不可变事实快照。"}</span>
             <div>
               <button className="secondary-button" type="button" onClick={() => void copyMarkdown()}>复制 Markdown</button>
-              <button className="primary-button" type="button" onClick={downloadMarkdown}>下载 Markdown</button>
+              <button className="secondary-button" type="button" onClick={downloadMarkdown}>下载 Markdown</button>
+              <button className="primary-button" type="button" disabled={savingDraft} onClick={() => void onSaveDraft(report, audience, markdown)}>{savingDraft ? "保存中…" : "保存草稿"}</button>
             </div>
           </footer>
+        </article>
+
+        <article className="reports-draft-history">
+          <header><strong>已保存 ReportDraft</strong><span>{reportDraftFiles.length} 份</span></header>
+          {reportDraftFiles.length === 0 ? <p className="empty-note">尚未保存 canonical 报告草稿。</p> : <ol>{reportDraftFiles.slice(0, 8).map((item) => <li key={item.record.id}><span><strong>{item.record.data.report_type === "weekly" ? "周报" : "月报"} · {item.record.data.audience === "personal" ? "个人复盘" : "汇报版"}</strong><small>{item.record.data.period_start} → {item.record.data.period_end} · {item.record.data.facts_snapshot_json.sources.length} 条快照</small></span><code>{item.record.id}</code></li>)}</ol>}
+          <p>保存采用 create-only：每次生成新 ID 和新文件，不覆盖旧草稿；源记录版本和值已固化在 facts snapshot 中。</p>
         </article>
 
         <div className="reports-export">

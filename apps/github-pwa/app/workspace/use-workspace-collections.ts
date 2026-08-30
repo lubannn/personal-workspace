@@ -17,8 +17,9 @@ import { parseProjectNoteRecord } from "../../../../src/lib/github-data/project-
 import { parseProjectFileReferenceRecord } from "../../../../src/lib/github-data/project-file-references";
 import { parseActivityEventRecord } from "../../../../src/lib/github-data/activity-events";
 import { parseCalendarEventRecord } from "../../../../src/lib/github-data/calendar-events";
+import { parseReportDraftRecord } from "../../../../src/lib/github-data/report-drafts";
 import { parseCaptureRecord } from "../../../../src/lib/github-data/workspace";
-import { friendlyError, type SyncedActivityEvent, type SyncedCalendarEvent, type SyncedCapture, type SyncedMilestone, type SyncedProject, type SyncedProjectFileReference, type SyncedProjectNote, type SyncedProjectPhase, type SyncedTask } from "./page-model";
+import { friendlyError, type SyncedActivityEvent, type SyncedCalendarEvent, type SyncedCapture, type SyncedMilestone, type SyncedProject, type SyncedProjectFileReference, type SyncedProjectNote, type SyncedProjectPhase, type SyncedReportDraft, type SyncedTask } from "./page-model";
 
 type Options = {
   adapterRef: MutableRefObject<GitHubContentsAdapter | null>;
@@ -36,6 +37,7 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
   const [projectFileReferenceFiles, setProjectFileReferenceFiles] = useState<SyncedProjectFileReference[]>([]);
   const [activityEventFiles, setActivityEventFiles] = useState<SyncedActivityEvent[]>([]);
   const [calendarEventFiles, setCalendarEventFiles] = useState<SyncedCalendarEvent[]>([]);
+  const [reportDraftFiles, setReportDraftFiles] = useState<SyncedReportDraft[]>([]);
   const [dashboardLayout, setDashboardLayout] = useState<DashboardLayout | null>(null);
   const [dashboardBlobSha, setDashboardBlobSha] = useState<string | null>(null);
   const [loadingCaptures, setLoadingCaptures] = useState(false);
@@ -47,6 +49,7 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
   const [loadingProjectFileReferences, setLoadingProjectFileReferences] = useState(false);
   const [loadingActivityEvents, setLoadingActivityEvents] = useState(false);
   const [loadingCalendarEvents, setLoadingCalendarEvents] = useState(false);
+  const [loadingReportDrafts, setLoadingReportDrafts] = useState(false);
   const [loadingDashboard, setLoadingDashboard] = useState(false);
 
   const loadRecentCaptures = useCallback(async (adapter = adapterRef.current) => {
@@ -353,6 +356,44 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     }
   }, [adapterRef, setErrorMessage]);
 
+  const loadReportDrafts = useCallback(async (adapter = adapterRef.current) => {
+    if (!adapter) return;
+    setLoadingReportDrafts(true);
+    setErrorMessage("");
+    try {
+      let items;
+      try {
+        items = await adapter.listDirectory("data/report-drafts");
+      } catch (error) {
+        if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") {
+          setReportDraftFiles([]);
+          return;
+        }
+        throw error;
+      }
+      const candidates = items
+        .filter((item) => item.type === "file" && item.name.endsWith(".json"))
+        .sort((left, right) => right.name.localeCompare(left.name));
+      const records: SyncedReportDraft[] = [];
+      const batchSize = 6;
+      for (let index = 0; index < candidates.length; index += batchSize) {
+        records.push(...(await Promise.all(candidates.slice(index, index + batchSize).map(async (item) => {
+          try {
+            const file = await adapter.readText(item.path);
+            return { record: parseReportDraftRecord(file.text), path: file.path, blobSha: file.blobSha };
+          } catch {
+            return null;
+          }
+        }))).filter((item): item is SyncedReportDraft => item !== null));
+      }
+      setReportDraftFiles(records);
+    } catch (error) {
+      setErrorMessage(friendlyError(error));
+    } finally {
+      setLoadingReportDrafts(false);
+    }
+  }, [adapterRef, setErrorMessage]);
+
   const loadProjectFileReferences = useCallback(async (adapter = adapterRef.current) => {
     if (!adapter) return;
     setLoadingProjectFileReferences(true);
@@ -428,6 +469,7 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     setProjectFileReferenceFiles([]);
     setActivityEventFiles([]);
     setCalendarEventFiles([]);
+    setReportDraftFiles([]);
     setDashboardLayout(null);
     setDashboardBlobSha(null);
   }
@@ -451,6 +493,8 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     setActivityEventFiles,
     calendarEventFiles,
     setCalendarEventFiles,
+    reportDraftFiles,
+    setReportDraftFiles,
     dashboardLayout,
     setDashboardLayout,
     dashboardBlobSha,
@@ -464,6 +508,7 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     loadingProjectFileReferences,
     loadingActivityEvents,
     loadingCalendarEvents,
+    loadingReportDrafts,
     loadingDashboard,
     loadRecentCaptures,
     loadTasks,
@@ -474,6 +519,7 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     loadProjectFileReferences,
     loadActivityEvents,
     loadCalendarEvents,
+    loadReportDrafts,
     loadDashboardLayout,
     clearCollections,
   };
