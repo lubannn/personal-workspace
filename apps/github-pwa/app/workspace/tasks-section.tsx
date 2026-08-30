@@ -157,7 +157,7 @@ export function TasksSection(props: Props) {
           </select>
         </label>
         <label>DDL
-          <input type="date" value={taskDueDate} onChange={(event) => onTaskDueDateChange(event.target.value)} disabled={!connection || savingTask || taskFormActive} />
+          <input type="date" value={taskDueDate} onChange={(event) => onTaskDueDateChange(event.target.value)} onInput={(event) => onTaskDueDateChange(event.currentTarget.value)} disabled={!connection || savingTask || taskFormActive} />
         </label>
         <button className="primary-button" type="submit" disabled={!connection || !taskTitle.trim() || savingTask || taskFormActive || online === false}>{savingTask ? "保存中…" : "创建任务"}</button>
       </form>
@@ -199,7 +199,7 @@ export function TasksSection(props: Props) {
                         </select>
                       </label>
                       <label>DDL
-                        <input type="date" value={editDueDate} onChange={(event) => setEditDueDate(event.target.value)} disabled={savingTaskId === item.record.id} />
+                        <input type="date" value={editDueDate} onChange={(event) => setEditDueDate(event.target.value)} onInput={(event) => setEditDueDate(event.currentTarget.value)} disabled={savingTaskId === item.record.id} />
                       </label>
                       <label className="task-edit-tags">标签（逗号分隔）
                         <input value={editTags} onChange={(event) => setEditTags(event.target.value)} maxLength={1020} placeholder="周报, 等待反馈" disabled={savingTaskId === item.record.id} />
