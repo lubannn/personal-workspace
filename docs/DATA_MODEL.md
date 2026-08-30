@@ -222,7 +222,11 @@ ActivityEvent 服务于时间线和报告事实；安全审计使用单独的 Au
 
 保存事实快照，避免后续任务变化导致旧报告不可解释。
 
-当前 Phase 2 确定性报告首切片尚未创建 `ReportDraft` canonical 文件。正式 PWA 仅在浏览器内根据当前 Task、Project、Milestone、ActivityEvent 和 CalendarEvent 生成即时周/月事实预览及 CSV；自然周为周一至周日，所有 instant 按 workspace IANA timezone 归属本地日期。CSV 保留 source entity、ID 和 canonical path，并防止表格公式注入。该即时结果不会写回 GitHub、不会进入 Worker 或 AI，也不承诺在后续 canonical 变化后仍可复现。保存草稿时必须另行开放事实快照、版本、export/restore 和 SHA 冲突语义。
+Phase 2 已把 `ReportDraft` 作为 `data/report-drafts/<id>.json` 中的 canonical v1 记录开放。正式 PWA 仍只在浏览器内根据当前 Task、Project、Milestone、ActivityEvent 和 CalendarEvent 生成即时周/月事实预览；自然周为周一至周日，所有 instant 按 workspace IANA timezone 归属本地日期。只有用户明确点击“保存草稿”才会创建新记录，不自动写回、调用 AI 或发送。
+
+首个保存切片采用 create-only 不可变语义：每次保存都生成新 ID 和新文件，不编辑或覆盖旧草稿。`facts_snapshot_json.sources` 固化每条来源事实的 entity type、ID、record version、标题、时间、项目、状态、数值及有界 details；摘要计数和耗时也一并固化。因此即使源记录后续变化，旧报告仍可解释。随机 ID 路径碰撞由 GitHub create-only PUT 拒绝；未来若开放编辑或生命周期变更，必须携带旧 blob SHA。
+
+ReportDraft 已进入 collection 加载、开放 JSON export、inspection、隔离 restore 和 schema migration dry-run。当前 lifecycle 只接受 `status = draft`、`generation_method = deterministic`、`ai_run_id = null`；approved、exported、archived 和 AI 生成仍未开放。
 
 ## 7. Calendar
 

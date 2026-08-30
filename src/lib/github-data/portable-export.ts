@@ -8,6 +8,7 @@ import { parseProjectNoteRecord } from "./project-notes";
 import { parseProjectFileReferenceRecord } from "./project-file-references";
 import { parseActivityEventRecord } from "./activity-events";
 import { parseCalendarEventRecord } from "./calendar-events";
+import { parseReportDraftRecord } from "./report-drafts";
 import { parseTaskRecord } from "./tasks";
 import { parseCaptureRecord, parseWorkspaceDescriptor, type WorkspaceDescriptor } from "./workspace";
 
@@ -37,7 +38,7 @@ export type PortableWorkspaceExport = {
   manifest: {
     schema_version: 1;
     scope: {
-      modules: Array<"workspace" | "captures" | "dashboard_layout" | "tasks" | "projects" | "project_phases" | "milestones" | "project_notes" | "project_file_references" | "activity_events" | "calendar_events">;
+      modules: Array<"workspace" | "captures" | "dashboard_layout" | "tasks" | "projects" | "project_phases" | "milestones" | "project_notes" | "project_file_references" | "activity_events" | "calendar_events" | "report_drafts">;
       complete: true;
     };
     counts: {
@@ -52,6 +53,7 @@ export type PortableWorkspaceExport = {
       project_file_references: number;
       activity_events: number;
       calendar_events: number;
+      report_drafts: number;
     };
     files: PortableExportManifestFile[];
   };
@@ -81,6 +83,7 @@ export type ExportInspection = {
     projectFileReferences: number;
     activityEvents: number;
     calendarEvents: number;
+    reportDrafts: number;
   };
   errors: ExportInspectionIssue[];
   warnings: ExportInspectionIssue[];
@@ -113,6 +116,7 @@ export async function buildPortableWorkspaceExport(input: {
   projectFileReferenceFiles?: GitHubStoredFile[];
   activityEventFiles?: GitHubStoredFile[];
   calendarEventFiles?: GitHubStoredFile[];
+  reportDraftFiles?: GitHubStoredFile[];
   generatedAt?: string;
 }): Promise<PortableWorkspaceExport> {
   const dashboardLayoutFiles = input.dashboardLayoutFile ? [input.dashboardLayoutFile] : [];
@@ -124,7 +128,8 @@ export async function buildPortableWorkspaceExport(input: {
   const projectFileReferenceFiles = input.projectFileReferenceFiles ?? [];
   const activityEventFiles = input.activityEventFiles ?? [];
   const calendarEventFiles = input.calendarEventFiles ?? [];
-  const files = [input.workspaceFile, ...input.captureFiles, ...dashboardLayoutFiles, ...taskFiles, ...projectFiles, ...projectPhaseFiles, ...milestoneFiles, ...projectNoteFiles, ...projectFileReferenceFiles, ...activityEventFiles, ...calendarEventFiles]
+  const reportDraftFiles = input.reportDraftFiles ?? [];
+  const files = [input.workspaceFile, ...input.captureFiles, ...dashboardLayoutFiles, ...taskFiles, ...projectFiles, ...projectPhaseFiles, ...milestoneFiles, ...projectNoteFiles, ...projectFileReferenceFiles, ...activityEventFiles, ...calendarEventFiles, ...reportDraftFiles]
     .map((file) => ({ ...file }))
     .sort((left, right) => left.path.localeCompare(right.path));
   const manifestFiles = await Promise.all(files.map(async (file) => ({
@@ -141,7 +146,7 @@ export async function buildPortableWorkspaceExport(input: {
     source: { repository: input.repository, branch: input.branch },
     manifest: {
       schema_version: 1,
-      scope: { modules: ["workspace", "captures", "dashboard_layout", "tasks", "projects", "project_phases", "milestones", "project_notes", "project_file_references", "activity_events", "calendar_events"], complete: true },
+      scope: { modules: ["workspace", "captures", "dashboard_layout", "tasks", "projects", "project_phases", "milestones", "project_notes", "project_file_references", "activity_events", "calendar_events", "report_drafts"], complete: true },
       counts: {
         files: files.length,
         captures: input.captureFiles.length,
@@ -154,6 +159,7 @@ export async function buildPortableWorkspaceExport(input: {
         project_file_references: projectFileReferenceFiles.length,
         activity_events: activityEventFiles.length,
         calendar_events: calendarEventFiles.length,
+        report_drafts: reportDraftFiles.length,
       },
       files: manifestFiles,
     },
@@ -187,7 +193,7 @@ export async function inspectPortableWorkspaceExport(value: unknown): Promise<Ex
     generatedAt: null,
     repository: null,
     workspace: null,
-    counts: { files: 0, captures: 0, dashboardLayouts: 0, tasks: 0, projects: 0, projectPhases: 0, milestones: 0, projectNotes: 0, projectFileReferences: 0, activityEvents: 0, calendarEvents: 0 },
+    counts: { files: 0, captures: 0, dashboardLayouts: 0, tasks: 0, projects: 0, projectPhases: 0, milestones: 0, projectNotes: 0, projectFileReferences: 0, activityEvents: 0, calendarEvents: 0, reportDrafts: 0 },
     errors,
     warnings,
   };
@@ -566,6 +572,31 @@ export async function inspectPortableWorkspaceExport(value: unknown): Promise<Ex
     errors.push({ code: "CALENDAR_EVENT_COUNT_MISMATCH", message: "CalendarEvent 数量与 manifest 不一致。" });
   }
 
+  const reportDraftIds = new Set<string>();
+  const reportDraftFiles = validPayloadFiles.filter((file) => file.path.startsWith("data/report-drafts/"));
+  result.counts.reportDrafts = reportDraftFiles.length;
+  for (const file of reportDraftFiles) {
+    try {
+      const record = parseReportDraftRecord(file.content);
+      if (result.workspace && record.owner_id !== result.workspace.owner_id) {
+        errors.push({ code: "OWNER_MISMATCH", message: "ReportDraft 的 owner_id 与 workspace 不一致。", path: file.path });
+      }
+      if (recordPath("report_draft", record.id) !== file.path) {
+        errors.push({ code: "REPORT_DRAFT_PATH_MISMATCH", message: "ReportDraft 的 ID 与文件路径不一致。", path: file.path });
+      }
+      if (reportDraftIds.has(record.id)) {
+        errors.push({ code: "DUPLICATE_REPORT_DRAFT_ID", message: "导出包中存在重复 ReportDraft ID。", path: file.path });
+      }
+      reportDraftIds.add(record.id);
+    } catch {
+      errors.push({ code: "INVALID_REPORT_DRAFT_RECORD", message: "ReportDraft 文件无法通过结构校验。", path: file.path });
+    }
+  }
+  const rawReportDraftCount = manifestCounts?.report_drafts;
+  if ((rawReportDraftCount !== undefined || reportDraftFiles.length > 0) && rawReportDraftCount !== reportDraftFiles.length) {
+    errors.push({ code: "REPORT_DRAFT_COUNT_MISMATCH", message: "ReportDraft 数量与 manifest 不一致。" });
+  }
+
   const supportedPaths = new Set(["workspace.json", DASHBOARD_LAYOUT_PATH]);
   const unexpectedFiles = validPayloadFiles.filter((file) => (
     !supportedPaths.has(file.path)
@@ -578,6 +609,7 @@ export async function inspectPortableWorkspaceExport(value: unknown): Promise<Ex
     && !file.path.startsWith("data/project-file-references/")
     && !file.path.startsWith("data/activity-events/")
     && !file.path.startsWith("data/calendar-events/")
+    && !file.path.startsWith("data/report-drafts/")
   ));
   for (const file of unexpectedFiles) {
     errors.push({ code: "UNEXPECTED_FILE", message: "当前版本不支持此导出路径。", path: file.path });

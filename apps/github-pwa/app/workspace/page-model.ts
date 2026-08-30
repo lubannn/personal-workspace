@@ -9,6 +9,7 @@ import type { ProjectNoteRecord } from "../../../../src/lib/github-data/project-
 import type { ProjectFileReferenceRecord } from "../../../../src/lib/github-data/project-file-references";
 import type { ActivityEventRecord } from "../../../../src/lib/github-data/activity-events";
 import type { CalendarEventRecord } from "../../../../src/lib/github-data/calendar-events";
+import type { ReportDraftRecord } from "../../../../src/lib/github-data/report-drafts";
 
 export type Connection = {
   repository: string;
@@ -77,6 +78,12 @@ export type SyncedCalendarEvent = {
   blobSha: string;
 };
 
+export type SyncedReportDraft = {
+  record: ReportDraftRecord;
+  path: string;
+  blobSha: string;
+};
+
 export type AuthAvailability = "checking" | "unavailable" | "configured";
 export type ConnectionMethod = "github-app" | "personal-token";
 
@@ -94,6 +101,7 @@ export type PortabilityResult = {
   projectFileReferences: number;
   activityEvents: number;
   calendarEvents: number;
+  reportDrafts: number;
   errors: ExportInspectionIssue[];
   warnings: ExportInspectionIssue[];
 };

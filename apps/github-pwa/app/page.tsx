@@ -61,6 +61,8 @@ import {
   setCalendarEventStatus,
   updateCalendarEventDetails,
 } from "../../../src/lib/github-data/calendar-events";
+import { createReportDraftData } from "../../../src/lib/github-data/report-drafts";
+import type { DeterministicReport, DeterministicReportAudience } from "../../../src/lib/github-data/deterministic-reports";
 import {
   archivedTasks,
   cancelledTasks,
@@ -95,6 +97,7 @@ import {
   type SyncedProjectPhase,
   type SyncedMilestone,
   type SyncedProjectNote,
+  type SyncedReportDraft,
   type SyncedTask,
 } from "./workspace/page-model";
 import { useOnlineStatus } from "./workspace/use-online-status";
@@ -138,6 +141,7 @@ export default function GitHubWorkspacePage() {
   const [taskDueDateOverride, setTaskDueDate] = useState<string | null>(null);
   const [taskView, setTaskView] = useState<"open" | "done" | "cancelled" | "archived" | "trash">("open");
   const [savingTask, setSavingTask] = useState(false);
+  const [savingReportDraft, setSavingReportDraft] = useState(false);
   const [savingTaskId, setSavingTaskId] = useState<string | null>(null);
   const [projectName, setProjectName] = useState("");
   const [projectTargetDate, setProjectTargetDate] = useState("");
@@ -192,6 +196,8 @@ export default function GitHubWorkspacePage() {
     setActivityEventFiles,
     calendarEventFiles,
     setCalendarEventFiles,
+    reportDraftFiles,
+    setReportDraftFiles,
     dashboardLayout,
     setDashboardLayout,
     dashboardBlobSha,
@@ -205,6 +211,7 @@ export default function GitHubWorkspacePage() {
     loadingProjectFileReferences,
     loadingActivityEvents,
     loadingCalendarEvents,
+    loadingReportDrafts,
     loadingDashboard,
     loadRecentCaptures,
     loadTasks,
@@ -215,6 +222,7 @@ export default function GitHubWorkspacePage() {
     loadProjectFileReferences,
     loadActivityEvents,
     loadCalendarEvents,
+    loadReportDrafts,
     loadDashboardLayout,
     clearCollections,
   } = useWorkspaceCollections({ adapterRef, setErrorMessage, setDashboardClean });
@@ -237,6 +245,7 @@ export default function GitHubWorkspacePage() {
     loadProjectFileReferences,
     loadActivityEvents,
     loadCalendarEvents,
+    loadReportDrafts,
   });
 
   const workspaceTimezone = connection?.timezone ?? "Asia/Shanghai";
@@ -421,6 +430,7 @@ export default function GitHubWorkspacePage() {
         loadProjectFileReferences(opened.adapter),
         loadActivityEvents(opened.adapter),
         loadCalendarEvents(opened.adapter),
+        loadReportDrafts(opened.adapter),
       ]);
     } catch (error) {
       adapterRef.current = null;
@@ -1229,6 +1239,42 @@ export default function GitHubWorkspacePage() {
     }
   }
 
+  async function saveReportDraft(report: DeterministicReport, audience: DeterministicReportAudience, markdown: string) {
+    const adapter = adapterRef.current;
+    if (!adapter || !connection || savingReportDraft || online === false) return false;
+    setSavingReportDraft(true);
+    setErrorMessage("");
+    setStatusMessage("");
+    const timestamp = new Date().toISOString();
+    const timePart = timestamp.replaceAll(/\D/g, "").slice(0, 17);
+    const id = `report_draft_${timePart}_${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`;
+    try {
+      const record = createWorkspaceRecord({
+        entityType: "report_draft",
+        id,
+        ownerId: connection.ownerId,
+        timestamp,
+        data: createReportDraftData(report, audience, markdown),
+      });
+      const result = await adapter.writeText({
+        path: recordPath("report_draft", id),
+        text: serializeRecord(record),
+        message: `report: save draft ${id}`,
+      });
+      const saved: SyncedReportDraft = { record, path: result.path, blobSha: result.blobSha };
+      setReportDraftFiles((current) => [saved, ...current]);
+      setStatusMessage("ReportDraft 已保存为新的不可变事实快照；旧草稿没有被覆盖，也没有调用 AI 或自动发送。");
+      return true;
+    } catch (error) {
+      setErrorMessage(error instanceof Error && error.message.startsWith("INVALID_REPORT_DRAFT")
+        ? "报告草稿或事实快照无效，未写入任何数据。"
+        : friendlyError(error));
+      return false;
+    } finally {
+      setSavingReportDraft(false);
+    }
+  }
+
   async function saveSubtask(parent: SyncedTask, rawTitle: string) {
     const adapter = adapterRef.current;
     if (!adapter || !connection || savingTaskId || online === false) return false;
@@ -1422,6 +1468,17 @@ export default function GitHubWorkspacePage() {
     }
   }
 
+  async function listReportDraftFiles(adapter: GitHubContentsAdapter) {
+    try {
+      return (await adapter.listDirectory("data/report-drafts"))
+        .filter((item) => item.type === "file" && item.name.endsWith(".json"))
+        .sort((left, right) => left.path.localeCompare(right.path));
+    } catch (error) {
+      if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") return [];
+      throw error;
+    }
+  }
+
   async function downloadPortableExport() {
     const adapter = adapterRef.current;
     if (!adapter || !connection || exporting || online === false) return;
@@ -1511,6 +1568,14 @@ export default function GitHubWorkspacePage() {
           calendarEventCandidates.slice(index, index + batchSize).map((item) => adapter.readText(item.path)),
         ));
       }
+      const reportDraftCandidates = await listReportDraftFiles(adapter);
+      const reportDraftExportFiles = [];
+      for (let index = 0; index < reportDraftCandidates.length; index += batchSize) {
+        setExportProgress(`正在读取 ReportDraft ${Math.min(index + batchSize, reportDraftCandidates.length)} / ${reportDraftCandidates.length}…`);
+        reportDraftExportFiles.push(...await Promise.all(
+          reportDraftCandidates.slice(index, index + batchSize).map((item) => adapter.readText(item.path)),
+        ));
+      }
 
       setExportProgress("正在生成 SHA-256 manifest…");
       const generatedAt = new Date().toISOString();
@@ -1528,6 +1593,7 @@ export default function GitHubWorkspacePage() {
         projectFileReferenceFiles: projectFileReferenceExportFiles,
         activityEventFiles,
         calendarEventFiles,
+        reportDraftFiles: reportDraftExportFiles,
         generatedAt,
       });
       const inspection = await inspectPortableWorkspaceExport(portableExport);
@@ -1559,6 +1625,7 @@ export default function GitHubWorkspacePage() {
         projectFileReferences: inspection.counts.projectFileReferences,
         activityEvents: inspection.counts.activityEvents,
         calendarEvents: inspection.counts.calendarEvents,
+        reportDrafts: inspection.counts.reportDrafts,
         errors: inspection.errors,
         warnings: inspection.warnings,
       });
@@ -1576,6 +1643,7 @@ export default function GitHubWorkspacePage() {
         projectFileReferences: inspection.counts.projectFileReferences,
         activityEvents: inspection.counts.activityEvents,
         calendarEvents: inspection.counts.calendarEvents,
+        reportDrafts: inspection.counts.reportDrafts,
         errors: inspection.errors,
         warnings: inspection.warnings,
       });
@@ -1621,6 +1689,7 @@ export default function GitHubWorkspacePage() {
           projectFileReferences: 0,
           activityEvents: 0,
           calendarEvents: 0,
+          reportDrafts: 0,
           errors: [{ code: "EXPORT_TOO_LARGE", message: "当前预检仅接受 50 MB 以内的 JSON 文件。" }],
           warnings: [],
         });
@@ -1642,6 +1711,7 @@ export default function GitHubWorkspacePage() {
         projectFileReferences: inspection.counts.projectFileReferences,
         activityEvents: inspection.counts.activityEvents,
         calendarEvents: inspection.counts.calendarEvents,
+        reportDrafts: inspection.counts.reportDrafts,
         errors: inspection.errors,
         warnings: inspection.warnings,
       });
@@ -1664,6 +1734,7 @@ export default function GitHubWorkspacePage() {
         projectFileReferences: 0,
         activityEvents: 0,
         calendarEvents: 0,
+        reportDrafts: 0,
         errors: [{ code: "INVALID_JSON", message: "文件不是有效的 JSON，未执行任何恢复操作。" }],
         warnings: [],
       });
@@ -1963,8 +2034,11 @@ export default function GitHubWorkspacePage() {
         milestoneFiles={milestoneFiles}
         calendarEventFiles={calendarEventFiles}
         activityEventFiles={activityEventFiles}
-        loading={loadingTasks || loadingProjects || loadingMilestones || loadingCalendarEvents || loadingActivityEvents}
-        onRefresh={() => void Promise.all([loadTasks(), loadProjects(), loadMilestones(), loadCalendarEvents(), loadActivityEvents()])}
+        reportDraftFiles={reportDraftFiles}
+        loading={loadingTasks || loadingProjects || loadingMilestones || loadingCalendarEvents || loadingActivityEvents || loadingReportDrafts}
+        savingDraft={savingReportDraft}
+        onRefresh={() => void Promise.all([loadTasks(), loadProjects(), loadMilestones(), loadCalendarEvents(), loadActivityEvents(), loadReportDrafts()])}
+        onSaveDraft={saveReportDraft}
       />
 
 
