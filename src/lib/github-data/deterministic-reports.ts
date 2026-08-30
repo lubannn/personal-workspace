@@ -6,6 +6,7 @@ import type { MilestoneRecord } from "./milestones";
 import type { TaskRecord } from "./tasks";
 
 export type DeterministicReportType = "weekly" | "monthly";
+export type DeterministicReportAudience = "personal" | "manager";
 
 export type ProjectReportSnapshot = {
   record: ProjectRecord;
@@ -136,6 +137,62 @@ export function deterministicReportFileName(report: DeterministicReport) {
   return `personal-workspace-${report.reportType}-${report.periodStart}-${report.periodEnd}.csv`;
 }
 
+export function renderDeterministicReportMarkdown(report: DeterministicReport, audience: DeterministicReportAudience) {
+  const title = audience === "personal"
+    ? `${report.reportType === "weekly" ? "个人复盘周报" : "个人复盘月报"}`
+    : `${report.reportType === "weekly" ? "工作周报" : "工作月报"}（事实草稿）`;
+  const lines = [
+    `# ${title}`,
+    "",
+    `- 周期：${report.periodStart} → ${report.periodEnd}`,
+    `- 时区：${report.timezone}`,
+    "- 生成方式：Personal Workspace 确定性事实汇总",
+    "",
+  ];
+  if (audience === "personal") {
+    lines.push(
+      "## 本期概览", "",
+      `- 完成任务：${report.completedTasks.length}`,
+      `- 完成里程碑：${report.completedMilestones.length}`,
+      `- 手工实际耗时：${formatDuration(report.actualTaskMinutes)}`,
+      `- 已确认日程：${report.calendarEvents.length} 项 / ${formatDuration(report.scheduledMinutes)}`,
+      `- Project Activity：${report.activityEvents.length}`, "",
+      "## 完成事项", "",
+      ...markdownItems(report.completedTasks.map((record) => `${markdownText(record.data.title)} — ${localDateForInstant(String(record.data.completed_at), report.timezone)}${record.data.actual_duration_minutes === null ? "" : ` · ${formatDuration(record.data.actual_duration_minutes)}`} · \`task:${record.id}\``), "本周期没有完成任务。"), "",
+      "## 项目进度", "",
+      ...markdownItems(report.projectSnapshots.map((snapshot) => `${markdownText(snapshot.record.data.name)} — ${snapshot.percent}% · ${progressSourceText(snapshot)} · ${projectStatusText(snapshot.record.data.status)} · \`project:${snapshot.record.id}\``), "当前没有进行中或本周期完成的项目。"), "",
+      "## 已完成里程碑", "",
+      ...markdownItems(report.completedMilestones.map((record) => `${markdownText(record.data.title)} — ${localDateForInstant(String(record.data.completed_at), report.timezone)} · 权重 ${record.data.weight} · \`milestone:${record.id}\``), "本周期没有完成里程碑。"), "",
+      "## 日程与时间块", "",
+      ...markdownItems(report.calendarEvents.map((record) => `${markdownText(record.data.title)} — ${record.data.local_start_date} · ${record.data.event_type === "time_block" ? "时间块" : "日程"} · ${formatDuration(Math.round((Date.parse(record.data.end_at) - Date.parse(record.data.start_at)) / 60_000))} · \`calendar_event:${record.id}\``), "本周期没有已确认日程。"), "",
+      "## Project Activity", "",
+      ...markdownItems(report.activityEvents.map((record) => `${markdownText(record.data.event_type)} — ${localDateForInstant(record.data.occurred_at, report.timezone)} · \`project:${record.data.entity_id}\` · \`activity_event:${record.id}\``), "本周期没有 Project Activity。"), "",
+    );
+  } else {
+    lines.push(
+      "> 本文仅由 canonical 事实生成，不包含 AI 推断；发送前请人工复核语境和缺失项。", "",
+      "## 交付与完成", "",
+      ...markdownItems([
+        ...report.completedTasks.map((record) => `${markdownText(record.data.title)} · \`task:${record.id}\``),
+        ...report.completedMilestones.map((record) => `里程碑：${markdownText(record.data.title)} · \`milestone:${record.id}\``),
+      ], "本周期没有已记录的完成事项。"), "",
+      "## 项目状态", "",
+      ...markdownItems(report.projectSnapshots.map((snapshot) => `${markdownText(snapshot.record.data.name)} — ${snapshot.percent}% · ${progressSourceText(snapshot)} · ${projectStatusText(snapshot.record.data.status)} · \`project:${snapshot.record.id}\``), "当前没有进行中或本周期完成的项目。"), "",
+      "## 时间投入", "",
+      `- 手工实际耗时：${formatDuration(report.actualTaskMinutes)}`,
+      `- 已确认日程：${report.calendarEvents.length} 项 / ${formatDuration(report.scheduledMinutes)}`, "",
+      "## 项目动态", "",
+      ...markdownItems(report.activityEvents.map((record) => `${markdownText(record.data.event_type)} · ${localDateForInstant(record.data.occurred_at, report.timezone)} · \`project:${record.data.entity_id}\` · \`activity_event:${record.id}\``), "本周期没有 Project Activity。"), "",
+    );
+  }
+  lines.push("---", "", "此文档是即时事实草稿，未保存为 ReportDraft。后续 canonical 变化可能改变重新生成的结果。", "");
+  return lines.join("\n");
+}
+
+export function deterministicReportMarkdownFileName(report: DeterministicReport, audience: DeterministicReportAudience) {
+  return `personal-workspace-${report.reportType}-${audience}-${report.periodStart}-${report.periodEnd}.md`;
+}
+
 export function localDateForInstant(value: string, timezone: string) {
   if (Number.isNaN(Date.parse(value))) throw new Error("INVALID_REPORT_INSTANT");
   assertTimezone(timezone);
@@ -160,4 +217,28 @@ function csvCell(value: string | number) {
   let text = String(value);
   if (/^[=+\-@]/.test(text)) text = `'${text}`;
   return `"${text.replaceAll('"', '""')}"`;
+}
+
+function markdownItems(items: string[], empty: string) {
+  return items.length === 0 ? [`- ${empty}`] : items.map((item) => `- ${item}`);
+}
+
+function markdownText(value: string) {
+  return value.replace(/\s+/g, " ").trim().replace(/([\\`*_{}\[\]()<>#+.!|\-])/g, "\\$1");
+}
+
+function formatDuration(minutes: number) {
+  if (minutes < 60) return `${minutes} 分钟`;
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return rest === 0 ? `${hours} 小时` : `${hours} 小时 ${rest} 分钟`;
+}
+
+function progressSourceText(snapshot: ProjectReportSnapshot) {
+  if (snapshot.progressSource === "manual") return "手工进度";
+  return `${snapshot.progressSource === "tasks" ? "任务事实" : "里程碑权重"} ${snapshot.completed ?? 0}/${snapshot.total ?? 0}`;
+}
+
+function projectStatusText(status: ProjectRecord["data"]["status"]) {
+  return ({ planned: "规划中", active: "进行中", on_hold: "已暂停", completed: "已完成", cancelled: "已取消", archived: "已归档" } as const)[status];
 }
