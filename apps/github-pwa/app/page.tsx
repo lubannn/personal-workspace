@@ -53,6 +53,7 @@ import {
 import { createProjectPhaseData } from "../../../src/lib/github-data/project-phases";
 import { createMilestoneData, setMilestoneStatus } from "../../../src/lib/github-data/milestones";
 import { createProjectNoteData, updateProjectNoteDetails, type ProjectNoteEditableFields } from "../../../src/lib/github-data/project-notes";
+import { createProjectFileReferenceData, type ProjectFileReferenceFields } from "../../../src/lib/github-data/project-file-references";
 import { createActivityEventData, type ActivityChangeSummary } from "../../../src/lib/github-data/activity-events";
 import {
   createCalendarEventData,
@@ -147,6 +148,7 @@ export default function GitHubWorkspacePage() {
   const [savingMilestoneId, setSavingMilestoneId] = useState<string | null>(null);
   const [savingProjectNoteProjectId, setSavingProjectNoteProjectId] = useState<string | null>(null);
   const [savingProjectNoteId, setSavingProjectNoteId] = useState<string | null>(null);
+  const [savingProjectFileReferenceProjectId, setSavingProjectFileReferenceProjectId] = useState<string | null>(null);
   const [savingCalendarEvent, setSavingCalendarEvent] = useState(false);
   const [savingCalendarEventId, setSavingCalendarEventId] = useState<string | null>(null);
   const [dashboardDirty, setDashboardDirty] = useState(false);
@@ -183,6 +185,8 @@ export default function GitHubWorkspacePage() {
     setMilestoneFiles,
     projectNoteFiles,
     setProjectNoteFiles,
+    projectFileReferenceFiles,
+    setProjectFileReferenceFiles,
     activityEventFiles,
     setActivityEventFiles,
     calendarEventFiles,
@@ -197,6 +201,7 @@ export default function GitHubWorkspacePage() {
     loadingProjectPhases,
     loadingMilestones,
     loadingProjectNotes,
+    loadingProjectFileReferences,
     loadingActivityEvents,
     loadingCalendarEvents,
     loadingDashboard,
@@ -206,6 +211,7 @@ export default function GitHubWorkspacePage() {
     loadProjectPhases,
     loadMilestones,
     loadProjectNotes,
+    loadProjectFileReferences,
     loadActivityEvents,
     loadCalendarEvents,
     loadDashboardLayout,
@@ -227,6 +233,7 @@ export default function GitHubWorkspacePage() {
     loadProjectPhases,
     loadMilestones,
     loadProjectNotes,
+    loadProjectFileReferences,
     loadActivityEvents,
     loadCalendarEvents,
   });
@@ -410,6 +417,7 @@ export default function GitHubWorkspacePage() {
         loadProjectPhases(opened.adapter),
         loadMilestones(opened.adapter),
         loadProjectNotes(opened.adapter),
+        loadProjectFileReferences(opened.adapter),
         loadActivityEvents(opened.adapter),
         loadCalendarEvents(opened.adapter),
       ]);
@@ -1115,6 +1123,40 @@ export default function GitHubWorkspacePage() {
     }
   }
 
+  async function saveProjectFileReference(project: SyncedProject, fields: ProjectFileReferenceFields) {
+    const adapter = adapterRef.current;
+    if (!adapter || !connection || savingProjectFileReferenceProjectId || online === false) return false;
+    setSavingProjectFileReferenceProjectId(project.record.id);
+    setErrorMessage("");
+    setStatusMessage("");
+    try {
+      const timestamp = new Date().toISOString();
+      const timePart = timestamp.replaceAll(/\D/g, "").slice(0, 17);
+      const id = `project_file_${timePart}_${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`;
+      const record = createWorkspaceRecord({
+        entityType: "project_file_reference",
+        id,
+        ownerId: connection.ownerId,
+        timestamp,
+        data: createProjectFileReferenceData(project.record.id, fields),
+      });
+      const result = await adapter.writeText({
+        path: recordPath("project_file_reference", id),
+        text: serializeRecord(record),
+        message: `project file: create ${id}`,
+      });
+      setProjectFileReferenceFiles((current) => [{ record, path: result.path, blobSha: result.blobSha }, ...current]);
+      await appendProjectActivity({ projectId: project.record.id, eventType: "project_file_reference.created", changeSummary: { title: record.data.title }, sourceRef: id, timestamp });
+      setStatusMessage("项目文件引用已保存为独立元数据；外部文件本体没有复制到仓库。");
+      return true;
+    } catch (error) {
+      setErrorMessage(friendlyError(error));
+      return false;
+    } finally {
+      setSavingProjectFileReferenceProjectId(null);
+    }
+  }
+
   async function updateProjectDeletion(item: SyncedProject, operation: "trash" | "restore") {
     const adapter = adapterRef.current;
     if (!adapter || !connection || savingProjectId || online === false) return;
@@ -1344,6 +1386,17 @@ export default function GitHubWorkspacePage() {
     }
   }
 
+  async function listProjectFileReferenceFiles(adapter: GitHubContentsAdapter) {
+    try {
+      return (await adapter.listDirectory("data/project-file-references"))
+        .filter((item) => item.type === "file" && item.name.endsWith(".json"))
+        .sort((left, right) => left.path.localeCompare(right.path));
+    } catch (error) {
+      if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") return [];
+      throw error;
+    }
+  }
+
   async function listActivityEventFiles(adapter: GitHubContentsAdapter) {
     try {
       return (await adapter.listDirectory("data/activity-events"))
@@ -1432,6 +1485,14 @@ export default function GitHubWorkspacePage() {
         ));
       }
       const activityEventCandidates = await listActivityEventFiles(adapter);
+      const projectFileReferenceCandidates = await listProjectFileReferenceFiles(adapter);
+      const projectFileReferenceExportFiles = [];
+      for (let index = 0; index < projectFileReferenceCandidates.length; index += batchSize) {
+        setExportProgress(`正在读取 ProjectFileReference ${Math.min(index + batchSize, projectFileReferenceCandidates.length)} / ${projectFileReferenceCandidates.length}…`);
+        projectFileReferenceExportFiles.push(...await Promise.all(
+          projectFileReferenceCandidates.slice(index, index + batchSize).map((item) => adapter.readText(item.path)),
+        ));
+      }
       const activityEventFiles = [];
       for (let index = 0; index < activityEventCandidates.length; index += batchSize) {
         setExportProgress(`正在读取 ActivityEvent ${Math.min(index + batchSize, activityEventCandidates.length)} / ${activityEventCandidates.length}…`);
@@ -1461,6 +1522,7 @@ export default function GitHubWorkspacePage() {
         projectPhaseFiles,
         milestoneFiles,
         projectNoteFiles,
+        projectFileReferenceFiles: projectFileReferenceExportFiles,
         activityEventFiles,
         calendarEventFiles,
         generatedAt,
@@ -1491,6 +1553,7 @@ export default function GitHubWorkspacePage() {
         projectPhases: inspection.counts.projectPhases,
         milestones: inspection.counts.milestones,
         projectNotes: inspection.counts.projectNotes,
+        projectFileReferences: inspection.counts.projectFileReferences,
         activityEvents: inspection.counts.activityEvents,
         calendarEvents: inspection.counts.calendarEvents,
         errors: inspection.errors,
@@ -1507,6 +1570,7 @@ export default function GitHubWorkspacePage() {
         projectPhases: inspection.counts.projectPhases,
         milestones: inspection.counts.milestones,
         projectNotes: inspection.counts.projectNotes,
+        projectFileReferences: inspection.counts.projectFileReferences,
         activityEvents: inspection.counts.activityEvents,
         calendarEvents: inspection.counts.calendarEvents,
         errors: inspection.errors,
@@ -1551,6 +1615,7 @@ export default function GitHubWorkspacePage() {
           projectPhases: 0,
           milestones: 0,
           projectNotes: 0,
+          projectFileReferences: 0,
           activityEvents: 0,
           calendarEvents: 0,
           errors: [{ code: "EXPORT_TOO_LARGE", message: "当前预检仅接受 50 MB 以内的 JSON 文件。" }],
@@ -1571,6 +1636,7 @@ export default function GitHubWorkspacePage() {
         projectPhases: inspection.counts.projectPhases,
         milestones: inspection.counts.milestones,
         projectNotes: inspection.counts.projectNotes,
+        projectFileReferences: inspection.counts.projectFileReferences,
         activityEvents: inspection.counts.activityEvents,
         calendarEvents: inspection.counts.calendarEvents,
         errors: inspection.errors,
@@ -1592,6 +1658,7 @@ export default function GitHubWorkspacePage() {
         projectPhases: 0,
         milestones: 0,
         projectNotes: 0,
+        projectFileReferences: 0,
         activityEvents: 0,
         calendarEvents: 0,
         errors: [{ code: "INVALID_JSON", message: "文件不是有效的 JSON，未执行任何恢复操作。" }],
@@ -1805,6 +1872,7 @@ export default function GitHubWorkspacePage() {
         projectPhaseFiles={projectPhaseFiles}
         milestoneFiles={milestoneFiles}
         projectNoteFiles={projectNoteFiles}
+        projectFileReferenceFiles={projectFileReferenceFiles}
         activityEventFiles={activityEventFiles}
         currentProjectFiles={currentProjectFiles}
         completedProjectFiles={completedProjectFiles}
@@ -1818,6 +1886,7 @@ export default function GitHubWorkspacePage() {
         loadingProjectPhases={loadingProjectPhases}
         loadingMilestones={loadingMilestones}
         loadingProjectNotes={loadingProjectNotes}
+        loadingProjectFileReferences={loadingProjectFileReferences}
         loadingActivityEvents={loadingActivityEvents}
         savingProject={savingProject}
         savingProjectId={savingProjectId}
@@ -1826,6 +1895,7 @@ export default function GitHubWorkspacePage() {
         savingMilestoneId={savingMilestoneId}
         savingProjectNoteProjectId={savingProjectNoteProjectId}
         savingProjectNoteId={savingProjectNoteId}
+        savingProjectFileReferenceProjectId={savingProjectFileReferenceProjectId}
         currentDate={currentTaskDate}
         onProjectNameChange={setProjectName}
         onProjectTargetDateChange={setProjectTargetDate}
@@ -1840,7 +1910,8 @@ export default function GitHubWorkspacePage() {
         onMilestoneLifecycle={updateMilestoneLifecycle}
         onCreateProjectNote={saveProjectNote}
         onEditProjectNote={saveProjectNoteEdit}
-        onRefresh={() => Promise.all([loadProjects(), loadProjectPhases(), loadMilestones(), loadProjectNotes(), loadActivityEvents()])}
+        onCreateProjectFileReference={saveProjectFileReference}
+        onRefresh={() => Promise.all([loadProjects(), loadProjectPhases(), loadMilestones(), loadProjectNotes(), loadProjectFileReferences(), loadActivityEvents()])}
       />
 
 

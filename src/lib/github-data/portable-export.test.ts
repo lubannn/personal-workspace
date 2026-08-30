@@ -4,6 +4,7 @@ import { createWorkspaceRecord, serializeRecord } from "./protocol";
 import { createDefaultDashboardLayout, serializeDashboardLayout } from "./dashboard-layout";
 import { createActivityEventData } from "./activity-events";
 import { createCalendarEventData, localDateTimeToIso } from "./calendar-events";
+import { createProjectFileReferenceData } from "./project-file-references";
 import {
   buildPortableWorkspaceExport,
   inspectPortableWorkspaceExport,
@@ -136,6 +137,22 @@ async function sampleExport() {
       sourceRef: "project_20260827014500000_abcd1234",
     }),
   }));
+  const projectFileReferenceText = serializeRecord(createWorkspaceRecord({
+    entityType: "project_file_reference",
+    id: "project_file_20260827015830000_abcd1234",
+    ownerId: "github_lubannn",
+    timestamp: "2026-08-27T01:58:30.000Z",
+    data: createProjectFileReferenceData("project_20260827014500000_abcd1234", {
+      title: "正式验收文档",
+      source_url: "https://example.com/files/acceptance.pdf",
+      original_filename: "acceptance.pdf",
+      mime_type: "application/pdf",
+      size_bytes: 4096,
+      sha256: "a".repeat(64),
+      purpose: "验收证据",
+      sort_order: 10,
+    }),
+  }));
   const calendarEventText = serializeRecord(createWorkspaceRecord({
     entityType: "calendar_event",
     id: "calendar_event_20260827015900000_abcd1234",
@@ -163,6 +180,7 @@ async function sampleExport() {
     projectPhaseFiles: [storedFile("data/project-phases/phase_20260827015000000_abcd1234.json", projectPhaseText, "phase-blob")],
     milestoneFiles: [storedFile("data/milestones/milestone_20260827015500000_abcd1234.json", milestoneText, "milestone-blob")],
     projectNoteFiles: [storedFile("data/project-notes/project_note_20260827015700000_abcd1234.json", projectNoteText, "project-note-blob")],
+    projectFileReferenceFiles: [storedFile("data/project-file-references/project_file_20260827015830000_abcd1234.json", projectFileReferenceText, "project-file-reference-blob")],
     activityEventFiles: [storedFile("data/activity-events/activity_20260827015800000_abcd1234.json", activityEventText, "activity-event-blob")],
     calendarEventFiles: [storedFile("data/calendar-events/calendar_event_20260827015900000_abcd1234.json", calendarEventText, "calendar-event-blob")],
   });
@@ -171,13 +189,14 @@ async function sampleExport() {
 describe("portable GitHub workspace export", () => {
   it("builds a deterministic manifest and passes restore preflight", async () => {
     const exported = await sampleExport();
-    expect(exported.manifest.counts).toEqual({ files: 10, captures: 1, dashboard_layouts: 1, tasks: 1, projects: 1, project_phases: 1, milestones: 1, project_notes: 1, activity_events: 1, calendar_events: 1 });
+    expect(exported.manifest.counts).toEqual({ files: 11, captures: 1, dashboard_layouts: 1, tasks: 1, projects: 1, project_phases: 1, milestones: 1, project_notes: 1, project_file_references: 1, activity_events: 1, calendar_events: 1 });
     expect(exported.manifest.files.map((file) => file.path)).toEqual([
       "config/dashboard-layout.json",
       "data/activity-events/activity_20260827015800000_abcd1234.json",
       "data/calendar-events/calendar_event_20260827015900000_abcd1234.json",
       "data/captures/capture_20260827010000000_abcd1234.json",
       "data/milestones/milestone_20260827015500000_abcd1234.json",
+      "data/project-file-references/project_file_20260827015830000_abcd1234.json",
       "data/project-notes/project_note_20260827015700000_abcd1234.json",
       "data/project-phases/phase_20260827015000000_abcd1234.json",
       "data/projects/project_20260827014500000_abcd1234.json",
@@ -189,7 +208,7 @@ describe("portable GitHub workspace export", () => {
     await expect(inspectPortableWorkspaceExport(exported)).resolves.toMatchObject({
       valid: true,
       repository: "lubannn/personal-workspace-data",
-      counts: { files: 10, captures: 1, dashboardLayouts: 1, tasks: 1, projects: 1, projectPhases: 1, milestones: 1, projectNotes: 1, activityEvents: 1, calendarEvents: 1 },
+      counts: { files: 11, captures: 1, dashboardLayouts: 1, tasks: 1, projects: 1, projectPhases: 1, milestones: 1, projectNotes: 1, projectFileReferences: 1, activityEvents: 1, calendarEvents: 1 },
       errors: [],
       workspace: { owner_id: "github_lubannn" },
     });
@@ -252,6 +271,7 @@ describe("portable GitHub workspace export", () => {
     expect(inspection.errors.map((error) => error.code)).toContain("PROJECT_PHASE_PROJECT_MISSING");
     expect(inspection.errors.map((error) => error.code)).toContain("MILESTONE_PROJECT_MISSING");
     expect(inspection.errors.map((error) => error.code)).toContain("PROJECT_NOTE_PROJECT_MISSING");
+    expect(inspection.errors.map((error) => error.code)).toContain("PROJECT_FILE_REFERENCE_PROJECT_MISSING");
     expect(inspection.errors.map((error) => error.code)).toContain("ACTIVITY_EVENT_PROJECT_MISSING");
   });
 
@@ -273,6 +293,7 @@ describe("portable GitHub workspace export", () => {
     exported.files = exported.files.filter((file) => !file.path.startsWith("data/project-phases/"));
     exported.files = exported.files.filter((file) => !file.path.startsWith("data/milestones/"));
     exported.files = exported.files.filter((file) => !file.path.startsWith("data/project-notes/"));
+    exported.files = exported.files.filter((file) => !file.path.startsWith("data/project-file-references/"));
     exported.files = exported.files.filter((file) => !file.path.startsWith("data/activity-events/"));
     exported.files = exported.files.filter((file) => !file.path.startsWith("data/calendar-events/"));
     exported.manifest.files = exported.manifest.files.filter((file) => file.path !== "config/dashboard-layout.json");
@@ -281,13 +302,14 @@ describe("portable GitHub workspace export", () => {
     exported.manifest.files = exported.manifest.files.filter((file) => !file.path.startsWith("data/project-phases/"));
     exported.manifest.files = exported.manifest.files.filter((file) => !file.path.startsWith("data/milestones/"));
     exported.manifest.files = exported.manifest.files.filter((file) => !file.path.startsWith("data/project-notes/"));
+    exported.manifest.files = exported.manifest.files.filter((file) => !file.path.startsWith("data/project-file-references/"));
     exported.manifest.files = exported.manifest.files.filter((file) => !file.path.startsWith("data/activity-events/"));
     exported.manifest.files = exported.manifest.files.filter((file) => !file.path.startsWith("data/calendar-events/"));
     exported.manifest.scope.modules = ["workspace", "captures"];
     exported.manifest.counts = { files: 2, captures: 1 } as typeof exported.manifest.counts;
     await expect(inspectPortableWorkspaceExport(exported)).resolves.toMatchObject({
       valid: true,
-      counts: { files: 2, captures: 1, dashboardLayouts: 0, tasks: 0, projects: 0, projectPhases: 0, milestones: 0, projectNotes: 0, activityEvents: 0, calendarEvents: 0 },
+      counts: { files: 2, captures: 1, dashboardLayouts: 0, tasks: 0, projects: 0, projectPhases: 0, milestones: 0, projectNotes: 0, projectFileReferences: 0, activityEvents: 0, calendarEvents: 0 },
     });
   });
 });

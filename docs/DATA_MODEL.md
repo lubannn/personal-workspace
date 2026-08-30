@@ -188,6 +188,16 @@ Milestone 使用 `open`、`completed`、`cancelled` 三种状态；只有 `compl
 
 ProjectNote 作为 `data/project-notes/<id>.json` 中的独立 canonical 记录保存，正文为开放 Markdown 字段；编辑沿用同路径 blob SHA 冲突保护与领域版本递增。首个切片开放创建、查看和编辑，不提供删除，避免形成无法从界面恢复的半套回收站。
 
+### ProjectFileReference
+
+- canonical 路径：`data/project-file-references/<id>.json`
+- `project_id`, `title`, `source_url`, `purpose`, `sort_order`
+- 可选附件元数据：`original_filename`, `mime_type`, `size_bytes`, `sha256`
+
+首个切片只接受不含用户名或密码的 HTTPS 外部文件地址。引用是独立版本化 canonical 记录，Project 只通过 `project_id` 建立关系，不内嵌文件正文。开放导出、inspection、restore 与 migration dry run 包含引用记录，并校验其 Project 必须同包存在。
+
+当前切片不上传、代理、缓存或复制外部文件，也不承诺 URL 长期可用；可选大小、MIME 和 SHA-256 是来源元数据，不等同于工作台已下载并重新验证文件。仓库内 `attachments/` 二进制保存需要单独设计 base64 导出、哈希复验、容量限制与原子恢复语义后再开放。
+
 ### ActivityEvent
 
 - `id`, `owner_id`, `entity_type`, `entity_id`

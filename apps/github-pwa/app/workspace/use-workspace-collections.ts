@@ -14,10 +14,11 @@ import { parseProjectRecord } from "../../../../src/lib/github-data/projects";
 import { parseProjectPhaseRecord } from "../../../../src/lib/github-data/project-phases";
 import { parseMilestoneRecord } from "../../../../src/lib/github-data/milestones";
 import { parseProjectNoteRecord } from "../../../../src/lib/github-data/project-notes";
+import { parseProjectFileReferenceRecord } from "../../../../src/lib/github-data/project-file-references";
 import { parseActivityEventRecord } from "../../../../src/lib/github-data/activity-events";
 import { parseCalendarEventRecord } from "../../../../src/lib/github-data/calendar-events";
 import { parseCaptureRecord } from "../../../../src/lib/github-data/workspace";
-import { friendlyError, type SyncedActivityEvent, type SyncedCalendarEvent, type SyncedCapture, type SyncedMilestone, type SyncedProject, type SyncedProjectNote, type SyncedProjectPhase, type SyncedTask } from "./page-model";
+import { friendlyError, type SyncedActivityEvent, type SyncedCalendarEvent, type SyncedCapture, type SyncedMilestone, type SyncedProject, type SyncedProjectFileReference, type SyncedProjectNote, type SyncedProjectPhase, type SyncedTask } from "./page-model";
 
 type Options = {
   adapterRef: MutableRefObject<GitHubContentsAdapter | null>;
@@ -32,6 +33,7 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
   const [projectPhaseFiles, setProjectPhaseFiles] = useState<SyncedProjectPhase[]>([]);
   const [milestoneFiles, setMilestoneFiles] = useState<SyncedMilestone[]>([]);
   const [projectNoteFiles, setProjectNoteFiles] = useState<SyncedProjectNote[]>([]);
+  const [projectFileReferenceFiles, setProjectFileReferenceFiles] = useState<SyncedProjectFileReference[]>([]);
   const [activityEventFiles, setActivityEventFiles] = useState<SyncedActivityEvent[]>([]);
   const [calendarEventFiles, setCalendarEventFiles] = useState<SyncedCalendarEvent[]>([]);
   const [dashboardLayout, setDashboardLayout] = useState<DashboardLayout | null>(null);
@@ -42,6 +44,7 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
   const [loadingProjectPhases, setLoadingProjectPhases] = useState(false);
   const [loadingMilestones, setLoadingMilestones] = useState(false);
   const [loadingProjectNotes, setLoadingProjectNotes] = useState(false);
+  const [loadingProjectFileReferences, setLoadingProjectFileReferences] = useState(false);
   const [loadingActivityEvents, setLoadingActivityEvents] = useState(false);
   const [loadingCalendarEvents, setLoadingCalendarEvents] = useState(false);
   const [loadingDashboard, setLoadingDashboard] = useState(false);
@@ -350,6 +353,42 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     }
   }, [adapterRef, setErrorMessage]);
 
+  const loadProjectFileReferences = useCallback(async (adapter = adapterRef.current) => {
+    if (!adapter) return;
+    setLoadingProjectFileReferences(true);
+    setErrorMessage("");
+    try {
+      let items;
+      try {
+        items = await adapter.listDirectory("data/project-file-references");
+      } catch (error) {
+        if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") {
+          setProjectFileReferenceFiles([]);
+          return;
+        }
+        throw error;
+      }
+      const candidates = items.filter((item) => item.type === "file" && item.name.endsWith(".json")).sort((left, right) => right.name.localeCompare(left.name));
+      const records: SyncedProjectFileReference[] = [];
+      const batchSize = 6;
+      for (let index = 0; index < candidates.length; index += batchSize) {
+        records.push(...(await Promise.all(candidates.slice(index, index + batchSize).map(async (item) => {
+          try {
+            const file = await adapter.readText(item.path);
+            return { record: parseProjectFileReferenceRecord(file.text), path: file.path, blobSha: file.blobSha };
+          } catch {
+            return null;
+          }
+        }))).filter((item): item is SyncedProjectFileReference => item !== null));
+      }
+      setProjectFileReferenceFiles(records);
+    } catch (error) {
+      setErrorMessage(friendlyError(error));
+    } finally {
+      setLoadingProjectFileReferences(false);
+    }
+  }, [adapterRef, setErrorMessage]);
+
   const loadDashboardLayout = useCallback(async (
     adapter = adapterRef.current,
     ownerId?: string,
@@ -386,6 +425,7 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     setProjectPhaseFiles([]);
     setMilestoneFiles([]);
     setProjectNoteFiles([]);
+    setProjectFileReferenceFiles([]);
     setActivityEventFiles([]);
     setCalendarEventFiles([]);
     setDashboardLayout(null);
@@ -405,6 +445,8 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     setMilestoneFiles,
     projectNoteFiles,
     setProjectNoteFiles,
+    projectFileReferenceFiles,
+    setProjectFileReferenceFiles,
     activityEventFiles,
     setActivityEventFiles,
     calendarEventFiles,
@@ -419,6 +461,7 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     loadingProjectPhases,
     loadingMilestones,
     loadingProjectNotes,
+    loadingProjectFileReferences,
     loadingActivityEvents,
     loadingCalendarEvents,
     loadingDashboard,
@@ -428,6 +471,7 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     loadProjectPhases,
     loadMilestones,
     loadProjectNotes,
+    loadProjectFileReferences,
     loadActivityEvents,
     loadCalendarEvents,
     loadDashboardLayout,
