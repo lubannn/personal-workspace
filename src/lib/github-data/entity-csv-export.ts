@@ -2,6 +2,7 @@ import type { MilestoneRecord } from "./milestones";
 import { recordPath } from "./protocol";
 import { projectMilestoneProgress, projectTaskProgress, type ProjectRecord } from "./projects";
 import type { TaskRecord } from "./tasks";
+import type { TimeEntryRecord } from "./time-entries";
 
 export function serializeTasksCsv(records: TaskRecord[]) {
   const header = [
@@ -37,7 +38,13 @@ export function serializeProjectsCsv(input: { projects: ProjectRecord[]; tasks: 
   return serializeCsv(header, rows);
 }
 
-export function entityCsvFileName(entity: "tasks" | "projects", localDate: string) {
+export function serializeTimeEntriesCsv(records: TimeEntryRecord[]) {
+  const header = ["schema_version", "entity_type", "id", "owner_id", "version", "created_at", "updated_at", "deleted_at", "source_path", "task_id", "project_id", "local_date", "timezone", "started_at", "ended_at", "duration_minutes", "entry_method", "notes_markdown", "source_ref"];
+  const rows = [...records].sort((left, right) => left.id.localeCompare(right.id)).map((record) => [record.schema_version, record.entity_type, record.id, record.owner_id, record.version, record.created_at, record.updated_at, record.deleted_at ?? "", recordPath("time_entry", record.id), record.data.task_id, record.data.project_id ?? "", record.data.local_date, record.data.timezone, "", "", record.data.duration_minutes, record.data.entry_method, record.data.notes_markdown, ""]);
+  return serializeCsv(header, rows);
+}
+
+export function entityCsvFileName(entity: "tasks" | "projects" | "time-entries", localDate: string) {
   const parsed = new Date(`${localDate}T00:00:00Z`);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(localDate) || Number.isNaN(parsed.valueOf()) || parsed.toISOString().slice(0, 10) !== localDate) {
     throw new Error("INVALID_ENTITY_CSV_DATE");

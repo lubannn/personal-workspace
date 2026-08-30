@@ -28,6 +28,7 @@ type Options = {
   loadRecentCaptures: (adapter: GitHubContentsAdapter) => Promise<void>;
   loadDashboardLayout: (adapter: GitHubContentsAdapter, ownerId: string) => Promise<void>;
   loadTasks: (adapter: GitHubContentsAdapter) => Promise<void>;
+  loadTimeEntries: (adapter: GitHubContentsAdapter) => Promise<void>;
   loadProjects: (adapter: GitHubContentsAdapter) => Promise<void>;
   loadProjectPhases: (adapter: GitHubContentsAdapter) => Promise<void>;
   loadMilestones: (adapter: GitHubContentsAdapter) => Promise<void>;
@@ -40,7 +41,7 @@ type Options = {
 
 export function useGitHubAppBootstrap(options: Options) {
   const started = useRef(false);
-  const { adapterRef, setConnection, setConnectionMethod, setAuthAvailability, setConnecting, setErrorMessage, setStatusMessage, loadRecentCaptures, loadDashboardLayout, loadTasks, loadProjects, loadProjectPhases, loadMilestones, loadProjectNotes, loadProjectFileReferences, loadActivityEvents, loadCalendarEvents, loadReportDrafts } = options;
+  const { adapterRef, setConnection, setConnectionMethod, setAuthAvailability, setConnecting, setErrorMessage, setStatusMessage, loadRecentCaptures, loadDashboardLayout, loadTasks, loadTimeEntries, loadProjects, loadProjectPhases, loadMilestones, loadProjectNotes, loadProjectFileReferences, loadActivityEvents, loadCalendarEvents, loadReportDrafts } = options;
 
   useEffect(() => {
     if (started.current) return;
@@ -70,7 +71,7 @@ export function useGitHubAppBootstrap(options: Options) {
         setConnection(opened.connection);
         setConnectionMethod("github-app");
         setStatusMessage(`已通过 GitHub App 登录${status.login ? `（${status.login}）` : ""}，访问令牌仅保留在当前页面内存中。`);
-        await Promise.all([loadRecentCaptures(opened.adapter), loadDashboardLayout(opened.adapter, opened.connection.ownerId), loadTasks(opened.adapter), loadProjects(opened.adapter), loadProjectPhases(opened.adapter), loadMilestones(opened.adapter), loadProjectNotes(opened.adapter), loadProjectFileReferences(opened.adapter), loadActivityEvents(opened.adapter), loadCalendarEvents(opened.adapter), loadReportDrafts(opened.adapter)]);
+        await Promise.all([loadRecentCaptures(opened.adapter), loadDashboardLayout(opened.adapter, opened.connection.ownerId), loadTasks(opened.adapter), loadTimeEntries(opened.adapter), loadProjects(opened.adapter), loadProjectPhases(opened.adapter), loadMilestones(opened.adapter), loadProjectNotes(opened.adapter), loadProjectFileReferences(opened.adapter), loadActivityEvents(opened.adapter), loadCalendarEvents(opened.adapter), loadReportDrafts(opened.adapter)]);
       } catch (error) {
         adapterRef.current = null;
         setConnection(null);
@@ -83,5 +84,5 @@ export function useGitHubAppBootstrap(options: Options) {
     }
 
     void bootstrap();
-  }, [adapterRef, loadActivityEvents, loadCalendarEvents, loadDashboardLayout, loadMilestones, loadProjectFileReferences, loadProjectNotes, loadProjectPhases, loadProjects, loadRecentCaptures, loadReportDrafts, loadTasks, setAuthAvailability, setConnecting, setConnection, setConnectionMethod, setErrorMessage, setStatusMessage]);
+  }, [adapterRef, loadActivityEvents, loadCalendarEvents, loadDashboardLayout, loadMilestones, loadProjectFileReferences, loadProjectNotes, loadProjectPhases, loadProjects, loadRecentCaptures, loadReportDrafts, loadTasks, loadTimeEntries, setAuthAvailability, setConnecting, setConnection, setConnectionMethod, setErrorMessage, setStatusMessage]);
 }

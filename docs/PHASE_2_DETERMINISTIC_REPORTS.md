@@ -9,6 +9,7 @@
 - 已完成 Milestone 与 Project Activity 同样按各自事实时间归属；
 - Calendar 只纳入周期内、未删除且状态为 `confirmed` 的记录；
 - Project 显示当前进度快照，并明确来源是手工、Task 事实或 Milestone 权重；
+- Time Entry 按 `local_date` 归属周期，只汇总未删除的手工分钟事实，并与 Task 上的人工实际耗时分开显示；
 - 每条预览事实保留 canonical ID，CSV 进一步保留 source entity 和 canonical path。
 
 这不是 AI 总结。排序、过滤、计数、时区换算、分钟汇总和 CSV 字段均由纯确定性逻辑完成。
@@ -32,24 +33,24 @@ CSV 使用 UTF-8 BOM 与 CRLF，面向 Excel 等表格工具。每行包含：
 
 - Tasks CSV 覆盖当前读取到的全部 Task，包括软删除记录、完整 envelope、Project/父子关系、生命周期、计划时间、DDL、耗时、tags JSON 和 Private notes Markdown；
 - Projects CSV 覆盖全部 Project，包括完整 envelope、生命周期、阶段引用、日期、原始 progress mode 与带来源的派生进度；
-- 两者都按 canonical ID 稳定排序，并保留 `source_path`；多行 Markdown 由标准 CSV quoting 保真；
-- Time Entry 实体尚未上线，因此不提供伪造的空 CSV。
+- Time Entries CSV 覆盖全部 Time Entry，包括软删除记录、Task/Project 引用、本地日期、时区、分钟、录入方式和 Private notes Markdown；
+- 三类实体都按 canonical ID 稳定排序，并保留 `source_path`；多行 Markdown 由标准 CSV quoting 保真；Time Entry 的空开始/结束时间保持为空，不伪造时钟事实。
 
 ## 3. 隐私与失败语义
 
 - 生成和下载只在当前浏览器执行；Worker、AI 服务和 Public 代码仓库不接收 Private 正文。
-- 当前不创建 `ReportDraft`，不写回 Private GitHub，因此预览是当前 canonical 状态的即时视图，不是永久事实快照。
+- 预览本身不写回；只有用户明确点击“保存草稿”才会 create-only 创建不可变 `ReportDraft`，并固化来源版本、计数和耗时快照。
 - 下载失败不改变任何 canonical 记录，也不影响 GitHub 同步状态。
 - 复制或 Markdown 下载失败同样不改变数据；草稿不会自动保存、审批或发送。
 - 被软删除、已取消或已归档的领域记录不会作为当前报告事实展示；Git 历史仍可能保留旧正文。
-- Task 的“实际耗时”只汇总现有 `actual_duration_minutes`；没有 Time Entry 时不能伪称为自动计时事实。
-- Tasks/Projects CSV 可能包含软删除记录和 Private Markdown 正文，下载后的文件由用户自行安全保管。
+- Task 的“实际耗时”只汇总现有 `actual_duration_minutes`；Time Entry 只汇总手工分钟记录，两者独立展示并禁止双算或伪称自动计时。
+- Tasks/Projects/Time Entries CSV 可能包含软删除记录和 Private Markdown 正文，下载后的文件由用户自行安全保管。
 
 ## 4. 明确未开放
 
-- ReportDraft canonical 保存、审批、归档与历史快照；
+- ReportDraft 审批、归档、编辑和导出生命周期；
 - AI 润色、PDF、Word 或自动发送；
-- Time Entry CSV；当前协议尚无 Time Entry 实体；
+- 运行中计时器、自动计时以及未经事实支持的开始/结束时刻；
 - 定时生成或后台同步。
 
-后续若保存 ReportDraft，必须先确定事实快照、引用完整性、export/inspection/restore/migration 和跨设备 SHA 冲突语义，不能把当前即时预览悄悄当作已保存报告。
+后续若开放 ReportDraft 生命周期变更，必须携带旧 blob SHA 并定义跨设备冲突语义；不能把当前即时预览悄悄当作已保存报告，也不能覆盖既有不可变草稿。

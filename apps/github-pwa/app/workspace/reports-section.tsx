@@ -11,8 +11,8 @@ import {
   type DeterministicReportAudience,
   type DeterministicReportType,
 } from "../../../../src/lib/github-data/deterministic-reports";
-import { entityCsvFileName, serializeProjectsCsv, serializeTasksCsv } from "../../../../src/lib/github-data/entity-csv-export";
-import type { Connection, SyncedActivityEvent, SyncedCalendarEvent, SyncedMilestone, SyncedProject, SyncedReportDraft, SyncedTask } from "./page-model";
+import { entityCsvFileName, serializeProjectsCsv, serializeTasksCsv, serializeTimeEntriesCsv } from "../../../../src/lib/github-data/entity-csv-export";
+import type { Connection, SyncedActivityEvent, SyncedCalendarEvent, SyncedMilestone, SyncedProject, SyncedReportDraft, SyncedTask, SyncedTimeEntry } from "./page-model";
 
 type Props = {
   connection: Connection | null;
@@ -22,6 +22,7 @@ type Props = {
   milestoneFiles: SyncedMilestone[];
   calendarEventFiles: SyncedCalendarEvent[];
   activityEventFiles: SyncedActivityEvent[];
+  timeEntryFiles: SyncedTimeEntry[];
   reportDraftFiles: SyncedReportDraft[];
   loading: boolean;
   savingDraft: boolean;
@@ -29,7 +30,7 @@ type Props = {
   onSaveDraft: (report: ReturnType<typeof buildDeterministicReport>, audience: DeterministicReportAudience, markdown: string) => Promise<boolean>;
 };
 
-export function ReportsSection({ connection, todayDate, taskFiles, projectFiles, milestoneFiles, calendarEventFiles, activityEventFiles, reportDraftFiles, loading, savingDraft, onRefresh, onSaveDraft }: Props) {
+export function ReportsSection({ connection, todayDate, taskFiles, projectFiles, milestoneFiles, calendarEventFiles, activityEventFiles, timeEntryFiles, reportDraftFiles, loading, savingDraft, onRefresh, onSaveDraft }: Props) {
   const [reportType, setReportType] = useState<DeterministicReportType>("weekly");
   const [audience, setAudience] = useState<DeterministicReportAudience>("personal");
   const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "failed">("idle");
@@ -45,8 +46,9 @@ export function ReportsSection({ connection, todayDate, taskFiles, projectFiles,
     milestones: milestoneFiles.map((item) => item.record),
     calendarEvents: calendarEventFiles.map((item) => item.record),
     activityEvents: activityEventFiles.map((item) => item.record),
-  }), [activityEventFiles, anchorDate, calendarEventFiles, milestoneFiles, projectFiles, reportType, taskFiles, timezone]);
-  const factCount = report.completedTasks.length + report.completedMilestones.length + report.calendarEvents.length + report.activityEvents.length;
+    timeEntries: timeEntryFiles.map((item) => item.record),
+  }), [activityEventFiles, anchorDate, calendarEventFiles, milestoneFiles, projectFiles, reportType, taskFiles, timeEntryFiles, timezone]);
+  const factCount = report.completedTasks.length + report.completedMilestones.length + report.calendarEvents.length + report.activityEvents.length + report.timeEntries.length;
   const markdown = useMemo(() => renderDeterministicReportMarkdown(report, audience), [audience, report]);
 
   function downloadCsv() {
@@ -59,11 +61,11 @@ export function ReportsSection({ connection, todayDate, taskFiles, projectFiles,
     downloadBrowserFile(markdown, "text/markdown;charset=utf-8", deterministicReportMarkdownFileName(report, audience));
   }
 
-  function downloadEntityCsv(entity: "tasks" | "projects") {
+  function downloadEntityCsv(entity: "tasks" | "projects" | "time-entries") {
     if (!connection) return;
-    const csv = entity === "tasks"
-      ? serializeTasksCsv(taskFiles.map((item) => item.record))
-      : serializeProjectsCsv({ projects: projectFiles.map((item) => item.record), tasks: taskFiles.map((item) => item.record), milestones: milestoneFiles.map((item) => item.record) });
+    const csv = entity === "tasks" ? serializeTasksCsv(taskFiles.map((item) => item.record))
+      : entity === "time-entries" ? serializeTimeEntriesCsv(timeEntryFiles.map((item) => item.record))
+        : serializeProjectsCsv({ projects: projectFiles.map((item) => item.record), tasks: taskFiles.map((item) => item.record), milestones: milestoneFiles.map((item) => item.record) });
     downloadBrowserFile(csv, "text/csv;charset=utf-8", entityCsvFileName(entity, todayDate || anchorDate));
   }
 
@@ -105,6 +107,7 @@ export function ReportsSection({ connection, todayDate, taskFiles, projectFiles,
           <article><strong>{report.completedTasks.length}</strong><span>完成任务</span></article>
           <article><strong>{report.completedMilestones.length}</strong><span>完成里程碑</span></article>
           <article><strong>{formatMinutes(report.actualTaskMinutes)}</strong><span>手工实际耗时</span></article>
+          <article><strong>{formatMinutes(report.trackedMinutes)}</strong><span>Time Entry</span></article>
           <article><strong>{formatMinutes(report.scheduledMinutes)}</strong><span>日程安排</span></article>
           <article><strong>{report.activityEvents.length}</strong><span>项目活动</span></article>
         </div>
@@ -115,6 +118,7 @@ export function ReportsSection({ connection, todayDate, taskFiles, projectFiles,
           <ReportGroup title="已完成里程碑" empty="本周期没有完成里程碑。" items={report.completedMilestones.map((record) => ({ id: record.id, title: record.data.title, meta: `${localTimestamp(record.data.completed_at, report.timezone)} · 权重 ${record.data.weight}` }))} />
           <ReportGroup title="日程与时间块" empty="本周期没有已确认日程。" items={report.calendarEvents.map((record) => ({ id: record.id, title: record.data.title, meta: `${record.data.local_start_date} · ${record.data.event_type === "time_block" ? "时间块" : "日程"}` }))} />
           <ReportGroup title="Project Activity" empty="本周期没有 Project Activity。" items={report.activityEvents.map((record) => ({ id: record.id, title: record.data.event_type, meta: `${localTimestamp(record.data.occurred_at, report.timezone)} · Project ${record.data.entity_id}` }))} />
+          <ReportGroup title="时间投入" empty="本周期没有 Time Entry。" items={report.timeEntries.map((record) => ({ id: record.id, title: `${formatMinutes(record.data.duration_minutes)} · Task ${record.data.task_id}`, meta: `${record.data.local_date}${record.data.project_id ? ` · Project ${record.data.project_id}` : ""}` }))} />
         </div>
 
         <article className="reports-draft">
@@ -143,10 +147,11 @@ export function ReportsSection({ connection, todayDate, taskFiles, projectFiles,
         </article>
 
         <div className="reports-export">
-          <p><strong>CSV 边界</strong>：周期事实 CSV 含 {factCount} 条事实和 {report.projectSnapshots.length} 条项目快照。Tasks/Projects CSV 则覆盖全部当前 canonical 记录，包括软删除、版本、关系和 Private Markdown；全部保留 source path 并转义公式前缀，只在当前浏览器生成。Time Entry 实体尚未启用。</p>
+          <p><strong>CSV 边界</strong>：周期事实 CSV 含 {factCount} 条事实和 {report.projectSnapshots.length} 条项目快照。Tasks/Projects/Time Entries CSV 覆盖全部当前 canonical 记录，包括软删除、版本、关系和 Private Markdown；全部保留 source path 并转义公式前缀，只在当前浏览器生成。</p>
           <div className="reports-export-actions">
             <button className="secondary-button" type="button" onClick={downloadCsv}>周期事实 CSV</button>
             <button className="secondary-button" type="button" onClick={() => downloadEntityCsv("tasks")}>Tasks CSV</button>
+            <button className="secondary-button" type="button" onClick={() => downloadEntityCsv("time-entries")}>Time Entries CSV</button>
             <button className="primary-button" type="button" onClick={() => downloadEntityCsv("projects")}>Projects CSV</button>
           </div>
         </div>

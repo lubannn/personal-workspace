@@ -10,6 +10,7 @@ import { parseActivityEventRecord } from "./activity-events";
 import { parseCalendarEventRecord } from "./calendar-events";
 import { parseReportDraftRecord } from "./report-drafts";
 import { parseTaskRecord } from "./tasks";
+import { parseTimeEntryRecord } from "./time-entries";
 import { parseCaptureRecord, parseWorkspaceDescriptor, type WorkspaceDescriptor } from "./workspace";
 
 export const PORTABLE_EXPORT_FORMAT = "personal-workspace-export" as const;
@@ -38,7 +39,7 @@ export type PortableWorkspaceExport = {
   manifest: {
     schema_version: 1;
     scope: {
-      modules: Array<"workspace" | "captures" | "dashboard_layout" | "tasks" | "projects" | "project_phases" | "milestones" | "project_notes" | "project_file_references" | "activity_events" | "calendar_events" | "report_drafts">;
+      modules: Array<"workspace" | "captures" | "dashboard_layout" | "tasks" | "time_entries" | "projects" | "project_phases" | "milestones" | "project_notes" | "project_file_references" | "activity_events" | "calendar_events" | "report_drafts">;
       complete: true;
     };
     counts: {
@@ -46,6 +47,7 @@ export type PortableWorkspaceExport = {
       captures: number;
       dashboard_layouts: number;
       tasks: number;
+      time_entries: number;
       projects: number;
       project_phases: number;
       milestones: number;
@@ -76,6 +78,7 @@ export type ExportInspection = {
     captures: number;
     dashboardLayouts: number;
     tasks: number;
+    timeEntries: number;
     projects: number;
     projectPhases: number;
     milestones: number;
@@ -109,6 +112,7 @@ export async function buildPortableWorkspaceExport(input: {
   captureFiles: GitHubStoredFile[];
   dashboardLayoutFile?: GitHubStoredFile | null;
   taskFiles?: GitHubStoredFile[];
+  timeEntryFiles?: GitHubStoredFile[];
   projectFiles?: GitHubStoredFile[];
   projectPhaseFiles?: GitHubStoredFile[];
   milestoneFiles?: GitHubStoredFile[];
@@ -121,6 +125,7 @@ export async function buildPortableWorkspaceExport(input: {
 }): Promise<PortableWorkspaceExport> {
   const dashboardLayoutFiles = input.dashboardLayoutFile ? [input.dashboardLayoutFile] : [];
   const taskFiles = input.taskFiles ?? [];
+  const timeEntryFiles = input.timeEntryFiles ?? [];
   const projectFiles = input.projectFiles ?? [];
   const projectPhaseFiles = input.projectPhaseFiles ?? [];
   const milestoneFiles = input.milestoneFiles ?? [];
@@ -129,7 +134,7 @@ export async function buildPortableWorkspaceExport(input: {
   const activityEventFiles = input.activityEventFiles ?? [];
   const calendarEventFiles = input.calendarEventFiles ?? [];
   const reportDraftFiles = input.reportDraftFiles ?? [];
-  const files = [input.workspaceFile, ...input.captureFiles, ...dashboardLayoutFiles, ...taskFiles, ...projectFiles, ...projectPhaseFiles, ...milestoneFiles, ...projectNoteFiles, ...projectFileReferenceFiles, ...activityEventFiles, ...calendarEventFiles, ...reportDraftFiles]
+  const files = [input.workspaceFile, ...input.captureFiles, ...dashboardLayoutFiles, ...taskFiles, ...timeEntryFiles, ...projectFiles, ...projectPhaseFiles, ...milestoneFiles, ...projectNoteFiles, ...projectFileReferenceFiles, ...activityEventFiles, ...calendarEventFiles, ...reportDraftFiles]
     .map((file) => ({ ...file }))
     .sort((left, right) => left.path.localeCompare(right.path));
   const manifestFiles = await Promise.all(files.map(async (file) => ({
@@ -146,12 +151,13 @@ export async function buildPortableWorkspaceExport(input: {
     source: { repository: input.repository, branch: input.branch },
     manifest: {
       schema_version: 1,
-      scope: { modules: ["workspace", "captures", "dashboard_layout", "tasks", "projects", "project_phases", "milestones", "project_notes", "project_file_references", "activity_events", "calendar_events", "report_drafts"], complete: true },
+      scope: { modules: ["workspace", "captures", "dashboard_layout", "tasks", "time_entries", "projects", "project_phases", "milestones", "project_notes", "project_file_references", "activity_events", "calendar_events", "report_drafts"], complete: true },
       counts: {
         files: files.length,
         captures: input.captureFiles.length,
         dashboard_layouts: dashboardLayoutFiles.length,
         tasks: taskFiles.length,
+        time_entries: timeEntryFiles.length,
         projects: projectFiles.length,
         project_phases: projectPhaseFiles.length,
         milestones: milestoneFiles.length,
@@ -193,7 +199,7 @@ export async function inspectPortableWorkspaceExport(value: unknown): Promise<Ex
     generatedAt: null,
     repository: null,
     workspace: null,
-    counts: { files: 0, captures: 0, dashboardLayouts: 0, tasks: 0, projects: 0, projectPhases: 0, milestones: 0, projectNotes: 0, projectFileReferences: 0, activityEvents: 0, calendarEvents: 0, reportDrafts: 0 },
+    counts: { files: 0, captures: 0, dashboardLayouts: 0, tasks: 0, timeEntries: 0, projects: 0, projectPhases: 0, milestones: 0, projectNotes: 0, projectFileReferences: 0, activityEvents: 0, calendarEvents: 0, reportDrafts: 0 },
     errors,
     warnings,
   };
@@ -392,6 +398,23 @@ export async function inspectPortableWorkspaceExport(value: unknown): Promise<Ex
   if ((rawProjectCount !== undefined || projectFiles.length > 0) && rawProjectCount !== projectFiles.length) {
     errors.push({ code: "PROJECT_COUNT_MISMATCH", message: "Project 数量与 manifest 不一致。" });
   }
+
+  const timeEntryIds = new Set<string>();
+  const timeEntryFiles = validPayloadFiles.filter((file) => file.path.startsWith("data/time-entries/"));
+  result.counts.timeEntries = timeEntryFiles.length;
+  for (const file of timeEntryFiles) {
+    try {
+      const record = parseTimeEntryRecord(file.content);
+      if (result.workspace && record.owner_id !== result.workspace.owner_id) errors.push({ code: "OWNER_MISMATCH", message: "TimeEntry 的 owner_id 与 workspace 不一致。", path: file.path });
+      if (recordPath("time_entry", record.id) !== file.path) errors.push({ code: "TIME_ENTRY_PATH_MISMATCH", message: "TimeEntry 的 ID 与文件路径不一致。", path: file.path });
+      if (timeEntryIds.has(record.id)) errors.push({ code: "DUPLICATE_TIME_ENTRY_ID", message: "导出包中存在重复 TimeEntry ID。", path: file.path });
+      timeEntryIds.add(record.id);
+      if (!taskIds.has(record.data.task_id)) errors.push({ code: "TIME_ENTRY_TASK_MISSING", message: "TimeEntry 引用的 Task 不在导出包中。", path: file.path });
+      if (record.data.project_id && !projectIds.has(record.data.project_id)) errors.push({ code: "TIME_ENTRY_PROJECT_MISSING", message: "TimeEntry 引用的 Project 不在导出包中。", path: file.path });
+    } catch { errors.push({ code: "INVALID_TIME_ENTRY_RECORD", message: "TimeEntry 文件无法通过结构校验。", path: file.path }); }
+  }
+  const rawTimeEntryCount = manifestCounts?.time_entries;
+  if ((rawTimeEntryCount !== undefined || timeEntryFiles.length > 0) && rawTimeEntryCount !== timeEntryFiles.length) errors.push({ code: "TIME_ENTRY_COUNT_MISMATCH", message: "TimeEntry 数量与 manifest 不一致。" });
 
   const projectPhaseIds = new Set<string>();
   const projectPhaseRecords = new Map<string, ReturnType<typeof parseProjectPhaseRecord>>();
@@ -602,6 +625,7 @@ export async function inspectPortableWorkspaceExport(value: unknown): Promise<Ex
     !supportedPaths.has(file.path)
     && !file.path.startsWith("data/captures/")
     && !file.path.startsWith("data/tasks/")
+    && !file.path.startsWith("data/time-entries/")
     && !file.path.startsWith("data/projects/")
     && !file.path.startsWith("data/project-phases/")
     && !file.path.startsWith("data/milestones/")

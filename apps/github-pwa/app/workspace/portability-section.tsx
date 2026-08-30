@@ -11,7 +11,7 @@ function InspectionResult({ result }: { result: PortabilityResult }) {
     <div className={`portability-result ${result.valid ? "valid" : "invalid"}`} role="status">
       <strong>{result.valid ? "预检通过" : "预检未通过"}</strong>
       <span>{result.fileName}</span>
-      <p>{result.files} 个文件 · {result.captures} 条 Capture · {result.tasks} 条 Task · {result.projects} 个 Project · {result.projectPhases} 个阶段 · {result.milestones} 个里程碑 · {result.projectNotes} 条 Project Note · {result.projectFileReferences} 条文件引用 · {result.activityEvents} 条 Activity · {result.calendarEvents} 条 Calendar Event · {result.reportDrafts} 份 ReportDraft · {result.dashboardLayouts} 个 Dashboard 布局</p>
+      <p>{result.files} 个文件 · {result.captures} 条 Capture · {result.tasks} 条 Task · {result.timeEntries} 条 Time Entry · {result.projects} 个 Project · {result.projectPhases} 个阶段 · {result.milestones} 个里程碑 · {result.projectNotes} 条 Project Note · {result.projectFileReferences} 条文件引用 · {result.activityEvents} 条 Activity · {result.calendarEvents} 条 Calendar Event · {result.reportDrafts} 份 ReportDraft · {result.dashboardLayouts} 个 Dashboard 布局</p>
       {result.errors.length > 0 ? <ul>{result.errors.slice(0, 5).map((issue, index) => <li key={`${issue.code}-${issue.path ?? index}`}>{issue.path ? `${issue.path}：` : ""}{issue.message}</li>)}</ul> : null}
       {result.warnings.length > 0 ? <ul>{result.warnings.slice(0, 3).map((issue, index) => <li key={`${issue.code}-${index}`}>{issue.message}</li>)}</ul> : null}
     </div>
@@ -91,7 +91,7 @@ export function PortabilitySection(props: Props) {
                 </div>
                 {restorePlan ? <div className={`restore-plan ${restorePlan.ready ? "valid" : "invalid"}`} role="status">
                   <strong>{restorePlan.ready ? "目标检查通过" : "禁止恢复到此目标"}</strong><span>{restorePlan.targetRepository} · {restorePlan.branch}</span>
-                  <p>{restorePlan.counts.files} 个文件 · {restorePlan.counts.captures} 条 Capture · {restorePlan.counts.tasks} 条 Task · {restorePlan.counts.projects} 个 Project · {restorePlan.counts.projectPhases} 个阶段 · {restorePlan.counts.milestones} 个里程碑 · {restorePlan.counts.projectNotes} 条 Project Note · {restorePlan.counts.projectFileReferences} 条文件引用 · {restorePlan.counts.activityEvents} 条 Activity · {restorePlan.counts.calendarEvents} 条 Calendar Event · {restorePlan.counts.reportDrafts} 份 ReportDraft · 单个原子 commit</p>
+                  <p>{restorePlan.counts.files} 个文件 · {restorePlan.counts.captures} 条 Capture · {restorePlan.counts.tasks} 条 Task · {restorePlan.counts.timeEntries} 条 Time Entry · {restorePlan.counts.projects} 个 Project · {restorePlan.counts.projectPhases} 个阶段 · {restorePlan.counts.milestones} 个里程碑 · {restorePlan.counts.projectNotes} 条 Project Note · {restorePlan.counts.projectFileReferences} 条文件引用 · {restorePlan.counts.activityEvents} 条 Activity · {restorePlan.counts.calendarEvents} 条 Calendar Event · {restorePlan.counts.reportDrafts} 份 ReportDraft · 单个原子 commit</p>
                   {restorePlan.errors.length > 0 ? <ul>{restorePlan.errors.slice(0, 5).map((issue, index) => <li key={`${issue.code}-${issue.path ?? index}`}>{issue.path ? `${issue.path}：` : ""}{issue.message}</li>)}</ul> : null}
                   {restorePlan.warnings.length > 0 ? <ul>{restorePlan.warnings.slice(0, 3).map((issue, index) => <li key={`${issue.code}-${index}`}>{issue.message}</li>)}</ul> : null}
                 </div> : null}
