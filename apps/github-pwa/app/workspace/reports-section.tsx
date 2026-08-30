@@ -11,6 +11,7 @@ import {
   type DeterministicReportAudience,
   type DeterministicReportType,
 } from "../../../../src/lib/github-data/deterministic-reports";
+import { entityCsvFileName, serializeProjectsCsv, serializeTasksCsv } from "../../../../src/lib/github-data/entity-csv-export";
 import type { Connection, SyncedActivityEvent, SyncedCalendarEvent, SyncedMilestone, SyncedProject, SyncedTask } from "./page-model";
 
 type Props = {
@@ -47,22 +48,20 @@ export function ReportsSection({ connection, todayDate, taskFiles, projectFiles,
 
   function downloadCsv() {
     if (!connection) return;
-    const url = URL.createObjectURL(new Blob([serializeDeterministicReportCsv(report)], { type: "text/csv;charset=utf-8" }));
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = deterministicReportFileName(report);
-    link.click();
-    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    downloadBrowserFile(serializeDeterministicReportCsv(report), "text/csv;charset=utf-8", deterministicReportFileName(report));
   }
 
   function downloadMarkdown() {
     if (!connection) return;
-    const url = URL.createObjectURL(new Blob([markdown], { type: "text/markdown;charset=utf-8" }));
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = deterministicReportMarkdownFileName(report, audience);
-    link.click();
-    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    downloadBrowserFile(markdown, "text/markdown;charset=utf-8", deterministicReportMarkdownFileName(report, audience));
+  }
+
+  function downloadEntityCsv(entity: "tasks" | "projects") {
+    if (!connection) return;
+    const csv = entity === "tasks"
+      ? serializeTasksCsv(taskFiles.map((item) => item.record))
+      : serializeProjectsCsv({ projects: projectFiles.map((item) => item.record), tasks: taskFiles.map((item) => item.record), milestones: milestoneFiles.map((item) => item.record) });
+    downloadBrowserFile(csv, "text/csv;charset=utf-8", entityCsvFileName(entity, todayDate || anchorDate));
   }
 
   async function copyMarkdown() {
@@ -134,8 +133,12 @@ export function ReportsSection({ connection, todayDate, taskFiles, projectFiles,
         </article>
 
         <div className="reports-export">
-          <p><strong>CSV 边界</strong>：导出 {factCount} 条周期事实和 {report.projectSnapshots.length} 条项目快照，保留 source entity、ID 与 canonical path；公式前缀会被转义。文件只在当前浏览器生成。</p>
-          <button className="primary-button" type="button" onClick={downloadCsv}>下载事实 CSV</button>
+          <p><strong>CSV 边界</strong>：周期事实 CSV 含 {factCount} 条事实和 {report.projectSnapshots.length} 条项目快照。Tasks/Projects CSV 则覆盖全部当前 canonical 记录，包括软删除、版本、关系和 Private Markdown；全部保留 source path 并转义公式前缀，只在当前浏览器生成。Time Entry 实体尚未启用。</p>
+          <div className="reports-export-actions">
+            <button className="secondary-button" type="button" onClick={downloadCsv}>周期事实 CSV</button>
+            <button className="secondary-button" type="button" onClick={() => downloadEntityCsv("tasks")}>Tasks CSV</button>
+            <button className="primary-button" type="button" onClick={() => downloadEntityCsv("projects")}>Projects CSV</button>
+          </div>
         </div>
       </>}
     </section>
@@ -161,4 +164,13 @@ function formatMinutes(minutes: number) {
 function progressLabel(source: "manual" | "tasks" | "milestones", completed: number | null, total: number | null) {
   if (source === "manual") return "手工进度";
   return `${source === "tasks" ? "任务事实" : "里程碑权重"} ${completed ?? 0}/${total ?? 0}`;
+}
+
+function downloadBrowserFile(contents: string, type: string, fileName: string) {
+  const url = URL.createObjectURL(new Blob([contents], { type }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  link.click();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }

@@ -512,7 +512,7 @@ User
 ## 16. 导出映射
 
 - JSON：每类实体单独集合，保留 ID、关系、schema version 和时间语义。
-- CSV：按实体输出，复杂 JSON 字段另附 schema 或拆表。
+- CSV：当前已实现周期事实、Tasks 与 Projects 浏览器内下载；按实体输出，保留 envelope、关系、source path 和软删除记录，复杂数组使用 JSON 字符串。Time Entry 尚未实现，因此没有对应 CSV。
 - Markdown：Journal、Project Notes、Reports 和可读摘要。
 - Attachments：保留原文件或可选择排除，始终输出 `attachments.csv/json` 清单与 SHA-256。
 - Manifest：导出版本、范围、计数、文件哈希、生成时间、时区和缺失项。
