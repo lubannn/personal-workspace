@@ -1,6 +1,6 @@
 "use client";
 
-import { type ChangeEvent, type FormEvent, useCallback, useMemo, useRef, useState } from "react";
+import { type ChangeEvent, type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { GitHubContentsAdapter, GitHubDataError } from "../../../src/lib/github-data/github-contents";
 import {
@@ -133,7 +133,7 @@ export default function GitHubWorkspacePage() {
   const [taskCategory, setTaskCategory] = useState<TaskCategory>("work");
   const [taskPriority, setTaskPriority] = useState<TaskPriority>("medium");
   const [taskProjectId, setTaskProjectId] = useState("");
-  const [taskDueDate, setTaskDueDate] = useState(() => localDateInTimezone("Asia/Shanghai"));
+  const [taskDueDateOverride, setTaskDueDate] = useState<string | null>(null);
   const [taskView, setTaskView] = useState<"open" | "done" | "cancelled" | "archived" | "trash">("open");
   const [savingTask, setSavingTask] = useState(false);
   const [savingTaskId, setSavingTaskId] = useState<string | null>(null);
@@ -231,6 +231,15 @@ export default function GitHubWorkspacePage() {
     loadCalendarEvents,
   });
 
+  const workspaceTimezone = connection?.timezone ?? "Asia/Shanghai";
+  const [currentTaskDate, setCurrentTaskDate] = useState("");
+  useEffect(() => {
+    const updateCurrentDate = () => setCurrentTaskDate(localDateInTimezone(workspaceTimezone));
+    updateCurrentDate();
+    const intervalId = window.setInterval(updateCurrentDate, 60_000);
+    return () => window.clearInterval(intervalId);
+  }, [workspaceTimezone]);
+  const taskDueDate = taskDueDateOverride ?? currentTaskDate;
 
   const readiness = useMemo(
     () => buildReadiness(connection, connectionMethod, authAvailability),
@@ -252,7 +261,6 @@ export default function GitHubWorkspacePage() {
   }, [captureFiles]);
 
   const visibleCaptures = captureView === "inbox" ? inboxCaptures : trashedCaptures;
-  const currentTaskDate = localDateInTimezone(connection?.timezone ?? "Asia/Shanghai");
   const openTaskFiles = useMemo(() => {
     const byId = new Map(taskFiles.map((item) => [item.record.id, item]));
     return openTasks(taskFiles.map((item) => item.record))
@@ -284,6 +292,7 @@ export default function GitHubWorkspacePage() {
       .filter((item): item is SyncedTask => Boolean(item));
   }, [taskFiles]);
   const todayTaskFiles = useMemo(() => {
+    if (!currentTaskDate) return [];
     const byId = new Map(taskFiles.map((item) => [item.record.id, item]));
     return tasksForToday(taskFiles.map((item) => item.record), currentTaskDate)
       .map((record) => byId.get(record.id))
