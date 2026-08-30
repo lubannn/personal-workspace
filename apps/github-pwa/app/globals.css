@@ -249,6 +249,9 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .calendar-edit-actions small { color: var(--muted); font-size: 9px; line-height: 1.5; }
 .calendar-edit-actions > span { display: flex; align-items: center; gap: 10px; }
 .calendar-boundary { margin: 12px 0 0; color: var(--muted); font-size: 10px; line-height: 1.6; }
+.calendar-reminder-permission { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 12px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: rgba(255,255,255,.34); }
+.calendar-reminder-permission span { display: grid; gap: 3px; }
+.calendar-reminder-permission small { color: var(--muted); font-size: 10px; line-height: 1.55; }
 .project-row-actions { min-width: 126px; display: grid; justify-items: end; gap: 7px; }
 .project-item-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 3px 10px; }
 .project-row-actions .text-button { padding: 2px 0; font-size: 10px; }
@@ -409,6 +412,7 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
   .calendar-create-form { grid-template-columns: 1fr; }
   .calendar-title-field, .calendar-task-field, .calendar-form-actions { grid-column: 1; }
   .calendar-form-actions { align-items: stretch; flex-direction: column; }
+  .calendar-reminder-permission { align-items: stretch; flex-direction: column; }
   .calendar-day-list li { grid-template-columns: 70px minmax(0, 1fr); gap: 8px; }
   .calendar-range-list li { grid-template-columns: 1fr; }
   .calendar-range-list .calendar-event-actions { grid-column: 1; }

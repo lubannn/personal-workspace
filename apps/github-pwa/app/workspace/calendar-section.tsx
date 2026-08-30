@@ -9,9 +9,11 @@ import {
   trashedCalendarEventsForRange,
   type CalendarRangeView,
   type CalendarEventType,
+  type CalendarReminderOffset,
 } from "../../../../src/lib/github-data/calendar-events";
 import { openTasks } from "../../../../src/lib/github-data/tasks";
 import type { Connection, SyncedCalendarEvent, SyncedTask } from "./page-model";
+import { useCalendarReminders } from "./use-calendar-reminders";
 
 export type CalendarEventFields = {
   title: string;
@@ -20,6 +22,7 @@ export type CalendarEventFields = {
   startTime: string;
   endTime: string;
   linkedTaskId: string | null;
+  reminderOffsetsMinutes: CalendarReminderOffset[];
 };
 
 type Props = {
@@ -48,6 +51,7 @@ export function CalendarSection({ connection, online, todayDate, eventFiles, tas
   const [startTime, setStartTime] = useState("09:00");
   const [endTime, setEndTime] = useState("10:00");
   const [linkedTaskId, setLinkedTaskId] = useState("");
+  const [reminderOffset, setReminderOffset] = useState<"none" | `${CalendarReminderOffset}`>("none");
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState("");
   const [editEventType, setEditEventType] = useState<CalendarEventType>("time_block");
@@ -55,6 +59,8 @@ export function CalendarSection({ connection, online, todayDate, eventFiles, tas
   const [editStartTime, setEditStartTime] = useState("09:00");
   const [editEndTime, setEditEndTime] = useState("10:00");
   const [editLinkedTaskId, setEditLinkedTaskId] = useState("");
+  const [editReminderOffset, setEditReminderOffset] = useState<"none" | `${CalendarReminderOffset}`>("none");
+  const { permission: reminderPermission, deliveryError: reminderDeliveryError, requestPermission } = useCalendarReminders(eventFiles.map((item) => item.record));
   const dateRange = useMemo(() => calendarDateRange(selectedDate || "1970-01-01", periodView), [selectedDate, periodView]);
   const events = useMemo(() => {
     if (!selectedDate) return [];
@@ -86,7 +92,7 @@ export function CalendarSection({ connection, online, todayDate, eventFiles, tas
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!selectedDate || !title.trim() || invalidRange || operationBusy || online === false) return;
-    const saved = await onCreate({ title, eventType, localDate: selectedDate, startTime, endTime, linkedTaskId: linkedTaskId || null });
+    const saved = await onCreate({ title, eventType, localDate: selectedDate, startTime, endTime, linkedTaskId: linkedTaskId || null, reminderOffsetsMinutes: reminderOffset === "none" ? [] : [Number(reminderOffset) as CalendarReminderOffset] });
     if (saved) setTitle("");
   }
 
@@ -99,6 +105,7 @@ export function CalendarSection({ connection, online, todayDate, eventFiles, tas
     setEditStartTime(formatEventInputTime(item.record.data.start_at, item.record.data.timezone));
     setEditEndTime(formatEventInputTime(item.record.data.end_at, item.record.data.timezone));
     setEditLinkedTaskId(item.record.data.linked_entity_id ?? "");
+    setEditReminderOffset(item.record.data.reminder_offsets_minutes[0] === undefined ? "none" : String(item.record.data.reminder_offsets_minutes[0]) as `${CalendarReminderOffset}`);
   }
 
   async function submitEdit(event: FormEvent<HTMLFormElement>, item: SyncedCalendarEvent) {
@@ -111,6 +118,7 @@ export function CalendarSection({ connection, online, todayDate, eventFiles, tas
       startTime: editStartTime,
       endTime: editEndTime,
       linkedTaskId: editLinkedTaskId || null,
+      reminderOffsetsMinutes: editReminderOffset === "none" ? [] : [Number(editReminderOffset) as CalendarReminderOffset],
     });
     if (saved) setEditingEventId(null);
   }
@@ -154,6 +162,11 @@ export function CalendarSection({ connection, online, todayDate, eventFiles, tas
               {openTaskRecords.map((task) => <option key={task.id} value={task.id}>{task.data.title}</option>)}
             </select>
           </label>
+          <label className="calendar-task-field">前台设备提醒
+            <select value={reminderOffset} onChange={(event) => setReminderOffset(event.target.value as "none" | `${CalendarReminderOffset}`)} disabled={!connection || calendarBusy}>
+              {reminderOptions()}
+            </select>
+          </label>
           <div className="calendar-form-actions">
             <small>{!selectedDate ? "正在定位工作区日期…" : invalidRange ? "结束时间必须晚于开始时间。" : `${selectedDate} · ${connection?.timezone ?? "workspace timezone"}`}</small>
             <button className="primary-button" type="submit" disabled={!connection || !selectedDate || !title.trim() || invalidRange || calendarBusy || online === false}>{saving ? "保存中…" : "创建时间块"}</button>
@@ -184,6 +197,11 @@ export function CalendarSection({ connection, online, todayDate, eventFiles, tas
                             {linkableTaskRecords.map((task) => <option key={task.id} value={task.id}>{task.data.title}</option>)}
                           </select>
                         </label>
+                        <label className="calendar-edit-task">前台设备提醒
+                          <select value={editReminderOffset} onChange={(event) => setEditReminderOffset(event.target.value as "none" | `${CalendarReminderOffset}`)} disabled={operationBusy}>
+                            {reminderOptions()}
+                          </select>
+                        </label>
                         <div className="calendar-edit-actions">
                           <small>{invalidEditRange ? "结束时间必须晚于开始时间。" : `保存会生成 v${record.version + 1}，并校验旧 blob SHA。`}</small>
                           <span>
@@ -196,7 +214,7 @@ export function CalendarSection({ connection, online, todayDate, eventFiles, tas
                   ) : (
                     <li key={record.id}>
                       <time>{periodView === "day" ? "" : `${record.data.local_start_date.slice(5)} · `}{formatEventTime(record.data.start_at, record.data.end_at, record.data.timezone)}</time>
-                      <div className="calendar-event-copy"><strong>{record.data.title}</strong><small>{record.data.event_type === "time_block" ? "时间块" : "日程"}{linkedTask ? ` · Task：${linkedTask}` : record.data.linked_entity_id ? " · Task 引用当前不可用" : ""}</small></div>
+                      <div className="calendar-event-copy"><strong>{record.data.title}</strong><small>{record.data.event_type === "time_block" ? "时间块" : "日程"}{linkedTask ? ` · Task：${linkedTask}` : record.data.linked_entity_id ? " · Task 引用当前不可用" : ""}{record.data.reminder_offsets_minutes[0] === undefined ? "" : ` · ${reminderLabel(record.data.reminder_offsets_minutes[0])}`}</small></div>
                       <div className="calendar-event-actions">
                         <code>v{record.version}</code>
                         {eventView === "scheduled" ? <>
@@ -213,9 +231,25 @@ export function CalendarSection({ connection, online, todayDate, eventFiles, tas
                 })}</ol>}
         </div>
       </div>
-      <p className="calendar-boundary"><strong>当前边界</strong>：支持单日内部事件的版本化编辑、取消/恢复与可恢复软删除；提醒、重复、全天事件、永久删除和外部同步尚未开放。</p>
+      <div className="calendar-reminder-permission">
+        <span><strong>前台设备提醒</strong><small>{reminderPermission === "granted" ? "此设备已授权；页面运行或恢复时会检查到期提醒。" : reminderPermission === "denied" ? "此设备已拒绝通知，请在系统设置中重新授权。" : reminderPermission === "unsupported" ? "当前浏览器不支持所需的通知与 Service Worker API。" : "需要你点击按钮后由浏览器请求通知权限。"}</small></span>
+        {reminderPermission === "default" ? <button className="secondary-button" type="button" onClick={() => void requestPermission()}>启用此设备提醒</button> : null}
+      </div>
+      {reminderDeliveryError ? <p className="calendar-boundary" role="status">{reminderDeliveryError}</p> : null}
+      <p className="calendar-boundary"><strong>当前边界</strong>：提醒计划保存在 Private GitHub，但首版只在页面运行或从挂起恢复时尝试通知，不承诺关闭页面后的后台送达。iPhone/iPad 后台 Web Push 需要安装到主屏幕，并且还需要尚未接入的隐私安全调度端。重复、全天事件、永久删除和外部同步仍未开放。</p>
     </section>
   );
+}
+
+function reminderOptions() {
+  return <><option value="none">不提醒</option><option value="0">开始时</option><option value="5">提前 5 分钟</option><option value="10">提前 10 分钟</option><option value="15">提前 15 分钟</option><option value="30">提前 30 分钟</option><option value="60">提前 1 小时</option><option value="1440">提前 1 天</option></>;
+}
+
+function reminderLabel(offset: CalendarReminderOffset) {
+  if (offset === 0) return "开始时提醒";
+  if (offset === 60) return "提前 1 小时提醒";
+  if (offset === 1440) return "提前 1 天提醒";
+  return `提前 ${offset} 分钟提醒`;
 }
 
 function formatEventTime(startAt: string, endAt: string, timezone: string) {

@@ -657,6 +657,7 @@ export default function GitHubWorkspacePage() {
           timezone: connection.timezone,
           localDate: fields.localDate,
           linkedTaskId: fields.linkedTaskId,
+          reminderOffsetsMinutes: fields.reminderOffsetsMinutes,
         }),
       });
       const result = await adapter.writeText({
@@ -698,6 +699,7 @@ export default function GitHubWorkspacePage() {
         timezone: connection.timezone,
         localDate: fields.localDate,
         linkedTaskId: fields.linkedTaskId,
+        reminderOffsetsMinutes: fields.reminderOffsetsMinutes,
       });
       const result = await adapter.writeText({
         path: item.path,

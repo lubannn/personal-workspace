@@ -2,6 +2,8 @@ import { parseRecord, updateWorkspaceRecord, type WorkspaceRecord } from "./prot
 
 export type CalendarEventType = "event" | "time_block";
 export type CalendarRangeView = "day" | "week" | "month";
+export const CALENDAR_REMINDER_OFFSETS = [0, 5, 10, 15, 30, 60, 1440] as const;
+export type CalendarReminderOffset = typeof CALENDAR_REMINDER_OFFSETS[number];
 
 export type CalendarEventData = {
   calendar_id: "internal-default";
@@ -23,6 +25,8 @@ export type CalendarEventData = {
   sync_status: "internal";
   recurrence_rule: null;
   recurrence_timezone: null;
+  reminder_offsets_minutes: CalendarReminderOffset[];
+  reminder_delivery: "foreground_notification";
 };
 
 export type CalendarEventRecord = WorkspaceRecord<CalendarEventData>;
@@ -34,6 +38,7 @@ export type CalendarEventEditableFields = {
   timezone: string;
   localDate: string;
   linkedTaskId: string | null;
+  reminderOffsetsMinutes?: CalendarReminderOffset[];
 };
 
 function isStableId(value: unknown): value is string {
@@ -61,6 +66,8 @@ function isValidTimezone(value: unknown): value is string {
 }
 
 function isValidData(data: Record<string, unknown>): data is CalendarEventData {
+  const reminderOffsets = data.reminder_offsets_minutes ?? [];
+  const reminderDelivery = data.reminder_delivery ?? "foreground_notification";
   const linkedPairValid = (
     (data.linked_entity_type === null && data.linked_entity_id === null)
     || (data.linked_entity_type === "task" && isStableId(data.linked_entity_id))
@@ -90,6 +97,11 @@ function isValidData(data: Record<string, unknown>): data is CalendarEventData {
     && data.sync_status === "internal"
     && data.recurrence_rule === null
     && data.recurrence_timezone === null
+    && Array.isArray(reminderOffsets)
+    && reminderOffsets.length <= CALENDAR_REMINDER_OFFSETS.length
+    && reminderOffsets.every((offset) => CALENDAR_REMINDER_OFFSETS.includes(offset as CalendarReminderOffset))
+    && new Set(reminderOffsets).size === reminderOffsets.length
+    && reminderDelivery === "foreground_notification"
   );
 }
 
@@ -98,7 +110,14 @@ export function parseCalendarEventRecord(value: string): CalendarEventRecord {
   if (record.entity_type !== "calendar_event" || !isValidData(record.data)) {
     throw new Error("INVALID_CALENDAR_EVENT_RECORD");
   }
-  return record as CalendarEventRecord;
+  return {
+    ...record,
+    data: {
+      ...record.data,
+      reminder_offsets_minutes: [...((record.data.reminder_offsets_minutes ?? []) as CalendarReminderOffset[])].sort((left, right) => left - right),
+      reminder_delivery: "foreground_notification",
+    },
+  } as CalendarEventRecord;
 }
 
 export function createCalendarEventData(input: {
@@ -109,6 +128,7 @@ export function createCalendarEventData(input: {
   timezone: string;
   localDate: string;
   linkedTaskId?: string | null;
+  reminderOffsetsMinutes?: CalendarReminderOffset[];
 }): CalendarEventData {
   const linkedTaskId = input.linkedTaskId || null;
   const data: CalendarEventData = {
@@ -131,6 +151,8 @@ export function createCalendarEventData(input: {
     sync_status: "internal",
     recurrence_rule: null,
     recurrence_timezone: null,
+    reminder_offsets_minutes: normalizeReminderOffsets(input.reminderOffsetsMinutes ?? []),
+    reminder_delivery: "foreground_notification",
   };
   if (!isValidData(data)) throw new Error("INVALID_CALENDAR_EVENT_DETAILS");
   return data;
@@ -155,9 +177,50 @@ export function updateCalendarEventDetails(
     local_end_date: fields.localDate,
     linked_entity_type: linkedTaskId ? "task" : null,
     linked_entity_id: linkedTaskId,
+    reminder_offsets_minutes: normalizeReminderOffsets(fields.reminderOffsetsMinutes ?? current.data.reminder_offsets_minutes),
+    reminder_delivery: "foreground_notification",
   };
   if (!isValidData(data)) throw new Error("INVALID_CALENDAR_EVENT_DETAILS");
   return updateWorkspaceRecord(current, data, timestamp);
+}
+
+function normalizeReminderOffsets(offsets: readonly CalendarReminderOffset[]) {
+  const normalized = [...new Set(offsets)].sort((left, right) => left - right);
+  if (normalized.some((offset) => !CALENDAR_REMINDER_OFFSETS.includes(offset))) {
+    throw new Error("INVALID_CALENDAR_EVENT_DETAILS");
+  }
+  return normalized;
+}
+
+export type DueCalendarReminder = {
+  event: CalendarEventRecord;
+  offsetMinutes: CalendarReminderOffset;
+  triggerAt: string;
+  deliveryKey: string;
+};
+
+export function dueCalendarReminders(
+  records: CalendarEventRecord[],
+  now = new Date().toISOString(),
+  graceMinutes = 5,
+): DueCalendarReminder[] {
+  const nowValue = Date.parse(now);
+  if (Number.isNaN(nowValue) || !Number.isFinite(graceMinutes) || graceMinutes < 0 || graceMinutes > 60) {
+    throw new Error("INVALID_CALENDAR_REMINDER_WINDOW");
+  }
+  return records.flatMap((event) => {
+    if (event.deleted_at !== null || event.data.status !== "confirmed") return [];
+    return event.data.reminder_offsets_minutes.flatMap((offsetMinutes) => {
+      const triggerValue = Date.parse(event.data.start_at) - offsetMinutes * 60_000;
+      if (triggerValue > nowValue || triggerValue + graceMinutes * 60_000 < nowValue) return [];
+      return [{
+        event,
+        offsetMinutes,
+        triggerAt: new Date(triggerValue).toISOString(),
+        deliveryKey: `${event.id}:${event.version}:${offsetMinutes}`,
+      }];
+    });
+  }).sort((left, right) => left.triggerAt.localeCompare(right.triggerAt) || left.deliveryKey.localeCompare(right.deliveryKey));
 }
 
 export function setCalendarEventStatus(
