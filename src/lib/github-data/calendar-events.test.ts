@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { calendarDateRange, calendarEventsForDate, calendarEventsForRange, cancelledCalendarEventsForDate, createCalendarEventData, localDateTimeToIso, parseCalendarEventRecord, setCalendarEventStatus, trashedCalendarEventsForDate, updateCalendarEventDetails } from "./calendar-events";
+import { calendarDateRange, calendarEventsForDate, calendarEventsForRange, cancelledCalendarEventsForDate, createCalendarEventData, dueCalendarReminders, localDateTimeToIso, parseCalendarEventRecord, setCalendarEventStatus, trashedCalendarEventsForDate, updateCalendarEventDetails } from "./calendar-events";
 import { createWorkspaceRecord, serializeRecord, setWorkspaceRecordDeleted } from "./protocol";
 
 function event(id: string, localDate = "2026-08-29", startTime = "09:00") {
@@ -81,6 +81,23 @@ describe("GitHub calendar event records", () => {
     expect(calendarDateRange("2026-08-29", "week")).toEqual({ startDate: "2026-08-24", endDate: "2026-08-30" });
     expect(calendarDateRange("2026-08-29", "month")).toEqual({ startDate: "2026-08-01", endDate: "2026-08-31" });
     expect(() => calendarDateRange("2026-02-30", "week")).toThrow("INVALID_CALENDAR_DATE_RANGE");
+  });
+
+  it("keeps legacy events compatible and derives deterministic foreground reminder windows", () => {
+    const legacy = event("calendar_event_legacy", "2026-08-29", "09:00");
+    expect(legacy.data.reminder_offsets_minutes).toEqual([]);
+    const reminded = {
+      ...legacy,
+      version: 2,
+      data: { ...legacy.data, reminder_offsets_minutes: [15, 0] as Array<0 | 5 | 10 | 15 | 30 | 60 | 1440> },
+    };
+    expect(dueCalendarReminders([reminded], "2026-08-29T00:45:00.000Z")).toMatchObject([
+      { offsetMinutes: 15, deliveryKey: "calendar_event_legacy:2:15" },
+    ]);
+    expect(dueCalendarReminders([reminded], "2026-08-29T01:00:00.000Z")).toMatchObject([
+      { offsetMinutes: 0, deliveryKey: "calendar_event_legacy:2:0" },
+    ]);
+    expect(() => dueCalendarReminders([reminded], "invalid")).toThrow("INVALID_CALENDAR_REMINDER_WINDOW");
   });
 
   it("lists only events overlapping a selected local-date range", () => {
