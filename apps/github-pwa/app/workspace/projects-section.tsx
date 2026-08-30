@@ -220,7 +220,7 @@ export function ProjectsSection(props: Props) {
           <input value={projectName} onChange={(event) => onProjectNameChange(event.target.value)} maxLength={300} placeholder={connection ? "例如：PWA 正式主页面" : "连接 Private 数据仓库后创建项目"} disabled={!connection || projectBusy} />
         </label>
         <label>目标日期
-          <input type="date" value={projectTargetDate} onChange={(event) => onProjectTargetDateChange(event.target.value)} disabled={!connection || projectBusy} />
+          <input type="date" value={projectTargetDate} onChange={(event) => onProjectTargetDateChange(event.target.value)} onInput={(event) => onProjectTargetDateChange(event.currentTarget.value)} disabled={!connection || projectBusy} />
         </label>
         <button className="primary-button" type="submit" disabled={!connection || !projectName.trim() || projectBusy || online === false}>{savingProject ? "保存中…" : "创建项目"}</button>
       </form>
@@ -256,10 +256,10 @@ export function ProjectsSection(props: Props) {
                       <input value={editName} onChange={(event) => setEditName(event.target.value)} maxLength={300} autoFocus disabled={savingProjectId === item.record.id} />
                     </label>
                     <label>开始日期
-                      <input type="date" value={editStartDate} onChange={(event) => setEditStartDate(event.target.value)} disabled={savingProjectId === item.record.id} />
+                      <input type="date" value={editStartDate} onChange={(event) => setEditStartDate(event.target.value)} onInput={(event) => setEditStartDate(event.currentTarget.value)} disabled={savingProjectId === item.record.id} />
                     </label>
                     <label>目标日期
-                      <input type="date" value={editTargetDate} onChange={(event) => setEditTargetDate(event.target.value)} disabled={savingProjectId === item.record.id} />
+                      <input type="date" value={editTargetDate} onChange={(event) => setEditTargetDate(event.target.value)} onInput={(event) => setEditTargetDate(event.currentTarget.value)} disabled={savingProjectId === item.record.id} />
                     </label>
                     <label>进度口径
                       <select value={editProgressMode} onChange={(event) => setEditProgressMode(event.target.value as ProjectProgressMode)} disabled={savingProjectId === item.record.id}>
@@ -306,7 +306,7 @@ export function ProjectsSection(props: Props) {
                           <input value={milestoneTitle} onChange={(event) => setMilestoneTitle(event.target.value)} maxLength={300} autoFocus placeholder="例如：完成正式页面验收" disabled={savingMilestoneProjectId === item.record.id} />
                         </label>
                         <label>目标日期
-                          <input type="date" value={milestoneTargetDate} onChange={(event) => setMilestoneTargetDate(event.target.value)} disabled={savingMilestoneProjectId === item.record.id} />
+                          <input type="date" value={milestoneTargetDate} onChange={(event) => setMilestoneTargetDate(event.target.value)} onInput={(event) => setMilestoneTargetDate(event.currentTarget.value)} disabled={savingMilestoneProjectId === item.record.id} />
                         </label>
                         <button className="primary-button" type="submit" disabled={!milestoneTitle.trim() || projectOperationBusy || online === false}>{savingMilestoneProjectId === item.record.id ? "保存中…" : "创建里程碑"}</button>
                         <button className="secondary-button" type="button" onClick={() => setMilestoneProjectId(null)} disabled={projectOperationBusy}>完成管理</button>
@@ -329,7 +329,7 @@ export function ProjectsSection(props: Props) {
                           <input value={noteTitle} onChange={(event) => setNoteTitle(event.target.value)} maxLength={300} autoFocus placeholder="例如：本周验收记录" disabled={savingProjectNoteProjectId === item.record.id} />
                         </label>
                         <label>记录日期
-                          <input type="date" value={noteDate} onChange={(event) => setNoteDate(event.target.value)} disabled={savingProjectNoteProjectId === item.record.id} />
+                          <input type="date" value={noteDate} onChange={(event) => setNoteDate(event.target.value)} onInput={(event) => setNoteDate(event.currentTarget.value)} disabled={savingProjectNoteProjectId === item.record.id} />
                         </label>
                         <label className="project-note-body">Markdown 正文
                           <textarea value={noteBody} onChange={(event) => setNoteBody(event.target.value)} maxLength={100000} rows={5} placeholder="事实、决策、问题和下一步…" disabled={savingProjectNoteProjectId === item.record.id} />
@@ -344,7 +344,7 @@ export function ProjectsSection(props: Props) {
                           : <ul>{projectNotes.map((note) => <li key={note.record.id}>
                             {editingProjectNoteId === note.record.id ? <form className="project-note-edit-form" onSubmit={(event) => submitProjectNoteEdit(event, note)}>
                               <label>Note 标题<input value={editNoteTitle} onChange={(event) => setEditNoteTitle(event.target.value)} maxLength={300} autoFocus disabled={savingProjectNoteId === note.record.id} /></label>
-                              <label>记录日期<input type="date" value={editNoteDate} onChange={(event) => setEditNoteDate(event.target.value)} disabled={savingProjectNoteId === note.record.id} /></label>
+                              <label>记录日期<input type="date" value={editNoteDate} onChange={(event) => setEditNoteDate(event.target.value)} onInput={(event) => setEditNoteDate(event.currentTarget.value)} disabled={savingProjectNoteId === note.record.id} /></label>
                               <label className="project-note-body">Markdown 正文<textarea value={editNoteBody} onChange={(event) => setEditNoteBody(event.target.value)} maxLength={100000} rows={5} disabled={savingProjectNoteId === note.record.id} /></label>
                               <div className="project-note-form-actions">
                                 <button className="primary-button" type="submit" disabled={!editNoteTitle.trim() || !editNoteDate || projectOperationBusy || online === false}>{savingProjectNoteId === note.record.id ? "保存中…" : "保存 Note"}</button>
