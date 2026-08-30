@@ -58,7 +58,9 @@ type Props = {
 
 export function DashboardSection(props: Props) {
   const { connection, online, dashboardLayout, dashboardBlobSha, dashboardDirty, editingDashboard, loadingDashboard, savingDashboard, visibleWidgets, hiddenWidgets, capture, savingCapture, savedCapture, todayTasks, currentProjects, projectTasks, projectMilestones, calendarEvents, loadingTasks, loadingProjects, loadingMilestones, loadingCalendarEvents, savingTaskId, currentTaskDate, onToggleEditing, onRefresh, onSaveLayout, onWidgetChange, onWidgetResize, onReset, onCaptureChange, onSaveCapture, onCompleteTask } = props;
-  const todayCalendarEvents = calendarEventsForDate(calendarEvents.map((item) => item.record), currentTaskDate);
+  const todayCalendarEvents = currentTaskDate
+    ? calendarEventsForDate(calendarEvents.map((item) => item.record), currentTaskDate)
+    : [];
   return (
     <section className="dashboard-card" aria-labelledby="dashboard-title">
       <div className="card-heading dashboard-heading">
