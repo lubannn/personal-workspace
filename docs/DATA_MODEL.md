@@ -222,6 +222,8 @@ ActivityEvent 服务于时间线和报告事实；安全审计使用单独的 Au
 
 保存事实快照，避免后续任务变化导致旧报告不可解释。
 
+当前 Phase 2 确定性报告首切片尚未创建 `ReportDraft` canonical 文件。正式 PWA 仅在浏览器内根据当前 Task、Project、Milestone、ActivityEvent 和 CalendarEvent 生成即时周/月事实预览及 CSV；自然周为周一至周日，所有 instant 按 workspace IANA timezone 归属本地日期。CSV 保留 source entity、ID 和 canonical path，并防止表格公式注入。该即时结果不会写回 GitHub、不会进入 Worker 或 AI，也不承诺在后续 canonical 变化后仍可复现。保存草稿时必须另行开放事实快照、版本、export/restore 和 SHA 冲突语义。
+
 ## 7. Calendar
 
 ### Calendar

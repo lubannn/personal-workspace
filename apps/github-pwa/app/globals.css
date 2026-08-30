@@ -63,7 +63,7 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .message-bar.error { border-color: #d5aaa2; background: #f3e2df; color: #773e35; }
 
 .dashboard-card { margin-bottom: 18px; padding: clamp(24px, 4vw, 40px); }
-.dashboard-card, .capture-card, .status-card, .recent-card, .projects-card, .tasks-card, .portability-card { border: 1px solid var(--line); border-radius: 24px; background: rgba(250,249,245,.72); }
+.dashboard-card, .capture-card, .status-card, .recent-card, .projects-card, .tasks-card, .reports-card, .portability-card { border: 1px solid var(--line); border-radius: 24px; background: rgba(250,249,245,.72); }
 .dashboard-heading { align-items: center; }
 .dashboard-heading h2 { margin: 0; font: 500 32px/1.15 ui-serif, Georgia, "Songti SC", serif; letter-spacing: -.035em; }
 .dashboard-subtitle { margin: 10px 0 0; color: var(--muted); font-size: 10px; }
@@ -296,6 +296,40 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .task-subtask-form > div { display: flex; flex-wrap: wrap; gap: 8px; }
 .task-subtask-form .primary-button, .task-subtask-form .secondary-button { min-height: 40px; }
 .task-subtask-form small { grid-column: 1 / -1; color: var(--muted); font-size: 8px; line-height: 1.55; }
+.reports-card { margin-bottom: 18px; padding: clamp(24px, 4vw, 40px); }
+.reports-card .card-heading h2 { font-size: 25px; }
+.reports-subtitle { max-width: 680px; margin: 9px 0 0; color: var(--muted); font-size: 10px; line-height: 1.6; }
+.reports-header-actions { display: flex; align-items: end; gap: 10px; }
+.reports-header-actions label { display: grid; gap: 6px; color: var(--muted); font-size: 9px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.reports-header-actions input { min-width: 0; height: 40px; border: 1px solid var(--line); border-radius: 9px; padding: 0 10px; background: white; color: var(--ink); outline: none; }
+.reports-header-actions input:focus { border-color: var(--accent); }
+.reports-header-actions input:disabled { opacity: .52; cursor: default; }
+.reports-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 18px; margin-top: 20px; }
+.reports-toolbar > span { color: var(--muted); font: 9px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.reports-type-actions { display: flex; gap: 8px; }
+.reports-type-actions button[aria-pressed="true"] { border-color: var(--ink); background: var(--ink); color: white; }
+.reports-empty { margin-top: 24px; }
+.reports-metrics { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; margin-top: 18px; }
+.reports-metrics article { min-width: 0; display: grid; gap: 4px; padding: 14px; border: 1px solid var(--line); border-radius: 13px; background: rgba(255,255,255,.4); }
+.reports-metrics strong { overflow-wrap: anywhere; font: 500 20px/1.2 ui-serif, Georgia, "Songti SC", serif; }
+.reports-metrics span { color: var(--muted); font-size: 9px; }
+.reports-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 12px; }
+.report-fact-group { min-width: 0; padding: 15px; border: 1px solid var(--line); border-radius: 14px; background: rgba(255,255,255,.34); }
+.report-fact-group > header { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-bottom: 9px; border-bottom: 1px solid var(--line); }
+.report-fact-group > header strong { font: 500 14px/1.4 ui-serif, Georgia, "Songti SC", serif; }
+.report-fact-group > header span, .report-fact-group > p { color: var(--muted); font-size: 9px; }
+.report-fact-group > p { margin: 14px 0 2px; line-height: 1.6; }
+.report-fact-group ol { margin: 0; padding: 0; list-style: none; }
+.report-fact-group li { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.report-fact-group li:last-child { border-bottom: 0; }
+.report-fact-group li > span { min-width: 0; display: grid; gap: 3px; }
+.report-fact-group li strong { overflow-wrap: anywhere; font: 500 12px/1.45 ui-serif, Georgia, "Songti SC", serif; }
+.report-fact-group li small, .report-fact-group li code { color: var(--muted); font-size: 9px; line-height: 1.5; }
+.report-fact-group li code { max-width: 135px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.reports-export { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-top: 12px; padding: 16px; border-radius: 14px; background: #292923; color: white; }
+.reports-export p { max-width: 720px; margin: 0; color: #aaa9a1; font-size: 10px; line-height: 1.65; }
+.reports-export p strong { color: white; }
+.reports-export .primary-button { flex: 0 0 auto; background: #f0eee7; color: var(--ink); }
 .portability-card { margin-bottom: 72px; padding: clamp(24px, 4vw, 40px); }
 .portability-card .card-heading h2 { font-size: 25px; }
 .portability-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 30px; }
@@ -364,6 +398,10 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
   .recent-actions { justify-content: flex-start; }
   .project-view-actions { justify-content: flex-start; }
   .task-view-actions { justify-content: flex-start; }
+  .reports-header-actions { align-items: stretch; flex-direction: column; }
+  .reports-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .reports-grid { grid-template-columns: 1fr; }
+  .reports-export { align-items: stretch; flex-direction: column; }
   .project-create-form { grid-template-columns: 1fr 1fr; }
   .project-create-form label:first-child, .project-create-form button { grid-column: 1 / -1; }
   .project-create-form button { width: 100%; }
@@ -418,6 +456,7 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
   .calendar-range-list .calendar-event-actions { grid-column: 1; }
   .calendar-event-actions { grid-column: 2; justify-items: start; }
   .calendar-edit-form { grid-template-columns: 1fr; }
+  .reports-metrics { grid-template-columns: 1fr 1fr; }
   .calendar-edit-title, .calendar-edit-task, .calendar-edit-actions { grid-column: 1; }
   .calendar-day-list li .calendar-edit-actions { align-items: stretch; flex-direction: column; }
   .calendar-edit-actions > span { justify-content: flex-end; }
