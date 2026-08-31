@@ -2,7 +2,7 @@
 
 ## 1. 状态与边界
 
-当前代码已增加 JournalSegment / JournalRevision canonical 读取、collection loading、完整 portability，以及单 Git commit 原子事务引擎。生产开关 `JOURNAL_REVISION_WRITES_ENABLED` 仍固定为 `false`，现有 Journal 编辑 UI 尚未调用事务，因此本切片不会触发 Private 写入。当前已发布记录继续使用 `JournalEntry.body_markdown`，且 `current_revision_id = null` 是合法兼容状态。
+当前代码已增加 JournalSegment / JournalRevision canonical 读取、collection loading、完整 portability，以及单 Git commit 原子事务引擎。生产开关 `JOURNAL_REVISION_WRITES_ENABLED` 已固定为 `true`，Journal UI 的创建与正文编辑会调用原子事务；代码启用本身不执行写入，只有用户在已连接的产品中明确保存才会修改 Private 仓库。旧记录继续兼容 `current_revision_id = null`。
 
 本切片明确不做：
 
@@ -77,8 +77,8 @@ JournalRevision 字段：
 ## 6. 后续启用顺序
 
 1. 已完成：增加 JournalSegment/JournalRevision canonical entity、路径、collection loading、校验和 portability 支持；
-2. 已完成：增加精确 commit 基线读取、单 commit Revision 原子推进、旧正文 baseline，以及并发/篡改/半套状态测试；生产开关保持关闭；
-3. 下一步：代码审查与发布后，单独启用 Journal UI 的原子创建/编辑路径，并保持生命周期操作不伪造内容 Revision；
-4. 用脱敏 fixture 验证 Legacy Word preview，禁止接触真实原件；
+2. 已完成：增加精确 commit 基线读取、单 commit Revision 原子推进、旧正文 baseline，以及并发/篡改/半套状态测试；
+3. 已完成：启用 Journal UI 的原子创建/编辑路径；生命周期操作继续只改变 Entry 状态，不伪造内容 Revision；
+4. 下一步：用脱敏 fixture 验证 Legacy Word preview，禁止接触真实原件；
 5. 再定义 Obsidian frontmatter、原子写入、hash/conflict 和单向导出；
 6. 经过明确授权后，才用正式 Private 数据执行创建、编辑、冲突、导出和恢复验收。

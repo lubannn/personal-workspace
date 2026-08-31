@@ -185,6 +185,22 @@ export function friendlyError(error: unknown) {
   return "连接 GitHub 时发生错误，请稍后重试。";
 }
 
+export function friendlyJournalWriteError(error: unknown, operation: "create" | "edit") {
+  if (error instanceof GitHubDataError) return friendlyError(error);
+  if (!(error instanceof Error)) return friendlyError(error);
+  if (error.message === "DUPLICATE_ACTIVE_DAILY_JOURNAL") return "保存前 GitHub 中已出现同日 daily 日记；请刷新后编辑现有记录，本次没有写入。";
+  if (error.message === "JOURNAL_ENTRY_NOT_ACTIVE") return "这篇日记已在另一处进入回收站；请刷新后重试，本次没有写入。";
+  if (error.message === "JOURNAL_ENTRY_ID_CONFLICT" || error.message === "JOURNAL_REVISION_ID_CONFLICT") return "生成的 Journal 记录 ID 已存在；本次没有写入，请重试。";
+  if (error.message.startsWith("INVALID_JOURNAL_ENTRY") || error.message.startsWith("INVALID_JOURNAL_REVISION")) {
+    return operation === "create" ? "日记日期、时区或正文无效，未写入任何数据。" : "日记正文或元数据无效，未保存修订。";
+  }
+  if (
+    error.message.startsWith("JOURNAL_")
+    || error.message.startsWith("DUPLICATE_JOURNAL_")
+  ) return "Journal Revision 历史未通过一致性校验；为防止覆盖，本次没有写入。请刷新，若仍出现请先修复 canonical 数据。";
+  return friendlyError(error);
+}
+
 export function formatCaptureTime(value: string) {
   return new Intl.DateTimeFormat("zh-CN", {
     month: "short",
