@@ -29,6 +29,7 @@ export function createJournalEntryData(input: {
   mood?: string;
   weather?: string;
   timestamp?: string;
+  currentRevisionId?: string | null;
 }): JournalEntryData {
   const timestamp = input.timestamp ?? new Date().toISOString();
   const data: JournalEntryData = {
@@ -42,7 +43,7 @@ export function createJournalEntryData(input: {
     first_entry_at: timestamp,
     last_entry_at: timestamp,
     sensitivity: "restricted",
-    current_revision_id: null,
+    current_revision_id: input.currentRevisionId ?? null,
     obsidian_document_id: null,
     sync_status: "not_configured",
   };
@@ -56,6 +57,7 @@ export function updateJournalEntryData(current: JournalEntryRecord, input: {
   mood?: string;
   weather?: string;
   timestamp?: string;
+  currentRevisionId?: string | null;
 }): JournalEntryData {
   const data: JournalEntryData = {
     ...current.data,
@@ -64,6 +66,7 @@ export function updateJournalEntryData(current: JournalEntryRecord, input: {
     mood: nullableText(input.mood),
     weather: nullableText(input.weather),
     last_entry_at: input.timestamp ?? new Date().toISOString(),
+    current_revision_id: input.currentRevisionId === undefined ? current.data.current_revision_id : input.currentRevisionId,
   };
   if (!isValidData(data)) throw new Error("INVALID_JOURNAL_ENTRY_DETAILS");
   return data;

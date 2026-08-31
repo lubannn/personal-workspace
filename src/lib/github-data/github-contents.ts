@@ -214,9 +214,10 @@ export class GitHubContentsAdapter {
     };
   }
 
-  async readText(pathname: string): Promise<GitHubStoredFile> {
+  async readText(pathname: string, refOverride?: string): Promise<GitHubStoredFile> {
     assertFilePath(pathname);
-    const branch = this.config.branch ? `?ref=${encodeURIComponent(this.config.branch)}` : "";
+    const ref = refOverride ?? this.config.branch;
+    const branch = ref ? `?ref=${encodeURIComponent(ref)}` : "";
     const result = await this.request<GitHubFileResponse>(
       `/repos/${encodeURIComponent(this.config.owner)}/${encodeURIComponent(this.config.repository)}/contents/${encodeRepositoryPath(pathname)}${branch}`,
     );
@@ -226,9 +227,10 @@ export class GitHubContentsAdapter {
     return { path: result.path, blobSha: result.sha, sizeBytes: result.size, text: decodeBase64(result.content) };
   }
 
-  async listDirectory(pathname: string): Promise<GitHubDirectoryItem[]> {
+  async listDirectory(pathname: string, refOverride?: string): Promise<GitHubDirectoryItem[]> {
     if (pathname) assertFilePath(pathname);
-    const branch = this.config.branch ? `?ref=${encodeURIComponent(this.config.branch)}` : "";
+    const ref = refOverride ?? this.config.branch;
+    const branch = ref ? `?ref=${encodeURIComponent(ref)}` : "";
     const contentsPath = pathname ? `/contents/${encodeRepositoryPath(pathname)}` : "/contents";
     const result = await this.request<GitHubDirectoryResponse>(
       `/repos/${encodeURIComponent(this.config.owner)}/${encodeURIComponent(this.config.repository)}${contentsPath}${branch}`,
@@ -344,6 +346,10 @@ export class GitHubContentsAdapter {
         body: JSON.stringify({ sha: commit.sha, force: false }),
       },
     );
-    return { commitSha: commit.sha, treeSha: tree.sha };
+    return {
+      commitSha: commit.sha,
+      treeSha: tree.sha,
+      files: input.files.map((file, index) => ({ path: file.path, blobSha: blobs[index]!.sha })),
+    };
   }
 }

@@ -56,4 +56,4 @@ Journal 列表支持月份前后浏览、回到本月、查看全部日期，以
 
 `journal-segment-codec.ts` 已实现稳定顺序、版本化 metadata marker、保留 marker 行转义和严格解析，验证同一天多个时间片段可以确定性、可逆地序列化为 Markdown。非法时间对、重复身份/顺序、父记录不匹配、标题篡改和块重排会被拒绝；内容编辑原因使用受控枚举。
 
-这不是正式写入启用：现有记录不迁移，`current_revision_id = null` 继续有效，也没有新增 Private 写入。canonical 解析、collection loading、export/inspection/restore/migration 已覆盖两类新实体；完整不可变记录、单 Git commit 原子推进、兼容读取和后续启用顺序见 `PHASE_3_JOURNAL_REVISIONS.md`。
+这仍不是正式写入启用：现有记录不迁移，`current_revision_id = null` 继续有效，也没有新增 Private 写入。canonical 解析、collection loading、export/inspection/restore/migration 已覆盖两类新实体；单 Git commit 事务引擎及并发/篡改测试也已实现，但生产开关固定关闭且 UI 尚未接入。完整不可变记录、原子推进、兼容读取和后续启用顺序见 `PHASE_3_JOURNAL_REVISIONS.md`。

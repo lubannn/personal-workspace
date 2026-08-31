@@ -33,7 +33,7 @@ describe("GitHub contents adapter", () => {
     );
 
     await expect(adapter.verifyPrivateRepository()).resolves.toMatchObject({ private: true, fullName: "owner/personal-workspace-data" });
-    await expect(adapter.readText("data/captures/one.json")).resolves.toMatchObject({ text: "你好，GitHub。\n", blobSha: "blob-one" });
+    await expect(adapter.readText("data/captures/one.json", "head-one")).resolves.toMatchObject({ text: "你好，GitHub。\n", blobSha: "blob-one" });
     await expect(adapter.writeText({
       path: "data/captures/one.json",
       text: "更新",
@@ -42,6 +42,7 @@ describe("GitHub contents adapter", () => {
     })).resolves.toMatchObject({ blobSha: "blob-two", commitSha: "commit-two" });
 
     const writeBody = JSON.parse(String(fetcher.mock.calls[2]?.[1]?.body)) as { sha: string; content: string };
+    expect(fetcher.mock.calls[1]?.[0]).toContain("?ref=head-one");
     expect(writeBody.sha).toBe("blob-one");
     expect(decodeURIComponent(escape(atob(writeBody.content)))).toBe("更新");
   });
@@ -146,7 +147,14 @@ describe("GitHub contents adapter", () => {
       message: "restore: import portable export",
       expectedHeadCommitSha: snapshot.headCommitSha,
       baseTreeSha: snapshot.rootTreeSha,
-    })).resolves.toEqual({ commitSha: "commit-two", treeSha: "tree-two" });
+    })).resolves.toEqual({
+      commitSha: "commit-two",
+      treeSha: "tree-two",
+      files: [
+        { path: "workspace.json", blobSha: "blob-workspace" },
+        { path: "data/captures/one.json", blobSha: "blob-capture" },
+      ],
+    });
 
     expect(snapshot).toEqual({ branch: "main", headCommitSha: "head-one", rootTreeSha: "tree-one" });
     const treeBody = JSON.parse(String(fetcher.mock.calls[4]?.[1]?.body)) as {
@@ -162,6 +170,33 @@ describe("GitHub contents adapter", () => {
     });
     const refBody = JSON.parse(String(fetcher.mock.calls[6]?.[1]?.body)) as { sha: string; force: boolean };
     expect(refBody).toEqual({ sha: "commit-two", force: false });
+  });
+
+  it("does not move the branch when an atomic write loses the head race", async () => {
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({ sha: "blob-revision" }, 201))
+      .mockResolvedValueOnce(jsonResponse({ sha: "blob-entry" }, 201))
+      .mockResolvedValueOnce(jsonResponse({ sha: "tree-two" }, 201))
+      .mockResolvedValueOnce(jsonResponse({ sha: "commit-two", tree: { sha: "tree-two" } }, 201))
+      .mockResolvedValueOnce(jsonResponse({ message: "Update is not a fast forward" }, 422));
+    const adapter = new GitHubContentsAdapter(
+      { owner: "owner", repository: "personal-workspace-data", branch: "main", token: "test-token" },
+      fetcher,
+    );
+
+    await expect(adapter.writeAtomicFiles({
+      files: [
+        { path: "data/journal-revisions/revision_2.json", text: "revision" },
+        { path: "data/journal-entries/journal_1.json", text: "entry" },
+      ],
+      message: "journal: update journal_1",
+      expectedHeadCommitSha: "head-one",
+      baseTreeSha: "tree-one",
+    })).rejects.toBeInstanceOf(GitHubConflictError);
+
+    expect(fetcher).toHaveBeenCalledTimes(5);
+    expect(fetcher.mock.calls[4]?.[0]).toContain("/git/refs/heads/main");
+    expect(JSON.parse(String(fetcher.mock.calls[4]?.[1]?.body))).toEqual({ sha: "commit-two", force: false });
   });
 
   it("normalizes pasted tokens and classifies cross-origin browser failures", async () => {

@@ -285,7 +285,7 @@ Phase 3A 首个 Journal Core 切片把记录保存到 `data/journal-entries/<id>
 
 首版以 Private canonical JSON 为唯一真源。`obsidian_document_id = null`、`current_revision_id = null`、`sync_status = not_configured` 明确表示尚未连接 Vault；浏览器 Markdown 下载只是带 canonical ID、日期、时区和版本的派生导出。Dashboard 仅展示最近日记的有界纯文本摘要。JournalEntry 已进入 export、manifest、inspection、隔离 restore 和 migration dry run。
 
-`first_entry_at` 保存首次创建发生的真实 instant，`last_entry_at` 随修订更新；`journal_date` 是用户选择的本地日期，编辑不允许悄悄移动日期。JournalSegment/JournalRevision 的 canonical 解析、collection loading 与 portability 已实现，但正式写入和 UI 尚未开放；ObsidianDocument、SyncConflict、Legacy Word Import 和 AI 共创仍未开放。不可变、原子推进和可逆 Markdown 契约见 `PHASE_3_JOURNAL_REVISIONS.md`，既有记录不触发迁移。
+`first_entry_at` 保存首次创建发生的真实 instant，`last_entry_at` 随修订更新；`journal_date` 是用户选择的本地日期，编辑不允许悄悄移动日期。JournalSegment/JournalRevision 的 canonical 解析、collection loading、portability 与原子事务引擎已实现，但生产写入开关和 UI 仍未开放；ObsidianDocument、SyncConflict、Legacy Word Import 和 AI 共创仍未开放。不可变、原子推进和可逆 Markdown 契约见 `PHASE_3_JOURNAL_REVISIONS.md`，既有记录不会在只读加载时迁移。
 
 ### JournalSegment
 
@@ -302,7 +302,7 @@ canonical 文件位于 `data/journal-segments/<id>.json`。记录固定 `version
 - `content_mode`, `body_markdown`, `segment_ids`, `content_sha256`
 - `created_at`, `created_by`, `change_reason`
 
-Revision 是 create-only 内容快照。`change_reason` 使用受控枚举；`body_markdown` 永远保存完整物化正文，使旧读取、列表搜索和导出无需 fan-out。未来一次内容保存必须在单个 Git commit 中 create-only 写入新 Segment/Revision，并以旧 HEAD、旧 blob SHA 和旧 revision 为前置条件原子推进 JournalEntry 的 `current_revision_id`；冲突时不产生可见半套状态。
+Revision 是 create-only 内容快照。`change_reason` 使用受控枚举；`body_markdown` 永远保存完整物化正文，使旧读取、列表搜索和导出无需 fan-out。事务引擎会在单个 Git commit 中 create-only 写入新 Revision，并以旧 HEAD、旧 blob SHA 和旧 revision 为前置条件原子推进 JournalEntry 的 `current_revision_id`；冲突时不推进 branch ref，已创建但不可达的 Git 对象不构成可见半套状态。新记录从 revision 1 开始；旧 `current_revision_id = null` 记录第一次正文编辑会在同一 commit 中先建立旧正文 baseline，再创建新 revision。仅修改标题、心情或天气时不制造内容 revision。
 
 canonical 文件位于 `data/journal-revisions/<id>.json`。记录固定 `version = 1` 且不可软删除；portable inspection 校验正文 SHA-256、同父 revision number 唯一、Segment 顺序/归属/物化结果，以及 JournalEntry 必须指向自己的最高 revision 并保存相同物化正文。
 

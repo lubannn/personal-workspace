@@ -613,6 +613,7 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     setJournalEntryFiles,
     journalSegmentFiles,
     journalRevisionFiles,
+    setJournalRevisionFiles,
     dashboardLayout,
     setDashboardLayout,
     dashboardBlobSha,
