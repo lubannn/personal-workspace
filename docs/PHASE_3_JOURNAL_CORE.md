@@ -57,3 +57,5 @@ Journal 列表支持月份前后浏览、回到本月、查看全部日期，以
 `journal-segment-codec.ts` 已实现稳定顺序、版本化 metadata marker、保留 marker 行转义和严格解析，验证同一天多个时间片段可以确定性、可逆地序列化为 Markdown。非法时间对、重复身份/顺序、父记录不匹配、标题篡改和块重排会被拒绝；内容编辑原因使用受控枚举。
 
 Journal UI 已启用 body-mode Revision 原子创建/编辑：新建时 Entry 与 revision 1 同 commit，旧 `current_revision_id = null` 记录第一次修改正文时同 commit 保存旧正文 baseline 和新 Revision。只读加载不会迁移记录，软删除/恢复也不会伪造内容 Revision。canonical 解析、collection loading、export/inspection/restore/migration 已覆盖两类新实体；正式 Private 生命周期验收仍需用户针对精确业务写入确认。完整不可变记录、原子推进、兼容读取和后续顺序见 `PHASE_3_JOURNAL_REVISIONS.md`。
+
+Legacy Word 首个切片已提供 local-only `.docx` Preview：浏览器内计算源哈希、读取 OOXML 段落、生成按日 Markdown 与 diagnostics，并明确展示 orphan 和不支持对象。该切片没有 Commit 按钮，不写 Journal、GitHub 或 Obsidian，也没有使用真实日记原件；完整边界见 `JOURNAL_IMPORT_SPEC.md`。
