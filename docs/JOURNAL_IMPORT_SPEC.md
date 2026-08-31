@@ -1,11 +1,11 @@
 # Legacy Journal Importer 规格
 
-> 状态：Phase 3 本地修正与 Dry Run staging 切片已实现
-> 版本：0.3
+> 状态：Phase 3 本地修正、Dry Run staging 与正式提交前预检契约已实现
+> 版本：0.4
 > 最后更新：2026-08-31
 > 范围：巨大 Word 文档中的多年纯文字日记，解析为可预览、可审计的 Journal/Markdown 数据。
 
-当前实现边界：PWA 可在浏览器内选择 `.docx` 工作副本，计算源 SHA-256，只解压 `word/document.xml`，提取段落、样式/大纲/加粗/字号提示，按源顺序识别中文或阿拉伯数字年/月/日/时间，并展示按日 Markdown、继承上下文、置信度、orphan、不支持对象和 diagnostics。用户可以为异常或低置信度段落追加带原因、时间和 `supersedesId` 的本地修正，立即重解析并查看差异；结构通过后可下载包含 staging Markdown、machine-readable manifest 和不复制正文的 Import Log 的确定性 ZIP。文件不上传、不修改，不写 GitHub、Journal 或 Vault；Commit 能力固定关闭。当前没有 Import Log 持久化、正式批量提交或 Obsidian 写入。
+当前实现边界：PWA 可在浏览器内选择 `.docx` 工作副本，计算源 SHA-256，只解压 `word/document.xml`，提取段落、样式/大纲/加粗/字号提示，按源顺序识别中文或阿拉伯数字年/月/日/时间，并展示按日 Markdown、继承上下文、置信度、orphan、不支持对象和 diagnostics。用户可以为异常或低置信度段落追加带原因、时间和 `supersedesId` 的本地修正，立即重解析并查看差异；结构通过后可下载包含 staging Markdown、machine-readable manifest 和不复制正文的 Import Log 的确定性 ZIP。纯代码预检还能把显式选择的最多 25 个日期确定性映射为 Entry/Revision/Segment，分类 pending、already imported 和 conflict，并生成 checkpoint/回滚预览契约。文件不上传、不修改，不写 GitHub、Journal 或 Vault；Commit 能力固定关闭。当前没有 checkpoint 持久化、正式批量提交或 Obsidian 写入。
 
 ## 1. 目标
 
@@ -302,6 +302,8 @@ schema_version: 1
 
 批量提交使用小批次检查点，避免巨大事务。每个小批次要么完整成功，要么回滚；整批可部分完成，但 UI 必须准确显示已提交与未提交范围。
 
+当前已实现正式写入前的纯函数 plan：每次显式选择 1–25 天，以精确 branch HEAD 和同一 snapshot 下的现有 Journal 集合作为输入，生成确定性 segment-mode Entry/Revision/Segment 文件、SHA-256、幂等状态和冲突原因。生产 Commit 常量仍为 false，尚未调用 GitHub write API。完整边界见 `PHASE_3_LEGACY_COMMIT_PLAN.md`。
+
 ## 11. Import Log 与 Manifest
 
 ### 11.1 Import Log
@@ -320,6 +322,8 @@ schema_version: 1
 日志不需要复制每篇完整正文；通过哈希和受控引用关联，避免产生又一份敏感全集。
 
 ### 11.2 Machine-readable Manifest
+
+当前生成格式为 manifest v2。除下列字段外，还保存完整有序修正链的 `correction_set_sha256`；Dry Run ID 和 ZIP 文件名都包含该身份，确保同一源文件的不同修正结果不会碰撞。
 
 建议 JSON/CSV 包含：
 
@@ -373,10 +377,10 @@ schema_version: 1
 - UI 只渲染最多前 100 条按日预览以避免巨大文档阻塞；汇总和 diagnostics 仍覆盖全文。
 - 手工修正按 source locator 校验，理由必填；同段后续修正必须精确取代上一条，不支持对象只能明确跳过。
 - 每次修正使用同一源文件和完整修正链重解析，并展示新增、删除、变化日期及 diagnostics/orphan 计数差异。
-- Dry Run 只在没有 error/blocking、所有非空段落均有明确去向时开放；ZIP 包含 `staging/Journal/...`、`manifest.json` 和 `import-log.md`，所有输出有 SHA-256，目标 Journal ID 为空、状态为 pending、`commit_enabled = false`。
+- Dry Run 只在没有 error/blocking、所有非空段落均有明确去向时开放；manifest v2 和 Import Log 包含修正链 SHA-256；ZIP 包含 `staging/Journal/...`、`manifest.json` 和 `import-log.md`，所有输出有 SHA-256，目标 Journal ID 为空、状态为 pending、`commit_enabled = false`。
 - ZIP 条目顺序、mtime、输出路径和默认审计时间锚点固定；对同一 preview 重复生成得到相同 ZIP。显式传入时间时，该时间视为确定性输入。
 - Import Log 记录源指纹、修正链、跳过原因、diagnostics 与输出哈希，不复制日记正文。
-- 下一切片才允许设计幂等正式 Commit；仍需独立事务、冲突、恢复与逐批确认。
+- 正式 Commit 前 plan、幂等/冲突分类、checkpoint 结构和软删除回滚 preview 已有纯代码证明；实际 batch writer、checkpoint 持久化与 UI 确认仍未开放。
 - 回滚本身生成 AuditEvent 和 Import Log 追加记录。
 
 ## 15. 性能与资源安全
