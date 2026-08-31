@@ -2,12 +2,12 @@
 
 ## 1. 状态与边界
 
-本切片只冻结可逆序列化和未来写入事务的契约，不启用新的 Private canonical 实体，也不改变现有 Journal 编辑 UI。当前已发布记录继续使用 `JournalEntry.body_markdown`，且 `current_revision_id = null` 是合法兼容状态。
+当前代码切片已增加 JournalSegment / JournalRevision canonical 读取、collection loading 与完整 portability 支持，但不启用 Private 写入，也不改变现有 Journal 编辑 UI。当前已发布记录继续使用 `JournalEntry.body_markdown`，且 `current_revision_id = null` 是合法兼容状态。
 
 本切片明确不做：
 
 - 不迁移或重写既有 JournalEntry；
-- 不创建正式 JournalSegment、JournalRevision 或测试日记；
+- 不创建正式 JournalSegment、JournalRevision 或测试日记；canonical 支持只用本地 fixture 验证；
 - 不连接或写入 Obsidian Vault；
 - 不解析真实 Legacy Word；
 - 不把正文、segment marker 或 source locator 写入 Public 数据、日志、搜索 projection 或第三方服务。
@@ -15,6 +15,8 @@
 ## 2. 不可变记录
 
 JournalSegment 和 JournalRevision 都是 create-only 快照。应用不得原地修改或删除历史 Segment/Revision；软删除 JournalEntry 也不擦除历史。内容变更必须创建新的 Revision，必要时创建新的 Segment，然后由 JournalEntry 指向新的 current revision。
+
+canonical 路径分别是 `data/journal-segments/<id>.json` 和 `data/journal-revisions/<id>.json`。两类记录都必须保持 `version = 1`、`deleted_at = null`、`updated_at = created_at`；任何原地更新或软删除都会被解析器拒绝。
 
 JournalSegment 字段：
 
@@ -66,10 +68,12 @@ JournalRevision 字段：
 - 月份浏览和关键词搜索始终读取 JournalEntry 的当前物化字段，不按列表查询 fan-out 所有 Revision/Segment；
 - 导出、inspection、隔离 restore 和 migration dry run 必须与 canonical entity 支持在同一发布切片启用，不能先开放写入再补可移植性。
 
+当前 inspection 已同时验证 owner、路径、父 JournalEntry、唯一 ID、同父记录 sort order / revision number、Segment 顺序与引用、物化正文 SHA-256、`current_revision_id`、最新 revision 和 JournalEntry 当前正文一致性。旧 export v1 若不含 Segment/Revision 计数字段仍保持可读。
+
 ## 6. 后续启用顺序
 
-1. 增加 JournalSegment/JournalRevision canonical entity、路径、校验和 portability 支持；
-2. 增加单 commit 的 Revision 原子推进与并发/篡改测试；
+1. 已完成：增加 JournalSegment/JournalRevision canonical entity、路径、collection loading、校验和 portability 支持；
+2. 下一切片：增加单 commit 的 Revision 原子推进与并发/篡改测试；
 3. 用脱敏 fixture 验证 Legacy Word preview，禁止接触真实原件；
 4. 再定义 Obsidian frontmatter、原子写入、hash/conflict 和单向导出；
 5. 经过明确授权后，才用正式 Private 数据执行创建、编辑、冲突、导出和恢复验收。

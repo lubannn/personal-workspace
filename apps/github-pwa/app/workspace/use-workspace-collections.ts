@@ -20,8 +20,10 @@ import { parseActivityEventRecord } from "../../../../src/lib/github-data/activi
 import { parseCalendarEventRecord } from "../../../../src/lib/github-data/calendar-events";
 import { parseReportDraftRecord } from "../../../../src/lib/github-data/report-drafts";
 import { parseJournalEntryRecord } from "../../../../src/lib/github-data/journal-entries";
+import { parseJournalSegmentRecord } from "../../../../src/lib/github-data/journal-segments";
+import { parseJournalRevisionRecord } from "../../../../src/lib/github-data/journal-revisions";
 import { parseCaptureRecord } from "../../../../src/lib/github-data/workspace";
-import { friendlyError, type SyncedActivityEvent, type SyncedCalendarEvent, type SyncedCapture, type SyncedJournalEntry, type SyncedMilestone, type SyncedProject, type SyncedProjectFileReference, type SyncedProjectNote, type SyncedProjectPhase, type SyncedReportDraft, type SyncedTask, type SyncedTimeEntry } from "./page-model";
+import { friendlyError, type SyncedActivityEvent, type SyncedCalendarEvent, type SyncedCapture, type SyncedJournalEntry, type SyncedJournalRevision, type SyncedJournalSegment, type SyncedMilestone, type SyncedProject, type SyncedProjectFileReference, type SyncedProjectNote, type SyncedProjectPhase, type SyncedReportDraft, type SyncedTask, type SyncedTimeEntry } from "./page-model";
 
 type Options = {
   adapterRef: MutableRefObject<GitHubContentsAdapter | null>;
@@ -42,6 +44,8 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
   const [calendarEventFiles, setCalendarEventFiles] = useState<SyncedCalendarEvent[]>([]);
   const [reportDraftFiles, setReportDraftFiles] = useState<SyncedReportDraft[]>([]);
   const [journalEntryFiles, setJournalEntryFiles] = useState<SyncedJournalEntry[]>([]);
+  const [journalSegmentFiles, setJournalSegmentFiles] = useState<SyncedJournalSegment[]>([]);
+  const [journalRevisionFiles, setJournalRevisionFiles] = useState<SyncedJournalRevision[]>([]);
   const [dashboardLayout, setDashboardLayout] = useState<DashboardLayout | null>(null);
   const [dashboardBlobSha, setDashboardBlobSha] = useState<string | null>(null);
   const [loadingCaptures, setLoadingCaptures] = useState(false);
@@ -56,6 +60,8 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
   const [loadingCalendarEvents, setLoadingCalendarEvents] = useState(false);
   const [loadingReportDrafts, setLoadingReportDrafts] = useState(false);
   const [loadingJournalEntries, setLoadingJournalEntries] = useState(false);
+  const [loadingJournalSegments, setLoadingJournalSegments] = useState(false);
+  const [loadingJournalRevisions, setLoadingJournalRevisions] = useState(false);
   const [loadingDashboard, setLoadingDashboard] = useState(false);
 
   const loadRecentCaptures = useCallback(async (adapter = adapterRef.current) => {
@@ -448,6 +454,54 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     finally { setLoadingJournalEntries(false); }
   }, [adapterRef, setErrorMessage]);
 
+  const loadJournalSegments = useCallback(async (adapter = adapterRef.current) => {
+    if (!adapter) return;
+    setLoadingJournalSegments(true);
+    setErrorMessage("");
+    try {
+      let items;
+      try { items = await adapter.listDirectory("data/journal-segments"); }
+      catch (error) {
+        if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") { setJournalSegmentFiles([]); return; }
+        throw error;
+      }
+      const candidates = items.filter((item) => item.type === "file" && item.name.endsWith(".json")).sort((left, right) => right.name.localeCompare(left.name));
+      const records: SyncedJournalSegment[] = [];
+      for (let index = 0; index < candidates.length; index += 6) {
+        records.push(...(await Promise.all(candidates.slice(index, index + 6).map(async (item) => {
+          try { const file = await adapter.readText(item.path); return { record: parseJournalSegmentRecord(file.text), path: file.path, blobSha: file.blobSha }; }
+          catch { return null; }
+        }))).filter((item): item is SyncedJournalSegment => item !== null));
+      }
+      setJournalSegmentFiles(records);
+    } catch (error) { setErrorMessage(friendlyError(error)); }
+    finally { setLoadingJournalSegments(false); }
+  }, [adapterRef, setErrorMessage]);
+
+  const loadJournalRevisions = useCallback(async (adapter = adapterRef.current) => {
+    if (!adapter) return;
+    setLoadingJournalRevisions(true);
+    setErrorMessage("");
+    try {
+      let items;
+      try { items = await adapter.listDirectory("data/journal-revisions"); }
+      catch (error) {
+        if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") { setJournalRevisionFiles([]); return; }
+        throw error;
+      }
+      const candidates = items.filter((item) => item.type === "file" && item.name.endsWith(".json")).sort((left, right) => right.name.localeCompare(left.name));
+      const records: SyncedJournalRevision[] = [];
+      for (let index = 0; index < candidates.length; index += 6) {
+        records.push(...(await Promise.all(candidates.slice(index, index + 6).map(async (item) => {
+          try { const file = await adapter.readText(item.path); return { record: parseJournalRevisionRecord(file.text), path: file.path, blobSha: file.blobSha }; }
+          catch { return null; }
+        }))).filter((item): item is SyncedJournalRevision => item !== null));
+      }
+      setJournalRevisionFiles(records);
+    } catch (error) { setErrorMessage(friendlyError(error)); }
+    finally { setLoadingJournalRevisions(false); }
+  }, [adapterRef, setErrorMessage]);
+
   const loadProjectFileReferences = useCallback(async (adapter = adapterRef.current) => {
     if (!adapter) return;
     setLoadingProjectFileReferences(true);
@@ -526,6 +580,8 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     setCalendarEventFiles([]);
     setReportDraftFiles([]);
     setJournalEntryFiles([]);
+    setJournalSegmentFiles([]);
+    setJournalRevisionFiles([]);
     setDashboardLayout(null);
     setDashboardBlobSha(null);
   }
@@ -555,6 +611,8 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     setReportDraftFiles,
     journalEntryFiles,
     setJournalEntryFiles,
+    journalSegmentFiles,
+    journalRevisionFiles,
     dashboardLayout,
     setDashboardLayout,
     dashboardBlobSha,
@@ -571,6 +629,8 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     loadingCalendarEvents,
     loadingReportDrafts,
     loadingJournalEntries,
+    loadingJournalSegments,
+    loadingJournalRevisions,
     loadingDashboard,
     loadRecentCaptures,
     loadTasks,
@@ -584,6 +644,8 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     loadCalendarEvents,
     loadReportDrafts,
     loadJournalEntries,
+    loadJournalSegments,
+    loadJournalRevisions,
     loadDashboardLayout,
     clearCollections,
   };

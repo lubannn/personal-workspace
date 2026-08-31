@@ -12,6 +12,8 @@ import type { ActivityEventRecord } from "../../../../src/lib/github-data/activi
 import type { CalendarEventRecord } from "../../../../src/lib/github-data/calendar-events";
 import type { ReportDraftRecord } from "../../../../src/lib/github-data/report-drafts";
 import type { JournalEntryRecord } from "../../../../src/lib/github-data/journal-entries";
+import type { JournalSegmentRecord } from "../../../../src/lib/github-data/journal-segments";
+import type { JournalRevisionRecord } from "../../../../src/lib/github-data/journal-revisions";
 
 export type Connection = {
   repository: string;
@@ -89,6 +91,8 @@ export type SyncedReportDraft = {
 };
 
 export type SyncedJournalEntry = { record: JournalEntryRecord; path: string; blobSha: string };
+export type SyncedJournalSegment = { record: JournalSegmentRecord; path: string; blobSha: string };
+export type SyncedJournalRevision = { record: JournalRevisionRecord; path: string; blobSha: string };
 
 export type AuthAvailability = "checking" | "unavailable" | "configured";
 export type ConnectionMethod = "github-app" | "personal-token";
@@ -110,6 +114,8 @@ export type PortabilityResult = {
   calendarEvents: number;
   reportDrafts: number;
   journalEntries: number;
+  journalSegments: number;
+  journalRevisions: number;
   errors: ExportInspectionIssue[];
   warnings: ExportInspectionIssue[];
 };

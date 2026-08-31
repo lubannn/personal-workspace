@@ -242,6 +242,8 @@ export default function GitHubWorkspacePage() {
     loadCalendarEvents,
     loadReportDrafts,
     loadJournalEntries,
+    loadJournalSegments,
+    loadJournalRevisions,
     loadDashboardLayout,
     clearCollections,
   } = useWorkspaceCollections({ adapterRef, setErrorMessage, setDashboardClean });
@@ -267,6 +269,8 @@ export default function GitHubWorkspacePage() {
     loadCalendarEvents,
     loadReportDrafts,
     loadJournalEntries,
+    loadJournalSegments,
+    loadJournalRevisions,
   });
 
   const workspaceTimezone = connection?.timezone ?? "Asia/Shanghai";
@@ -454,6 +458,8 @@ export default function GitHubWorkspacePage() {
         loadCalendarEvents(opened.adapter),
         loadReportDrafts(opened.adapter),
         loadJournalEntries(opened.adapter),
+        loadJournalSegments(opened.adapter),
+        loadJournalRevisions(opened.adapter),
       ]);
     } catch (error) {
       adapterRef.current = null;
@@ -1515,6 +1521,16 @@ export default function GitHubWorkspacePage() {
     catch (error) { if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") return []; throw error; }
   }
 
+  async function listJournalSegmentFiles(adapter: GitHubContentsAdapter) {
+    try { return (await adapter.listDirectory("data/journal-segments")).filter((item) => item.type === "file" && item.name.endsWith(".json")).sort((left, right) => left.path.localeCompare(right.path)); }
+    catch (error) { if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") return []; throw error; }
+  }
+
+  async function listJournalRevisionFiles(adapter: GitHubContentsAdapter) {
+    try { return (await adapter.listDirectory("data/journal-revisions")).filter((item) => item.type === "file" && item.name.endsWith(".json")).sort((left, right) => left.path.localeCompare(right.path)); }
+    catch (error) { if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") return []; throw error; }
+  }
+
   async function listProjectFiles(adapter: GitHubContentsAdapter) {
     try {
       return (await adapter.listDirectory("data/projects"))
@@ -1712,6 +1728,18 @@ export default function GitHubWorkspacePage() {
         setExportProgress(`正在读取 JournalEntry ${Math.min(index + batchSize, journalEntryCandidates.length)} / ${journalEntryCandidates.length}…`);
         journalEntryExportFiles.push(...await Promise.all(journalEntryCandidates.slice(index, index + batchSize).map((item) => adapter.readText(item.path))));
       }
+      const journalSegmentCandidates = await listJournalSegmentFiles(adapter);
+      const journalSegmentExportFiles = [];
+      for (let index = 0; index < journalSegmentCandidates.length; index += batchSize) {
+        setExportProgress(`正在读取 JournalSegment ${Math.min(index + batchSize, journalSegmentCandidates.length)} / ${journalSegmentCandidates.length}…`);
+        journalSegmentExportFiles.push(...await Promise.all(journalSegmentCandidates.slice(index, index + batchSize).map((item) => adapter.readText(item.path))));
+      }
+      const journalRevisionCandidates = await listJournalRevisionFiles(adapter);
+      const journalRevisionExportFiles = [];
+      for (let index = 0; index < journalRevisionCandidates.length; index += batchSize) {
+        setExportProgress(`正在读取 JournalRevision ${Math.min(index + batchSize, journalRevisionCandidates.length)} / ${journalRevisionCandidates.length}…`);
+        journalRevisionExportFiles.push(...await Promise.all(journalRevisionCandidates.slice(index, index + batchSize).map((item) => adapter.readText(item.path))));
+      }
 
       setExportProgress("正在生成 SHA-256 manifest…");
       const generatedAt = new Date().toISOString();
@@ -1732,6 +1760,8 @@ export default function GitHubWorkspacePage() {
         calendarEventFiles,
         reportDraftFiles: reportDraftExportFiles,
         journalEntryFiles: journalEntryExportFiles,
+        journalSegmentFiles: journalSegmentExportFiles,
+        journalRevisionFiles: journalRevisionExportFiles,
         generatedAt,
       });
       const inspection = await inspectPortableWorkspaceExport(portableExport);
@@ -1766,6 +1796,8 @@ export default function GitHubWorkspacePage() {
         calendarEvents: inspection.counts.calendarEvents,
         reportDrafts: inspection.counts.reportDrafts,
         journalEntries: inspection.counts.journalEntries,
+        journalSegments: inspection.counts.journalSegments,
+        journalRevisions: inspection.counts.journalRevisions,
         errors: inspection.errors,
         warnings: inspection.warnings,
       });
@@ -1786,6 +1818,8 @@ export default function GitHubWorkspacePage() {
         calendarEvents: inspection.counts.calendarEvents,
         reportDrafts: inspection.counts.reportDrafts,
         journalEntries: inspection.counts.journalEntries,
+        journalSegments: inspection.counts.journalSegments,
+        journalRevisions: inspection.counts.journalRevisions,
         errors: inspection.errors,
         warnings: inspection.warnings,
       });
@@ -1834,6 +1868,8 @@ export default function GitHubWorkspacePage() {
           calendarEvents: 0,
           reportDrafts: 0,
           journalEntries: 0,
+          journalSegments: 0,
+          journalRevisions: 0,
           errors: [{ code: "EXPORT_TOO_LARGE", message: "当前预检仅接受 50 MB 以内的 JSON 文件。" }],
           warnings: [],
         });
@@ -1858,6 +1894,8 @@ export default function GitHubWorkspacePage() {
         calendarEvents: inspection.counts.calendarEvents,
         reportDrafts: inspection.counts.reportDrafts,
         journalEntries: inspection.counts.journalEntries,
+        journalSegments: inspection.counts.journalSegments,
+        journalRevisions: inspection.counts.journalRevisions,
         errors: inspection.errors,
         warnings: inspection.warnings,
       });
@@ -1883,6 +1921,8 @@ export default function GitHubWorkspacePage() {
         calendarEvents: 0,
         reportDrafts: 0,
         journalEntries: 0,
+        journalSegments: 0,
+        journalRevisions: 0,
         errors: [{ code: "INVALID_JSON", message: "文件不是有效的 JSON，未执行任何恢复操作。" }],
         warnings: [],
       });

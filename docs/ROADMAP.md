@@ -1,6 +1,6 @@
 # Personal Workspace 路线图
 
-> 状态：Phase 2 的 Task、Project、Calendar、提醒、确定性报告、CSV、ReportDraft 与 Time Entry 代码基线已发布；Phase 3A Journal Core、日期浏览/搜索与 Segment/Revision 可逆契约证明已实现
+> 状态：Phase 2 代码基线已发布；Phase 3A Journal Core、日期浏览/搜索、Segment/Revision 可逆契约及 canonical portability 支持已实现
 > 版本：0.1  
 > 最后更新：2026-08-31
 > 原则：阶段按“风险被验证且可验收”推进，不用日期承诺替代范围控制。
@@ -124,7 +124,7 @@
 - 数据库与 Markdown 序列化契约。
 - 同步状态和冲突模型。
 
-当前切片已实现 Private canonical JSON、每天一条 active daily、创建/版本化编辑/软删除恢复、最近日记、月份浏览、浏览器内必要字段搜索、单篇 Markdown 下载和完整 portability。搜索不建立持久化 projection，断开、刷新、删除/恢复或权限变化后从当前可见 canonical 记录重新派生。Segment/Revision 的不可变记录、单 commit 原子推进与可逆 Markdown codec 契约已完成离线证明，但 canonical 实体、UI 和既有记录迁移尚未启用。Obsidian 与 Legacy Import 仍按后续切片推进；正式 Private 写入验收尚未执行。
+当前切片已实现 Private canonical JSON、每天一条 active daily、创建/版本化编辑/软删除恢复、最近日记、月份浏览、浏览器内必要字段搜索、单篇 Markdown 下载和完整 portability。搜索不建立持久化 projection，断开、刷新、删除/恢复或权限变化后从当前可见 canonical 记录重新派生。Segment/Revision 的不可变记录、可逆 Markdown、canonical 解析、collection loading 与 portability 已完成离线证明；下一步是单 commit 原子推进，UI 和既有记录迁移仍未启用。Obsidian 与 Legacy Import 继续按后续切片推进；正式 Private 写入验收尚未执行。
 
 #### 3B Obsidian Integration
 

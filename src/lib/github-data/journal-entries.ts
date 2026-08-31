@@ -11,7 +11,7 @@ export type JournalEntryData = {
   first_entry_at: string;
   last_entry_at: string;
   sensitivity: "restricted";
-  current_revision_id: null;
+  current_revision_id: string | null;
   obsidian_document_id: null;
   sync_status: "not_configured";
 };
@@ -165,7 +165,7 @@ function isValidData(value: Record<string, unknown>): value is JournalEntryData 
     && typeof value.last_entry_at === "string" && !Number.isNaN(Date.parse(value.last_entry_at))
     && Date.parse(value.last_entry_at) >= Date.parse(value.first_entry_at)
     && value.sensitivity === "restricted"
-    && value.current_revision_id === null
+    && (value.current_revision_id === null || isStableId(value.current_revision_id))
     && value.obsidian_document_id === null
     && value.sync_status === "not_configured";
 }
@@ -198,6 +198,10 @@ function normalizeSearchText(value: string) {
 function isTimezone(value: unknown): value is string {
   if (typeof value !== "string" || !value || value.length > 100) return false;
   try { new Intl.DateTimeFormat("en", { timeZone: value }).format(); return true; } catch { return false; }
+}
+
+function isStableId(value: unknown): value is string {
+  return typeof value === "string" && /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/.test(value);
 }
 
 function escapeMarkdownHeading(value: string) {

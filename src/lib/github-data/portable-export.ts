@@ -12,6 +12,9 @@ import { parseReportDraftRecord } from "./report-drafts";
 import { parseTaskRecord } from "./tasks";
 import { parseTimeEntryRecord } from "./time-entries";
 import { parseJournalEntryRecord } from "./journal-entries";
+import { parseJournalSegmentRecord } from "./journal-segments";
+import { parseJournalRevisionRecord, sha256JournalRevisionBody } from "./journal-revisions";
+import { renderJournalSegmentsMarkdown } from "./journal-segment-codec";
 import { parseCaptureRecord, parseWorkspaceDescriptor, type WorkspaceDescriptor } from "./workspace";
 
 export const PORTABLE_EXPORT_FORMAT = "personal-workspace-export" as const;
@@ -40,7 +43,7 @@ export type PortableWorkspaceExport = {
   manifest: {
     schema_version: 1;
     scope: {
-      modules: Array<"workspace" | "captures" | "dashboard_layout" | "tasks" | "time_entries" | "projects" | "project_phases" | "milestones" | "project_notes" | "project_file_references" | "activity_events" | "calendar_events" | "report_drafts" | "journal_entries">;
+      modules: Array<"workspace" | "captures" | "dashboard_layout" | "tasks" | "time_entries" | "projects" | "project_phases" | "milestones" | "project_notes" | "project_file_references" | "activity_events" | "calendar_events" | "report_drafts" | "journal_entries" | "journal_segments" | "journal_revisions">;
       complete: true;
     };
     counts: {
@@ -58,6 +61,8 @@ export type PortableWorkspaceExport = {
       calendar_events: number;
       report_drafts: number;
       journal_entries: number;
+      journal_segments: number;
+      journal_revisions: number;
     };
     files: PortableExportManifestFile[];
   };
@@ -90,6 +95,8 @@ export type ExportInspection = {
     calendarEvents: number;
     reportDrafts: number;
     journalEntries: number;
+    journalSegments: number;
+    journalRevisions: number;
   };
   errors: ExportInspectionIssue[];
   warnings: ExportInspectionIssue[];
@@ -125,6 +132,8 @@ export async function buildPortableWorkspaceExport(input: {
   calendarEventFiles?: GitHubStoredFile[];
   reportDraftFiles?: GitHubStoredFile[];
   journalEntryFiles?: GitHubStoredFile[];
+  journalSegmentFiles?: GitHubStoredFile[];
+  journalRevisionFiles?: GitHubStoredFile[];
   generatedAt?: string;
 }): Promise<PortableWorkspaceExport> {
   const dashboardLayoutFiles = input.dashboardLayoutFile ? [input.dashboardLayoutFile] : [];
@@ -139,7 +148,9 @@ export async function buildPortableWorkspaceExport(input: {
   const calendarEventFiles = input.calendarEventFiles ?? [];
   const reportDraftFiles = input.reportDraftFiles ?? [];
   const journalEntryFiles = input.journalEntryFiles ?? [];
-  const files = [input.workspaceFile, ...input.captureFiles, ...dashboardLayoutFiles, ...taskFiles, ...timeEntryFiles, ...projectFiles, ...projectPhaseFiles, ...milestoneFiles, ...projectNoteFiles, ...projectFileReferenceFiles, ...activityEventFiles, ...calendarEventFiles, ...reportDraftFiles, ...journalEntryFiles]
+  const journalSegmentFiles = input.journalSegmentFiles ?? [];
+  const journalRevisionFiles = input.journalRevisionFiles ?? [];
+  const files = [input.workspaceFile, ...input.captureFiles, ...dashboardLayoutFiles, ...taskFiles, ...timeEntryFiles, ...projectFiles, ...projectPhaseFiles, ...milestoneFiles, ...projectNoteFiles, ...projectFileReferenceFiles, ...activityEventFiles, ...calendarEventFiles, ...reportDraftFiles, ...journalEntryFiles, ...journalSegmentFiles, ...journalRevisionFiles]
     .map((file) => ({ ...file }))
     .sort((left, right) => left.path.localeCompare(right.path));
   const manifestFiles = await Promise.all(files.map(async (file) => ({
@@ -156,7 +167,7 @@ export async function buildPortableWorkspaceExport(input: {
     source: { repository: input.repository, branch: input.branch },
     manifest: {
       schema_version: 1,
-      scope: { modules: ["workspace", "captures", "dashboard_layout", "tasks", "time_entries", "projects", "project_phases", "milestones", "project_notes", "project_file_references", "activity_events", "calendar_events", "report_drafts", "journal_entries"], complete: true },
+      scope: { modules: ["workspace", "captures", "dashboard_layout", "tasks", "time_entries", "projects", "project_phases", "milestones", "project_notes", "project_file_references", "activity_events", "calendar_events", "report_drafts", "journal_entries", "journal_segments", "journal_revisions"], complete: true },
       counts: {
         files: files.length,
         captures: input.captureFiles.length,
@@ -172,6 +183,8 @@ export async function buildPortableWorkspaceExport(input: {
         calendar_events: calendarEventFiles.length,
         report_drafts: reportDraftFiles.length,
         journal_entries: journalEntryFiles.length,
+        journal_segments: journalSegmentFiles.length,
+        journal_revisions: journalRevisionFiles.length,
       },
       files: manifestFiles,
     },
@@ -205,7 +218,7 @@ export async function inspectPortableWorkspaceExport(value: unknown): Promise<Ex
     generatedAt: null,
     repository: null,
     workspace: null,
-    counts: { files: 0, captures: 0, dashboardLayouts: 0, tasks: 0, timeEntries: 0, projects: 0, projectPhases: 0, milestones: 0, projectNotes: 0, projectFileReferences: 0, activityEvents: 0, calendarEvents: 0, reportDrafts: 0, journalEntries: 0 },
+    counts: { files: 0, captures: 0, dashboardLayouts: 0, tasks: 0, timeEntries: 0, projects: 0, projectPhases: 0, milestones: 0, projectNotes: 0, projectFileReferences: 0, activityEvents: 0, calendarEvents: 0, reportDrafts: 0, journalEntries: 0, journalSegments: 0, journalRevisions: 0 },
     errors,
     warnings,
   };
@@ -627,6 +640,7 @@ export async function inspectPortableWorkspaceExport(value: unknown): Promise<Ex
   }
 
   const journalEntryIds = new Set<string>();
+  const journalEntryRecords = new Map<string, ReturnType<typeof parseJournalEntryRecord>>();
   const activeDailyDates = new Set<string>();
   const journalEntryFiles = validPayloadFiles.filter((file) => file.path.startsWith("data/journal-entries/"));
   result.counts.journalEntries = journalEntryFiles.length;
@@ -637,6 +651,7 @@ export async function inspectPortableWorkspaceExport(value: unknown): Promise<Ex
       if (recordPath("journal_entry", record.id) !== file.path) errors.push({ code: "JOURNAL_ENTRY_PATH_MISMATCH", message: "JournalEntry 的 ID 与文件路径不一致。", path: file.path });
       if (journalEntryIds.has(record.id)) errors.push({ code: "DUPLICATE_JOURNAL_ENTRY_ID", message: "导出包中存在重复 JournalEntry ID。", path: file.path });
       journalEntryIds.add(record.id);
+      journalEntryRecords.set(record.id, record);
       if (record.deleted_at === null) {
         const dateKey = `${record.data.entry_kind}:${record.data.journal_date}`;
         if (activeDailyDates.has(dateKey)) errors.push({ code: "DUPLICATE_ACTIVE_DAILY_JOURNAL", message: "同一日期存在多条未删除的 daily JournalEntry。", path: file.path });
@@ -646,6 +661,87 @@ export async function inspectPortableWorkspaceExport(value: unknown): Promise<Ex
   }
   const rawJournalEntryCount = manifestCounts?.journal_entries;
   if ((rawJournalEntryCount !== undefined || journalEntryFiles.length > 0) && rawJournalEntryCount !== journalEntryFiles.length) errors.push({ code: "JOURNAL_ENTRY_COUNT_MISMATCH", message: "JournalEntry 数量与 manifest 不一致。" });
+
+  const journalSegmentIds = new Set<string>();
+  const journalSegmentRecords = new Map<string, ReturnType<typeof parseJournalSegmentRecord>>();
+  const journalSegmentOrders = new Set<string>();
+  const journalSegmentFiles = validPayloadFiles.filter((file) => file.path.startsWith("data/journal-segments/"));
+  result.counts.journalSegments = journalSegmentFiles.length;
+  for (const file of journalSegmentFiles) {
+    try {
+      const record = parseJournalSegmentRecord(file.content);
+      if (result.workspace && record.owner_id !== result.workspace.owner_id) errors.push({ code: "OWNER_MISMATCH", message: "JournalSegment 的 owner_id 与 workspace 不一致。", path: file.path });
+      if (recordPath("journal_segment", record.id) !== file.path) errors.push({ code: "JOURNAL_SEGMENT_PATH_MISMATCH", message: "JournalSegment 的 ID 与文件路径不一致。", path: file.path });
+      if (journalSegmentIds.has(record.id)) errors.push({ code: "DUPLICATE_JOURNAL_SEGMENT_ID", message: "导出包中存在重复 JournalSegment ID。", path: file.path });
+      journalSegmentIds.add(record.id);
+      journalSegmentRecords.set(record.id, record);
+      if (!journalEntryIds.has(record.data.journal_entry_id)) errors.push({ code: "JOURNAL_SEGMENT_ENTRY_MISSING", message: "JournalSegment 引用的 JournalEntry 不在导出包中。", path: file.path });
+      const orderKey = `${record.data.journal_entry_id}:${record.data.sort_order}`;
+      if (journalSegmentOrders.has(orderKey)) errors.push({ code: "DUPLICATE_JOURNAL_SEGMENT_ORDER", message: "同一 JournalEntry 存在重复 Segment sort_order。", path: file.path });
+      journalSegmentOrders.add(orderKey);
+    } catch { errors.push({ code: "INVALID_JOURNAL_SEGMENT_RECORD", message: "JournalSegment 文件无法通过结构校验。", path: file.path }); }
+  }
+  const rawJournalSegmentCount = manifestCounts?.journal_segments;
+  if ((rawJournalSegmentCount !== undefined || journalSegmentFiles.length > 0) && rawJournalSegmentCount !== journalSegmentFiles.length) errors.push({ code: "JOURNAL_SEGMENT_COUNT_MISMATCH", message: "JournalSegment 数量与 manifest 不一致。" });
+
+  const journalRevisionIds = new Set<string>();
+  const journalRevisionRecords = new Map<string, ReturnType<typeof parseJournalRevisionRecord>>();
+  const journalRevisionNumbers = new Set<string>();
+  const referencedSegmentIds = new Set<string>();
+  const journalRevisionFiles = validPayloadFiles.filter((file) => file.path.startsWith("data/journal-revisions/"));
+  result.counts.journalRevisions = journalRevisionFiles.length;
+  for (const file of journalRevisionFiles) {
+    try {
+      const record = parseJournalRevisionRecord(file.content);
+      if (result.workspace && record.owner_id !== result.workspace.owner_id) errors.push({ code: "OWNER_MISMATCH", message: "JournalRevision 的 owner_id 与 workspace 不一致。", path: file.path });
+      if (recordPath("journal_revision", record.id) !== file.path) errors.push({ code: "JOURNAL_REVISION_PATH_MISMATCH", message: "JournalRevision 的 ID 与文件路径不一致。", path: file.path });
+      if (journalRevisionIds.has(record.id)) errors.push({ code: "DUPLICATE_JOURNAL_REVISION_ID", message: "导出包中存在重复 JournalRevision ID。", path: file.path });
+      journalRevisionIds.add(record.id);
+      journalRevisionRecords.set(record.id, record);
+      if (!journalEntryIds.has(record.data.journal_entry_id)) errors.push({ code: "JOURNAL_REVISION_ENTRY_MISSING", message: "JournalRevision 引用的 JournalEntry 不在导出包中。", path: file.path });
+      const numberKey = `${record.data.journal_entry_id}:${record.data.revision_number}`;
+      if (journalRevisionNumbers.has(numberKey)) errors.push({ code: "DUPLICATE_JOURNAL_REVISION_NUMBER", message: "同一 JournalEntry 存在重复 revision_number。", path: file.path });
+      journalRevisionNumbers.add(numberKey);
+      if (await sha256JournalRevisionBody(record.data.body_markdown) !== record.data.content_sha256) errors.push({ code: "JOURNAL_REVISION_HASH_MISMATCH", message: "JournalRevision 的物化正文哈希不一致。", path: file.path });
+      if (record.data.content_mode === "segments") {
+        const segments = record.data.segment_ids.map((id) => journalSegmentRecords.get(id));
+        for (const [index, segment] of segments.entries()) {
+          const id = record.data.segment_ids[index]!;
+          referencedSegmentIds.add(id);
+          if (!segment) errors.push({ code: "JOURNAL_REVISION_SEGMENT_MISSING", message: "JournalRevision 引用的 Segment 不在导出包中。", path: file.path });
+          else if (segment.data.journal_entry_id !== record.data.journal_entry_id) errors.push({ code: "JOURNAL_REVISION_SEGMENT_ENTRY_MISMATCH", message: "JournalRevision 引用了其他 JournalEntry 的 Segment。", path: file.path });
+        }
+        if (segments.every((segment) => Boolean(segment))) {
+          const present = segments.filter((segment): segment is ReturnType<typeof parseJournalSegmentRecord> => Boolean(segment));
+          const ordered = [...present].sort((left, right) => left.data.sort_order - right.data.sort_order);
+          if (ordered.some((segment, index) => segment.id !== record.data.segment_ids[index])) errors.push({ code: "JOURNAL_REVISION_SEGMENT_ORDER_MISMATCH", message: "JournalRevision 的 segment_ids 不是 canonical sort_order。", path: file.path });
+          const snapshots = ordered.map((segment) => ({ id: segment.id, ...segment.data }));
+          if (renderJournalSegmentsMarkdown(record.data.journal_entry_id, snapshots).trim() !== record.data.body_markdown) errors.push({ code: "JOURNAL_REVISION_MATERIALIZATION_MISMATCH", message: "JournalRevision 的物化正文与 Segment 渲染结果不一致。", path: file.path });
+        }
+      }
+    } catch { errors.push({ code: "INVALID_JOURNAL_REVISION_RECORD", message: "JournalRevision 文件无法通过结构校验。", path: file.path }); }
+  }
+  const rawJournalRevisionCount = manifestCounts?.journal_revisions;
+  if ((rawJournalRevisionCount !== undefined || journalRevisionFiles.length > 0) && rawJournalRevisionCount !== journalRevisionFiles.length) errors.push({ code: "JOURNAL_REVISION_COUNT_MISMATCH", message: "JournalRevision 数量与 manifest 不一致。" });
+
+  for (const [id, segment] of journalSegmentRecords) {
+    if (!referencedSegmentIds.has(id)) errors.push({ code: "JOURNAL_SEGMENT_ORPHANED", message: "JournalSegment 没有被任何 JournalRevision 引用。", path: recordPath("journal_segment", segment.id) });
+  }
+  for (const [id, entry] of journalEntryRecords) {
+    const revisions = [...journalRevisionRecords.values()].filter((revision) => revision.data.journal_entry_id === id);
+    if (entry.data.current_revision_id === null) {
+      if (revisions.length > 0) errors.push({ code: "JOURNAL_ENTRY_CURRENT_REVISION_MISSING", message: "JournalEntry 已有 Revision，但没有 current_revision_id。", path: recordPath("journal_entry", entry.id) });
+      continue;
+    }
+    const current = journalRevisionRecords.get(entry.data.current_revision_id);
+    if (!current) errors.push({ code: "JOURNAL_ENTRY_CURRENT_REVISION_NOT_FOUND", message: "JournalEntry 的 current Revision 不在导出包中。", path: recordPath("journal_entry", entry.id) });
+    else {
+      if (current.data.journal_entry_id !== entry.id) errors.push({ code: "JOURNAL_ENTRY_CURRENT_REVISION_MISMATCH", message: "JournalEntry 指向了其他日记的 Revision。", path: recordPath("journal_entry", entry.id) });
+      if (current.data.body_markdown !== entry.data.body_markdown) errors.push({ code: "JOURNAL_ENTRY_MATERIALIZATION_MISMATCH", message: "JournalEntry 当前正文与 Revision 物化正文不一致。", path: recordPath("journal_entry", entry.id) });
+      const latestNumber = Math.max(...revisions.map((revision) => revision.data.revision_number));
+      if (current.data.revision_number !== latestNumber) errors.push({ code: "JOURNAL_ENTRY_CURRENT_REVISION_NOT_LATEST", message: "JournalEntry 没有指向最高 revision_number。", path: recordPath("journal_entry", entry.id) });
+    }
+  }
 
   const supportedPaths = new Set(["workspace.json", DASHBOARD_LAYOUT_PATH]);
   const unexpectedFiles = validPayloadFiles.filter((file) => (
@@ -662,6 +758,8 @@ export async function inspectPortableWorkspaceExport(value: unknown): Promise<Ex
     && !file.path.startsWith("data/calendar-events/")
     && !file.path.startsWith("data/report-drafts/")
     && !file.path.startsWith("data/journal-entries/")
+    && !file.path.startsWith("data/journal-segments/")
+    && !file.path.startsWith("data/journal-revisions/")
   ));
   for (const file of unexpectedFiles) {
     errors.push({ code: "UNEXPECTED_FILE", message: "当前版本不支持此导出路径。", path: file.path });
