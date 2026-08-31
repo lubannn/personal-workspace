@@ -285,20 +285,22 @@ Phase 3A 首个 Journal Core 切片把记录保存到 `data/journal-entries/<id>
 
 首版以 Private canonical JSON 为唯一真源。`obsidian_document_id = null`、`current_revision_id = null`、`sync_status = not_configured` 明确表示尚未连接 Vault；浏览器 Markdown 下载只是带 canonical ID、日期、时区和版本的派生导出。Dashboard 仅展示最近日记的有界纯文本摘要。JournalEntry 已进入 export、manifest、inspection、隔离 restore 和 migration dry run。
 
-`first_entry_at` 保存首次创建发生的真实 instant，`last_entry_at` 随修订更新；`journal_date` 是用户选择的本地日期，编辑不允许悄悄移动日期。JournalSegment、JournalRevision、ObsidianDocument、SyncConflict、Legacy Word Import 和 AI 共创仍未开放。
+`first_entry_at` 保存首次创建发生的真实 instant，`last_entry_at` 随修订更新；`journal_date` 是用户选择的本地日期，编辑不允许悄悄移动日期。JournalSegment、JournalRevision、ObsidianDocument、SyncConflict、Legacy Word Import 和 AI 共创仍未开放。Segment/Revision 的不可变、原子推进和可逆 Markdown 契约已在 `PHASE_3_JOURNAL_REVISIONS.md` 冻结，但不触发既有记录迁移。
 
 ### JournalSegment
 
 - `id`, `journal_entry_id`, `local_time`, `occurred_at`
 - `body_markdown`, `sort_order`, `source_ref`
 
-它允许保留旧日记中同一天的多个时间片段。新日记可以只用 `body_markdown`，也可使用 segments；渲染规则必须确定且可逆。
+它允许保留旧日记中同一天的多个时间片段。Segment 是 create-only 快照；`source_ref` 仅保存稳定导入批次与源定位，不保存绝对路径。新日记可以只用 `body_markdown`，也可使用 segments；确定性 codec 使用版本化 marker、规范化顺序和正文 marker 转义保证 round trip。
 
 ### JournalRevision
 
 - `id`, `journal_entry_id`, `revision_number`
-- `body_markdown`, `content_sha256`
+- `content_mode`, `body_markdown`, `segment_ids`, `content_sha256`
 - `created_at`, `created_by`, `change_reason`
+
+Revision 是 create-only 内容快照。`change_reason` 使用受控枚举；`body_markdown` 永远保存完整物化正文，使旧读取、列表搜索和导出无需 fan-out。未来一次内容保存必须在单个 Git commit 中 create-only 写入新 Segment/Revision，并以旧 HEAD、旧 blob SHA 和旧 revision 为前置条件原子推进 JournalEntry 的 `current_revision_id`；冲突时不产生可见半套状态。
 
 ### ObsidianDocument
 
