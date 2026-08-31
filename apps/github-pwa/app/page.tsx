@@ -91,6 +91,7 @@ import {
   DEFAULT_REPOSITORY,
   buildReadiness,
   friendlyError,
+  friendlyJournalWriteError,
   localDateInTimezone,
   openPrivateRepository,
   readCookie,
@@ -1477,7 +1478,7 @@ export default function GitHubWorkspacePage() {
       setStatusMessage("日记已保存到 Private canonical JSON；没有连接、扫描或写入 Obsidian Vault。");
       return true;
     } catch (error) {
-      setErrorMessage(error instanceof Error && error.message.startsWith("INVALID_JOURNAL_ENTRY") ? "日记日期、时区或正文无效，未写入任何数据。" : friendlyError(error));
+      setErrorMessage(friendlyJournalWriteError(error, "create"));
       return false;
     } finally { setSavingJournalEntry(false); }
   }
@@ -1518,7 +1519,7 @@ export default function GitHubWorkspacePage() {
       setStatusMessage(`日记修订已保存为 v${updated.version}；日期与首次记录时间保持不变。`);
       return true;
     } catch (error) {
-      setErrorMessage(error instanceof Error && error.message.startsWith("INVALID_JOURNAL_ENTRY") ? "日记正文或元数据无效，未保存修订。" : friendlyError(error));
+      setErrorMessage(friendlyJournalWriteError(error, "edit"));
       return false;
     } finally { setSavingJournalEntryId(null); }
   }

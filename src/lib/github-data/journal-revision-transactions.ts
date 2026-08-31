@@ -19,7 +19,7 @@ import {
 } from "./journal-revisions";
 import { createWorkspaceRecord, recordPath, serializeRecord, updateWorkspaceRecord } from "./protocol";
 
-export const JOURNAL_REVISION_WRITES_ENABLED = false as const;
+export const JOURNAL_REVISION_WRITES_ENABLED = true as const;
 
 export type JournalRevisionTransactionAdapter = Pick<
   GitHubContentsAdapter,

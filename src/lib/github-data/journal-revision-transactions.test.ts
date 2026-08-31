@@ -88,8 +88,8 @@ async function journalRevision(input: { id: string; body: string; revisionNumber
 }
 
 describe("atomic Journal revision transactions", () => {
-  it("keeps the production write path explicitly disabled", () => {
-    expect(JOURNAL_REVISION_WRITES_ENABLED).toBe(false);
+  it("keeps the production atomic write path explicitly enabled", () => {
+    expect(JOURNAL_REVISION_WRITES_ENABLED).toBe(true);
   });
 
   it("creates JournalEntry and revision 1 in one commit from an exact branch snapshot", async () => {

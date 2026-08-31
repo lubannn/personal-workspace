@@ -5,6 +5,7 @@ import {
   buildReadiness,
   formatTaskDue,
   friendlyError,
+  friendlyJournalWriteError,
   localDateInTimezone,
   type Connection,
 } from "./page-model";
@@ -54,5 +55,16 @@ describe("formal PWA page behavior", () => {
   it("keeps the Private-repository safety failure visible", () => {
     expect(friendlyError(new GitHubDataError("public", 400, "GITHUB_REPOSITORY_NOT_PRIVATE")))
       .toBe("安全检查未通过：数据仓库必须保持 Private。");
+  });
+
+  it("explains atomic Journal conflicts and history failures without claiming a save", () => {
+    expect(friendlyJournalWriteError(new GitHubDataError("conflict", 409, "GITHUB_SYNC_CONFLICT"), "edit"))
+      .toBe("文件已在另一台设备更新，请刷新后重试。");
+    expect(friendlyJournalWriteError(new Error("DUPLICATE_ACTIVE_DAILY_JOURNAL"), "create"))
+      .toContain("本次没有写入");
+    expect(friendlyJournalWriteError(new Error("JOURNAL_REVISION_HASH_MISMATCH"), "edit"))
+      .toContain("一致性校验");
+    expect(friendlyJournalWriteError(new Error("INVALID_JOURNAL_REVISION_DETAILS"), "edit"))
+      .toBe("日记正文或元数据无效，未保存修订。");
   });
 });
