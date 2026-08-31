@@ -2,7 +2,7 @@
 
 ## 1. 状态与边界
 
-当前代码切片已增加 JournalSegment / JournalRevision canonical 读取、collection loading 与完整 portability 支持，但不启用 Private 写入，也不改变现有 Journal 编辑 UI。当前已发布记录继续使用 `JournalEntry.body_markdown`，且 `current_revision_id = null` 是合法兼容状态。
+当前代码已增加 JournalSegment / JournalRevision canonical 读取、collection loading、完整 portability，以及单 Git commit 原子事务引擎。生产开关 `JOURNAL_REVISION_WRITES_ENABLED` 仍固定为 `false`，现有 Journal 编辑 UI 尚未调用事务，因此本切片不会触发 Private 写入。当前已发布记录继续使用 `JournalEntry.body_markdown`，且 `current_revision_id = null` 是合法兼容状态。
 
 本切片明确不做：
 
@@ -38,14 +38,18 @@ JournalRevision 字段：
 
 ## 3. 原子推进
 
-未来启用 Revision 后，一次内容保存必须在同一个 Git Data API commit 中完成：
+`journal-revision-transactions.ts` 已把一次内容保存实现为同一个 Git Data API commit：
 
 1. 校验当前分支 HEAD、JournalEntry blob SHA 与旧 `current_revision_id`；
 2. create-only 写入新 Segment（如有）和新 Revision；
 3. 将 JournalEntry 的 `body_markdown` 更新为同一 revision 的物化正文，递增 record version，并推进 `current_revision_id`；
 4. 只用一个 tree/commit 更新分支引用。
 
-任一步校验失败都不得推进分支引用，也不得产生可见的半套状态。并发冲突必须停止并要求重新读取，不能自动覆盖。`revision_number` 在父 JournalEntry 范围内严格递增；inspection 同时检查 ID、序号、哈希、引用和物化正文一致性。
+事务先取得 branch HEAD/root tree，再按该 commit SHA 一致读取 Entry 与 Revision 基线；不会把来自两个不同 HEAD 的目录和文件拼成一个判断。底层写入返回每个新 blob SHA，并用旧 HEAD 作为唯一 parent、`force = false` 推进 branch ref。若其他设备先推进 HEAD，GitHub 拒绝非 fast-forward 更新；blob/tree/commit 即使已经创建也保持不可达，不会出现可见半套状态。
+
+新建 Journal 会在同一 commit 中创建 JournalEntry 与 revision 1。旧 `current_revision_id = null` 记录第一次修改正文时，会先以 `migration/schema_migration` 保存旧正文 baseline，再以 `owner/manual_edit` 保存新正文并推进指针；两个 Revision 与更新后的 Entry 同 commit 可见。仅修改标题、心情或天气时只原子更新 Entry，不创建内容相同的冗余 Revision。
+
+任一步校验失败都不得推进分支引用。事务会拒绝旧 blob SHA、旧 pointer、重复 ID/序号、路径错位、owner 错位、hash 篡改、物化正文不一致和非最新 current pointer。并发冲突必须停止并要求重新读取，不能自动覆盖。
 
 ## 4. 可逆 Markdown codec
 
@@ -73,7 +77,8 @@ JournalRevision 字段：
 ## 6. 后续启用顺序
 
 1. 已完成：增加 JournalSegment/JournalRevision canonical entity、路径、collection loading、校验和 portability 支持；
-2. 下一切片：增加单 commit 的 Revision 原子推进与并发/篡改测试；
-3. 用脱敏 fixture 验证 Legacy Word preview，禁止接触真实原件；
-4. 再定义 Obsidian frontmatter、原子写入、hash/conflict 和单向导出；
-5. 经过明确授权后，才用正式 Private 数据执行创建、编辑、冲突、导出和恢复验收。
+2. 已完成：增加精确 commit 基线读取、单 commit Revision 原子推进、旧正文 baseline，以及并发/篡改/半套状态测试；生产开关保持关闭；
+3. 下一步：代码审查与发布后，单独启用 Journal UI 的原子创建/编辑路径，并保持生命周期操作不伪造内容 Revision；
+4. 用脱敏 fixture 验证 Legacy Word preview，禁止接触真实原件；
+5. 再定义 Obsidian frontmatter、原子写入、hash/conflict 和单向导出；
+6. 经过明确授权后，才用正式 Private 数据执行创建、编辑、冲突、导出和恢复验收。

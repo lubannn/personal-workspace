@@ -82,6 +82,11 @@ import {
 import { createTimeEntryData } from "../../../src/lib/github-data/time-entries";
 import { createJournalEntryData, hasActiveDailyJournalDate, updateJournalEntryData } from "../../../src/lib/github-data/journal-entries";
 import {
+  createJournalEntryAtomically,
+  JOURNAL_REVISION_WRITES_ENABLED,
+  updateJournalEntryAtomically,
+} from "../../../src/lib/github-data/journal-revision-transactions";
+import {
   DEFAULT_OWNER,
   DEFAULT_REPOSITORY,
   buildReadiness,
@@ -213,6 +218,7 @@ export default function GitHubWorkspacePage() {
     setReportDraftFiles,
     journalEntryFiles,
     setJournalEntryFiles,
+    setJournalRevisionFiles,
     dashboardLayout,
     setDashboardLayout,
     dashboardBlobSha,
@@ -1443,6 +1449,28 @@ export default function GitHubWorkspacePage() {
     const timestamp = new Date().toISOString();
     const id = `journal_entry_${timestamp.replaceAll(/\D/g, "").slice(0, 17)}_${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`;
     try {
+      if (JOURNAL_REVISION_WRITES_ENABLED) {
+        const revisionId = `journal_revision_${timestamp.replaceAll(/\D/g, "").slice(0, 17)}_${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`;
+        const atomic = await createJournalEntryAtomically(adapter, {
+          ownerId: connection.ownerId,
+          journalEntryId: id,
+          revisionId,
+          journalDate: fields.journalDate,
+          timezone: connection.timezone,
+          title: fields.title,
+          bodyMarkdown: fields.bodyMarkdown,
+          mood: fields.mood,
+          weather: fields.weather,
+          timestamp,
+        });
+        setJournalEntryFiles((current) => [{ record: atomic.entry, path: atomic.entryFile.path, blobSha: atomic.entryFile.blobSha }, ...current]);
+        setJournalRevisionFiles((current) => [
+          ...atomic.revisions.map((record, index) => ({ record, path: atomic.revisionFiles[index]!.path, blobSha: atomic.revisionFiles[index]!.blobSha })),
+          ...current,
+        ]);
+        setStatusMessage("日记与初始 Revision 已通过一个 Git commit 原子保存；没有连接、扫描或写入 Obsidian Vault。");
+        return true;
+      }
       const record = createWorkspaceRecord({ entityType: "journal_entry", id, ownerId: connection.ownerId, timestamp, data: createJournalEntryData({ journalDate: fields.journalDate, timezone: connection.timezone, title: fields.title, bodyMarkdown: fields.bodyMarkdown, mood: fields.mood, weather: fields.weather, timestamp }) });
       const result = await adapter.writeText({ path: recordPath("journal_entry", id), text: serializeRecord(record), message: `journal: create ${id}` });
       setJournalEntryFiles((current) => [{ record, path: result.path, blobSha: result.blobSha }, ...current]);
@@ -1460,6 +1488,30 @@ export default function GitHubWorkspacePage() {
     setSavingJournalEntryId(item.record.id); setErrorMessage(""); setStatusMessage("");
     const timestamp = new Date().toISOString();
     try {
+      if (JOURNAL_REVISION_WRITES_ENABLED) {
+        const atomic = await updateJournalEntryAtomically(adapter, {
+          ownerId: connection.ownerId,
+          journalEntryId: item.record.id,
+          expectedJournalEntryBlobSha: item.blobSha,
+          expectedCurrentRevisionId: item.record.data.current_revision_id,
+          baselineRevisionId: `journal_revision_${timestamp.replaceAll(/\D/g, "").slice(0, 17)}_${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`,
+          revisionId: `journal_revision_${timestamp.replaceAll(/\D/g, "").slice(0, 17)}_${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`,
+          title: fields.title,
+          bodyMarkdown: fields.bodyMarkdown,
+          mood: fields.mood,
+          weather: fields.weather,
+          timestamp,
+        });
+        setJournalEntryFiles((current) => current.map((candidate) => candidate.record.id === item.record.id ? { record: atomic.entry, path: atomic.entryFile.path, blobSha: atomic.entryFile.blobSha } : candidate));
+        setJournalRevisionFiles((current) => [
+          ...atomic.revisions.map((record, index) => ({ record, path: atomic.revisionFiles[index]!.path, blobSha: atomic.revisionFiles[index]!.blobSha })),
+          ...current,
+        ]);
+        setStatusMessage(atomic.revisions.length > 0
+          ? `日记正文与 ${atomic.revisions.length} 个不可变 Revision 已通过一个 Git commit 原子保存。`
+          : `日记元数据已保存为 v${atomic.entry.version}；正文 Revision 未发生变化。`);
+        return true;
+      }
       const updated = updateWorkspaceRecord(item.record, updateJournalEntryData(item.record, { title: fields.title, bodyMarkdown: fields.bodyMarkdown, mood: fields.mood, weather: fields.weather, timestamp }), timestamp);
       const result = await adapter.writeText({ path: item.path, text: serializeRecord(updated), message: `journal: update ${item.record.id}`, expectedBlobSha: item.blobSha });
       setJournalEntryFiles((current) => current.map((candidate) => candidate.record.id === item.record.id ? { record: updated, path: result.path, blobSha: result.blobSha } : candidate));

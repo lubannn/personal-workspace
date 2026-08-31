@@ -18,11 +18,13 @@ describe("journal entries", () => {
   });
 
   it("updates editable content while preserving the journal date and first entry instant", () => {
-    const record = journal("journal_1", "2026-08-31");
+    const base = journal("journal_1", "2026-08-31");
+    const record = { ...base, data: { ...base.data, current_revision_id: "revision_1" } };
     const data = updateJournalEntryData(record, { title: "复盘", bodyMarkdown: "修订后的正文", weather: "晴", timestamp: "2026-08-31T13:00:00.000Z" });
     const updated = updateWorkspaceRecord(record, data, "2026-08-31T13:00:00.000Z");
     expect(updated.version).toBe(2);
-    expect(updated.data).toMatchObject({ journal_date: "2026-08-31", first_entry_at: "2026-08-31T12:00:00.000Z", last_entry_at: "2026-08-31T13:00:00.000Z", body_markdown: "修订后的正文" });
+    expect(updated.data).toMatchObject({ journal_date: "2026-08-31", first_entry_at: "2026-08-31T12:00:00.000Z", last_entry_at: "2026-08-31T13:00:00.000Z", body_markdown: "修订后的正文", current_revision_id: "revision_1" });
+    expect(updateJournalEntryData(record, { bodyMarkdown: "下一版", currentRevisionId: "revision_2", timestamp: "2026-08-31T14:00:00.000Z" }).current_revision_id).toBe("revision_2");
   });
 
   it("enforces valid dates, timezones, content bounds and monotonic entry instants", () => {
