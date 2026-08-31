@@ -19,6 +19,7 @@ export type JournalEntryData = {
 export type JournalEntryRecord = WorkspaceRecord<JournalEntryData>;
 
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+const MONTH_ONLY = /^\d{4}-\d{2}$/;
 
 export function createJournalEntryData(input: {
   journalDate: string;
@@ -88,6 +89,39 @@ export function recentJournalEntries(records: JournalEntryRecord[], limit = 3) {
   return activeJournalEntries(records).slice(0, limit);
 }
 
+export function filterJournalEntries(records: JournalEntryRecord[], input: {
+  view: "active" | "trash";
+  month?: string;
+  query?: string;
+}) {
+  const month = input.month?.trim() ?? "";
+  if (month && !isMonthOnly(month)) throw new Error("INVALID_JOURNAL_MONTH");
+  const tokens = normalizeSearchText(input.query ?? "").split(" ").filter(Boolean);
+  const source = input.view === "active" ? activeJournalEntries(records) : trashedJournalEntries(records);
+  return source.filter((record) => {
+    if (month && !record.data.journal_date.startsWith(`${month}-`)) return false;
+    if (tokens.length === 0) return true;
+    const searchable = normalizeSearchText([
+      record.data.journal_date,
+      record.data.title,
+      record.data.body_markdown,
+      record.data.mood ?? "",
+      record.data.weather ?? "",
+    ].join("\n"));
+    return tokens.every((token) => searchable.includes(token));
+  });
+}
+
+export function shiftJournalMonth(month: string, offset: number) {
+  if (!isMonthOnly(month) || !Number.isInteger(offset)) throw new Error("INVALID_JOURNAL_MONTH");
+  const [year, monthNumber] = month.split("-").map(Number);
+  const shiftedIndex = year * 12 + monthNumber - 1 + offset;
+  const shiftedYear = Math.floor(shiftedIndex / 12);
+  const shiftedMonth = shiftedIndex % 12 + 1;
+  if (shiftedYear < 1 || shiftedYear > 9999) throw new Error("INVALID_JOURNAL_MONTH");
+  return `${String(shiftedYear).padStart(4, "0")}-${String(shiftedMonth).padStart(2, "0")}`;
+}
+
 export function hasActiveDailyJournalDate(records: JournalEntryRecord[], journalDate: string, excludingId?: string) {
   return records.some((record) => record.deleted_at === null && record.id !== excludingId && record.data.entry_kind === "daily" && record.data.journal_date === journalDate);
 }
@@ -149,6 +183,16 @@ function isDateOnly(value: string) {
   if (!DATE_ONLY.test(value)) return false;
   const parsed = new Date(`${value}T00:00:00Z`);
   return !Number.isNaN(parsed.valueOf()) && parsed.toISOString().slice(0, 10) === value;
+}
+
+function isMonthOnly(value: string) {
+  if (!MONTH_ONLY.test(value)) return false;
+  const [year, month] = value.split("-").map(Number);
+  return year >= 1 && month >= 1 && month <= 12;
+}
+
+function normalizeSearchText(value: string) {
+  return value.normalize("NFKC").toLowerCase().replace(/\s+/g, " ").trim();
 }
 
 function isTimezone(value: unknown): value is string {
