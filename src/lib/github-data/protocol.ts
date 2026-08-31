@@ -13,6 +13,8 @@ export type EntityType =
   | "calendar_event"
   | "report_draft"
   | "journal_entry"
+  | "journal_segment"
+  | "journal_revision"
   | "journal"
   | "learning"
   | "habit"
@@ -43,6 +45,8 @@ const ENTITY_DIRECTORIES: Record<Exclude<EntityType, "journal">, string> = {
   calendar_event: "calendar-events",
   report_draft: "report-drafts",
   journal_entry: "journal-entries",
+  journal_segment: "journal-segments",
+  journal_revision: "journal-revisions",
   learning: "learning",
   habit: "habits",
   health: "health",

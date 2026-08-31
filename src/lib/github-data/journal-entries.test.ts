@@ -12,6 +12,9 @@ describe("journal entries", () => {
     const record = journal("journal_1", "2026-08-31");
     expect(parseJournalEntryRecord(serializeRecord(record))).toEqual(record);
     expect(record.data).toMatchObject({ entry_kind: "daily", sensitivity: "restricted", current_revision_id: null, obsidian_document_id: null, sync_status: "not_configured" });
+    const versioned = { ...record, data: { ...record.data, current_revision_id: "revision_1" } };
+    expect(parseJournalEntryRecord(serializeRecord(versioned)).data.current_revision_id).toBe("revision_1");
+    expect(() => parseJournalEntryRecord(serializeRecord({ ...record, data: { ...record.data, current_revision_id: "invalid/revision" } }))).toThrow("INVALID_JOURNAL_ENTRY_RECORD");
   });
 
   it("updates editable content while preserving the journal date and first entry instant", () => {

@@ -22,7 +22,7 @@
 - 不连接、枚举、扫描或写入真实 Obsidian Vault；
 - 不从 Vault 反向覆盖 Workspace；
 - 不声称 `sync_status = not_configured` 的记录已经同步；
-- 不创建正式 JournalSegment、JournalRevision 或 SyncConflict；当前修订历史由 record version、blob SHA 和 Git 历史提供；Segment/Revision 的可逆 codec 与未来原子推进契约已完成离线证明，但尚未接入 canonical 写入；
+- 不创建正式 JournalSegment、JournalRevision 或 SyncConflict；当前修订历史由 record version、blob SHA 和 Git 历史提供；Segment/Revision 的可逆 codec、canonical 读取与 portability 已完成离线证明，但尚未接入 Private 写入；
 - 不处理 Legacy Word、不调用 AI、不创建公开分享。
 
 正式连接 Vault 前仍需用户选择 Vault 和子目录，并用无私人内容的文件验证路径、权限、编码、原子替换与冲突语义。
@@ -56,4 +56,4 @@ Journal 列表支持月份前后浏览、回到本月、查看全部日期，以
 
 `journal-segment-codec.ts` 已实现稳定顺序、版本化 metadata marker、保留 marker 行转义和严格解析，验证同一天多个时间片段可以确定性、可逆地序列化为 Markdown。非法时间对、重复身份/顺序、父记录不匹配、标题篡改和块重排会被拒绝；内容编辑原因使用受控枚举。
 
-这不是正式数据模型启用：现有记录不迁移，`current_revision_id = null` 继续有效，也没有新增 Private 写入。完整不可变记录、单 Git commit 原子推进、兼容读取和后续启用顺序见 `PHASE_3_JOURNAL_REVISIONS.md`。
+这不是正式写入启用：现有记录不迁移，`current_revision_id = null` 继续有效，也没有新增 Private 写入。canonical 解析、collection loading、export/inspection/restore/migration 已覆盖两类新实体；完整不可变记录、单 Git commit 原子推进、兼容读取和后续启用顺序见 `PHASE_3_JOURNAL_REVISIONS.md`。
