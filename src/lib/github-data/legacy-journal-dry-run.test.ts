@@ -28,8 +28,8 @@ describe("Legacy Journal deterministic dry run", () => {
 
     expect(first.sha256).toBe(second.sha256);
     expect(first.bytes).toEqual(second.bytes);
-    expect(first.fileName).toMatch(/^legacy-journal-dry-run-[0-9a-f]{12}\.zip$/u);
-    expect(manifest).toMatchObject({ manifest_version: 1, batch_identity: preview.batchIdentity, generated_at: "2026-08-31T10:00:00.000Z", counts: { journal_files: 1, segments: 1, corrections: 0 }, commit_enabled: false });
+    expect(first.fileName).toMatch(/^legacy-journal-dry-run-[0-9a-f]{12}-[0-9a-f]{8}\.zip$/u);
+    expect(manifest).toMatchObject({ manifest_version: 2, batch_identity: preview.batchIdentity, correction_set_sha256: expect.stringMatching(/^[0-9a-f]{64}$/u), generated_at: "2026-08-31T10:00:00.000Z", counts: { journal_files: 1, segments: 1, corrections: 0 }, commit_enabled: false });
     expect(manifest.entries[0]).toMatchObject({ staging_id: expect.stringContaining("2012-03-05"), target_journal_id: null, relative_output_path: "Journal/2012/2012-03-05.md", status: "pending", manual_edit: false });
     expect(manifest.entries[0].output_sha256).toMatch(/^[0-9a-f]{64}$/u);
     expect(strFromU8(files["staging/Journal/2012/2012-03-05.md"])).toContain("不应进入 Import Log 的正文");
@@ -60,6 +60,20 @@ describe("Legacy Journal deterministic dry run", () => {
     expect(dryRun.manifest.entries.find((entry) => entry.date === "2012-03-04")?.manual_edit).toBe(true);
     expect(dryRun.importLogMarkdown).toContain("assign-orphan");
     expect(dryRun.importLogMarkdown).not.toContain("孤立正文");
+  });
+
+  it("changes the dry run identity when the audited correction chain changes", async () => {
+    const base = await previewLegacyJournalDocx(docxFile(cleanDocumentXml), { timezone: "Asia/Shanghai" });
+    const corrected = await previewLegacyJournalDocx(docxFile(cleanDocumentXml), {
+      timezone: "Asia/Shanghai",
+      corrections: [{ id: "body-override", sourceLocator: "word/document.xml#p5", action: "set-body", reason: "显式确认是正文", recordedAt: "2026-08-31T10:00:00.000Z" }],
+    });
+    const first = await buildLegacyJournalDryRun(base, { generatedAt: "2026-08-31T10:02:00.000Z" });
+    const second = await buildLegacyJournalDryRun(corrected, { generatedAt: "2026-08-31T10:02:00.000Z" });
+
+    expect(first.dryRunId).not.toBe(second.dryRunId);
+    expect(first.manifest.correction_set_sha256).not.toBe(second.manifest.correction_set_sha256);
+    expect(first.fileName).not.toBe(second.fileName);
   });
 
   it("refuses dry run when archive diagnostics contain an unhandled object", async () => {

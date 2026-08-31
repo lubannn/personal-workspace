@@ -3,13 +3,14 @@ import { strToU8, zipSync, type Zippable } from "fflate";
 import type { LegacyDocxPreview } from "./legacy-docx-preview";
 import type { LegacyImportDiagnostic } from "./legacy-journal-import";
 
-export const LEGACY_JOURNAL_DRY_RUN_MANIFEST_VERSION = 1 as const;
+export const LEGACY_JOURNAL_DRY_RUN_MANIFEST_VERSION = 2 as const;
 const DETERMINISTIC_ZIP_MTIME = new Date("1980-01-01T00:00:00.000Z");
 
 export type LegacyJournalDryRunManifest = {
   manifest_version: typeof LEGACY_JOURNAL_DRY_RUN_MANIFEST_VERSION;
   dry_run_id: string;
   batch_identity: string;
+  correction_set_sha256: string;
   generated_at: string;
   source: LegacyDocxPreview["source"];
   parser_version: string;
@@ -63,7 +64,8 @@ export async function buildLegacyJournalDryRun(preview: LegacyDocxPreview, optio
       ?? preview.source.lastModified
       ?? DETERMINISTIC_ZIP_MTIME.toISOString(),
   );
-  const dryRunId = `legacy-journal:${preview.source.sha256}:${preview.parserVersion}:${preview.mappingVersion}`;
+  const identity = await legacyJournalDryRunIdentity(preview);
+  const dryRunId = identity.dryRunId;
   const sortedEntries = [...preview.parse.entries].sort((left, right) => left.outputPath.localeCompare(right.outputPath));
   if (new Set(sortedEntries.map((entry) => entry.outputPath)).size !== sortedEntries.length) throw new Error("LEGACY_IMPORT_DUPLICATE_OUTPUT_PATH");
   const manifestEntries = await Promise.all(sortedEntries.map(async (entry) => ({
@@ -81,6 +83,7 @@ export async function buildLegacyJournalDryRun(preview: LegacyDocxPreview, optio
     manifest_version: LEGACY_JOURNAL_DRY_RUN_MANIFEST_VERSION,
     dry_run_id: dryRunId,
     batch_identity: preview.batchIdentity,
+    correction_set_sha256: identity.correctionSetSha256,
     generated_at: generatedAt,
     source: preview.source,
     parser_version: preview.parserVersion,
@@ -108,12 +111,29 @@ export async function buildLegacyJournalDryRun(preview: LegacyDocxPreview, optio
   const bytes = zipSync(files, { level: 6, mtime: DETERMINISTIC_ZIP_MTIME });
   return {
     dryRunId,
-    fileName: `legacy-journal-dry-run-${preview.source.sha256.slice(0, 12)}.zip`,
+    fileName: `legacy-journal-dry-run-${preview.source.sha256.slice(0, 12)}-${identity.correctionSetSha256.slice(0, 8)}.zip`,
     bytes,
     sha256: await sha256Bytes(bytes),
     manifest,
     importLogMarkdown,
     commitEnabled: false,
+  };
+}
+
+export async function legacyJournalDryRunIdentity(preview: LegacyDocxPreview) {
+  const correctionSetSha256 = await sha256Text(JSON.stringify(preview.parse.corrections.map((correction) => ({
+    id: correction.id,
+    source_locator: correction.sourceLocator,
+    action: correction.action,
+    date: correction.date ?? null,
+    time: correction.time ?? null,
+    reason: correction.reason,
+    recorded_at: correction.recordedAt,
+    supersedes_id: correction.supersedesId ?? null,
+  }))));
+  return {
+    correctionSetSha256,
+    dryRunId: `legacy-journal:${preview.source.sha256}:${preview.parserVersion}:${preview.mappingVersion}:${correctionSetSha256}`,
   };
 }
 
@@ -126,6 +146,7 @@ function renderImportLog(manifest: LegacyJournalDryRunManifest) {
     `- Source file: ${manifest.source.fileName}`,
     `- Source SHA-256: \`${manifest.source.sha256}\``,
     `- Parser / mapping: ${manifest.parser_version} / ${manifest.mapping_version}`,
+    `- Correction set SHA-256: \`${manifest.correction_set_sha256}\``,
     `- Timezone: ${manifest.timezone}`,
     `- Planned Journal files: ${manifest.counts.journal_files}`,
     `- Segments: ${manifest.counts.segments}`,

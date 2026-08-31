@@ -81,6 +81,7 @@ JournalRevision 字段：
 3. 已完成：启用 Journal UI 的原子创建/编辑路径；生命周期操作继续只改变 Entry 状态，不伪造内容 Revision；
 4. 已完成：用脱敏 OOXML/ZIP fixture 验证 local-only Legacy Word preview；没有接触真实原件，也没有 Commit 能力；
 5. 已完成：增加带 supersedes 链的手工修正、可比较的重新解析，以及包含 staging Markdown、manifest 和 Import Log 的确定性 local-only Dry Run ZIP；
-6. 下一步：定义 Legacy Import 正式 Commit 的幂等 JournalRevision 事务、冲突预检、检查点和回滚预览；
-7. 再定义 Obsidian frontmatter、原子写入、hash/conflict 和单向导出；
-8. 经过明确授权后，才用正式 Private 数据执行创建、编辑、冲突、导出和恢复验收。
+6. 已完成：Legacy Import 正式 Commit 前的确定性 segment-mode 计划、精确重试/冲突分类、checkpoint 结构和只读回滚预览；生产 Commit 仍固定关闭；
+7. 下一步：实现同一 branch snapshot 下的原子 batch writer 与 Private checkpoint 持久化，并接入逐批确认 UI；
+8. 再定义 Obsidian frontmatter、原子写入、hash/conflict 和单向导出；
+9. 经过明确授权后，才用正式 Private 数据执行创建、编辑、冲突、导出和恢复验收。
