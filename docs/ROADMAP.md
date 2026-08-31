@@ -1,8 +1,8 @@
 # Personal Workspace 路线图
 
-> 状态：Phase 0 已批准；Phase 1A SQLite 基线完成；Phase 1B GitHub-backed PWA 验收通过；Phase 1C 前五个切片已验收；Phase 2A Tasks 首个切片验收完成
+> 状态：Phase 2 的 Task、Project、Calendar、提醒、确定性报告、CSV、ReportDraft 与 Time Entry 代码基线已发布；Phase 3A Journal Core 首切片已实现
 > 版本：0.1  
-> 最后更新：2026-08-27
+> 最后更新：2026-08-31
 > 原则：阶段按“风险被验证且可验收”推进，不用日期承诺替代范围控制。
 
 ## 1. 阶段总览
@@ -123,6 +123,8 @@
 - Journal 创建、编辑、修订、搜索、最近日记和 Markdown 导出。
 - 数据库与 Markdown 序列化契约。
 - 同步状态和冲突模型。
+
+当前首切片已实现 Private canonical JSON、每天一条 active daily、创建/版本化编辑/软删除恢复、最近日记、单篇 Markdown 下载和完整 portability。Obsidian、细粒度 Revision/Segment、搜索和 Legacy Import 仍按后续切片推进；正式 Private 写入验收尚未执行。
 
 #### 3B Obsidian Integration
 

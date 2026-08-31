@@ -281,6 +281,12 @@ CalendarEvent 可以通过 `linked_entity_type = task` 和 `linked_entity_id` �
 - `obsidian_document_id`, `sync_status`
 - 通用字段
 
+Phase 3A 首个 Journal Core 切片把记录保存到 `data/journal-entries/<id>.json`。当前 `entry_kind = daily`、`sensitivity = restricted`，同一 workspace 本地日期只允许一条未删除记录；创建、版本化编辑、软删除与恢复均直接写入 Private GitHub，编辑和生命周期更新携带旧 blob SHA。恢复若与同日 active daily 冲突会停止，portable inspection 也拒绝同包重复 active daily。
+
+首版以 Private canonical JSON 为唯一真源。`obsidian_document_id = null`、`current_revision_id = null`、`sync_status = not_configured` 明确表示尚未连接 Vault；浏览器 Markdown 下载只是带 canonical ID、日期、时区和版本的派生导出。Dashboard 仅展示最近日记的有界纯文本摘要。JournalEntry 已进入 export、manifest、inspection、隔离 restore 和 migration dry run。
+
+`first_entry_at` 保存首次创建发生的真实 instant，`last_entry_at` 随修订更新；`journal_date` 是用户选择的本地日期，编辑不允许悄悄移动日期。JournalSegment、JournalRevision、ObsidianDocument、SyncConflict、Legacy Word Import 和 AI 共创仍未开放。
+
 ### JournalSegment
 
 - `id`, `journal_entry_id`, `local_time`, `occurred_at`

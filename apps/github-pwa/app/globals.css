@@ -356,6 +356,29 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .time-entry-list li { display: grid; grid-template-columns: minmax(0,1fr) auto auto; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); }
 .time-entry-list li > span { min-width: 0; display: grid; gap: 3px; }
 .time-entry-list small, .time-entry-list code { color: var(--muted); font-size: 9px; overflow-wrap: anywhere; }
+.journal-card { margin-top: 18px; padding: 22px; border: 1px solid var(--line); border-radius: 18px; background: var(--paper); box-shadow: var(--shadow); }
+.journal-subtitle { max-width: 760px; margin: 5px 0 0; color: var(--muted); font-size: 10px; line-height: 1.6; }
+.journal-view-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.journal-form { margin-top: 18px; padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: rgba(255,255,255,.3); }
+.journal-form-meta { display: grid; grid-template-columns: 150px minmax(180px, 1.5fr) minmax(120px, .7fr) minmax(120px, .7fr); gap: 10px; }
+.journal-form label { display: grid; gap: 6px; color: var(--muted); font-size: 9px; }
+.journal-body { margin-top: 12px; }
+.journal-body textarea { min-height: 190px; resize: vertical; font: 11px/1.7 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.journal-form > footer { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-top: 12px; }
+.journal-form > footer > span { max-width: 720px; color: var(--muted); font-size: 9px; line-height: 1.6; }
+.journal-form > footer > div, .journal-item-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.journal-list { margin: 16px 0 0; padding: 0; list-style: none; }
+.journal-list > li { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 18px; padding: 16px 0; border-bottom: 1px solid var(--line); }
+.journal-list > li > div:first-child { min-width: 0; display: grid; gap: 5px; }
+.journal-list span, .journal-list small { color: var(--muted); font-size: 9px; }
+.journal-list strong { font: 500 15px/1.35 ui-serif, Georgia, "Songti SC", serif; }
+.journal-list p { margin: 0; color: var(--soft); font-size: 10px; line-height: 1.65; overflow-wrap: anywhere; }
+.dashboard-journal-widget ul { margin: 0; padding: 0; list-style: none; }
+.dashboard-journal-widget li { padding: 9px 0; border-bottom: 1px solid var(--line); }
+.dashboard-journal-widget li > div { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.dashboard-journal-widget strong { font-size: 10px; }
+.dashboard-journal-widget small { color: var(--muted); font-size: 8px; }
+.dashboard-journal-widget p { margin: 4px 0 0; color: var(--soft); font-size: 9px; line-height: 1.5; }
 .reports-export { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-top: 12px; padding: 16px; border-radius: 14px; background: #292923; color: white; }
 .reports-export p { max-width: 720px; margin: 0; color: #aaa9a1; font-size: 10px; line-height: 1.65; }
 .reports-export p strong { color: white; }
@@ -403,6 +426,11 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 @media (max-width: 780px) {
   .time-entry-create-form { grid-template-columns: 1fr; }
   .time-entry-view-actions { justify-content: flex-start; }
+  .journal-form-meta { grid-template-columns: 1fr; }
+  .journal-view-actions { justify-content: flex-start; }
+  .journal-form > footer { align-items: stretch; flex-direction: column; }
+  .journal-list > li { align-items: stretch; grid-template-columns: 1fr; }
+  .journal-form > footer > div, .journal-item-actions { justify-content: flex-start; }
   .preview-shell { width: min(100% - 30px, 620px); }
   .topbar { height: 86px; }
   .hero { padding: 72px 0 58px; }

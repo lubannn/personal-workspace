@@ -33,6 +33,7 @@ import {
   recordPath,
   serializeRecord,
   setWorkspaceRecordDeleted,
+  updateWorkspaceRecord,
 } from "../../../src/lib/github-data/protocol";
 import {
   newestCaptures,
@@ -79,6 +80,7 @@ import {
   type TaskPriority,
 } from "../../../src/lib/github-data/tasks";
 import { createTimeEntryData } from "../../../src/lib/github-data/time-entries";
+import { createJournalEntryData, hasActiveDailyJournalDate, updateJournalEntryData } from "../../../src/lib/github-data/journal-entries";
 import {
   DEFAULT_OWNER,
   DEFAULT_REPOSITORY,
@@ -94,6 +96,7 @@ import {
   type SavedCapture,
   type SyncedCapture,
   type SyncedCalendarEvent,
+  type SyncedJournalEntry,
   type SyncedProject,
   type SyncedProjectPhase,
   type SyncedMilestone,
@@ -115,6 +118,7 @@ import { ReadinessSection } from "./workspace/readiness-section";
 import { ReportsSection } from "./workspace/reports-section";
 import { TasksSection } from "./workspace/tasks-section";
 import { TimeEntriesSection } from "./workspace/time-entries-section";
+import { JournalSection } from "./workspace/journal-section";
 
 export default function GitHubWorkspacePage() {
   const adapterRef = useRef<GitHubContentsAdapter | null>(null);
@@ -161,6 +165,8 @@ export default function GitHubWorkspacePage() {
   const [savingProjectFileReferenceProjectId, setSavingProjectFileReferenceProjectId] = useState<string | null>(null);
   const [savingCalendarEvent, setSavingCalendarEvent] = useState(false);
   const [savingCalendarEventId, setSavingCalendarEventId] = useState<string | null>(null);
+  const [savingJournalEntry, setSavingJournalEntry] = useState(false);
+  const [savingJournalEntryId, setSavingJournalEntryId] = useState<string | null>(null);
   const [dashboardDirty, setDashboardDirty] = useState(false);
   const [editingDashboard, setEditingDashboard] = useState(false);
   const [savingDashboard, setSavingDashboard] = useState(false);
@@ -205,6 +211,8 @@ export default function GitHubWorkspacePage() {
     setCalendarEventFiles,
     reportDraftFiles,
     setReportDraftFiles,
+    journalEntryFiles,
+    setJournalEntryFiles,
     dashboardLayout,
     setDashboardLayout,
     dashboardBlobSha,
@@ -220,6 +228,7 @@ export default function GitHubWorkspacePage() {
     loadingActivityEvents,
     loadingCalendarEvents,
     loadingReportDrafts,
+    loadingJournalEntries,
     loadingDashboard,
     loadRecentCaptures,
     loadTasks,
@@ -232,6 +241,7 @@ export default function GitHubWorkspacePage() {
     loadActivityEvents,
     loadCalendarEvents,
     loadReportDrafts,
+    loadJournalEntries,
     loadDashboardLayout,
     clearCollections,
   } = useWorkspaceCollections({ adapterRef, setErrorMessage, setDashboardClean });
@@ -256,6 +266,7 @@ export default function GitHubWorkspacePage() {
     loadActivityEvents,
     loadCalendarEvents,
     loadReportDrafts,
+    loadJournalEntries,
   });
 
   const workspaceTimezone = connection?.timezone ?? "Asia/Shanghai";
@@ -442,6 +453,7 @@ export default function GitHubWorkspacePage() {
         loadActivityEvents(opened.adapter),
         loadCalendarEvents(opened.adapter),
         loadReportDrafts(opened.adapter),
+        loadJournalEntries(opened.adapter),
       ]);
     } catch (error) {
       adapterRef.current = null;
@@ -1414,6 +1426,63 @@ export default function GitHubWorkspacePage() {
     finally { setSavingTimeEntryId(null); }
   }
 
+  async function saveJournalEntry(fields: { journalDate: string; title: string; bodyMarkdown: string; mood: string; weather: string }) {
+    const adapter = adapterRef.current;
+    if (!adapter || !connection || savingJournalEntry || online === false) return false;
+    if (hasActiveDailyJournalDate(journalEntryFiles.map((item) => item.record), fields.journalDate)) {
+      setErrorMessage("这一天已经有一篇未删除的 daily 日记；请编辑现有记录，未创建重复日记。");
+      return false;
+    }
+    setSavingJournalEntry(true); setErrorMessage(""); setStatusMessage("");
+    const timestamp = new Date().toISOString();
+    const id = `journal_entry_${timestamp.replaceAll(/\D/g, "").slice(0, 17)}_${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`;
+    try {
+      const record = createWorkspaceRecord({ entityType: "journal_entry", id, ownerId: connection.ownerId, timestamp, data: createJournalEntryData({ journalDate: fields.journalDate, timezone: connection.timezone, title: fields.title, bodyMarkdown: fields.bodyMarkdown, mood: fields.mood, weather: fields.weather, timestamp }) });
+      const result = await adapter.writeText({ path: recordPath("journal_entry", id), text: serializeRecord(record), message: `journal: create ${id}` });
+      setJournalEntryFiles((current) => [{ record, path: result.path, blobSha: result.blobSha }, ...current]);
+      setStatusMessage("日记已保存到 Private canonical JSON；没有连接、扫描或写入 Obsidian Vault。");
+      return true;
+    } catch (error) {
+      setErrorMessage(error instanceof Error && error.message.startsWith("INVALID_JOURNAL_ENTRY") ? "日记日期、时区或正文无效，未写入任何数据。" : friendlyError(error));
+      return false;
+    } finally { setSavingJournalEntry(false); }
+  }
+
+  async function saveJournalEntryEdit(item: SyncedJournalEntry, fields: { title: string; bodyMarkdown: string; mood: string; weather: string }) {
+    const adapter = adapterRef.current;
+    if (!adapter || !connection || savingJournalEntryId || online === false) return false;
+    setSavingJournalEntryId(item.record.id); setErrorMessage(""); setStatusMessage("");
+    const timestamp = new Date().toISOString();
+    try {
+      const updated = updateWorkspaceRecord(item.record, updateJournalEntryData(item.record, { title: fields.title, bodyMarkdown: fields.bodyMarkdown, mood: fields.mood, weather: fields.weather, timestamp }), timestamp);
+      const result = await adapter.writeText({ path: item.path, text: serializeRecord(updated), message: `journal: update ${item.record.id}`, expectedBlobSha: item.blobSha });
+      setJournalEntryFiles((current) => current.map((candidate) => candidate.record.id === item.record.id ? { record: updated, path: result.path, blobSha: result.blobSha } : candidate));
+      setStatusMessage(`日记修订已保存为 v${updated.version}；日期与首次记录时间保持不变。`);
+      return true;
+    } catch (error) {
+      setErrorMessage(error instanceof Error && error.message.startsWith("INVALID_JOURNAL_ENTRY") ? "日记正文或元数据无效，未保存修订。" : friendlyError(error));
+      return false;
+    } finally { setSavingJournalEntryId(null); }
+  }
+
+  async function updateJournalEntryDeletion(item: SyncedJournalEntry, operation: "trash" | "restore") {
+    const adapter = adapterRef.current;
+    if (!adapter || !connection || savingJournalEntryId || online === false) return;
+    if (operation === "restore" && hasActiveDailyJournalDate(journalEntryFiles.map((candidate) => candidate.record), item.record.data.journal_date, item.record.id)) {
+      setErrorMessage("同一天已有另一篇未删除的 daily 日记；为避免日期冲突，本次恢复已停止。");
+      return;
+    }
+    setSavingJournalEntryId(item.record.id); setErrorMessage(""); setStatusMessage("");
+    const timestamp = new Date().toISOString();
+    const updated = setWorkspaceRecordDeleted(item.record, operation === "trash" ? timestamp : null, timestamp);
+    try {
+      const result = await adapter.writeText({ path: item.path, text: serializeRecord(updated), message: `journal: ${operation} ${item.record.id}`, expectedBlobSha: item.blobSha });
+      setJournalEntryFiles((current) => current.map((candidate) => candidate.record.id === item.record.id ? { record: updated, path: result.path, blobSha: result.blobSha } : candidate));
+      setStatusMessage(operation === "trash" ? "日记已移到可恢复回收站；Git 历史仍保留旧正文。" : "日记已恢复。没有覆盖同一天的其他记录。");
+    } catch (error) { setErrorMessage(friendlyError(error)); }
+    finally { setSavingJournalEntryId(null); }
+  }
+
   async function listCaptureFiles(adapter: GitHubContentsAdapter) {
     try {
       return (await adapter.listDirectory("data/captures"))
@@ -1438,6 +1507,11 @@ export default function GitHubWorkspacePage() {
 
   async function listTimeEntryFiles(adapter: GitHubContentsAdapter) {
     try { return (await adapter.listDirectory("data/time-entries")).filter((item) => item.type === "file" && item.name.endsWith(".json")).sort((left, right) => left.path.localeCompare(right.path)); }
+    catch (error) { if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") return []; throw error; }
+  }
+
+  async function listJournalEntryFiles(adapter: GitHubContentsAdapter) {
+    try { return (await adapter.listDirectory("data/journal-entries")).filter((item) => item.type === "file" && item.name.endsWith(".json")).sort((left, right) => left.path.localeCompare(right.path)); }
     catch (error) { if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") return []; throw error; }
   }
 
@@ -1632,6 +1706,12 @@ export default function GitHubWorkspacePage() {
           reportDraftCandidates.slice(index, index + batchSize).map((item) => adapter.readText(item.path)),
         ));
       }
+      const journalEntryCandidates = await listJournalEntryFiles(adapter);
+      const journalEntryExportFiles = [];
+      for (let index = 0; index < journalEntryCandidates.length; index += batchSize) {
+        setExportProgress(`正在读取 JournalEntry ${Math.min(index + batchSize, journalEntryCandidates.length)} / ${journalEntryCandidates.length}…`);
+        journalEntryExportFiles.push(...await Promise.all(journalEntryCandidates.slice(index, index + batchSize).map((item) => adapter.readText(item.path))));
+      }
 
       setExportProgress("正在生成 SHA-256 manifest…");
       const generatedAt = new Date().toISOString();
@@ -1651,6 +1731,7 @@ export default function GitHubWorkspacePage() {
         activityEventFiles,
         calendarEventFiles,
         reportDraftFiles: reportDraftExportFiles,
+        journalEntryFiles: journalEntryExportFiles,
         generatedAt,
       });
       const inspection = await inspectPortableWorkspaceExport(portableExport);
@@ -1684,6 +1765,7 @@ export default function GitHubWorkspacePage() {
         activityEvents: inspection.counts.activityEvents,
         calendarEvents: inspection.counts.calendarEvents,
         reportDrafts: inspection.counts.reportDrafts,
+        journalEntries: inspection.counts.journalEntries,
         errors: inspection.errors,
         warnings: inspection.warnings,
       });
@@ -1703,6 +1785,7 @@ export default function GitHubWorkspacePage() {
         activityEvents: inspection.counts.activityEvents,
         calendarEvents: inspection.counts.calendarEvents,
         reportDrafts: inspection.counts.reportDrafts,
+        journalEntries: inspection.counts.journalEntries,
         errors: inspection.errors,
         warnings: inspection.warnings,
       });
@@ -1750,6 +1833,7 @@ export default function GitHubWorkspacePage() {
           activityEvents: 0,
           calendarEvents: 0,
           reportDrafts: 0,
+          journalEntries: 0,
           errors: [{ code: "EXPORT_TOO_LARGE", message: "当前预检仅接受 50 MB 以内的 JSON 文件。" }],
           warnings: [],
         });
@@ -1773,6 +1857,7 @@ export default function GitHubWorkspacePage() {
         activityEvents: inspection.counts.activityEvents,
         calendarEvents: inspection.counts.calendarEvents,
         reportDrafts: inspection.counts.reportDrafts,
+        journalEntries: inspection.counts.journalEntries,
         errors: inspection.errors,
         warnings: inspection.warnings,
       });
@@ -1797,6 +1882,7 @@ export default function GitHubWorkspacePage() {
         activityEvents: 0,
         calendarEvents: 0,
         reportDrafts: 0,
+        journalEntries: 0,
         errors: [{ code: "INVALID_JSON", message: "文件不是有效的 JSON，未执行任何恢复操作。" }],
         warnings: [],
       });
@@ -1963,10 +2049,12 @@ export default function GitHubWorkspacePage() {
         projectTasks={taskFiles}
         projectMilestones={milestoneFiles}
         calendarEvents={calendarEventFiles}
+        journalEntries={journalEntryFiles}
         loadingTasks={loadingTasks}
         loadingProjects={loadingProjects}
         loadingMilestones={loadingMilestones}
         loadingCalendarEvents={loadingCalendarEvents}
+        loadingJournalEntries={loadingJournalEntries}
         savingTaskId={savingTaskId}
         currentTaskDate={currentTaskDate}
         onToggleEditing={() => setEditingDashboard((current) => !current)}
@@ -2101,6 +2189,21 @@ export default function GitHubWorkspacePage() {
         onCreate={saveTimeEntry}
         onDeletionChange={updateTimeEntryDeletion}
         onRefresh={() => loadTimeEntries()}
+      />
+
+
+      <JournalSection
+        connection={connection}
+        online={online}
+        todayDate={currentTaskDate}
+        journalEntryFiles={journalEntryFiles}
+        loading={loadingJournalEntries}
+        saving={savingJournalEntry}
+        savingId={savingJournalEntryId}
+        onCreate={saveJournalEntry}
+        onEdit={saveJournalEntryEdit}
+        onDeletionChange={updateJournalEntryDeletion}
+        onRefresh={() => loadJournalEntries()}
       />
 
 
