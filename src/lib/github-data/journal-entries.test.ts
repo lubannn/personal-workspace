@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { createWorkspaceRecord, serializeRecord, setWorkspaceRecordDeleted, updateWorkspaceRecord } from "./protocol";
-import { activeJournalEntries, createJournalEntryData, hasActiveDailyJournalDate, journalEntryMarkdownFileName, parseJournalEntryRecord, recentJournalEntries, renderJournalEntryMarkdown, trashedJournalEntries, updateJournalEntryData } from "./journal-entries";
+import { activeJournalEntries, createJournalEntryData, filterJournalEntries, hasActiveDailyJournalDate, journalEntryMarkdownFileName, parseJournalEntryRecord, recentJournalEntries, renderJournalEntryMarkdown, shiftJournalMonth, trashedJournalEntries, updateJournalEntryData } from "./journal-entries";
 
 function journal(id: string, date: string, timestamp = `${date}T12:00:00.000Z`) {
   return createWorkspaceRecord({ entityType: "journal_entry" as const, id, ownerId: "owner_1", timestamp, data: createJournalEntryData({ journalDate: date, timezone: "Asia/Shanghai", title: "日记", bodyMarkdown: "今天完成了验收。", mood: "平静", timestamp }) });
@@ -39,6 +39,26 @@ describe("journal entries", () => {
     expect(trashedJournalEntries([older, trashed, newer]).map((record) => record.id)).toEqual(["journal_c"]);
     expect(hasActiveDailyJournalDate([older, trashed, newer], "2026-08-31")).toBe(true);
     expect(hasActiveDailyJournalDate([older, trashed, newer], "2026-08-29")).toBe(false);
+  });
+
+  it("derives month and multi-term search only from necessary canonical fields", () => {
+    const august = journal("journal_august", "2026-08-31");
+    const september = createWorkspaceRecord({ entityType: "journal_entry", id: "opaque_internal_id", ownerId: "owner_1", timestamp: "2026-09-01T12:00:00.000Z", data: createJournalEntryData({ journalDate: "2026-09-01", timezone: "Asia/Shanghai", title: "发布复盘", bodyMarkdown: "完成 Journal 搜索验收。", mood: "专注", weather: "多云", timestamp: "2026-09-01T12:00:00.000Z" }) });
+    expect(filterJournalEntries([august, september], { view: "active", month: "2026-09", query: "ＪＯＵＲＮＡＬ 专注" }).map((record) => record.id)).toEqual(["opaque_internal_id"]);
+    expect(filterJournalEntries([august, september], { view: "active", query: "多云 发布" }).map((record) => record.id)).toEqual(["opaque_internal_id"]);
+    expect(filterJournalEntries([august, september], { view: "active", query: "opaque_internal_id" })).toEqual([]);
+  });
+
+  it("keeps trash search separate and shifts months across year boundaries", () => {
+    const active = journal("journal_active", "2026-12-31");
+    const trashed = setWorkspaceRecordDeleted(journal("journal_trash", "2027-01-01"), "2027-01-02T00:00:00.000Z", "2027-01-02T00:00:00.000Z");
+    expect(filterJournalEntries([active, trashed], { view: "trash", month: "2027-01", query: "验收" }).map((record) => record.id)).toEqual(["journal_trash"]);
+    expect(filterJournalEntries([active, trashed], { view: "active", month: "2027-01" })).toEqual([]);
+    expect(shiftJournalMonth("2026-12", 1)).toBe("2027-01");
+    expect(shiftJournalMonth("2027-01", -1)).toBe("2026-12");
+    expect(shiftJournalMonth("0099-12", 1)).toBe("0100-01");
+    expect(() => shiftJournalMonth("2026-13", 1)).toThrow("INVALID_JOURNAL_MONTH");
+    expect(() => shiftJournalMonth("0001-01", -1)).toThrow("INVALID_JOURNAL_MONTH");
   });
 
   it("renders portable Markdown with escaped headings and canonical traceability", () => {

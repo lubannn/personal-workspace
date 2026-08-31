@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
-import { activeJournalEntries, hasActiveDailyJournalDate, journalEntryMarkdownFileName, renderJournalEntryMarkdown, trashedJournalEntries } from "../../../../src/lib/github-data/journal-entries";
+import { useMemo, useState, type FormEvent } from "react";
+import { activeJournalEntries, filterJournalEntries, hasActiveDailyJournalDate, journalEntryMarkdownFileName, renderJournalEntryMarkdown, shiftJournalMonth, trashedJournalEntries } from "../../../../src/lib/github-data/journal-entries";
 import type { Connection, SyncedJournalEntry } from "./page-model";
 
 type JournalFields = { journalDate: string; title: string; bodyMarkdown: string; mood: string; weather: string };
@@ -28,13 +28,18 @@ export function JournalSection({ connection, online, todayDate, journalEntryFile
   const [bodyMarkdown, setBodyMarkdown] = useState("");
   const [mood, setMood] = useState("");
   const [weather, setWeather] = useState("");
-  const byId = new Map(journalEntryFiles.map((item) => [item.record.id, item]));
-  const active = activeJournalEntries(journalEntryFiles.map((item) => item.record)).map((record) => byId.get(record.id)!);
-  const trash = trashedJournalEntries(journalEntryFiles.map((item) => item.record)).map((record) => byId.get(record.id)!);
-  const visible = view === "active" ? active : trash;
+  const [month, setMonth] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const records = useMemo(() => journalEntryFiles.map((item) => item.record), [journalEntryFiles]);
+  const byId = useMemo(() => new Map(journalEntryFiles.map((item) => [item.record.id, item])), [journalEntryFiles]);
+  const active = useMemo(() => activeJournalEntries(records).map((record) => byId.get(record.id)!), [byId, records]);
+  const trash = useMemo(() => trashedJournalEntries(records).map((record) => byId.get(record.id)!), [byId, records]);
+  const source = view === "active" ? active : trash;
+  const visible = useMemo(() => filterJournalEntries(records, { view, month, query: searchQuery }).map((record) => byId.get(record.id)!), [byId, month, records, searchQuery, view]);
   const busy = saving || Boolean(savingId);
   const selectedDate = journalDate || todayDate;
-  const dateConflict = !editingId && Boolean(selectedDate) && hasActiveDailyJournalDate(journalEntryFiles.map((item) => item.record), selectedDate);
+  const currentMonth = todayDate.slice(0, 7);
+  const dateConflict = !editingId && Boolean(selectedDate) && hasActiveDailyJournalDate(records, selectedDate);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -78,7 +83,12 @@ export function JournalSection({ connection, online, todayDate, journalEntryFile
       <label className="journal-body">Markdown 正文<textarea value={bodyMarkdown} onChange={(event) => setBodyMarkdown(event.target.value)} maxLength={2_000_000} placeholder="今天发生了什么？" disabled={!connection || busy} /></label>
       <footer><span>{editingId ? "编辑会递增 record version，并使用旧 blob SHA 防止覆盖跨设备变更。" : dateConflict ? "这一天已经有一篇未删除的 daily 日记，请编辑现有记录。" : "每天一篇 daily；同一天的多个时刻可先写在同一篇 Markdown 中。"}</span><div>{editingId ? <button className="secondary-button" type="button" onClick={resetForm} disabled={busy}>取消编辑</button> : null}<button className="primary-button" type="submit" disabled={!connection || !selectedDate || !bodyMarkdown.trim() || dateConflict || busy || online === false}>{busy ? "保存中…" : editingId ? "保存修订" : "保存日记"}</button></div></footer>
     </form> : null}
-    {!connection ? <p className="empty-note">连接后显示 Private 仓库中的 JournalEntry。</p> : loading && journalEntryFiles.length === 0 ? <p className="empty-note">正在读取日记…</p> : visible.length === 0 ? <p className="empty-note">{view === "active" ? "还没有日记。" : "Journal 回收站是空的。"}</p> : <ol className="journal-list">{visible.map((item) => <li key={item.record.id}>
+    <div className="journal-browser" aria-label="日记日期浏览与搜索">
+      <div className="journal-browser-date"><label><span>月份</span><input type="month" value={month} onChange={(event) => setMonth(event.target.value)} disabled={!connection} /></label><button className="secondary-button" type="button" aria-label="上一个月" onClick={() => setMonth(shiftJournalMonth(month || currentMonth, -1))} disabled={!connection || !currentMonth}>←</button><button className="secondary-button" type="button" onClick={() => setMonth(currentMonth)} disabled={!connection || !currentMonth}>本月</button><button className="secondary-button" type="button" aria-label="下一个月" onClick={() => setMonth(shiftJournalMonth(month || currentMonth, 1))} disabled={!connection || !currentMonth}>→</button><button className="text-button" type="button" onClick={() => setMonth("")} disabled={!connection || !month}>全部日期</button></div>
+      <label className="journal-browser-search"><span>浏览器内搜索</span><input type="search" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} maxLength={200} placeholder="搜索标题、正文、心情或天气" disabled={!connection} /></label>
+      <div className="journal-browser-meta" aria-live="polite"><span>{connection ? `显示 ${visible.length} / ${source.length}` : "连接后可搜索"}</span><button className="text-button" type="button" onClick={() => { setMonth(""); setSearchQuery(""); }} disabled={!connection || (!month && !searchQuery)}>清除筛选</button></div>
+    </div>
+    {!connection ? <p className="empty-note">连接后显示 Private 仓库中的 JournalEntry。</p> : loading && journalEntryFiles.length === 0 ? <p className="empty-note">正在读取日记…</p> : source.length === 0 ? <p className="empty-note">{view === "active" ? "还没有日记。" : "Journal 回收站是空的。"}</p> : visible.length === 0 ? <p className="empty-note">没有符合当前月份与搜索条件的日记。</p> : <ol className="journal-list">{visible.map((item) => <li key={item.record.id}>
       <div><span>{item.record.data.journal_date}</span><strong>{item.record.data.title || "未命名日记"}</strong><p>{preview(item.record.data.body_markdown)}</p><small>{[item.record.data.mood && `心情 ${item.record.data.mood}`, item.record.data.weather && `天气 ${item.record.data.weather}`, `v${item.record.version}`, item.record.data.sync_status === "not_configured" && "未连接 Obsidian"].filter(Boolean).join(" · ")}</small></div>
       <div className="journal-item-actions">{view === "active" ? <><button className="text-button" type="button" onClick={() => beginEdit(item)} disabled={Boolean(savingId) || saving}>编辑</button><button className="text-button" type="button" onClick={() => downloadMarkdown(item)}>下载 Markdown</button></> : null}<button className="text-button" type="button" onClick={() => onDeletionChange(item, view === "active" ? "trash" : "restore")} disabled={Boolean(savingId) || online === false}>{savingId === item.record.id ? "…" : view === "active" ? "移到回收站" : "恢复"}</button></div>
     </li>)}</ol>}
