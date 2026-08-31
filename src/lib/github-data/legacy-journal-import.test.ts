@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { classifyLegacyWordParagraph, parseLegacyJournalParagraphs, type LegacyWordParagraph } from "./legacy-journal-import";
+import { classifyLegacyWordParagraph, compareLegacyJournalPreviews, parseLegacyJournalParagraphs, type LegacyImportCorrection, type LegacyWordParagraph } from "./legacy-journal-import";
 
 function paragraph(index: number, text: string, extra: Partial<LegacyWordParagraph> = {}): LegacyWordParagraph {
   return { sourceLocator: `fixture#p${index}`, text, ...extra };
@@ -77,5 +77,55 @@ describe("Legacy Journal structural preview", () => {
     expect(preview.entries[0].segments[0].bodyMarkdown).toBe("原本属于五日");
     expect(preview.orphanBlocks.map((block) => block.text)).toContain("24:00\n时间归属不确定，必须成为 orphan");
     expect(preview.entries[1].segments[0].bodyMarkdown).toBe("六日正文");
+  });
+
+  it("applies auditable correction chains and reports a reproducible reparse comparison", () => {
+    const paragraphs = [
+      paragraph(1, "无日期正文"),
+      paragraph(2, "2012年"),
+      paragraph(3, "3月"),
+      paragraph(4, "5日"),
+      paragraph(5, "五日正文"),
+    ];
+    const before = parseLegacyJournalParagraphs(paragraphs, { timezone: "Asia/Shanghai" });
+    const corrections: LegacyImportCorrection[] = [
+      { id: "correction-1", sourceLocator: "fixture#p1", action: "assign-body", date: "2012-03-04", time: "23:10", reason: "根据脱敏样本中的前页日期确认", recordedAt: "2026-08-31T10:00:00.000Z" },
+      { id: "correction-2", sourceLocator: "fixture#p1", action: "assign-body", date: "2012-03-04", time: null, reason: "样本没有可靠时间，撤销时间推断", recordedAt: "2026-08-31T10:01:00.000Z", supersedesId: "correction-1" },
+    ];
+    const after = parseLegacyJournalParagraphs(paragraphs, { timezone: "Asia/Shanghai", corrections });
+    const comparison = compareLegacyJournalPreviews(before, after);
+
+    expect(after.entries[0]).toMatchObject({ date: "2012-03-04", segments: [{ time: null, bodyMarkdown: "无日期正文" }] });
+    expect(after.corrections).toHaveLength(2);
+    expect(after.summary).toMatchObject({ manualCorrections: 2, orphanBlocks: 0, errors: 0 });
+    expect(after.dryRunReady).toBe(true);
+    expect(comparison).toMatchObject({ addedDates: ["2012-03-04"], removedDates: [], orphanBlocksBefore: 1, orphanBlocksAfter: 0, correctionsBefore: 0, correctionsAfter: 2 });
+    expect(comparison.diagnosticsRemoved).toBe(1);
+    expect(comparison.diagnosticsAdded).toBe(1);
+  });
+
+  it("can repair an invalid date heading without attaching its literal heading text as body", () => {
+    const preview = parseLegacyJournalParagraphs([
+      paragraph(1, "2012年"),
+      paragraph(2, "2月"),
+      paragraph(3, "30日"),
+      paragraph(4, "正文"),
+    ], {
+      timezone: "Asia/Shanghai",
+      corrections: [{ id: "repair-date", sourceLocator: "fixture#p3", action: "set-date-heading", date: "2012-02-29", reason: "对照脱敏页码确认是闰日", recordedAt: "2026-08-31T10:00:00.000Z" }],
+    });
+
+    expect(preview.entries[0]).toMatchObject({ date: "2012-02-29", segments: [{ bodyMarkdown: "正文" }] });
+    expect(preview.entries[0].markdown).not.toContain("30日");
+    expect(preview.dryRunReady).toBe(true);
+  });
+
+  it("requires reasons, valid targets and an unbroken supersedes audit chain", () => {
+    const paragraphs = [paragraph(1, "正文")];
+    expect(() => parseLegacyJournalParagraphs(paragraphs, { timezone: "Asia/Shanghai", corrections: [{ id: "bad", sourceLocator: "fixture#p1", action: "assign-body", date: "2012-02-30", reason: "invalid", recordedAt: "2026-08-31T10:00:00.000Z" }] })).toThrow("INVALID_LEGACY_CORRECTION_DATE");
+    expect(() => parseLegacyJournalParagraphs(paragraphs, { timezone: "Asia/Shanghai", corrections: [
+      { id: "first", sourceLocator: "fixture#p1", action: "skip", reason: "第一版判断", recordedAt: "2026-08-31T10:00:00.000Z" },
+      { id: "second", sourceLocator: "fixture#p1", action: "set-body", reason: "重新归类", recordedAt: "2026-08-31T10:01:00.000Z", supersedesId: "unknown" },
+    ] })).toThrow("INVALID_LEGACY_CORRECTION_CHAIN");
   });
 });

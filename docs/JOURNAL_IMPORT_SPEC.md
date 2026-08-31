@@ -1,11 +1,11 @@
 # Legacy Journal Importer 规格
 
-> 状态：Phase 3 首个本地只读 Preview 切片已实现
-> 版本：0.2
+> 状态：Phase 3 本地修正与 Dry Run staging 切片已实现
+> 版本：0.3
 > 最后更新：2026-08-31
 > 范围：巨大 Word 文档中的多年纯文字日记，解析为可预览、可审计的 Journal/Markdown 数据。
 
-当前实现边界：PWA 可在浏览器内选择 `.docx` 工作副本，计算源 SHA-256，只解压 `word/document.xml`，提取段落、样式/大纲/加粗/字号提示，按源顺序识别中文或阿拉伯数字年/月/日/时间，并展示按日 Markdown、继承上下文、置信度、orphan、不支持对象和 diagnostics。文件不上传、不修改，不写 GitHub、Journal 或 Vault；Commit 能力固定关闭。当前没有手工修正规则、Import Log 持久化、dry-run 文件下载或正式批量提交。
+当前实现边界：PWA 可在浏览器内选择 `.docx` 工作副本，计算源 SHA-256，只解压 `word/document.xml`，提取段落、样式/大纲/加粗/字号提示，按源顺序识别中文或阿拉伯数字年/月/日/时间，并展示按日 Markdown、继承上下文、置信度、orphan、不支持对象和 diagnostics。用户可以为异常或低置信度段落追加带原因、时间和 `supersedesId` 的本地修正，立即重解析并查看差异；结构通过后可下载包含 staging Markdown、machine-readable manifest 和不复制正文的 Import Log 的确定性 ZIP。文件不上传、不修改，不写 GitHub、Journal 或 Vault；Commit 能力固定关闭。当前没有 Import Log 持久化、正式批量提交或 Obsidian 写入。
 
 ## 1. 目标
 
@@ -212,6 +212,8 @@
 
 ### 7.3 用户可执行动作
 
+当前实现的安全子集是：将单段解释为完整日期标题、时间标题或正文，把孤立正文指派到明确日期/可选时间，或填写原因后跳过；每次修正都会追加审计记录并比较重新解析结果。下面其余动作仍是后续能力：
+
 - 修改日期/时间。
 - 将段落重新标记为年/月/日/时间/正文。
 - 合并或拆分条目。
@@ -361,7 +363,7 @@ schema_version: 1
 - 已编辑或发生同步冲突的条目进入人工处理，不强制覆盖。
 - 文件移入可恢复隔离区，数据库使用软删除；保留期过后才允许永久清理。
 
-## 14. 首个只读 Preview 切片验收
+## 14. 本地 Preview、修正与 Dry Run 切片验收
 
 - `.docx` ZIP 与 `word/document.xml` 全部在当前浏览器内处理；不调用上传或服务器解析接口。
 - 限制源文件 256 MiB、主文档 XML 64 MiB、ZIP 条目 20,000，并拒绝路径穿越、加密包、损坏 ZIP 和缺失主文档。
@@ -369,10 +371,15 @@ schema_version: 1
 - 非法日期/时间会清空当前归属状态，后续正文进入 orphan，禁止误挂到上一日。
 - 脱敏 OOXML/ZIP fixture 覆盖中文年份、上下文继承、全角时间、同日多 Segment、无时间正文、日期回退、非法 24:00、表格和媒体报告。
 - UI 只渲染最多前 100 条按日预览以避免巨大文档阻塞；汇总和 diagnostics 仍覆盖全文。
-- 下一切片才允许增加手工修正、可比较的重新解析、dry-run manifest 和幂等 Import Log；正式 Commit 仍需独立设计与逐批确认。
+- 手工修正按 source locator 校验，理由必填；同段后续修正必须精确取代上一条，不支持对象只能明确跳过。
+- 每次修正使用同一源文件和完整修正链重解析，并展示新增、删除、变化日期及 diagnostics/orphan 计数差异。
+- Dry Run 只在没有 error/blocking、所有非空段落均有明确去向时开放；ZIP 包含 `staging/Journal/...`、`manifest.json` 和 `import-log.md`，所有输出有 SHA-256，目标 Journal ID 为空、状态为 pending、`commit_enabled = false`。
+- ZIP 条目顺序、mtime、输出路径和默认审计时间锚点固定；对同一 preview 重复生成得到相同 ZIP。显式传入时间时，该时间视为确定性输入。
+- Import Log 记录源指纹、修正链、跳过原因、diagnostics 与输出哈希，不复制日记正文。
+- 下一切片才允许设计幂等正式 Commit；仍需独立事务、冲突、恢复与逐批确认。
 - 回滚本身生成 AuditEvent 和 Import Log 追加记录。
 
-## 14. 性能与资源安全
+## 15. 性能与资源安全
 
 - 流式/分段解析巨大文档，避免全部对象常驻内存。
 - 限制文件大小、解压后大小、段落数、单段长度、处理时间和并发数。
@@ -380,7 +387,7 @@ schema_version: 1
 - 解析器在隔离环境运行，不执行宏、链接或嵌入对象。
 - Preview 分页和虚拟化，不能一次渲染十多年全文。
 
-## 15. 隐私
+## 16. 隐私
 
 - 原 Word、staging 正文、dry-run 输出和日志都属于 Restricted。
 - 默认不将正文发送给 AI 或第三方转换服务。
@@ -388,7 +395,7 @@ schema_version: 1
 - 临时文件在 Job 完成/失败后按策略清理，路径和内容不进入普通日志。
 - 导入完成后用户选择保留或删除服务端工作副本；原件备份策略单独说明。
 
-## 16. 测试矩阵
+## 17. 测试矩阵
 
 - 阿拉伯/中文数字年月日。
 - 全角冒号、不同空格、不同换行。
@@ -400,7 +407,7 @@ schema_version: 1
 - 表格、图片、脚注、文本框等意外对象。
 - 中途失败、重试、取消、回滚和同步冲突。
 
-## 17. 验收标准
+## 18. 验收标准
 
 - 原文件字节和 SHA-256 在导入前后不变。
 - Commit 前存在完整 preview，blocking error 必须解决或明确排除。
@@ -410,7 +417,7 @@ schema_version: 1
 - Import Log 和 machine-readable manifest 可定位每条输出来源。
 - 模拟冲突和回滚不会覆盖导入后的人工作品。
 
-## 18. 需要用户提供/确认
+## 19. 需要用户提供/确认
 
 进入 Phase 1/3 技术验证前需要：
 
