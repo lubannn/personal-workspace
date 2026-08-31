@@ -3,7 +3,8 @@
 import type { DashboardLayout, DashboardWidgetConfig, DashboardWidgetSize } from "../../../../src/lib/github-data/dashboard-layout";
 import { projectMilestoneProgress, projectTaskProgress } from "../../../../src/lib/github-data/projects";
 import { calendarEventsForDate } from "../../../../src/lib/github-data/calendar-events";
-import { formatTaskDue, type Connection, type SavedCapture, type SyncedCalendarEvent, type SyncedMilestone, type SyncedProject, type SyncedTask } from "./page-model";
+import { recentJournalEntries } from "../../../../src/lib/github-data/journal-entries";
+import { formatTaskDue, type Connection, type SavedCapture, type SyncedCalendarEvent, type SyncedJournalEntry, type SyncedMilestone, type SyncedProject, type SyncedTask } from "./page-model";
 
 type WidgetDefinition = { eyebrow: string; title: string; empty: string };
 
@@ -14,7 +15,7 @@ const WIDGETS: Record<string, WidgetDefinition> = {
   project_progress: { eyebrow: "Projects", title: "项目进度", empty: "连接后显示进行中项目的任务事实进度。" },
   learning_today: { eyebrow: "Learning", title: "今日学习", empty: "Learning 模块接入后，这里显示语言、乐器和运动学习任务。" },
   exercise_today: { eyebrow: "Health", title: "今日运动", empty: "Health 数据经确认后，这里生成当天运动建议。" },
-  recent_journal: { eyebrow: "Journal", title: "最近日记", empty: "Journal 模块接入后，这里只显示克制的最近摘要。" },
+  recent_journal: { eyebrow: "Journal", title: "最近日记", empty: "连接后显示最近三篇日记的克制摘要。" },
   habit_heatmap: { eyebrow: "Habits", title: "习惯月度打卡", empty: "Habit 模块接入后，这里显示当月 Heatmap。" },
 };
 
@@ -39,10 +40,12 @@ type Props = {
   projectTasks: SyncedTask[];
   projectMilestones: SyncedMilestone[];
   calendarEvents: SyncedCalendarEvent[];
+  journalEntries: SyncedJournalEntry[];
   loadingTasks: boolean;
   loadingProjects: boolean;
   loadingMilestones: boolean;
   loadingCalendarEvents: boolean;
+  loadingJournalEntries: boolean;
   savingTaskId: string | null;
   currentTaskDate: string;
   onToggleEditing: () => void;
@@ -57,10 +60,12 @@ type Props = {
 };
 
 export function DashboardSection(props: Props) {
-  const { connection, online, dashboardLayout, dashboardBlobSha, dashboardDirty, editingDashboard, loadingDashboard, savingDashboard, visibleWidgets, hiddenWidgets, capture, savingCapture, savedCapture, todayTasks, currentProjects, projectTasks, projectMilestones, calendarEvents, loadingTasks, loadingProjects, loadingMilestones, loadingCalendarEvents, savingTaskId, currentTaskDate, onToggleEditing, onRefresh, onSaveLayout, onWidgetChange, onWidgetResize, onReset, onCaptureChange, onSaveCapture, onCompleteTask } = props;
+  const { connection, online, dashboardLayout, dashboardBlobSha, dashboardDirty, editingDashboard, loadingDashboard, savingDashboard, visibleWidgets, hiddenWidgets, capture, savingCapture, savedCapture, todayTasks, currentProjects, projectTasks, projectMilestones, calendarEvents, journalEntries, loadingTasks, loadingProjects, loadingMilestones, loadingCalendarEvents, loadingJournalEntries, savingTaskId, currentTaskDate, onToggleEditing, onRefresh, onSaveLayout, onWidgetChange, onWidgetResize, onReset, onCaptureChange, onSaveCapture, onCompleteTask } = props;
   const todayCalendarEvents = currentTaskDate
     ? calendarEventsForDate(calendarEvents.map((item) => item.record), currentTaskDate)
     : [];
+  const journalById = new Map(journalEntries.map((item) => [item.record.id, item]));
+  const recentJournals = recentJournalEntries(journalEntries.map((item) => item.record), 3).map((record) => journalById.get(record.id)!);
   return (
     <section className="dashboard-card" aria-labelledby="dashboard-title">
       <div className="card-heading dashboard-heading">
@@ -141,6 +146,13 @@ export function DashboardSection(props: Props) {
                         })}</ul>}
                   {currentProjects.length > 3 ? <p className="task-overflow-note">另有 {currentProjects.length - 3} 个项目，请在项目区查看。</p> : null}
                 </div>
+              ) : widget.widget_type === "recent_journal" ? (
+                <div className="dashboard-journal-widget">
+                  {!connection ? <p className="widget-empty">连接 Private 数据仓库后显示最近日记。</p>
+                    : loadingJournalEntries ? <p className="widget-empty">正在读取最近日记…</p>
+                      : recentJournals.length === 0 ? <p className="widget-empty">还没有日记。</p>
+                        : <ul>{recentJournals.map((item) => <li key={item.record.id}><div><strong>{item.record.data.title || item.record.data.journal_date}</strong><small>{item.record.data.journal_date}</small></div><p>{journalPreview(item.record.data.body_markdown)}</p></li>)}</ul>}
+                </div>
               ) : <p className="widget-empty">{definition.empty}</p>}
             </article>
           );
@@ -164,4 +176,9 @@ function projectDashboardMeta(item: SyncedProject) {
 function formatScheduleTime(startAt: string, endAt: string, timezone: string) {
   const formatter = new Intl.DateTimeFormat("zh-CN", { timeZone: timezone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
   return `${formatter.format(new Date(startAt))}–${formatter.format(new Date(endAt))}`;
+}
+
+function journalPreview(value: string) {
+  const text = value.replace(/[#>*_`\[\]()\-]/g, " ").replace(/\s+/g, " ").trim();
+  return text.length > 90 ? `${text.slice(0, 90)}…` : text;
 }

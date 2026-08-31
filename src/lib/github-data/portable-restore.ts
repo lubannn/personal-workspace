@@ -33,7 +33,7 @@ export type PortableRestorePlan = {
   branch: string;
   expectedHeadCommitSha: string;
   baseTreeSha: string;
-  counts: { files: number; captures: number; dashboardLayouts: number; tasks: number; timeEntries: number; projects: number; projectPhases: number; milestones: number; projectNotes: number; projectFileReferences: number; activityEvents: number; calendarEvents: number; reportDrafts: number };
+  counts: { files: number; captures: number; dashboardLayouts: number; tasks: number; timeEntries: number; projects: number; projectPhases: number; milestones: number; projectNotes: number; projectFileReferences: number; activityEvents: number; calendarEvents: number; reportDrafts: number; journalEntries: number };
   files: Array<{ path: string; text: string }>;
   errors: ExportInspectionIssue[];
   warnings: ExportInspectionIssue[];
