@@ -62,6 +62,39 @@ export type LegacyUnsupportedBlock = {
   objectTypes: string[];
 };
 
+export type LegacyImportCorrectionAction = "set-date-heading" | "set-time-heading" | "set-body" | "assign-body" | "skip";
+
+export type LegacyImportCorrection = {
+  id: string;
+  sourceLocator: string;
+  action: LegacyImportCorrectionAction;
+  date?: string;
+  time?: string | null;
+  reason: string;
+  recordedAt: string;
+  supersedesId?: string | null;
+};
+
+export type LegacySkippedBlock = {
+  sourceLocator: string;
+  text: string;
+  reason: string;
+  correctionId: string;
+};
+
+export type LegacyPreviewComparison = {
+  addedDates: string[];
+  removedDates: string[];
+  changedDates: string[];
+  unchangedDates: number;
+  diagnosticsAdded: number;
+  diagnosticsRemoved: number;
+  orphanBlocksBefore: number;
+  orphanBlocksAfter: number;
+  correctionsBefore: number;
+  correctionsAfter: number;
+};
+
 export type LegacyJournalParsePreview = {
   parserVersion: string;
   mappingVersion: string;
@@ -70,6 +103,8 @@ export type LegacyJournalParsePreview = {
   tokens: LegacyParagraphToken[];
   orphanBlocks: LegacyOrphanBlock[];
   unsupportedBlocks: LegacyUnsupportedBlock[];
+  skippedBlocks: LegacySkippedBlock[];
+  corrections: LegacyImportCorrection[];
   diagnostics: LegacyImportDiagnostic[];
   summary: {
     sourceParagraphs: number;
@@ -87,16 +122,19 @@ export type LegacyJournalParsePreview = {
     duplicateDates: number;
     orphanBlocks: number;
     unsupportedObjects: number;
+    manualCorrections: number;
+    skippedParagraphs: number;
   };
   dryRunReady: boolean;
   commitEnabled: false;
 };
 
-type ParseOptions = {
+export type LegacyJournalParseOptions = {
   timezone: string;
   sourceSha256?: string;
   minimumYear?: number;
   maximumYear?: number;
+  corrections?: LegacyImportCorrection[];
 };
 
 type ClassifiedParagraph = {
@@ -124,7 +162,7 @@ type DraftEntry = {
 const CHINESE_DIGITS: Record<string, number> = { "〇": 0, "零": 0, "一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9 };
 const CONFIDENCE_RANK: Record<LegacyImportConfidence, number> = { low: 0, medium: 1, high: 2 };
 
-export function parseLegacyJournalParagraphs(paragraphs: LegacyWordParagraph[], options: ParseOptions): LegacyJournalParsePreview {
+export function parseLegacyJournalParagraphs(paragraphs: LegacyWordParagraph[], options: LegacyJournalParseOptions): LegacyJournalParsePreview {
   const minimumYear = options.minimumYear ?? 1900;
   const maximumYear = options.maximumYear ?? 2100;
   if (!isIanaTimezone(options.timezone)) throw new Error("INVALID_LEGACY_IMPORT_TIMEZONE");
@@ -134,6 +172,10 @@ export function parseLegacyJournalParagraphs(paragraphs: LegacyWordParagraph[], 
   const diagnostics: LegacyImportDiagnostic[] = [];
   const orphanBlocks: LegacyOrphanBlock[] = [];
   const unsupportedBlocks: LegacyUnsupportedBlock[] = [];
+  const skippedBlocks: LegacySkippedBlock[] = [];
+  const corrections = validateCorrections(paragraphs, options.corrections ?? [], minimumYear, maximumYear);
+  const activeCorrections = new Map<string, LegacyImportCorrection>();
+  for (const correction of corrections) activeCorrections.set(correction.sourceLocator, correction);
   const entriesByDate = new Map<string, DraftEntry>();
   const entryOrder: DraftEntry[] = [];
   let currentYear: number | null = null;
@@ -156,9 +198,36 @@ export function parseLegacyJournalParagraphs(paragraphs: LegacyWordParagraph[], 
   }
 
   for (const paragraph of paragraphs) {
-    const classified = classifyParagraph(paragraph, { currentYear, currentMonth, minimumYear, maximumYear });
-    const token = classified.token;
+    const correction = activeCorrections.get(paragraph.sourceLocator);
+    const classified: ClassifiedParagraph = correction ? classifyCorrection(paragraph, correction) : classifyParagraph(paragraph, { currentYear, currentMonth, minimumYear, maximumYear });
+    const token: LegacyParagraphToken = classified.token;
     tokens.push(token);
+
+    if (correction?.action === "skip") {
+      skippedBlocks.push({ sourceLocator: paragraph.sourceLocator, text: paragraph.text, reason: correction.reason, correctionId: correction.id });
+      addDiagnostic({ code: "MANUAL_SKIP_APPLIED", severity: "info", message: `已按手工修正跳过该段落：${correction.reason}`, sourceLocator: paragraph.sourceLocator });
+      continue;
+    }
+    if (correction?.action === "assign-body") {
+      const date = correction.date!;
+      let entry = entriesByDate.get(date);
+      if (!entry) {
+        entry = { date, segments: [], sourceLocators: [], inheritedContext: ["日期来自手工修正"], confidence: "high", diagnostics: [] };
+        entriesByDate.set(date, entry);
+        entryOrder.push(entry);
+      }
+      const assignedTime = correction.time ?? null;
+      let segment = entry.segments.at(-1);
+      if (!segment || segment.time !== assignedTime || segment.headingLocator) {
+        segment = { time: assignedTime, lines: [], sourceLocators: [], confidence: "high" };
+        entry.segments.push(segment);
+      }
+      segment.lines.push(paragraph.text);
+      segment.sourceLocators.push(paragraph.sourceLocator);
+      entry.sourceLocators.push(paragraph.sourceLocator);
+      addDiagnostic({ code: "MANUAL_BODY_ASSIGNMENT_APPLIED", severity: "info", message: `正文已按手工修正归入 ${date}${assignedTime ? ` ${assignedTime}` : ""}：${correction.reason}`, sourceLocator: paragraph.sourceLocator }, entry);
+      continue;
+    }
 
     if (token.kind === "UNSUPPORTED_OBJECT") {
       unsupportedBlocks.push({ sourceLocator: paragraph.sourceLocator, text: paragraph.text, objectTypes: paragraph.unsupportedObjects ?? [] });
@@ -312,6 +381,8 @@ export function parseLegacyJournalParagraphs(paragraphs: LegacyWordParagraph[], 
     tokens,
     orphanBlocks,
     unsupportedBlocks,
+    skippedBlocks,
+    corrections,
     diagnostics,
     summary: {
       sourceParagraphs: paragraphs.length,
@@ -329,14 +400,50 @@ export function parseLegacyJournalParagraphs(paragraphs: LegacyWordParagraph[], 
       duplicateDates,
       orphanBlocks: orphanBlocks.length,
       unsupportedObjects: unsupportedBlocks.length,
+      manualCorrections: corrections.length,
+      skippedParagraphs: skippedBlocks.length,
     },
     dryRunReady: entries.length > 0 && counts.error === 0 && counts.blocking === 0 && accountedNonEmptyParagraphs === nonEmptyParagraphs,
     commitEnabled: false,
   };
 }
 
+export function compareLegacyJournalPreviews(before: LegacyJournalParsePreview, after: LegacyJournalParsePreview): LegacyPreviewComparison {
+  const beforeEntries = new Map(before.entries.map((entry) => [entry.date, entry]));
+  const afterEntries = new Map(after.entries.map((entry) => [entry.date, entry]));
+  const addedDates = [...afterEntries.keys()].filter((date) => !beforeEntries.has(date)).sort();
+  const removedDates = [...beforeEntries.keys()].filter((date) => !afterEntries.has(date)).sort();
+  const sharedDates = [...afterEntries.keys()].filter((date) => beforeEntries.has(date));
+  const changedDates = sharedDates.filter((date) => beforeEntries.get(date)!.markdown !== afterEntries.get(date)!.markdown).sort();
+  const beforeDiagnostics = multiset(before.diagnostics.map(diagnosticFingerprint));
+  const afterDiagnostics = multiset(after.diagnostics.map(diagnosticFingerprint));
+  return {
+    addedDates,
+    removedDates,
+    changedDates,
+    unchangedDates: sharedDates.length - changedDates.length,
+    diagnosticsAdded: multisetDifferenceCount(afterDiagnostics, beforeDiagnostics),
+    diagnosticsRemoved: multisetDifferenceCount(beforeDiagnostics, afterDiagnostics),
+    orphanBlocksBefore: before.orphanBlocks.length,
+    orphanBlocksAfter: after.orphanBlocks.length,
+    correctionsBefore: before.corrections.length,
+    correctionsAfter: after.corrections.length,
+  };
+}
+
 export function classifyLegacyWordParagraph(paragraph: LegacyWordParagraph, context: { currentYear: number | null; currentMonth: number | null; minimumYear?: number; maximumYear?: number }) {
   return classifyParagraph(paragraph, { minimumYear: context.minimumYear ?? 1900, maximumYear: context.maximumYear ?? 2100, currentYear: context.currentYear, currentMonth: context.currentMonth }).token;
+}
+
+function classifyCorrection(paragraph: LegacyWordParagraph, correction: LegacyImportCorrection): ClassifiedParagraph {
+  const normalizedText = normalizeForMatch(paragraph.text);
+  const base = { sourceLocator: paragraph.sourceLocator, originalText: paragraph.text, normalizedText, confidence: "high" as const, evidence: [`手工修正 ${correction.id}：${correction.reason}`] };
+  if (correction.action === "set-date-heading") {
+    const [year, month, day] = correction.date!.split("-").map(Number);
+    return { token: { ...base, kind: "DATE_HEADING", parsed: { year, month, day } } };
+  }
+  if (correction.action === "set-time-heading") return { token: { ...base, kind: "TIME_HEADING", parsed: { time: correction.time! } } };
+  return { token: { ...base, kind: "BODY" } };
 }
 
 function classifyParagraph(paragraph: LegacyWordParagraph, context: { currentYear: number | null; currentMonth: number | null; minimumYear: number; maximumYear: number }): ClassifiedParagraph {
@@ -489,4 +596,63 @@ function countDiagnostics(diagnostics: LegacyImportDiagnostic[]) {
 
 function unique(values: string[]) {
   return [...new Set(values)];
+}
+
+function validateCorrections(paragraphs: LegacyWordParagraph[], corrections: LegacyImportCorrection[], minimumYear: number, maximumYear: number) {
+  const paragraphsByLocator = new Map(paragraphs.map((paragraph) => [paragraph.sourceLocator, paragraph]));
+  const ids = new Set<string>();
+  const previousByLocator = new Map<string, LegacyImportCorrection>();
+  return corrections.map((correction) => {
+    if (!correction.id.trim() || correction.id.length > 200 || ids.has(correction.id)) throw new Error("INVALID_LEGACY_CORRECTION_ID");
+    ids.add(correction.id);
+    const paragraph = paragraphsByLocator.get(correction.sourceLocator);
+    if (!paragraph) throw new Error("LEGACY_CORRECTION_LOCATOR_NOT_FOUND");
+    const previous = previousByLocator.get(correction.sourceLocator);
+    if (previous ? correction.supersedesId !== previous.id : correction.supersedesId) throw new Error("INVALID_LEGACY_CORRECTION_CHAIN");
+    if ((paragraph.unsupportedObjects?.length ?? 0) > 0 && correction.action !== "skip") throw new Error("LEGACY_CORRECTION_UNSUPPORTED_OBJECT");
+    const reason = correction.reason.trim();
+    if (!reason || reason.length > 1_000) throw new Error("INVALID_LEGACY_CORRECTION_REASON");
+    const recordedAt = new Date(correction.recordedAt);
+    if (Number.isNaN(recordedAt.valueOf()) || recordedAt.toISOString() !== correction.recordedAt) throw new Error("INVALID_LEGACY_CORRECTION_TIMESTAMP");
+    if (!(["set-date-heading", "set-time-heading", "set-body", "assign-body", "skip"] as string[]).includes(correction.action)) throw new Error("INVALID_LEGACY_CORRECTION_ACTION");
+    if (correction.action === "set-date-heading" || correction.action === "assign-body") {
+      if (!correction.date || !isValidIsoDate(correction.date, minimumYear, maximumYear)) throw new Error("INVALID_LEGACY_CORRECTION_DATE");
+    } else if (correction.date !== undefined) throw new Error("UNEXPECTED_LEGACY_CORRECTION_DATE");
+    if (correction.action === "set-time-heading") {
+      if (!correction.time || !isValidIsoTime(correction.time)) throw new Error("INVALID_LEGACY_CORRECTION_TIME");
+    } else if (correction.action === "assign-body") {
+      if (correction.time !== undefined && correction.time !== null && !isValidIsoTime(correction.time)) throw new Error("INVALID_LEGACY_CORRECTION_TIME");
+    } else if (correction.time !== undefined) throw new Error("UNEXPECTED_LEGACY_CORRECTION_TIME");
+    const normalized = { ...correction, reason, recordedAt: recordedAt.toISOString(), supersedesId: correction.supersedesId ?? null };
+    previousByLocator.set(correction.sourceLocator, normalized);
+    return normalized;
+  });
+}
+
+function isValidIsoDate(value: string, minimumYear: number, maximumYear: number) {
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/u);
+  if (!match) return false;
+  const year = Number(match[1]);
+  return year >= minimumYear && year <= maximumYear && isValidDate(year, Number(match[2]), Number(match[3]));
+}
+
+function isValidIsoTime(value: string) {
+  const match = value.match(/^(\d{2}):(\d{2})$/u);
+  return Boolean(match && Number(match[1]) <= 23 && Number(match[2]) <= 59);
+}
+
+function diagnosticFingerprint(issue: LegacyImportDiagnostic) {
+  return `${issue.severity}\u0000${issue.code}\u0000${issue.sourceLocator ?? ""}\u0000${issue.message}`;
+}
+
+function multiset(values: string[]) {
+  const counts = new Map<string, number>();
+  for (const value of values) counts.set(value, (counts.get(value) ?? 0) + 1);
+  return counts;
+}
+
+function multisetDifferenceCount(left: Map<string, number>, right: Map<string, number>) {
+  let count = 0;
+  for (const [value, occurrences] of left) count += Math.max(0, occurrences - (right.get(value) ?? 0));
+  return count;
 }

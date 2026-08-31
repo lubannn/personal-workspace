@@ -1,6 +1,6 @@
 # Personal Workspace 路线图
 
-> 状态：Phase 2 代码基线已发布；Phase 3A Journal Core、日期浏览/搜索、Segment/Revision 可逆契约及 canonical portability 支持已实现
+> 状态：Phase 2 代码基线已发布；Phase 3A Journal Core、Segment/Revision 原子写入、Legacy Word 本地修正与 Dry Run staging 已实现
 > 版本：0.1  
 > 最后更新：2026-08-31
 > 原则：阶段按“风险被验证且可验收”推进，不用日期承诺替代范围控制。
@@ -124,7 +124,7 @@
 - 数据库与 Markdown 序列化契约。
 - 同步状态和冲突模型。
 
-当前切片已实现 Private canonical JSON、每天一条 active daily、原子 Revision 创建/正文编辑、软删除恢复、最近日记、月份浏览、浏览器内必要字段搜索、单篇 Markdown 下载和完整 portability。搜索不建立持久化 projection，断开、刷新、删除/恢复或权限变化后从当前可见 canonical 记录重新派生。Segment/Revision 的不可变记录、可逆 Markdown、canonical 解析、collection loading、portability 与单 commit 原子事务已启用；并发、篡改、旧正文 baseline 和 branch ref 竞争均有测试。Legacy Word 已进入 local-only `.docx` Preview：源哈希、OOXML 段落、按日 Markdown、orphan/unsupported diagnostics 已覆盖脱敏 fixture，Commit 固定关闭。下一步是手工修正、dry-run manifest 和幂等 Import Log；Obsidian 仍按后续切片推进，正式 Private 写入验收尚未执行。
+当前切片已实现 Private canonical JSON、每天一条 active daily、原子 Revision 创建/正文编辑、软删除恢复、最近日记、月份浏览、浏览器内必要字段搜索、单篇 Markdown 下载和完整 portability。搜索不建立持久化 projection，断开、刷新、删除/恢复或权限变化后从当前可见 canonical 记录重新派生。Segment/Revision 的不可变记录、可逆 Markdown、canonical 解析、collection loading、portability 与单 commit 原子事务已启用；并发、篡改、旧正文 baseline 和 branch ref 竞争均有测试。Legacy Word 已具备 local-only `.docx` Preview、带 supersedes 链的单段修正、可比较重解析，以及包含 staging Markdown、manifest 与 Import Log 的确定性 Dry Run ZIP；脱敏 fixture 覆盖 source hash、OOXML 段落、按日输出、orphan/unsupported 和阻断门。Commit 固定关闭。下一步是正式导入的幂等 JournalRevision 事务、冲突预检、检查点和回滚预览；Obsidian 仍按后续切片推进，正式 Private 写入验收尚未执行。
 
 #### 3B Obsidian Integration
 

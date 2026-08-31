@@ -1,6 +1,6 @@
 import { unzip, type UnzipFileInfo, type Unzipped } from "fflate";
 
-import { LEGACY_JOURNAL_MAPPING_VERSION, LEGACY_JOURNAL_PARSER_VERSION, parseLegacyJournalParagraphs, type LegacyImportDiagnostic, type LegacyJournalParsePreview, type LegacyWordParagraph } from "./legacy-journal-import";
+import { LEGACY_JOURNAL_MAPPING_VERSION, LEGACY_JOURNAL_PARSER_VERSION, parseLegacyJournalParagraphs, type LegacyImportCorrection, type LegacyImportDiagnostic, type LegacyJournalParsePreview, type LegacyWordParagraph } from "./legacy-journal-import";
 
 export const LEGACY_DOCX_MAX_FILE_BYTES = 256 * 1024 * 1024;
 export const LEGACY_DOCX_MAX_DOCUMENT_XML_BYTES = 64 * 1024 * 1024;
@@ -31,7 +31,7 @@ export type LegacyDocxPreview = {
   commitEnabled: false;
 };
 
-export async function previewLegacyJournalDocx(file: LegacyDocxFile, options: { timezone: string; minimumYear?: number; maximumYear?: number }): Promise<LegacyDocxPreview> {
+export async function previewLegacyJournalDocx(file: LegacyDocxFile, options: { timezone: string; minimumYear?: number; maximumYear?: number; corrections?: LegacyImportCorrection[] }): Promise<LegacyDocxPreview> {
   if (!/\.docx$/iu.test(file.name)) throw new Error("LEGACY_IMPORT_DOCX_REQUIRED");
   if (!Number.isSafeInteger(file.size) || file.size <= 0) throw new Error("LEGACY_IMPORT_EMPTY_FILE");
   if (file.size > LEGACY_DOCX_MAX_FILE_BYTES) throw new Error("LEGACY_IMPORT_FILE_TOO_LARGE");
@@ -50,7 +50,7 @@ export async function previewLegacyJournalDocx(file: LegacyDocxFile, options: { 
   const paragraphs = extractLegacyWordParagraphs(xml);
   if (paragraphs.length === 0) throw new Error("LEGACY_IMPORT_NO_PARAGRAPHS");
   const archiveDiagnostics = archiveDiagnosticsFor(entries);
-  const parse = parseLegacyJournalParagraphs(paragraphs, { timezone: options.timezone, sourceSha256: sha256, minimumYear: options.minimumYear, maximumYear: options.maximumYear });
+  const parse = parseLegacyJournalParagraphs(paragraphs, { timezone: options.timezone, sourceSha256: sha256, minimumYear: options.minimumYear, maximumYear: options.maximumYear, corrections: options.corrections });
   const batchIdentity = `${sha256}:${LEGACY_JOURNAL_PARSER_VERSION}:${LEGACY_JOURNAL_MAPPING_VERSION}`;
   return {
     source: {
