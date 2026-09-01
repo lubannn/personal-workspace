@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, type FormEvent } from "react";
+import type { GitHubContentsAdapter } from "../../../../src/lib/github-data/github-contents";
 import { activeJournalEntries, filterJournalEntries, hasActiveDailyJournalDate, journalEntryMarkdownFileName, renderJournalEntryMarkdown, shiftJournalMonth, trashedJournalEntries } from "../../../../src/lib/github-data/journal-entries";
 import { LegacyJournalImportSection } from "./legacy-journal-import-section";
 import type { Connection, SyncedJournalEntry } from "./page-model";
@@ -9,6 +10,7 @@ type JournalFields = { journalDate: string; title: string; bodyMarkdown: string;
 
 type Props = {
   connection: Connection | null;
+  adapter: GitHubContentsAdapter | null;
   online: boolean | null;
   todayDate: string;
   journalEntryFiles: SyncedJournalEntry[];
@@ -21,7 +23,7 @@ type Props = {
   onRefresh: () => void;
 };
 
-export function JournalSection({ connection, online, todayDate, journalEntryFiles, loading, saving, savingId, onCreate, onEdit, onDeletionChange, onRefresh }: Props) {
+export function JournalSection({ connection, adapter, online, todayDate, journalEntryFiles, loading, saving, savingId, onCreate, onEdit, onDeletionChange, onRefresh }: Props) {
   const [view, setView] = useState<"active" | "trash">("active");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [journalDate, setJournalDate] = useState("");
@@ -93,7 +95,7 @@ export function JournalSection({ connection, online, todayDate, journalEntryFile
       <div><span>{item.record.data.journal_date}</span><strong>{item.record.data.title || "未命名日记"}</strong><p>{preview(item.record.data.body_markdown)}</p><small>{[item.record.data.mood && `心情 ${item.record.data.mood}`, item.record.data.weather && `天气 ${item.record.data.weather}`, `v${item.record.version}`, item.record.data.sync_status === "not_configured" && "未连接 Obsidian"].filter(Boolean).join(" · ")}</small></div>
       <div className="journal-item-actions">{view === "active" ? <><button className="text-button" type="button" onClick={() => beginEdit(item)} disabled={Boolean(savingId) || saving}>编辑</button><button className="text-button" type="button" onClick={() => downloadMarkdown(item)}>下载 Markdown</button></> : null}<button className="text-button" type="button" onClick={() => onDeletionChange(item, view === "active" ? "trash" : "restore")} disabled={Boolean(savingId) || online === false}>{savingId === item.record.id ? "…" : view === "active" ? "移到回收站" : "恢复"}</button></div>
     </li>)}</ol>}
-    <LegacyJournalImportSection timezone={connection?.timezone ?? "Asia/Shanghai"} />
+    <LegacyJournalImportSection key={connection ? `${connection.ownerLogin}/${connection.repository}/${connection.timezone}` : "disconnected"} connection={connection} adapter={adapter} online={online} />
   </section>;
 }
 

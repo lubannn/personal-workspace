@@ -2307,6 +2307,7 @@ export default function GitHubWorkspacePage() {
 
       <JournalSection
         connection={connection}
+        adapter={adapterRef.current}
         online={online}
         todayDate={currentTaskDate}
         journalEntryFiles={journalEntryFiles}
