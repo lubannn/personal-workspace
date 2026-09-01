@@ -9,6 +9,7 @@ import { createTimeEntryData } from "./time-entries";
 import { createJournalEntryData } from "./journal-entries";
 import { createJournalSegmentData } from "./journal-segments";
 import { createJournalRevisionData, sha256JournalRevisionBody } from "./journal-revisions";
+import { createJournalImportCheckpointRecord } from "./journal-import-checkpoints";
 import { renderJournalSegmentsMarkdown } from "./journal-segment-codec";
 import {
   buildPortableWorkspaceExport,
@@ -204,7 +205,8 @@ async function sampleExport() {
   const journalSegmentId = "journal_segment_20260827020210000_abcd1234";
   const journalRevisionId = "journal_revision_20260827020220000_abcd1234";
   const journalTimestamp = "2026-08-27T02:02:00.000Z";
-  const journalSegmentData = createJournalSegmentData({ id: journalSegmentId, journalEntryId, localTime: "10:02", occurredAt: "2026-08-27T10:02:00+08:00", bodyMarkdown: "今天完成了迁移验收。", sortOrder: 0 });
+  const importBatchId = `legacy_import_${"a".repeat(32)}`;
+  const journalSegmentData = createJournalSegmentData({ id: journalSegmentId, journalEntryId, localTime: "10:02", occurredAt: "2026-08-27T10:02:00+08:00", bodyMarkdown: "今天完成了迁移验收。", sortOrder: 0, sourceRef: { source_type: "legacy_word", import_batch_id: importBatchId, source_locator: "word/document.xml#p1" } });
   const journalBody = renderJournalSegmentsMarkdown(journalEntryId, [{ id: journalSegmentId, ...journalSegmentData }]).trim();
   const journalEntryText = serializeRecord(createWorkspaceRecord({
     entityType: "journal_entry",
@@ -219,8 +221,26 @@ async function sampleExport() {
     id: journalRevisionId,
     ownerId: "github_lubannn",
     timestamp: journalTimestamp,
-    data: createJournalRevisionData({ journalEntryId, revisionNumber: 1, contentMode: "segments", bodyMarkdown: journalBody, segmentIds: [journalSegmentId], contentSha256: await sha256JournalRevisionBody(journalBody), createdAt: journalTimestamp, createdBy: "migration", changeReason: "schema_migration" }),
+    data: createJournalRevisionData({ journalEntryId, revisionNumber: 1, contentMode: "segments", bodyMarkdown: journalBody, segmentIds: [journalSegmentId], contentSha256: await sha256JournalRevisionBody(journalBody), createdAt: journalTimestamp, createdBy: "legacy_importer", changeReason: "legacy_import" }),
   }));
+  const journalCheckpoint = createJournalImportCheckpointRecord({
+    id: `journal_import_checkpoint_${"b".repeat(32)}`,
+    ownerId: "github_lubannn",
+    importBatchId,
+    dryRunId: `legacy-journal:${"c".repeat(64)}:parser-v1:mapping-v1:${"d".repeat(64)}`,
+    sourceSha256: "c".repeat(64),
+    correctionSetSha256: "d".repeat(64),
+    expectedParentCommitSha: "e".repeat(40),
+    planSha256: "b".repeat(64),
+    committedAt: journalTimestamp,
+    items: [{ date: "2026-08-27", entry_id: journalEntryId, revision_id: journalRevisionId, segment_ids: [journalSegmentId], content_sha256: await sha256JournalRevisionBody(journalBody) }],
+    plannedFiles: [
+      { path: `data/journal-entries/${journalEntryId}.json`, sha256: "1".repeat(64) },
+      { path: `data/journal-revisions/${journalRevisionId}.json`, sha256: "2".repeat(64) },
+      { path: `data/journal-segments/${journalSegmentId}.json`, sha256: "3".repeat(64) },
+    ],
+  });
+  const journalCheckpointText = serializeRecord(journalCheckpoint);
   return buildPortableWorkspaceExport({
     repository: "lubannn/personal-workspace-data",
     branch: "main",
@@ -233,6 +253,7 @@ async function sampleExport() {
     journalEntryFiles: [storedFile("data/journal-entries/journal_entry_20260827020200000_abcd1234.json", journalEntryText, "journal-entry-blob")],
     journalSegmentFiles: [storedFile("data/journal-segments/journal_segment_20260827020210000_abcd1234.json", journalSegmentText, "journal-segment-blob")],
     journalRevisionFiles: [storedFile("data/journal-revisions/journal_revision_20260827020220000_abcd1234.json", journalRevisionText, "journal-revision-blob")],
+    journalImportCheckpointFiles: [storedFile(`data/journal-import-checkpoints/${journalCheckpoint.id}.json`, journalCheckpointText, "journal-checkpoint-blob")],
     projectFiles: [storedFile("data/projects/project_20260827014500000_abcd1234.json", projectText, "project-blob")],
     projectPhaseFiles: [storedFile("data/project-phases/phase_20260827015000000_abcd1234.json", projectPhaseText, "phase-blob")],
     milestoneFiles: [storedFile("data/milestones/milestone_20260827015500000_abcd1234.json", milestoneText, "milestone-blob")],
@@ -247,13 +268,14 @@ async function sampleExport() {
 describe("portable GitHub workspace export", () => {
   it("builds a deterministic manifest and passes restore preflight", async () => {
     const exported = await sampleExport();
-    expect(exported.manifest.counts).toEqual({ files: 16, captures: 1, dashboard_layouts: 1, tasks: 1, time_entries: 1, projects: 1, project_phases: 1, milestones: 1, project_notes: 1, project_file_references: 1, activity_events: 1, calendar_events: 1, report_drafts: 1, journal_entries: 1, journal_segments: 1, journal_revisions: 1 });
+    expect(exported.manifest.counts).toEqual({ files: 17, captures: 1, dashboard_layouts: 1, tasks: 1, time_entries: 1, projects: 1, project_phases: 1, milestones: 1, project_notes: 1, project_file_references: 1, activity_events: 1, calendar_events: 1, report_drafts: 1, journal_entries: 1, journal_segments: 1, journal_revisions: 1, journal_import_checkpoints: 1 });
     expect(exported.manifest.files.map((file) => file.path)).toEqual([
       "config/dashboard-layout.json",
       "data/activity-events/activity_20260827015800000_abcd1234.json",
       "data/calendar-events/calendar_event_20260827015900000_abcd1234.json",
       "data/captures/capture_20260827010000000_abcd1234.json",
       "data/journal-entries/journal_entry_20260827020200000_abcd1234.json",
+      `data/journal-import-checkpoints/journal_import_checkpoint_${"b".repeat(32)}.json`,
       "data/journal-revisions/journal_revision_20260827020220000_abcd1234.json",
       "data/journal-segments/journal_segment_20260827020210000_abcd1234.json",
       "data/milestones/milestone_20260827015500000_abcd1234.json",
@@ -271,7 +293,7 @@ describe("portable GitHub workspace export", () => {
     await expect(inspectPortableWorkspaceExport(exported)).resolves.toMatchObject({
       valid: true,
       repository: "lubannn/personal-workspace-data",
-      counts: { files: 16, captures: 1, dashboardLayouts: 1, tasks: 1, timeEntries: 1, projects: 1, projectPhases: 1, milestones: 1, projectNotes: 1, projectFileReferences: 1, activityEvents: 1, calendarEvents: 1, reportDrafts: 1, journalEntries: 1, journalSegments: 1, journalRevisions: 1 },
+      counts: { files: 17, captures: 1, dashboardLayouts: 1, tasks: 1, timeEntries: 1, projects: 1, projectPhases: 1, milestones: 1, projectNotes: 1, projectFileReferences: 1, activityEvents: 1, calendarEvents: 1, reportDrafts: 1, journalEntries: 1, journalSegments: 1, journalRevisions: 1, journalImportCheckpoints: 1 },
       errors: [],
       workspace: { owner_id: "github_lubannn" },
     });
@@ -383,6 +405,7 @@ describe("portable GitHub workspace export", () => {
     withoutSegment.manifest.counts.journal_segments = 0;
     inspection = await inspectPortableWorkspaceExport(withoutSegment);
     expect(inspection.errors.map((error) => error.code)).toContain("JOURNAL_REVISION_SEGMENT_MISSING");
+    expect(inspection.errors.map((error) => error.code)).toContain("JOURNAL_IMPORT_CHECKPOINT_SEGMENT_MISSING");
 
     const missingCurrent = await sampleExport();
     const entryFile = missingCurrent.files.find((file) => file.path.startsWith("data/journal-entries/"))!;
@@ -404,6 +427,7 @@ describe("portable GitHub workspace export", () => {
     exported.files = exported.files.filter((file) => !file.path.startsWith("data/journal-entries/"));
     exported.files = exported.files.filter((file) => !file.path.startsWith("data/journal-segments/"));
     exported.files = exported.files.filter((file) => !file.path.startsWith("data/journal-revisions/"));
+    exported.files = exported.files.filter((file) => !file.path.startsWith("data/journal-import-checkpoints/"));
     exported.files = exported.files.filter((file) => !file.path.startsWith("data/projects/"));
     exported.files = exported.files.filter((file) => !file.path.startsWith("data/project-phases/"));
     exported.files = exported.files.filter((file) => !file.path.startsWith("data/milestones/"));
@@ -418,6 +442,7 @@ describe("portable GitHub workspace export", () => {
     exported.manifest.files = exported.manifest.files.filter((file) => !file.path.startsWith("data/journal-entries/"));
     exported.manifest.files = exported.manifest.files.filter((file) => !file.path.startsWith("data/journal-segments/"));
     exported.manifest.files = exported.manifest.files.filter((file) => !file.path.startsWith("data/journal-revisions/"));
+    exported.manifest.files = exported.manifest.files.filter((file) => !file.path.startsWith("data/journal-import-checkpoints/"));
     exported.manifest.files = exported.manifest.files.filter((file) => !file.path.startsWith("data/projects/"));
     exported.manifest.files = exported.manifest.files.filter((file) => !file.path.startsWith("data/project-phases/"));
     exported.manifest.files = exported.manifest.files.filter((file) => !file.path.startsWith("data/milestones/"));

@@ -251,6 +251,7 @@ export default function GitHubWorkspacePage() {
     loadJournalEntries,
     loadJournalSegments,
     loadJournalRevisions,
+    loadJournalImportCheckpoints,
     loadDashboardLayout,
     clearCollections,
   } = useWorkspaceCollections({ adapterRef, setErrorMessage, setDashboardClean });
@@ -278,6 +279,7 @@ export default function GitHubWorkspacePage() {
     loadJournalEntries,
     loadJournalSegments,
     loadJournalRevisions,
+    loadJournalImportCheckpoints,
   });
 
   const workspaceTimezone = connection?.timezone ?? "Asia/Shanghai";
@@ -467,6 +469,7 @@ export default function GitHubWorkspacePage() {
         loadJournalEntries(opened.adapter),
         loadJournalSegments(opened.adapter),
         loadJournalRevisions(opened.adapter),
+        loadJournalImportCheckpoints(opened.adapter),
       ]);
     } catch (error) {
       adapterRef.current = null;
@@ -1584,6 +1587,11 @@ export default function GitHubWorkspacePage() {
     catch (error) { if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") return []; throw error; }
   }
 
+  async function listJournalImportCheckpointFiles(adapter: GitHubContentsAdapter) {
+    try { return (await adapter.listDirectory("data/journal-import-checkpoints")).filter((item) => item.type === "file" && item.name.endsWith(".json")).sort((left, right) => left.path.localeCompare(right.path)); }
+    catch (error) { if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") return []; throw error; }
+  }
+
   async function listProjectFiles(adapter: GitHubContentsAdapter) {
     try {
       return (await adapter.listDirectory("data/projects"))
@@ -1793,6 +1801,12 @@ export default function GitHubWorkspacePage() {
         setExportProgress(`正在读取 JournalRevision ${Math.min(index + batchSize, journalRevisionCandidates.length)} / ${journalRevisionCandidates.length}…`);
         journalRevisionExportFiles.push(...await Promise.all(journalRevisionCandidates.slice(index, index + batchSize).map((item) => adapter.readText(item.path))));
       }
+      const journalImportCheckpointCandidates = await listJournalImportCheckpointFiles(adapter);
+      const journalImportCheckpointExportFiles = [];
+      for (let index = 0; index < journalImportCheckpointCandidates.length; index += batchSize) {
+        setExportProgress(`正在读取 JournalImportCheckpoint ${Math.min(index + batchSize, journalImportCheckpointCandidates.length)} / ${journalImportCheckpointCandidates.length}…`);
+        journalImportCheckpointExportFiles.push(...await Promise.all(journalImportCheckpointCandidates.slice(index, index + batchSize).map((item) => adapter.readText(item.path))));
+      }
 
       setExportProgress("正在生成 SHA-256 manifest…");
       const generatedAt = new Date().toISOString();
@@ -1815,6 +1829,7 @@ export default function GitHubWorkspacePage() {
         journalEntryFiles: journalEntryExportFiles,
         journalSegmentFiles: journalSegmentExportFiles,
         journalRevisionFiles: journalRevisionExportFiles,
+        journalImportCheckpointFiles: journalImportCheckpointExportFiles,
         generatedAt,
       });
       const inspection = await inspectPortableWorkspaceExport(portableExport);
@@ -1851,6 +1866,7 @@ export default function GitHubWorkspacePage() {
         journalEntries: inspection.counts.journalEntries,
         journalSegments: inspection.counts.journalSegments,
         journalRevisions: inspection.counts.journalRevisions,
+        journalImportCheckpoints: inspection.counts.journalImportCheckpoints,
         errors: inspection.errors,
         warnings: inspection.warnings,
       });
@@ -1873,6 +1889,7 @@ export default function GitHubWorkspacePage() {
         journalEntries: inspection.counts.journalEntries,
         journalSegments: inspection.counts.journalSegments,
         journalRevisions: inspection.counts.journalRevisions,
+        journalImportCheckpoints: inspection.counts.journalImportCheckpoints,
         errors: inspection.errors,
         warnings: inspection.warnings,
       });
@@ -1923,6 +1940,7 @@ export default function GitHubWorkspacePage() {
           journalEntries: 0,
           journalSegments: 0,
           journalRevisions: 0,
+          journalImportCheckpoints: 0,
           errors: [{ code: "EXPORT_TOO_LARGE", message: "当前预检仅接受 50 MB 以内的 JSON 文件。" }],
           warnings: [],
         });
@@ -1949,6 +1967,7 @@ export default function GitHubWorkspacePage() {
         journalEntries: inspection.counts.journalEntries,
         journalSegments: inspection.counts.journalSegments,
         journalRevisions: inspection.counts.journalRevisions,
+        journalImportCheckpoints: inspection.counts.journalImportCheckpoints,
         errors: inspection.errors,
         warnings: inspection.warnings,
       });
@@ -1976,6 +1995,7 @@ export default function GitHubWorkspacePage() {
         journalEntries: 0,
         journalSegments: 0,
         journalRevisions: 0,
+        journalImportCheckpoints: 0,
         errors: [{ code: "INVALID_JSON", message: "文件不是有效的 JSON，未执行任何恢复操作。" }],
         warnings: [],
       });

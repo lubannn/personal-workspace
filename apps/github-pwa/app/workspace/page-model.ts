@@ -14,6 +14,7 @@ import type { ReportDraftRecord } from "../../../../src/lib/github-data/report-d
 import type { JournalEntryRecord } from "../../../../src/lib/github-data/journal-entries";
 import type { JournalSegmentRecord } from "../../../../src/lib/github-data/journal-segments";
 import type { JournalRevisionRecord } from "../../../../src/lib/github-data/journal-revisions";
+import type { JournalImportCheckpointRecord } from "../../../../src/lib/github-data/journal-import-checkpoints";
 
 export type Connection = {
   repository: string;
@@ -93,6 +94,7 @@ export type SyncedReportDraft = {
 export type SyncedJournalEntry = { record: JournalEntryRecord; path: string; blobSha: string };
 export type SyncedJournalSegment = { record: JournalSegmentRecord; path: string; blobSha: string };
 export type SyncedJournalRevision = { record: JournalRevisionRecord; path: string; blobSha: string };
+export type SyncedJournalImportCheckpoint = { record: JournalImportCheckpointRecord; path: string; blobSha: string };
 
 export type AuthAvailability = "checking" | "unavailable" | "configured";
 export type ConnectionMethod = "github-app" | "personal-token";
@@ -116,6 +118,7 @@ export type PortabilityResult = {
   journalEntries: number;
   journalSegments: number;
   journalRevisions: number;
+  journalImportCheckpoints: number;
   errors: ExportInspectionIssue[];
   warnings: ExportInspectionIssue[];
 };

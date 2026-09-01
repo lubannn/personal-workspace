@@ -14,6 +14,7 @@ import { parseTimeEntryRecord } from "./time-entries";
 import { parseJournalEntryRecord } from "./journal-entries";
 import { parseJournalSegmentRecord } from "./journal-segments";
 import { parseJournalRevisionRecord, sha256JournalRevisionBody } from "./journal-revisions";
+import { parseJournalImportCheckpointRecord } from "./journal-import-checkpoints";
 import { renderJournalSegmentsMarkdown } from "./journal-segment-codec";
 import { parseCaptureRecord, parseWorkspaceDescriptor, type WorkspaceDescriptor } from "./workspace";
 
@@ -43,7 +44,7 @@ export type PortableWorkspaceExport = {
   manifest: {
     schema_version: 1;
     scope: {
-      modules: Array<"workspace" | "captures" | "dashboard_layout" | "tasks" | "time_entries" | "projects" | "project_phases" | "milestones" | "project_notes" | "project_file_references" | "activity_events" | "calendar_events" | "report_drafts" | "journal_entries" | "journal_segments" | "journal_revisions">;
+      modules: Array<"workspace" | "captures" | "dashboard_layout" | "tasks" | "time_entries" | "projects" | "project_phases" | "milestones" | "project_notes" | "project_file_references" | "activity_events" | "calendar_events" | "report_drafts" | "journal_entries" | "journal_segments" | "journal_revisions" | "journal_import_checkpoints">;
       complete: true;
     };
     counts: {
@@ -63,6 +64,7 @@ export type PortableWorkspaceExport = {
       journal_entries: number;
       journal_segments: number;
       journal_revisions: number;
+      journal_import_checkpoints: number;
     };
     files: PortableExportManifestFile[];
   };
@@ -97,6 +99,7 @@ export type ExportInspection = {
     journalEntries: number;
     journalSegments: number;
     journalRevisions: number;
+    journalImportCheckpoints: number;
   };
   errors: ExportInspectionIssue[];
   warnings: ExportInspectionIssue[];
@@ -134,6 +137,7 @@ export async function buildPortableWorkspaceExport(input: {
   journalEntryFiles?: GitHubStoredFile[];
   journalSegmentFiles?: GitHubStoredFile[];
   journalRevisionFiles?: GitHubStoredFile[];
+  journalImportCheckpointFiles?: GitHubStoredFile[];
   generatedAt?: string;
 }): Promise<PortableWorkspaceExport> {
   const dashboardLayoutFiles = input.dashboardLayoutFile ? [input.dashboardLayoutFile] : [];
@@ -150,7 +154,8 @@ export async function buildPortableWorkspaceExport(input: {
   const journalEntryFiles = input.journalEntryFiles ?? [];
   const journalSegmentFiles = input.journalSegmentFiles ?? [];
   const journalRevisionFiles = input.journalRevisionFiles ?? [];
-  const files = [input.workspaceFile, ...input.captureFiles, ...dashboardLayoutFiles, ...taskFiles, ...timeEntryFiles, ...projectFiles, ...projectPhaseFiles, ...milestoneFiles, ...projectNoteFiles, ...projectFileReferenceFiles, ...activityEventFiles, ...calendarEventFiles, ...reportDraftFiles, ...journalEntryFiles, ...journalSegmentFiles, ...journalRevisionFiles]
+  const journalImportCheckpointFiles = input.journalImportCheckpointFiles ?? [];
+  const files = [input.workspaceFile, ...input.captureFiles, ...dashboardLayoutFiles, ...taskFiles, ...timeEntryFiles, ...projectFiles, ...projectPhaseFiles, ...milestoneFiles, ...projectNoteFiles, ...projectFileReferenceFiles, ...activityEventFiles, ...calendarEventFiles, ...reportDraftFiles, ...journalEntryFiles, ...journalSegmentFiles, ...journalRevisionFiles, ...journalImportCheckpointFiles]
     .map((file) => ({ ...file }))
     .sort((left, right) => left.path.localeCompare(right.path));
   const manifestFiles = await Promise.all(files.map(async (file) => ({
@@ -167,7 +172,7 @@ export async function buildPortableWorkspaceExport(input: {
     source: { repository: input.repository, branch: input.branch },
     manifest: {
       schema_version: 1,
-      scope: { modules: ["workspace", "captures", "dashboard_layout", "tasks", "time_entries", "projects", "project_phases", "milestones", "project_notes", "project_file_references", "activity_events", "calendar_events", "report_drafts", "journal_entries", "journal_segments", "journal_revisions"], complete: true },
+      scope: { modules: ["workspace", "captures", "dashboard_layout", "tasks", "time_entries", "projects", "project_phases", "milestones", "project_notes", "project_file_references", "activity_events", "calendar_events", "report_drafts", "journal_entries", "journal_segments", "journal_revisions", "journal_import_checkpoints"], complete: true },
       counts: {
         files: files.length,
         captures: input.captureFiles.length,
@@ -185,6 +190,7 @@ export async function buildPortableWorkspaceExport(input: {
         journal_entries: journalEntryFiles.length,
         journal_segments: journalSegmentFiles.length,
         journal_revisions: journalRevisionFiles.length,
+        journal_import_checkpoints: journalImportCheckpointFiles.length,
       },
       files: manifestFiles,
     },
@@ -218,7 +224,7 @@ export async function inspectPortableWorkspaceExport(value: unknown): Promise<Ex
     generatedAt: null,
     repository: null,
     workspace: null,
-    counts: { files: 0, captures: 0, dashboardLayouts: 0, tasks: 0, timeEntries: 0, projects: 0, projectPhases: 0, milestones: 0, projectNotes: 0, projectFileReferences: 0, activityEvents: 0, calendarEvents: 0, reportDrafts: 0, journalEntries: 0, journalSegments: 0, journalRevisions: 0 },
+    counts: { files: 0, captures: 0, dashboardLayouts: 0, tasks: 0, timeEntries: 0, projects: 0, projectPhases: 0, milestones: 0, projectNotes: 0, projectFileReferences: 0, activityEvents: 0, calendarEvents: 0, reportDrafts: 0, journalEntries: 0, journalSegments: 0, journalRevisions: 0, journalImportCheckpoints: 0 },
     errors,
     warnings,
   };
@@ -743,6 +749,40 @@ export async function inspectPortableWorkspaceExport(value: unknown): Promise<Ex
     }
   }
 
+  const journalImportCheckpointIds = new Set<string>();
+  const journalImportCheckpointFiles = validPayloadFiles.filter((file) => file.path.startsWith("data/journal-import-checkpoints/"));
+  result.counts.journalImportCheckpoints = journalImportCheckpointFiles.length;
+  for (const file of journalImportCheckpointFiles) {
+    try {
+      const record = parseJournalImportCheckpointRecord(file.content);
+      if (result.workspace && record.owner_id !== result.workspace.owner_id) errors.push({ code: "OWNER_MISMATCH", message: "JournalImportCheckpoint 的 owner_id 与 workspace 不一致。", path: file.path });
+      if (recordPath("journal_import_checkpoint", record.id) !== file.path) errors.push({ code: "JOURNAL_IMPORT_CHECKPOINT_PATH_MISMATCH", message: "JournalImportCheckpoint 的 ID 与文件路径不一致。", path: file.path });
+      if (journalImportCheckpointIds.has(record.id)) errors.push({ code: "DUPLICATE_JOURNAL_IMPORT_CHECKPOINT_ID", message: "导出包中存在重复 JournalImportCheckpoint ID。", path: file.path });
+      journalImportCheckpointIds.add(record.id);
+      const expectedPaths = new Set<string>();
+      for (const item of record.data.items) {
+        const entry = journalEntryRecords.get(item.entry_id);
+        const revision = journalRevisionRecords.get(item.revision_id);
+        const segments = item.segment_ids.map((id) => journalSegmentRecords.get(id));
+        expectedPaths.add(recordPath("journal_entry", item.entry_id));
+        expectedPaths.add(recordPath("journal_revision", item.revision_id));
+        item.segment_ids.forEach((id) => expectedPaths.add(recordPath("journal_segment", id)));
+        if (!entry) errors.push({ code: "JOURNAL_IMPORT_CHECKPOINT_ENTRY_MISSING", message: "JournalImportCheckpoint 引用的 JournalEntry 不在导出包中。", path: file.path });
+        if (!revision) errors.push({ code: "JOURNAL_IMPORT_CHECKPOINT_REVISION_MISSING", message: "JournalImportCheckpoint 引用的 JournalRevision 不在导出包中。", path: file.path });
+        if (segments.some((segment) => !segment)) errors.push({ code: "JOURNAL_IMPORT_CHECKPOINT_SEGMENT_MISSING", message: "JournalImportCheckpoint 引用的 JournalSegment 不在导出包中。", path: file.path });
+        if (entry && entry.data.journal_date !== item.date) errors.push({ code: "JOURNAL_IMPORT_CHECKPOINT_DATE_MISMATCH", message: "JournalImportCheckpoint 日期与 JournalEntry 不一致。", path: file.path });
+        if (revision && (revision.data.journal_entry_id !== item.entry_id || revision.data.content_sha256 !== item.content_sha256)) errors.push({ code: "JOURNAL_IMPORT_CHECKPOINT_REVISION_MISMATCH", message: "JournalImportCheckpoint 与 JournalRevision 身份或正文哈希不一致。", path: file.path });
+        if (segments.some((segment) => segment && (segment.data.journal_entry_id !== item.entry_id || segment.data.source_ref?.import_batch_id !== record.data.import_batch_id))) errors.push({ code: "JOURNAL_IMPORT_CHECKPOINT_SEGMENT_MISMATCH", message: "JournalImportCheckpoint 的 Segment 归属或来源批次不一致。", path: file.path });
+      }
+      const plannedPaths = new Set(record.data.planned_files.map((planned) => planned.path));
+      if (plannedPaths.size !== expectedPaths.size || [...expectedPaths].some((path) => !plannedPaths.has(path))) errors.push({ code: "JOURNAL_IMPORT_CHECKPOINT_FILE_SET_MISMATCH", message: "JournalImportCheckpoint 的 planned_files 与引用实体集合不一致。", path: file.path });
+    } catch {
+      errors.push({ code: "INVALID_JOURNAL_IMPORT_CHECKPOINT_RECORD", message: "JournalImportCheckpoint 文件无法通过结构校验。", path: file.path });
+    }
+  }
+  const rawJournalImportCheckpointCount = manifestCounts?.journal_import_checkpoints;
+  if ((rawJournalImportCheckpointCount !== undefined || journalImportCheckpointFiles.length > 0) && rawJournalImportCheckpointCount !== journalImportCheckpointFiles.length) errors.push({ code: "JOURNAL_IMPORT_CHECKPOINT_COUNT_MISMATCH", message: "JournalImportCheckpoint 数量与 manifest 不一致。" });
+
   const supportedPaths = new Set(["workspace.json", DASHBOARD_LAYOUT_PATH]);
   const unexpectedFiles = validPayloadFiles.filter((file) => (
     !supportedPaths.has(file.path)
@@ -760,6 +800,7 @@ export async function inspectPortableWorkspaceExport(value: unknown): Promise<Ex
     && !file.path.startsWith("data/journal-entries/")
     && !file.path.startsWith("data/journal-segments/")
     && !file.path.startsWith("data/journal-revisions/")
+    && !file.path.startsWith("data/journal-import-checkpoints/")
   ));
   for (const file of unexpectedFiles) {
     errors.push({ code: "UNEXPECTED_FILE", message: "当前版本不支持此导出路径。", path: file.path });

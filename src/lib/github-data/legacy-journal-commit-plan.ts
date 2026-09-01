@@ -153,7 +153,10 @@ export async function buildLegacyJournalCommitPlan(input: {
     items.push({ date, status: conflicts.length ? "conflict" : "pending", conflicts: unique(conflicts), artifacts });
   }
 
-  const files = items.filter((item) => item.status === "pending").flatMap((item) => item.artifacts!.files);
+  const files = items
+    .filter((item) => item.status === "pending")
+    .flatMap((item) => item.artifacts!.files)
+    .sort((left, right) => left.path.localeCompare(right.path));
   if (new Set(files.map((file) => file.path)).size !== files.length) throw new Error("LEGACY_IMPORT_DUPLICATE_PLANNED_PATH");
   const summary = {
     pending: items.filter((item) => item.status === "pending").length,

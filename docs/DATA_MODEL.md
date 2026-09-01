@@ -306,6 +306,16 @@ Revision 是 create-only 内容快照。`change_reason` 使用受控枚举；`bo
 
 canonical 文件位于 `data/journal-revisions/<id>.json`。记录固定 `version = 1` 且不可软删除；portable inspection 校验正文 SHA-256、同父 revision number 唯一、Segment 顺序/归属/物化结果，以及 JournalEntry 必须指向自己的最高 revision 并保存相同物化正文。
 
+### JournalImportCheckpoint
+
+- `id`, `checkpoint_version`, `checkpoint_kind`
+- `import_batch_id`, `dry_run_id`, `source_sha256`, `correction_set_sha256`
+- `expected_parent_commit_sha`, `plan_sha256`, `committed_at`
+- `items[]`：日期、Entry/Revision/Segment ID 与内容 SHA-256
+- `planned_files[]`：同一原子提交中业务文件的路径与 SHA-256
+
+canonical 文件位于 `data/journal-import-checkpoints/<id>.json`，固定 `version = 1`、不可编辑且不可软删除。Checkpoint 与本批 JournalEntry/JournalRevision/JournalSegment 在同一个 Git commit 中创建，记录精确 parent HEAD 和计划身份；它不保存包含自身的 resulting commit SHA，避免 commit 内容与 commit SHA 互相引用。实际 commit SHA 由写入结果返回，并可从包含此 checkpoint 的 Git 历史定位。portable inspection 会校验 owner、路径、引用实体、日期、Revision hash、Segment 来源批次和 planned file 集合；导出、隔离恢复与 migration dry run 均包含该实体。
+
 ### ObsidianDocument
 
 - `id`, `owner_id`, `vault_id`, `relative_path`
@@ -505,6 +515,7 @@ User
  ├─ Calendar ─ CalendarEvent ─ Reminder
  ├─ JournalEntry ─┬─ JournalSegment
  │                ├─ JournalRevision
+ │                ├─ JournalImportCheckpoint
  │                └─ ObsidianDocument ─ SyncConflict
  ├─ LearningArea ─┬─ LearningGoal
  │                └─ LearningActivity

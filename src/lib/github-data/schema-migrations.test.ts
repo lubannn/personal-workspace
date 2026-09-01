@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { buildPortableWorkspaceExport } from "./portable-export";
 import { createDefaultDashboardLayout, serializeDashboardLayout } from "./dashboard-layout";
 import { createWorkspaceRecord, serializeRecord } from "./protocol";
+import { createJournalImportCheckpointRecord } from "./journal-import-checkpoints";
 import {
   dryRunPortableWorkspaceMigrations,
   planSchemaMigration,
@@ -44,6 +45,27 @@ describe("schema migration registry", () => {
         serializeDashboardLayout(createDefaultDashboardLayout("github_lubannn", "2026-08-27T01:30:00.000Z")),
         "dashboard-blob",
       ),
+      journalImportCheckpointFiles: [storedFile(
+        `data/journal-import-checkpoints/journal_import_checkpoint_${"a".repeat(32)}.json`,
+        serializeRecord(createJournalImportCheckpointRecord({
+          id: `journal_import_checkpoint_${"a".repeat(32)}`,
+          ownerId: "github_lubannn",
+          importBatchId: `legacy_import_${"b".repeat(32)}`,
+          dryRunId: `legacy-journal:${"c".repeat(64)}:parser-v1:mapping-v1:${"d".repeat(64)}`,
+          sourceSha256: "c".repeat(64),
+          correctionSetSha256: "d".repeat(64),
+          expectedParentCommitSha: "e".repeat(40),
+          planSha256: "a".repeat(64),
+          committedAt: "2026-08-27T01:45:00.000Z",
+          items: [{ date: "2012-03-05", entry_id: "entry_1", revision_id: "revision_1", segment_ids: ["segment_1"], content_sha256: "1".repeat(64) }],
+          plannedFiles: [
+            { path: "data/journal-entries/entry_1.json", sha256: "2".repeat(64) },
+            { path: "data/journal-revisions/revision_1.json", sha256: "3".repeat(64) },
+            { path: "data/journal-segments/segment_1.json", sha256: "4".repeat(64) },
+          ],
+        })),
+        "checkpoint-blob",
+      )],
     });
     const before = JSON.stringify(exported);
     const dryRun = await dryRunPortableWorkspaceMigrations(exported);
@@ -51,10 +73,11 @@ describe("schema migration registry", () => {
     expect(dryRun).toMatchObject({
       valid: true,
       registryVersion: 1,
-      counts: { files: 3, current: 3, migratable: 0, blocked: 0, steps: 0 },
+      counts: { files: 4, current: 4, migratable: 0, blocked: 0, steps: 0 },
       errors: [],
     });
     expect(dryRun.files.find((file) => file.path === "config/dashboard-layout.json")?.kind).toBe("dashboard_layout");
+    expect(dryRun.files.find((file) => file.path.includes("journal-import-checkpoints"))?.kind).toBe("record");
     expect(JSON.stringify(exported)).toBe(before);
   });
 

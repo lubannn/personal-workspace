@@ -28,6 +28,7 @@ describe("GitHub data protocol", () => {
     expect(recordPath("journal_entry", "journal_entry_01")).toBe("data/journal-entries/journal_entry_01.json");
     expect(recordPath("journal_segment", "journal_segment_01")).toBe("data/journal-segments/journal_segment_01.json");
     expect(recordPath("journal_revision", "journal_revision_01")).toBe("data/journal-revisions/journal_revision_01.json");
+    expect(recordPath("journal_import_checkpoint", "journal_import_checkpoint_01")).toBe("data/journal-import-checkpoints/journal_import_checkpoint_01.json");
     expect(parseRecord(serializeRecord(record))).toEqual(record);
 
     const updated = updateWorkspaceRecord(record, { raw_text: "更新后的内容" }, "2026-08-25T01:00:00.000Z");
