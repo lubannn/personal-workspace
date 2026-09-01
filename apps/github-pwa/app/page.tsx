@@ -2318,6 +2318,7 @@ export default function GitHubWorkspacePage() {
         onEdit={saveJournalEntryEdit}
         onDeletionChange={updateJournalEntryDeletion}
         onRefresh={() => loadJournalEntries()}
+        onLegacyImportCommitted={async () => { await Promise.all([loadJournalEntries(), loadJournalSegments(), loadJournalRevisions(), loadJournalImportCheckpoints()]); }}
       />
 
 

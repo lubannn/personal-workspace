@@ -459,6 +459,7 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .legacy-commit-heading h4 { margin: 3px 0 0; font-size: 12px; }
 .legacy-commit-heading p:not(.eyebrow) { max-width: 720px; margin: 5px 0 0; color: var(--soft); font-size: 9px; line-height: 1.65; }
 .legacy-production-gate { flex: 0 0 auto; padding: 7px 9px; border: 1px solid #d5aaa2; border-radius: 999px; background: #f3e2df; color: #773e35; font-size: 8px; font-weight: 800; letter-spacing: .06em; }
+.legacy-production-gate[data-open="true"] { border-color: #b9c9b4; background: #e7ede4; color: #40513d; }
 .legacy-date-selection { min-width: 0; margin: 14px 0 12px; padding: 12px; border: 1px solid var(--line); border-radius: 11px; }
 .legacy-date-selection legend { padding: 0 6px; color: var(--muted); font-size: 9px; }
 .legacy-date-selection > div { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 7px; }
@@ -483,6 +484,13 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .legacy-confirmation-grid code { color: var(--ink); font-size: 8px; overflow-wrap: anywhere; }
 .legacy-confirmation-grid input { min-width: 0; }
 .legacy-commit-panel > .primary-button { margin-top: 10px; }
+.legacy-commit-result { display: grid; gap: 5px; margin-top: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: rgba(255,255,255,.4); }
+.legacy-commit-result.committed { border-color: #b9c9b4; background: #e7ede4; color: #40513d; }
+.legacy-commit-result.conflict, .legacy-commit-result.unknown { border-color: #d5aaa2; background: #f3e2df; color: #773e35; }
+.legacy-commit-result.not_committed { border-color: #d7caa2; background: #f3eddb; color: #66582d; }
+.legacy-commit-result strong { font-size: 10px; }
+.legacy-commit-result p { margin: 0; font-size: 9px; line-height: 1.6; }
+.legacy-commit-result span, .legacy-commit-result code { font-size: 8px; overflow-wrap: anywhere; }
 .legacy-reconciliation { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 12px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
 .legacy-reconciliation strong { font-size: 10px; }
 .legacy-reconciliation p { margin: 5px 0 0; color: var(--soft); font-size: 9px; line-height: 1.6; }

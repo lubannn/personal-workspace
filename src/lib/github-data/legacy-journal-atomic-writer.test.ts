@@ -112,9 +112,9 @@ function fakeAdapter(initialFiles: GitHubStoredFile[] = [], options: { head?: st
 }
 
 describe("Legacy Journal atomic batch writer", () => {
-  it("implements one-commit writing while keeping the production import gate closed", async () => {
+  it("implements one-commit writing behind the reviewed production import gate", async () => {
     expect(LEGACY_JOURNAL_ATOMIC_WRITER_IMPLEMENTED).toBe(true);
-    expect(LEGACY_JOURNAL_IMPORT_COMMIT_ENABLED).toBe(false);
+    expect(LEGACY_JOURNAL_IMPORT_COMMIT_ENABLED).toBe(true);
     const commitPlan = await plan();
     const fake = fakeAdapter();
     const result = await writeLegacyJournalBatchAtomically(fake.adapter, { plan: commitPlan, committedAt: timestamp });
