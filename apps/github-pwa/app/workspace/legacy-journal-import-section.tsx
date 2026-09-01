@@ -4,6 +4,9 @@ import { useMemo, useState, type ChangeEvent, type FormEvent } from "react";
 
 import { previewLegacyJournalDocx, type LegacyDocxPreview } from "../../../../src/lib/github-data/legacy-docx-preview";
 import { buildLegacyJournalDryRun } from "../../../../src/lib/github-data/legacy-journal-dry-run";
+import { buildLegacyJournalCommitPlan, LEGACY_JOURNAL_IMPORT_COMMIT_ENABLED, MAX_LEGACY_JOURNAL_DATES_PER_COMMIT, type LegacyJournalCommitPlan } from "../../../../src/lib/github-data/legacy-journal-commit-plan";
+import { prepareLegacyJournalAtomicPayload, readLegacyJournalPlanningSnapshot, reconcileLegacyJournalBatch, type LegacyJournalAtomicPayloadPreview, type LegacyJournalReconciliation } from "../../../../src/lib/github-data/legacy-journal-atomic-writer";
+import type { GitHubContentsAdapter } from "../../../../src/lib/github-data/github-contents";
 import {
   compareLegacyJournalPreviews,
   type LegacyImportCorrection,
@@ -11,10 +14,12 @@ import {
   type LegacyImportDiagnostic,
   type LegacyPreviewComparison,
 } from "../../../../src/lib/github-data/legacy-journal-import";
+import type { Connection } from "./page-model";
 
 type PreviewFilter = "all" | "issues" | "low-confidence";
 
-export function LegacyJournalImportSection({ timezone }: { timezone: string }) {
+export function LegacyJournalImportSection({ connection, adapter, online }: { connection: Connection | null; adapter: GitHubContentsAdapter | null; online: boolean | null }) {
+  const timezone = connection?.timezone ?? "Asia/Shanghai";
   const [preview, setPreview] = useState<LegacyDocxPreview | null>(null);
   const [sourceFile, setSourceFile] = useState<File | null>(null);
   const [checking, setChecking] = useState(false);
@@ -30,6 +35,14 @@ export function LegacyJournalImportSection({ timezone }: { timezone: string }) {
   const [correctionReason, setCorrectionReason] = useState("");
   const [comparison, setComparison] = useState<LegacyPreviewComparison | null>(null);
   const [dryRunResult, setDryRunResult] = useState<{ fileName: string; sha256: string; journalFiles: number } | null>(null);
+  const [selectedDates, setSelectedDates] = useState<string[]>([]);
+  const [planning, setPlanning] = useState(false);
+  const [plan, setPlan] = useState<LegacyJournalCommitPlan | null>(null);
+  const [payload, setPayload] = useState<LegacyJournalAtomicPayloadPreview | null>(null);
+  const [repositoryConfirmation, setRepositoryConfirmation] = useState("");
+  const [dateRangeConfirmation, setDateRangeConfirmation] = useState("");
+  const [reconciliation, setReconciliation] = useState<LegacyJournalReconciliation | null>(null);
+  const [reconciling, setReconciling] = useState(false);
   const diagnostics = useMemo(() => preview ? [...preview.archiveDiagnostics, ...preview.parse.diagnostics] : [], [preview]);
   const correctionCandidates = useMemo(() => {
     if (!preview) return [];
@@ -49,6 +62,10 @@ export function LegacyJournalImportSection({ timezone }: { timezone: string }) {
     return preview.parse.entries;
   }, [filter, preview]);
   const blocking = diagnostics.some((issue) => issue.severity === "blocking" || issue.severity === "error");
+  const targetRepository = connection ? `${connection.ownerLogin}/${connection.repository}` : "";
+  const exactDateRange = plan?.selectedDates.length ? `${plan.selectedDates[0]}..${plan.selectedDates.at(-1)}` : "";
+  const confirmationMatches = Boolean(plan && repositoryConfirmation === targetRepository && dateRangeConfirmation === exactDateRange);
+  const payloadWithinLimits = Boolean(payload && payload.limitBlockers.length === 0);
 
   async function inspectFile(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -64,6 +81,8 @@ export function LegacyJournalImportSection({ timezone }: { timezone: string }) {
       const nextPreview = await previewLegacyJournalDocx(file, { timezone });
       const firstLocator = firstCorrectionLocator(nextPreview);
       setPreview(nextPreview);
+      setSelectedDates(nextPreview.parse.entries.length <= MAX_LEGACY_JOURNAL_DATES_PER_COMMIT ? nextPreview.parse.entries.map((entry) => entry.date) : []);
+      resetCommitPlan();
       setCorrectionLocator(firstLocator);
       setCorrectionAction(nextPreview.parse.tokens.find((token) => token.sourceLocator === firstLocator)?.kind === "UNSUPPORTED_OBJECT" ? "skip" : "assign-body");
     } catch (caught) {
@@ -85,6 +104,8 @@ export function LegacyJournalImportSection({ timezone }: { timezone: string }) {
     setCorrectionReason("");
     setComparison(null);
     setDryRunResult(null);
+    setSelectedDates([]);
+    resetCommitPlan();
     setPickerKey((value) => value + 1);
   }
 
@@ -116,11 +137,64 @@ export function LegacyJournalImportSection({ timezone }: { timezone: string }) {
       setComparison(compareLegacyJournalPreviews(preview.parse, reparsed.parse));
       setPreview(reparsed);
       setDryRunResult(null);
+      setSelectedDates(reparsed.parse.entries.length <= MAX_LEGACY_JOURNAL_DATES_PER_COMMIT ? reparsed.parse.entries.map((entry) => entry.date) : []);
+      resetCommitPlan();
       setCorrectionReason("");
     } catch (caught) {
       setError(friendlyLegacyImportError(caught));
     } finally {
       setApplyingCorrection(false);
+    }
+  }
+
+  function resetCommitPlan() {
+    setPlan(null);
+    setPayload(null);
+    setRepositoryConfirmation("");
+    setDateRangeConfirmation("");
+    setReconciliation(null);
+  }
+
+  function toggleDate(date: string) {
+    resetCommitPlan();
+    setSelectedDates((current) => current.includes(date) ? current.filter((item) => item !== date) : [...current, date].sort());
+  }
+
+  async function buildCommitPlan() {
+    if (!preview || !connection || !adapter || selectedDates.length === 0) return;
+    setPlanning(true);
+    setError(null);
+    resetCommitPlan();
+    try {
+      const snapshot = await readLegacyJournalPlanningSnapshot(adapter);
+      const nextPlan = await buildLegacyJournalCommitPlan({
+        preview,
+        ownerId: connection.ownerId,
+        expectedHeadCommitSha: snapshot.headCommitSha,
+        selectedDates,
+        existing: snapshot,
+        plannedAt: new Date().toISOString(),
+      });
+      const nextPayload = nextPlan.commitReady ? await prepareLegacyJournalAtomicPayload(nextPlan) : null;
+      setPlan(nextPlan);
+      setPayload(nextPayload);
+    } catch (caught) {
+      setError(friendlyLegacyImportError(caught));
+    } finally {
+      setPlanning(false);
+    }
+  }
+
+  async function runReconciliation() {
+    if (!adapter || !plan) return;
+    setReconciling(true);
+    setError(null);
+    try {
+      setReconciliation(await reconcileLegacyJournalBatch(adapter, plan));
+    } catch (caught) {
+      setError(friendlyLegacyImportError(caught));
+    } finally {
+      setReconciling(false);
     }
   }
 
@@ -208,7 +282,25 @@ export function LegacyJournalImportSection({ timezone }: { timezone: string }) {
         <button className="primary-button" type="button" onClick={downloadDryRun} disabled={buildingDryRun || blocking || !preview.parse.dryRunReady}>{buildingDryRun ? "正在生成…" : "下载 Dry Run ZIP"}</button>
         {dryRunResult ? <div className="legacy-dry-run-result" role="status"><strong>{dryRunResult.fileName}</strong><span>{dryRunResult.journalFiles} 个待处理 Journal 文件 · Commit false</span><code>ZIP SHA-256 {dryRunResult.sha256}</code></div> : null}
       </div>
-      <div className="legacy-import-boundary"><strong>写入边界</strong><p>此流程可以本地修正规则并下载 Dry Run staging 包，但仍没有 Commit、自动合并、Journal 写入或 Vault 输出能力。任何正式写入都必须另行设计幂等事务并逐批明确确认。</p></div>
+      <div className="legacy-commit-panel" aria-labelledby="legacy-commit-title">
+        <div className="legacy-commit-heading"><div><p className="eyebrow">Fail-closed commit review</p><h4 id="legacy-commit-title">Legacy Journal 精确提交计划</h4><p>计划读取同一 branch snapshot 并固定 HEAD、目标日期、canonical 文件与 hash。生成计划和 reconciliation 都是只读操作。</p></div><span className="legacy-production-gate">Production gate · {LEGACY_JOURNAL_IMPORT_COMMIT_ENABLED ? "OPEN" : "CLOSED"}</span></div>
+        <fieldset className="legacy-date-selection" disabled={!connection || planning || blocking || !preview.parse.dryRunReady}>
+          <legend>选择本批日期（最多 {MAX_LEGACY_JOURNAL_DATES_PER_COMMIT} 天）</legend>
+          <div>{preview.parse.entries.map((entry) => <label key={entry.date}><input type="checkbox" checked={selectedDates.includes(entry.date)} onChange={() => toggleDate(entry.date)} disabled={!selectedDates.includes(entry.date) && selectedDates.length >= MAX_LEGACY_JOURNAL_DATES_PER_COMMIT} /><span>{entry.date}</span><small>{entry.segments.length} segments</small></label>)}</div>
+        </fieldset>
+        <button className="secondary-button" type="button" onClick={buildCommitPlan} disabled={!connection || !adapter || online === false || planning || blocking || !preview.parse.dryRunReady || selectedDates.length === 0}>{planning ? "正在读取精确 HEAD…" : "生成只读 Commit Plan"}</button>
+        {!connection ? <p className="empty-note">连接目标 Private 数据仓库后才能生成计划；DOCX 正文仍只在当前浏览器内处理。</p> : null}
+        {plan ? <>
+          <div className="legacy-commit-target"><div><span>目标 Private 仓库</span><strong>{targetRepository}</strong></div><div><span>精确日期范围</span><strong>{exactDateRange}</strong></div><div><span>Expected HEAD</span><code>{plan.expectedHeadCommitSha}</code></div><div><span>Dry Run ID</span><code>{plan.dryRunId}</code></div><div><span>Plan SHA-256</span><code>{payload?.planSha256 ?? "因冲突未生成"}</code></div><div><span>Correction SHA-256</span><code>{plan.correctionSetSha256}</code></div></div>
+          <div className="legacy-commit-summary" aria-label="Commit Plan 摘要"><SummaryMetric label="Pending" value={String(plan.summary.pending)} /><SummaryMetric label="Already imported" value={String(plan.summary.alreadyImported)} /><SummaryMetric label="Conflicts" value={String(plan.summary.conflicts)} /><SummaryMetric label="原子文件" value={payload ? String(payload.fileCount) : "—"} /><SummaryMetric label={payload?.byteCountExact === false ? "业务 UTF-8 bytes" : "UTF-8 bytes"} value={payload ? payload.byteCount.toLocaleString("en-US") : "—"} /></div>
+          <ol className="legacy-plan-items">{plan.items.map((item) => <li key={item.date} data-status={item.status}><strong>{item.date}</strong><span>{item.status}</span>{item.conflicts.length ? <code>{item.conflicts.join(" · ")}</code> : <small>{item.artifacts ? `${item.artifacts.files.length} 个业务文件` : "未生成 artifacts"}</small>}</li>)}</ol>
+          <div className="legacy-confirmation-grid"><label>输入完整目标仓库名<code>{targetRepository}</code><input value={repositoryConfirmation} onChange={(event) => setRepositoryConfirmation(event.target.value)} autoComplete="off" spellCheck={false} /></label><label>输入精确日期范围<code>{exactDateRange}</code><input value={dateRangeConfirmation} onChange={(event) => setDateRangeConfirmation(event.target.value)} autoComplete="off" spellCheck={false} /></label></div>
+          <div className={`legacy-import-gate ${plan.commitReady && payloadWithinLimits && confirmationMatches ? "ready" : "blocked"}`} role="status"><strong>{plan.commitReady && payloadWithinLimits && confirmationMatches ? "产品内确认已匹配" : "提交仍被阻断"}</strong><p>{plan.summary.conflicts ? "计划包含冲突，不能提交。" : !payloadWithinLimits ? `原子 payload 超出安全上限：${payload?.limitBlockers.join(" · ")}` : !confirmationMatches ? "必须逐字输入完整仓库名与精确日期范围。" : "确认仅满足产品内安全门；正式写入仍需动作发生时对该批次单独授权。"}</p></div>
+          <button className="primary-button" type="button" disabled={!LEGACY_JOURNAL_IMPORT_COMMIT_ENABLED || !plan.commitReady || !payloadWithinLimits || !confirmationMatches || online === false}>生产 Commit gate 已关闭</button>
+          <div className="legacy-reconciliation"><div><strong>未知网络结果 reconciliation</strong><p>只读重载 checkpoint、Entry、Revision 与 Segment，结果仅为“已提交 / 未提交 / 冲突”；不会盲目重试。</p></div><button className="secondary-button" type="button" onClick={runReconciliation} disabled={reconciling || online === false}>{reconciling ? "正在只读核对…" : "只读核对当前计划"}</button>{reconciliation ? <div className={`legacy-reconciliation-result ${reconciliation.status}`} role="status"><strong>{reconciliationLabel(reconciliation.status)}</strong><span>Observed HEAD {reconciliation.observedHeadCommitSha}</span><code>{reconciliation.checkpointPath}</code>{reconciliation.blockers.length ? <p>{reconciliation.blockers.join(" · ")}</p> : null}</div> : <p className="empty-note">尚未执行 reconciliation；此状态不会自动触发重试。</p>}</div>
+        </> : null}
+      </div>
+      <div className="legacy-import-boundary"><strong>Git 历史与写入边界</strong><p>软删除或未来 rollback 只能让当前 Entry 失效，不能从 Git 历史物理擦除 Revision、Segment、Checkpoint 或旧正文。生产 gate 当前固定关闭；本页不会执行 Commit、自动合并、回滚或 Vault 输出。</p></div>
     </> : null}
   </section>;
 }
@@ -248,8 +340,18 @@ function friendlyLegacyImportError(error: unknown) {
     INVALID_LEGACY_CORRECTION_REASON: "请填写不超过 1000 字的修正理由。",
     INVALID_LEGACY_CORRECTION_DATE: "请选择合法的完整目标日期。",
     INVALID_LEGACY_CORRECTION_TIME: "请选择合法的目标时间。",
+    INVALID_LEGACY_IMPORT_DATE_SELECTION: `请选择 1–${MAX_LEGACY_JOURNAL_DATES_PER_COMMIT} 个不重复日期。`,
+    LEGACY_IMPORT_PLAN_NOT_READY: "Preview 仍有阻断项，未生成 Commit Plan。",
+    LEGACY_IMPORT_ATOMIC_FILE_LIMIT_EXCEEDED: "计划超过 250 个原子文件（含 checkpoint），已阻断。",
+    LEGACY_IMPORT_ATOMIC_BYTE_LIMIT_EXCEEDED: "计划超过 10 MiB UTF-8 payload 上限，已阻断。",
   };
   return messages[code] ?? "只读解析失败，源文件未被修改，也没有写入任何数据。";
+}
+
+function reconciliationLabel(status: LegacyJournalReconciliation["status"]) {
+  if (status === "committed") return "已提交：checkpoint 与全部 planned files 一致";
+  if (status === "not_committed") return "未提交：未发现 checkpoint、部分 planned 文件或同日占用";
+  return "冲突：禁止盲目重试，需重新加载并人工处理";
 }
 
 function firstCorrectionLocator(preview: LegacyDocxPreview) {

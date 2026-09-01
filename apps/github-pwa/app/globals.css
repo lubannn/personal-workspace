@@ -454,6 +454,43 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .legacy-dry-run-result { grid-column: 1 / -1; display: grid; gap: 4px; padding-top: 11px; border-top: 1px solid currentColor; }
 .legacy-dry-run-result strong { font-size: 10px; overflow-wrap: anywhere; }
 .legacy-dry-run-result span, .legacy-dry-run-result code { font-size: 8px; overflow-wrap: anywhere; }
+.legacy-commit-panel { margin-top: 18px; padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--paper); }
+.legacy-commit-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
+.legacy-commit-heading h4 { margin: 3px 0 0; font-size: 12px; }
+.legacy-commit-heading p:not(.eyebrow) { max-width: 720px; margin: 5px 0 0; color: var(--soft); font-size: 9px; line-height: 1.65; }
+.legacy-production-gate { flex: 0 0 auto; padding: 7px 9px; border: 1px solid #d5aaa2; border-radius: 999px; background: #f3e2df; color: #773e35; font-size: 8px; font-weight: 800; letter-spacing: .06em; }
+.legacy-date-selection { min-width: 0; margin: 14px 0 12px; padding: 12px; border: 1px solid var(--line); border-radius: 11px; }
+.legacy-date-selection legend { padding: 0 6px; color: var(--muted); font-size: 9px; }
+.legacy-date-selection > div { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 7px; }
+.legacy-date-selection label { min-width: 0; display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 7px; padding: 8px; border-radius: 8px; background: rgba(255,255,255,.48); font-size: 9px; }
+.legacy-date-selection small { color: var(--muted); font-size: 8px; }
+.legacy-commit-target { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 8px; margin-top: 14px; }
+.legacy-commit-target > div { min-width: 0; display: grid; gap: 4px; padding: 10px; border: 1px solid var(--line); border-radius: 10px; }
+.legacy-commit-target span { color: var(--muted); font-size: 8px; }
+.legacy-commit-target strong { font-size: 10px; overflow-wrap: anywhere; }
+.legacy-commit-target code { font-size: 8px; overflow-wrap: anywhere; }
+.legacy-commit-summary { display: grid; grid-template-columns: repeat(5, minmax(0,1fr)); gap: 8px; margin-top: 9px; }
+.legacy-commit-summary > div { min-width: 0; padding: 10px; border: 1px solid var(--line); border-radius: 10px; }
+.legacy-commit-summary span { display: block; color: var(--muted); font-size: 8px; }
+.legacy-commit-summary strong { display: block; margin-top: 3px; font-size: 13px; overflow-wrap: anywhere; }
+.legacy-plan-items { margin: 12px 0 0; padding: 0; list-style: none; }
+.legacy-plan-items li { display: grid; grid-template-columns: 100px 120px minmax(0,1fr); gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); font-size: 9px; }
+.legacy-plan-items li[data-status="conflict"] { color: #773e35; }
+.legacy-plan-items li[data-status="already_imported"] { color: var(--muted); }
+.legacy-plan-items code, .legacy-plan-items small { overflow-wrap: anywhere; }
+.legacy-confirmation-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 10px; margin-top: 14px; }
+.legacy-confirmation-grid label { min-width: 0; display: grid; gap: 6px; color: var(--muted); font-size: 9px; }
+.legacy-confirmation-grid code { color: var(--ink); font-size: 8px; overflow-wrap: anywhere; }
+.legacy-confirmation-grid input { min-width: 0; }
+.legacy-commit-panel > .primary-button { margin-top: 10px; }
+.legacy-reconciliation { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 12px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
+.legacy-reconciliation strong { font-size: 10px; }
+.legacy-reconciliation p { margin: 5px 0 0; color: var(--soft); font-size: 9px; line-height: 1.6; }
+.legacy-reconciliation-result { grid-column: 1 / -1; display: grid; gap: 5px; padding: 11px; border: 1px solid var(--line); border-radius: 10px; }
+.legacy-reconciliation-result.committed { border-color: #b9c9b4; background: #e7ede4; color: #40513d; }
+.legacy-reconciliation-result.conflict { border-color: #d5aaa2; background: #f3e2df; color: #773e35; }
+.legacy-reconciliation-result span, .legacy-reconciliation-result code { font-size: 8px; overflow-wrap: anywhere; }
+.legacy-reconciliation > .empty-note { grid-column: 1 / -1; margin: 0; }
 .legacy-import-boundary { margin-top: 16px; padding: 14px 16px; border-radius: 12px; background: #292923; color: white; }
 .legacy-import-boundary strong { font-size: 10px; }
 .legacy-import-boundary p { margin: 5px 0 0; color: #aaa9a1; font-size: 9px; line-height: 1.65; }
@@ -525,6 +562,14 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
   .legacy-correction-reason { grid-column: auto; }
   .legacy-dry-run { grid-template-columns: 1fr; align-items: stretch; }
   .legacy-dry-run-result { grid-column: auto; }
+  .legacy-commit-heading { align-items: stretch; flex-direction: column; }
+  .legacy-production-gate { width: fit-content; }
+  .legacy-commit-target, .legacy-confirmation-grid { grid-template-columns: 1fr; }
+  .legacy-commit-summary { grid-template-columns: repeat(2, minmax(0,1fr)); }
+  .legacy-plan-items li { grid-template-columns: 90px minmax(0,1fr); }
+  .legacy-plan-items li code, .legacy-plan-items li small { grid-column: 1 / -1; }
+  .legacy-reconciliation { grid-template-columns: 1fr; align-items: stretch; }
+  .legacy-reconciliation-result { grid-column: auto; }
   .preview-shell { width: min(100% - 30px, 620px); }
   .topbar { height: 86px; }
   .hero { padding: 72px 0 58px; }
