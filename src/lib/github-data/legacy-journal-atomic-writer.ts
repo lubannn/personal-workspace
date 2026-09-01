@@ -198,7 +198,7 @@ export async function reconcileLegacyJournalBatch(
 
 /**
  * Low-level atomic writer. Production UI exposure remains governed by
- * LEGACY_JOURNAL_IMPORT_COMMIT_ENABLED=false in legacy-journal-commit-plan.ts.
+ * LEGACY_JOURNAL_IMPORT_COMMIT_ENABLED in legacy-journal-commit-plan.ts.
  */
 export async function writeLegacyJournalBatchAtomically(
   adapter: LegacyJournalAtomicWriterAdapter,

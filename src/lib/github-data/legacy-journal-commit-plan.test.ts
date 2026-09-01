@@ -59,8 +59,8 @@ function emptyExisting() {
 }
 
 describe("Legacy Journal formal commit preflight contract", () => {
-  it("keeps formal import writes disabled while producing deterministic segment-mode artifacts", async () => {
-    expect(LEGACY_JOURNAL_IMPORT_COMMIT_ENABLED).toBe(false);
+  it("enables the separately reviewed production gate while plans remain non-writing artifacts", async () => {
+    expect(LEGACY_JOURNAL_IMPORT_COMMIT_ENABLED).toBe(true);
     const source = twoDayPreview();
     const first = await buildLegacyJournalCommitPlan({
       preview: source,

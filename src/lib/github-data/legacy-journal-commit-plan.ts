@@ -7,7 +7,7 @@ import { renderJournalSegmentsMarkdown, type JournalSegmentSnapshot } from "./jo
 import { createJournalSegmentData, type JournalSegmentRecord } from "./journal-segments";
 import { createWorkspaceRecord, recordPath, serializeRecord, type WorkspaceRecord } from "./protocol";
 
-export const LEGACY_JOURNAL_IMPORT_COMMIT_ENABLED = false as const;
+export const LEGACY_JOURNAL_IMPORT_COMMIT_ENABLED = true as const;
 export const LEGACY_JOURNAL_IMPORT_PLAN_VERSION = 1 as const;
 export const LEGACY_JOURNAL_IMPORT_CHECKPOINT_VERSION = 1 as const;
 export const MAX_LEGACY_JOURNAL_DATES_PER_COMMIT = 25;
