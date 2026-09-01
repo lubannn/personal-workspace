@@ -2,14 +2,14 @@
 
 ## 1. 当前状态
 
-本切片实现正式写入前的纯代码安全契约，但没有开放生产 Commit：
+当前已实现正式写入前的安全契约、canonical checkpoint 和低层原子 writer，但没有开放生产 Commit：
 
 - `LEGACY_JOURNAL_IMPORT_COMMIT_ENABLED = false`；
-- 不调用 GitHub 写入、不创建正式 Journal、不接触 Obsidian；
+- 正式 PWA 没有导入写入入口，不创建正式 Journal、不接触 Obsidian；
 - 不读取真实 Word 日记或正式 Private 业务数据；
 - 所有行为由脱敏 fixture 和内存 canonical 记录验证。
 
-下一切片只有在持久化 checkpoint、原子批次写入和 UI 动作确认全部闭环后，才可以讨论启用正式写入入口。代码启用也不等于获准写入用户的正式 Private 仓库；每个真实批次仍需动作发生时的精确确认。
+低层 writer 只由脱敏内存 adapter 测试覆盖。下一切片只有在 UI 动作确认、脱敏 Private 演练和恢复边界全部闭环后，才可以讨论启用正式写入入口。代码启用也不等于获准写入用户的正式 Private 仓库；每个真实批次仍需动作发生时的精确确认。
 
 ## 2. Dry Run 身份 v2
 
@@ -60,7 +60,7 @@
 
 `createLegacyJournalImportCheckpoint` 只接受 `commitReady` 的计划、一个 40 位 commit SHA、commit 时间，以及与 planned files 路径完全一致的写入结果。缺文件、多文件、重复路径、未知路径或非法 blob SHA 一律拒绝。
 
-Checkpoint 记录：
+运行时 Checkpoint 记录：
 
 - import batch / Dry Run ID；
 - parent 与 committed commit SHA；
@@ -68,9 +68,23 @@ Checkpoint 记录：
 - Revision content SHA-256；
 - Entry 写后 blob SHA。
 
-当前函数只定义并验证 checkpoint 结构；尚未把它作为 Private canonical 文件持久化，也没有正式 batch writer。因此生产 Commit 仍保持关闭。
+持久化的 `JournalImportCheckpoint` 位于 `data/journal-import-checkpoints/<id>.json`，与全部本批 Entry/Revision/Segment 通过同一个 `writeAtomicFiles` commit 创建。它保存 source/correction/plan SHA-256、精确 parent HEAD、日期、实体 ID 和 planned file SHA-256。它不保存包含自身的 commit SHA，避免 commit 内容与 commit SHA 形成循环引用；实际 resulting commit SHA 由 writer 返回，Git 历史可定位包含该记录的 commit。
 
-## 6. 回滚预览
+Checkpoint 是 create-only canonical 实体，已进入 collection loading、portable export、inspection、隔离 restore 和 migration dry run。inspection 会验证其 owner、路径、引用实体、日期、Revision hash、Segment 来源批次和 planned file 集合。
+
+## 6. 原子批次 Writer
+
+`writeLegacyJournalBatchAtomically` 会重新读取精确 branch snapshot，并在该 commit ref 下加载 Entry、Revision、Segment 与 Checkpoint collection。它会重算每个 planned file 的 SHA-256、解析所有 canonical artifact、验证 owner/日期/ID/关系与远端空闲状态，并执行以下 fail-closed gate：
+
+- plan HEAD 与当前 HEAD 不一致时停止；
+- 远端出现同日 active Entry、任一 planned ID 或 checkpoint ID 时停止；
+- 单批最多 249 个业务文件，加一个 checkpoint 后最多 250 个原子文件；
+- 单批 UTF-8 payload 最多 10 MiB；
+- ref 更新冲突时不执行第二次或降级的部分写入。
+
+全部业务记录与 checkpoint 只调用一次 `writeAtomicFiles`。运行时结果返回 commit/tree SHA、业务 blob SHA 和 checkpoint blob SHA。`LEGACY_JOURNAL_IMPORT_COMMIT_ENABLED` 仍为 `false`，PWA 没有调用此 writer。
+
+## 7. 回滚预览
 
 回滚是只读 preview，不执行删除：
 
@@ -81,14 +95,12 @@ Checkpoint 记录：
 - 已经 inactive 的 Entry 标为 `already_inactive`，不重复操作；
 - 未来执行时必须使用 checkpoint 对应的最新 Entry blob SHA，并在动作前重查 branch HEAD。
 
-## 7. 下一实现边界
+## 8. 下一实现边界
 
-正式 Commit writer 仍需同时完成：
+生产入口仍需同时完成：
 
-1. 在同一 branch snapshot 下读取 Entry/Revision/Segment 与 checkpoint 目录；
-2. 用一个 `writeAtomicFiles` commit 写入所选日期的全部 canonical 记录和持久化 checkpoint；
-3. 限制单批文件数、正文总字节和 GitHub API payload；
-4. branch advance 时 fail closed，不复用旧计划；
-5. UI 明确展示日期、文件数、冲突、目标 Private 仓库和不可逆历史边界；
-6. 每个真实批次在动作发生时获得用户精确确认；
-7. 用脱敏独立 Private 测试仓库完成创建、精确重试、部分恢复、冲突和回滚验收后，再考虑正式数据。
+1. UI 明确展示日期、文件数、字节数、冲突、目标 Private 仓库和不可逆 Git 历史边界；
+2. 使用完整仓库名与精确日期范围进行动作确认，且每个真实批次在动作发生时获得用户确认；
+3. 网络结果不确定时先只读重载 checkpoint/实体状态，禁止盲目重试；
+4. 用脱敏独立 Private 测试仓库完成创建、精确重试、部分恢复、并发冲突和回滚验收；
+5. 上述验收完成后，才能单独评审是否把生产 gate 改为 true；正式业务数据仍需逐批确认。

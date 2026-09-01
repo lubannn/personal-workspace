@@ -15,6 +15,7 @@ export type EntityType =
   | "journal_entry"
   | "journal_segment"
   | "journal_revision"
+  | "journal_import_checkpoint"
   | "journal"
   | "learning"
   | "habit"
@@ -47,6 +48,7 @@ const ENTITY_DIRECTORIES: Record<Exclude<EntityType, "journal">, string> = {
   journal_entry: "journal-entries",
   journal_segment: "journal-segments",
   journal_revision: "journal-revisions",
+  journal_import_checkpoint: "journal-import-checkpoints",
   learning: "learning",
   habit: "habits",
   health: "health",

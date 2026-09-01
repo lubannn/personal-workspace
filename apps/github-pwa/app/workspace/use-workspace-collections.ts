@@ -22,8 +22,9 @@ import { parseReportDraftRecord } from "../../../../src/lib/github-data/report-d
 import { parseJournalEntryRecord } from "../../../../src/lib/github-data/journal-entries";
 import { parseJournalSegmentRecord } from "../../../../src/lib/github-data/journal-segments";
 import { parseJournalRevisionRecord } from "../../../../src/lib/github-data/journal-revisions";
+import { parseJournalImportCheckpointRecord } from "../../../../src/lib/github-data/journal-import-checkpoints";
 import { parseCaptureRecord } from "../../../../src/lib/github-data/workspace";
-import { friendlyError, type SyncedActivityEvent, type SyncedCalendarEvent, type SyncedCapture, type SyncedJournalEntry, type SyncedJournalRevision, type SyncedJournalSegment, type SyncedMilestone, type SyncedProject, type SyncedProjectFileReference, type SyncedProjectNote, type SyncedProjectPhase, type SyncedReportDraft, type SyncedTask, type SyncedTimeEntry } from "./page-model";
+import { friendlyError, type SyncedActivityEvent, type SyncedCalendarEvent, type SyncedCapture, type SyncedJournalEntry, type SyncedJournalImportCheckpoint, type SyncedJournalRevision, type SyncedJournalSegment, type SyncedMilestone, type SyncedProject, type SyncedProjectFileReference, type SyncedProjectNote, type SyncedProjectPhase, type SyncedReportDraft, type SyncedTask, type SyncedTimeEntry } from "./page-model";
 
 type Options = {
   adapterRef: MutableRefObject<GitHubContentsAdapter | null>;
@@ -46,6 +47,7 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
   const [journalEntryFiles, setJournalEntryFiles] = useState<SyncedJournalEntry[]>([]);
   const [journalSegmentFiles, setJournalSegmentFiles] = useState<SyncedJournalSegment[]>([]);
   const [journalRevisionFiles, setJournalRevisionFiles] = useState<SyncedJournalRevision[]>([]);
+  const [journalImportCheckpointFiles, setJournalImportCheckpointFiles] = useState<SyncedJournalImportCheckpoint[]>([]);
   const [dashboardLayout, setDashboardLayout] = useState<DashboardLayout | null>(null);
   const [dashboardBlobSha, setDashboardBlobSha] = useState<string | null>(null);
   const [loadingCaptures, setLoadingCaptures] = useState(false);
@@ -62,6 +64,7 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
   const [loadingJournalEntries, setLoadingJournalEntries] = useState(false);
   const [loadingJournalSegments, setLoadingJournalSegments] = useState(false);
   const [loadingJournalRevisions, setLoadingJournalRevisions] = useState(false);
+  const [loadingJournalImportCheckpoints, setLoadingJournalImportCheckpoints] = useState(false);
   const [loadingDashboard, setLoadingDashboard] = useState(false);
 
   const loadRecentCaptures = useCallback(async (adapter = adapterRef.current) => {
@@ -502,6 +505,30 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     finally { setLoadingJournalRevisions(false); }
   }, [adapterRef, setErrorMessage]);
 
+  const loadJournalImportCheckpoints = useCallback(async (adapter = adapterRef.current) => {
+    if (!adapter) return;
+    setLoadingJournalImportCheckpoints(true);
+    setErrorMessage("");
+    try {
+      let items;
+      try { items = await adapter.listDirectory("data/journal-import-checkpoints"); }
+      catch (error) {
+        if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") { setJournalImportCheckpointFiles([]); return; }
+        throw error;
+      }
+      const candidates = items.filter((item) => item.type === "file" && item.name.endsWith(".json")).sort((left, right) => right.name.localeCompare(left.name));
+      const records: SyncedJournalImportCheckpoint[] = [];
+      for (let index = 0; index < candidates.length; index += 6) {
+        records.push(...(await Promise.all(candidates.slice(index, index + 6).map(async (item) => {
+          try { const file = await adapter.readText(item.path); return { record: parseJournalImportCheckpointRecord(file.text), path: file.path, blobSha: file.blobSha }; }
+          catch { return null; }
+        }))).filter((item): item is SyncedJournalImportCheckpoint => item !== null));
+      }
+      setJournalImportCheckpointFiles(records);
+    } catch (error) { setErrorMessage(friendlyError(error)); }
+    finally { setLoadingJournalImportCheckpoints(false); }
+  }, [adapterRef, setErrorMessage]);
+
   const loadProjectFileReferences = useCallback(async (adapter = adapterRef.current) => {
     if (!adapter) return;
     setLoadingProjectFileReferences(true);
@@ -582,6 +609,7 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     setJournalEntryFiles([]);
     setJournalSegmentFiles([]);
     setJournalRevisionFiles([]);
+    setJournalImportCheckpointFiles([]);
     setDashboardLayout(null);
     setDashboardBlobSha(null);
   }
@@ -614,6 +642,7 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     journalSegmentFiles,
     journalRevisionFiles,
     setJournalRevisionFiles,
+    journalImportCheckpointFiles,
     dashboardLayout,
     setDashboardLayout,
     dashboardBlobSha,
@@ -632,6 +661,7 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     loadingJournalEntries,
     loadingJournalSegments,
     loadingJournalRevisions,
+    loadingJournalImportCheckpoints,
     loadingDashboard,
     loadRecentCaptures,
     loadTasks,
@@ -647,6 +677,7 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     loadJournalEntries,
     loadJournalSegments,
     loadJournalRevisions,
+    loadJournalImportCheckpoints,
     loadDashboardLayout,
     clearCollections,
   };
