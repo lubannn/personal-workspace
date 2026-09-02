@@ -5,6 +5,7 @@ import type { GitHubContentsAdapter } from "../../../../src/lib/github-data/gith
 import { activeJournalEntries, filterJournalEntries, hasActiveDailyJournalDate, journalEntryMarkdownFileName, renderJournalEntryMarkdown, shiftJournalMonth, trashedJournalEntries } from "../../../../src/lib/github-data/journal-entries";
 import { LegacyJournalImportSection } from "./legacy-journal-import-section";
 import { LegacyJournalCheckpointHistory } from "./legacy-journal-checkpoint-history";
+import { ObsidianVaultPreflight } from "./obsidian-vault-preflight";
 import type { Connection, SyncedJournalEntry, SyncedJournalImportCheckpoint } from "./page-model";
 
 type JournalFields = { journalDate: string; title: string; bodyMarkdown: string; mood: string; weather: string };
@@ -101,6 +102,7 @@ export function JournalSection({ connection, adapter, online, todayDate, journal
       <div className="journal-item-actions">{view === "active" ? <><button className="text-button" type="button" onClick={() => beginEdit(item)} disabled={Boolean(savingId) || saving}>编辑</button><button className="text-button" type="button" onClick={() => downloadMarkdown(item)}>下载 Markdown</button></> : null}<button className="text-button" type="button" onClick={() => onDeletionChange(item, view === "active" ? "trash" : "restore")} disabled={Boolean(savingId) || online === false}>{savingId === item.record.id ? "…" : view === "active" ? "移到回收站" : "恢复"}</button></div>
     </li>)}</ol>}
     <LegacyJournalCheckpointHistory connection={connection} adapter={adapter} checkpoints={journalImportCheckpointFiles} loading={loadingLegacyHistory} online={online} onRefresh={onRefreshLegacyHistory} />
+    <ObsidianVaultPreflight />
     <LegacyJournalImportSection key={connection ? `${connection.ownerLogin}/${connection.repository}/${connection.timezone}` : "disconnected"} connection={connection} adapter={adapter} online={online} onCommitted={onLegacyImportCommitted} />
   </section>;
 }
