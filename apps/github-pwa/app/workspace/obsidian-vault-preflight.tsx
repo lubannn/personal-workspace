@@ -50,7 +50,7 @@ export function ObsidianVaultPreflight() {
     if (!picker || busy) return;
     setBusy(true); setResult(null);
     try {
-      const selected = await picker({ id: "personal-workspace-obsidian-vault", mode: "readwrite" });
+      const selected = await picker({ id: "personal-workspace-vault", mode: "readwrite" });
       setDirectory(selected);
       await updatePlan(selected, subdirectory);
       setResult({ tone: "ready", title: "Vault 已在当前页面内存中选择", detail: "尚未枚举目录或写入文件。刷新或关闭页面后需要重新选择。" });
