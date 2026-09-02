@@ -524,6 +524,34 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .legacy-import-boundary { margin-top: 16px; padding: 14px 16px; border-radius: 12px; background: #292923; color: white; }
 .legacy-import-boundary strong { font-size: 10px; }
 .legacy-import-boundary p { margin: 5px 0 0; color: #aaa9a1; font-size: 9px; line-height: 1.65; }
+.obsidian-preflight { margin-top: 24px; padding: 18px; border: 1px solid var(--line); border-radius: 14px; background: rgba(247,246,241,.62); }
+.obsidian-preflight > p { margin: 10px 0 0; color: var(--soft); font-size: 9px; line-height: 1.7; }
+.obsidian-preflight-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.obsidian-preflight-heading h3 { margin: 3px 0 0; font: 500 18px/1.35 ui-serif, Georgia, "Songti SC", serif; }
+.obsidian-preflight-heading > span { flex: 0 0 auto; border: 1px solid; border-radius: 999px; padding: 5px 8px; font-size: 8px; font-weight: 720; letter-spacing: .05em; }
+.obsidian-preflight-heading > span.available { border-color: #b9c9b4; background: #e7ede4; color: #40513d; }
+.obsidian-preflight-heading > span.unavailable { border-color: #d7caa2; background: #f3eddb; color: #66582d; }
+.obsidian-preflight-controls { display: grid; grid-template-columns: auto minmax(220px,1fr); align-items: end; gap: 10px; margin-top: 14px; }
+.obsidian-preflight-controls label, .obsidian-preflight-confirmation label { min-width: 0; display: grid; gap: 6px; color: var(--muted); font-size: 9px; font-weight: 700; }
+.obsidian-preflight-controls input, .obsidian-preflight-confirmation input { min-width: 0; border: 1px solid var(--line); border-radius: 10px; padding: 10px 11px; background: rgba(255,255,255,.58); color: var(--ink); outline: none; }
+.obsidian-preflight-plan { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; margin: 14px 0 0; }
+.obsidian-preflight-plan > div { min-width: 0; padding: 10px; border: 1px solid var(--line); border-radius: 10px; }
+.obsidian-preflight-plan dt { color: var(--muted); font-size: 8px; }
+.obsidian-preflight-plan dd { margin: 4px 0 0; font-size: 9px; font-weight: 700; overflow-wrap: anywhere; }
+.obsidian-preflight-confirmation { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: end; gap: 12px; margin-top: 14px; }
+.obsidian-preflight-confirmation label code { color: var(--ink); font-size: 8px; overflow-wrap: anywhere; }
+.obsidian-preflight-confirmation > div { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.obsidian-preflight-error { color: #773e35 !important; }
+.obsidian-preflight-result { display: grid; gap: 5px; margin-top: 12px; padding: 11px; border: 1px solid var(--line); border-radius: 10px; }
+.obsidian-preflight-result.ready { border-color: #d7caa2; background: #f3eddb; color: #66582d; }
+.obsidian-preflight-result.verified { border-color: #b9c9b4; background: #e7ede4; color: #40513d; }
+.obsidian-preflight-result.conflict, .obsidian-preflight-result.error { border-color: #d5aaa2; background: #f3e2df; color: #773e35; }
+.obsidian-preflight-result strong { font-size: 10px; }
+.obsidian-preflight-result p { margin: 0; font-size: 9px; line-height: 1.6; }
+.obsidian-preflight-result code { font-size: 8px; overflow-wrap: anywhere; }
+.obsidian-preflight-boundary { margin-top: 14px; padding: 13px 15px; border-radius: 11px; background: #292923; color: white; }
+.obsidian-preflight-boundary strong { font-size: 10px; }
+.obsidian-preflight-boundary p { margin: 5px 0 0; color: #aaa9a1; font-size: 9px; line-height: 1.65; }
 .dashboard-journal-widget ul { margin: 0; padding: 0; list-style: none; }
 .dashboard-journal-widget li { padding: 9px 0; border-bottom: 1px solid var(--line); }
 .dashboard-journal-widget li > div { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
@@ -605,6 +633,11 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
   .legacy-plan-items li code, .legacy-plan-items li small { grid-column: 1 / -1; }
   .legacy-reconciliation { grid-template-columns: 1fr; align-items: stretch; }
   .legacy-reconciliation-result { grid-column: auto; }
+  .obsidian-preflight-heading { align-items: stretch; flex-direction: column; }
+  .obsidian-preflight-heading > span { width: fit-content; }
+  .obsidian-preflight-controls, .obsidian-preflight-confirmation { grid-template-columns: 1fr; align-items: stretch; }
+  .obsidian-preflight-confirmation > div { justify-content: flex-start; }
+  .obsidian-preflight-plan { grid-template-columns: 1fr; }
   .preview-shell { width: min(100% - 30px, 620px); }
   .topbar { height: 86px; }
   .hero { padding: 72px 0 58px; }
