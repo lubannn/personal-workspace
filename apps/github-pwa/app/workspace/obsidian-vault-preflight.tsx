@@ -139,7 +139,7 @@ export function ObsidianVaultPreflight() {
     </> : null}
     {planError ? <p className="obsidian-preflight-error" role="alert">{planError}</p> : null}
     {result ? <div className={`obsidian-preflight-result ${result.tone}`} role="status" aria-live="polite"><strong>{result.title}</strong><p>{result.detail}</p>{result.sha256 ? <code>SHA-256 {result.sha256}</code> : null}</div> : null}
-    <div className="obsidian-preflight-boundary"><strong>当前仍不是 Journal 同步</strong><p>测试文件不会自动删除；浏览器写入在 writable stream 成功关闭后提交，但云盘同步、文件锁和并发编辑仍需单独实机验证。任何非精确 fixture 都会按冲突停止，正式日记导出和 Obsidian → Workspace 覆盖均保持关闭。</p></div>
+    <div className="obsidian-preflight-boundary"><strong>合成预检不授权 Journal 导出</strong><p>测试文件不会自动删除；浏览器写入在 writable stream 成功关闭后提交，但云盘同步、文件锁和并发编辑仍需单独实机验证。任何非精确 fixture 都会按冲突停止；正式单篇导出必须使用上方独立入口重新选择日记并逐次确认，Obsidian → Workspace 覆盖保持关闭。</p></div>
   </section>;
 }
 

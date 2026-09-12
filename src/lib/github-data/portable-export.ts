@@ -15,6 +15,8 @@ import { parseJournalEntryRecord } from "./journal-entries";
 import { parseJournalSegmentRecord } from "./journal-segments";
 import { parseJournalRevisionRecord, sha256JournalRevisionBody } from "./journal-revisions";
 import { parseJournalImportCheckpointRecord } from "./journal-import-checkpoints";
+import { parseObsidianDocumentRecord } from "./obsidian-documents";
+import { parseSyncConflictRecord } from "./sync-conflicts";
 import { renderJournalSegmentsMarkdown } from "./journal-segment-codec";
 import { parseCaptureRecord, parseWorkspaceDescriptor, type WorkspaceDescriptor } from "./workspace";
 
@@ -44,7 +46,7 @@ export type PortableWorkspaceExport = {
   manifest: {
     schema_version: 1;
     scope: {
-      modules: Array<"workspace" | "captures" | "dashboard_layout" | "tasks" | "time_entries" | "projects" | "project_phases" | "milestones" | "project_notes" | "project_file_references" | "activity_events" | "calendar_events" | "report_drafts" | "journal_entries" | "journal_segments" | "journal_revisions" | "journal_import_checkpoints">;
+      modules: Array<"workspace" | "captures" | "dashboard_layout" | "tasks" | "time_entries" | "projects" | "project_phases" | "milestones" | "project_notes" | "project_file_references" | "activity_events" | "calendar_events" | "report_drafts" | "journal_entries" | "journal_segments" | "journal_revisions" | "journal_import_checkpoints" | "obsidian_documents" | "sync_conflicts">;
       complete: true;
     };
     counts: {
@@ -65,6 +67,8 @@ export type PortableWorkspaceExport = {
       journal_segments: number;
       journal_revisions: number;
       journal_import_checkpoints: number;
+      obsidian_documents: number;
+      sync_conflicts: number;
     };
     files: PortableExportManifestFile[];
   };
@@ -100,6 +104,8 @@ export type ExportInspection = {
     journalSegments: number;
     journalRevisions: number;
     journalImportCheckpoints: number;
+    obsidianDocuments: number;
+    syncConflicts: number;
   };
   errors: ExportInspectionIssue[];
   warnings: ExportInspectionIssue[];
@@ -138,6 +144,8 @@ export async function buildPortableWorkspaceExport(input: {
   journalSegmentFiles?: GitHubStoredFile[];
   journalRevisionFiles?: GitHubStoredFile[];
   journalImportCheckpointFiles?: GitHubStoredFile[];
+  obsidianDocumentFiles?: GitHubStoredFile[];
+  syncConflictFiles?: GitHubStoredFile[];
   generatedAt?: string;
 }): Promise<PortableWorkspaceExport> {
   const dashboardLayoutFiles = input.dashboardLayoutFile ? [input.dashboardLayoutFile] : [];
@@ -155,7 +163,9 @@ export async function buildPortableWorkspaceExport(input: {
   const journalSegmentFiles = input.journalSegmentFiles ?? [];
   const journalRevisionFiles = input.journalRevisionFiles ?? [];
   const journalImportCheckpointFiles = input.journalImportCheckpointFiles ?? [];
-  const files = [input.workspaceFile, ...input.captureFiles, ...dashboardLayoutFiles, ...taskFiles, ...timeEntryFiles, ...projectFiles, ...projectPhaseFiles, ...milestoneFiles, ...projectNoteFiles, ...projectFileReferenceFiles, ...activityEventFiles, ...calendarEventFiles, ...reportDraftFiles, ...journalEntryFiles, ...journalSegmentFiles, ...journalRevisionFiles, ...journalImportCheckpointFiles]
+  const obsidianDocumentFiles = input.obsidianDocumentFiles ?? [];
+  const syncConflictFiles = input.syncConflictFiles ?? [];
+  const files = [input.workspaceFile, ...input.captureFiles, ...dashboardLayoutFiles, ...taskFiles, ...timeEntryFiles, ...projectFiles, ...projectPhaseFiles, ...milestoneFiles, ...projectNoteFiles, ...projectFileReferenceFiles, ...activityEventFiles, ...calendarEventFiles, ...reportDraftFiles, ...journalEntryFiles, ...journalSegmentFiles, ...journalRevisionFiles, ...journalImportCheckpointFiles, ...obsidianDocumentFiles, ...syncConflictFiles]
     .map((file) => ({ ...file }))
     .sort((left, right) => left.path.localeCompare(right.path));
   const manifestFiles = await Promise.all(files.map(async (file) => ({
@@ -172,7 +182,7 @@ export async function buildPortableWorkspaceExport(input: {
     source: { repository: input.repository, branch: input.branch },
     manifest: {
       schema_version: 1,
-      scope: { modules: ["workspace", "captures", "dashboard_layout", "tasks", "time_entries", "projects", "project_phases", "milestones", "project_notes", "project_file_references", "activity_events", "calendar_events", "report_drafts", "journal_entries", "journal_segments", "journal_revisions", "journal_import_checkpoints"], complete: true },
+      scope: { modules: ["workspace", "captures", "dashboard_layout", "tasks", "time_entries", "projects", "project_phases", "milestones", "project_notes", "project_file_references", "activity_events", "calendar_events", "report_drafts", "journal_entries", "journal_segments", "journal_revisions", "journal_import_checkpoints", "obsidian_documents", "sync_conflicts"], complete: true },
       counts: {
         files: files.length,
         captures: input.captureFiles.length,
@@ -191,6 +201,8 @@ export async function buildPortableWorkspaceExport(input: {
         journal_segments: journalSegmentFiles.length,
         journal_revisions: journalRevisionFiles.length,
         journal_import_checkpoints: journalImportCheckpointFiles.length,
+        obsidian_documents: obsidianDocumentFiles.length,
+        sync_conflicts: syncConflictFiles.length,
       },
       files: manifestFiles,
     },
@@ -224,7 +236,7 @@ export async function inspectPortableWorkspaceExport(value: unknown): Promise<Ex
     generatedAt: null,
     repository: null,
     workspace: null,
-    counts: { files: 0, captures: 0, dashboardLayouts: 0, tasks: 0, timeEntries: 0, projects: 0, projectPhases: 0, milestones: 0, projectNotes: 0, projectFileReferences: 0, activityEvents: 0, calendarEvents: 0, reportDrafts: 0, journalEntries: 0, journalSegments: 0, journalRevisions: 0, journalImportCheckpoints: 0 },
+    counts: { files: 0, captures: 0, dashboardLayouts: 0, tasks: 0, timeEntries: 0, projects: 0, projectPhases: 0, milestones: 0, projectNotes: 0, projectFileReferences: 0, activityEvents: 0, calendarEvents: 0, reportDrafts: 0, journalEntries: 0, journalSegments: 0, journalRevisions: 0, journalImportCheckpoints: 0, obsidianDocuments: 0, syncConflicts: 0 },
     errors,
     warnings,
   };
@@ -783,6 +795,69 @@ export async function inspectPortableWorkspaceExport(value: unknown): Promise<Ex
   const rawJournalImportCheckpointCount = manifestCounts?.journal_import_checkpoints;
   if ((rawJournalImportCheckpointCount !== undefined || journalImportCheckpointFiles.length > 0) && rawJournalImportCheckpointCount !== journalImportCheckpointFiles.length) errors.push({ code: "JOURNAL_IMPORT_CHECKPOINT_COUNT_MISMATCH", message: "JournalImportCheckpoint 数量与 manifest 不一致。" });
 
+  const obsidianDocumentIds = new Set<string>();
+  const obsidianDocumentEntryKeys = new Set<string>();
+  const obsidianDocumentPathKeys = new Set<string>();
+  const obsidianDocumentRecords = new Map<string, ReturnType<typeof parseObsidianDocumentRecord>>();
+  const obsidianDocumentFiles = validPayloadFiles.filter((file) => file.path.startsWith("data/obsidian-documents/"));
+  result.counts.obsidianDocuments = obsidianDocumentFiles.length;
+  for (const file of obsidianDocumentFiles) {
+    try {
+      const record = parseObsidianDocumentRecord(file.content);
+      if (result.workspace && record.owner_id !== result.workspace.owner_id) errors.push({ code: "OWNER_MISMATCH", message: "ObsidianDocument 的 owner_id 与 workspace 不一致。", path: file.path });
+      if (recordPath("obsidian_document", record.id) !== file.path) errors.push({ code: "OBSIDIAN_DOCUMENT_PATH_MISMATCH", message: "ObsidianDocument 的 ID 与文件路径不一致。", path: file.path });
+      if (obsidianDocumentIds.has(record.id)) errors.push({ code: "DUPLICATE_OBSIDIAN_DOCUMENT_ID", message: "导出包中存在重复 ObsidianDocument ID。", path: file.path });
+      obsidianDocumentIds.add(record.id);
+      obsidianDocumentRecords.set(record.id, record);
+      const entryKey = `${record.data.vault_mapping_id}:${record.data.journal_entry_id}`;
+      const pathKey = `${record.data.vault_mapping_id}:${record.data.relative_path}`;
+      if (record.deleted_at === null && (obsidianDocumentEntryKeys.has(entryKey) || obsidianDocumentPathKeys.has(pathKey))) errors.push({ code: "DUPLICATE_ACTIVE_OBSIDIAN_DOCUMENT", message: "同一 Vault mapping 的 JournalEntry 或目标路径存在多个有效导出基线。", path: file.path });
+      if (record.deleted_at === null) {
+        obsidianDocumentEntryKeys.add(entryKey);
+        obsidianDocumentPathKeys.add(pathKey);
+      }
+      const entry = journalEntryRecords.get(record.data.journal_entry_id);
+      const revision = journalRevisionRecords.get(record.data.source_revision_id);
+      if (!entry) errors.push({ code: "OBSIDIAN_DOCUMENT_ENTRY_MISSING", message: "ObsidianDocument 引用的 JournalEntry 不在导出包中。", path: file.path });
+      if (!revision) errors.push({ code: "OBSIDIAN_DOCUMENT_REVISION_MISSING", message: "ObsidianDocument 引用的 JournalRevision 不在导出包中。", path: file.path });
+      if (entry && !record.data.relative_path.endsWith(`/Journal/${entry.data.journal_date.slice(0, 4)}/${entry.data.journal_date}.md`)) errors.push({ code: "OBSIDIAN_DOCUMENT_DATE_PATH_MISMATCH", message: "ObsidianDocument 路径与 JournalEntry 日期不一致。", path: file.path });
+      if (revision && (revision.data.journal_entry_id !== record.data.journal_entry_id || revision.data.content_sha256 !== record.data.source_content_sha256)) errors.push({ code: "OBSIDIAN_DOCUMENT_REVISION_MISMATCH", message: "ObsidianDocument 的 Revision 身份或正文哈希不一致。", path: file.path });
+      if (entry && entry.version < record.data.source_record_version) errors.push({ code: "OBSIDIAN_DOCUMENT_SOURCE_VERSION_FROM_FUTURE", message: "ObsidianDocument 的来源 record version 高于 JournalEntry。", path: file.path });
+    } catch {
+      errors.push({ code: "INVALID_OBSIDIAN_DOCUMENT_RECORD", message: "ObsidianDocument 文件无法通过结构校验。", path: file.path });
+    }
+  }
+  const rawObsidianDocumentCount = manifestCounts?.obsidian_documents;
+  if ((rawObsidianDocumentCount !== undefined || obsidianDocumentFiles.length > 0) && rawObsidianDocumentCount !== obsidianDocumentFiles.length) errors.push({ code: "OBSIDIAN_DOCUMENT_COUNT_MISMATCH", message: "ObsidianDocument 数量与 manifest 不一致。" });
+
+  const syncConflictIds = new Set<string>();
+  const syncConflictFiles = validPayloadFiles.filter((file) => file.path.startsWith("data/sync-conflicts/"));
+  result.counts.syncConflicts = syncConflictFiles.length;
+  for (const file of syncConflictFiles) {
+    try {
+      const record = parseSyncConflictRecord(file.content);
+      if (result.workspace && record.owner_id !== result.workspace.owner_id) errors.push({ code: "OWNER_MISMATCH", message: "SyncConflict 的 owner_id 与 workspace 不一致。", path: file.path });
+      if (recordPath("sync_conflict", record.id) !== file.path) errors.push({ code: "SYNC_CONFLICT_PATH_MISMATCH", message: "SyncConflict 的 ID 与文件路径不一致。", path: file.path });
+      if (syncConflictIds.has(record.id)) errors.push({ code: "DUPLICATE_SYNC_CONFLICT_ID", message: "导出包中存在重复 SyncConflict ID。", path: file.path });
+      syncConflictIds.add(record.id);
+      const entry = journalEntryRecords.get(record.data.journal_entry_id);
+      const revision = journalRevisionRecords.get(record.data.source_revision_id);
+      if (!entry) errors.push({ code: "SYNC_CONFLICT_ENTRY_MISSING", message: "SyncConflict 引用的 JournalEntry 不在导出包中。", path: file.path });
+      if (!revision) errors.push({ code: "SYNC_CONFLICT_REVISION_MISSING", message: "SyncConflict 引用的 JournalRevision 不在导出包中。", path: file.path });
+      if (entry && !record.data.relative_path.endsWith(`/Journal/${entry.data.journal_date.slice(0, 4)}/${entry.data.journal_date}.md`)) errors.push({ code: "SYNC_CONFLICT_DATE_PATH_MISMATCH", message: "SyncConflict 路径与 JournalEntry 日期不一致。", path: file.path });
+      if (revision && revision.data.journal_entry_id !== record.data.journal_entry_id) errors.push({ code: "SYNC_CONFLICT_REVISION_MISMATCH", message: "SyncConflict 的 JournalRevision 不属于目标 JournalEntry。", path: file.path });
+      if (record.data.obsidian_document_id) {
+        const document = obsidianDocumentRecords.get(record.data.obsidian_document_id);
+        if (!document) errors.push({ code: "SYNC_CONFLICT_OBSIDIAN_DOCUMENT_MISSING", message: "SyncConflict 引用的 ObsidianDocument 不在导出包中。", path: file.path });
+        else if (document.data.journal_entry_id !== record.data.journal_entry_id || document.data.vault_mapping_id !== record.data.vault_mapping_id || document.data.relative_path !== record.data.relative_path || document.data.document_sha256 !== record.data.baseline_document_sha256) errors.push({ code: "SYNC_CONFLICT_BASELINE_MISMATCH", message: "SyncConflict 与 ObsidianDocument 基线不一致。", path: file.path });
+      }
+    } catch {
+      errors.push({ code: "INVALID_SYNC_CONFLICT_RECORD", message: "SyncConflict 文件无法通过结构校验。", path: file.path });
+    }
+  }
+  const rawSyncConflictCount = manifestCounts?.sync_conflicts;
+  if ((rawSyncConflictCount !== undefined || syncConflictFiles.length > 0) && rawSyncConflictCount !== syncConflictFiles.length) errors.push({ code: "SYNC_CONFLICT_COUNT_MISMATCH", message: "SyncConflict 数量与 manifest 不一致。" });
+
   const supportedPaths = new Set(["workspace.json", DASHBOARD_LAYOUT_PATH]);
   const unexpectedFiles = validPayloadFiles.filter((file) => (
     !supportedPaths.has(file.path)
@@ -801,6 +876,8 @@ export async function inspectPortableWorkspaceExport(value: unknown): Promise<Ex
     && !file.path.startsWith("data/journal-segments/")
     && !file.path.startsWith("data/journal-revisions/")
     && !file.path.startsWith("data/journal-import-checkpoints/")
+    && !file.path.startsWith("data/obsidian-documents/")
+    && !file.path.startsWith("data/sync-conflicts/")
   ));
   for (const file of unexpectedFiles) {
     errors.push({ code: "UNEXPECTED_FILE", message: "当前版本不支持此导出路径。", path: file.path });

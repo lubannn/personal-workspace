@@ -16,6 +16,8 @@ export type EntityType =
   | "journal_segment"
   | "journal_revision"
   | "journal_import_checkpoint"
+  | "obsidian_document"
+  | "sync_conflict"
   | "journal"
   | "learning"
   | "habit"
@@ -49,6 +51,8 @@ const ENTITY_DIRECTORIES: Record<Exclude<EntityType, "journal">, string> = {
   journal_segment: "journal-segments",
   journal_revision: "journal-revisions",
   journal_import_checkpoint: "journal-import-checkpoints",
+  obsidian_document: "obsidian-documents",
+  sync_conflict: "sync-conflicts",
   learning: "learning",
   habit: "habits",
   health: "health",

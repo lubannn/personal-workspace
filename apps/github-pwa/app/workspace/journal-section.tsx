@@ -6,7 +6,8 @@ import { activeJournalEntries, filterJournalEntries, hasActiveDailyJournalDate, 
 import { LegacyJournalImportSection } from "./legacy-journal-import-section";
 import { LegacyJournalCheckpointHistory } from "./legacy-journal-checkpoint-history";
 import { ObsidianVaultPreflight } from "./obsidian-vault-preflight";
-import type { Connection, SyncedJournalEntry, SyncedJournalImportCheckpoint } from "./page-model";
+import { ObsidianJournalExport } from "./obsidian-journal-export";
+import type { Connection, SyncedJournalEntry, SyncedJournalImportCheckpoint, SyncedJournalRevision, SyncedObsidianDocument } from "./page-model";
 
 type JournalFields = { journalDate: string; title: string; bodyMarkdown: string; mood: string; weather: string };
 
@@ -16,7 +17,9 @@ type Props = {
   online: boolean | null;
   todayDate: string;
   journalEntryFiles: SyncedJournalEntry[];
+  journalRevisionFiles: SyncedJournalRevision[];
   journalImportCheckpointFiles: SyncedJournalImportCheckpoint[];
+  obsidianDocumentFiles: SyncedObsidianDocument[];
   loading: boolean;
   loadingLegacyHistory: boolean;
   saving: boolean;
@@ -27,9 +30,10 @@ type Props = {
   onRefresh: () => void;
   onRefreshLegacyHistory: () => Promise<void>;
   onLegacyImportCommitted: () => Promise<void>;
+  onObsidianCanonicalChanged: () => Promise<void>;
 };
 
-export function JournalSection({ connection, adapter, online, todayDate, journalEntryFiles, journalImportCheckpointFiles, loading, loadingLegacyHistory, saving, savingId, onCreate, onEdit, onDeletionChange, onRefresh, onRefreshLegacyHistory, onLegacyImportCommitted }: Props) {
+export function JournalSection({ connection, adapter, online, todayDate, journalEntryFiles, journalRevisionFiles, journalImportCheckpointFiles, obsidianDocumentFiles, loading, loadingLegacyHistory, saving, savingId, onCreate, onEdit, onDeletionChange, onRefresh, onRefreshLegacyHistory, onLegacyImportCommitted, onObsidianCanonicalChanged }: Props) {
   const [view, setView] = useState<"active" | "trash">("active");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [journalDate, setJournalDate] = useState("");
@@ -75,7 +79,7 @@ export function JournalSection({ connection, adapter, online, todayDate, journal
 
   return <section className="journal-card" aria-labelledby="journal-title">
     <div className="card-heading">
-      <div><p className="eyebrow">Phase 3A · Journal Core</p><h2 id="journal-title">日记</h2><p className="journal-subtitle">Private GitHub JSON 是唯一 canonical；Markdown 只在当前浏览器导出。首版不连接、不扫描也不覆盖 Obsidian Vault。</p></div>
+      <div><p className="eyebrow">Phase 3A · Journal Core</p><h2 id="journal-title">日记</h2><p className="journal-subtitle">Private GitHub JSON 是唯一 canonical；Obsidian 仅支持逐篇、显式确认的单向派生导出。</p></div>
       <div className="journal-view-actions" aria-label="日记视图与同步">
         <button className="view-button" type="button" aria-pressed={view === "active"} onClick={() => setView("active")}>日记 {active.length}</button>
         <button className="view-button" type="button" aria-pressed={view === "trash"} onClick={() => { setView("trash"); resetForm(); }}>回收站 {trash.length}</button>
@@ -98,10 +102,11 @@ export function JournalSection({ connection, adapter, online, todayDate, journal
       <div className="journal-browser-meta" aria-live="polite"><span>{connection ? `显示 ${visible.length} / ${source.length}` : "连接后可搜索"}</span><button className="text-button" type="button" onClick={() => { setMonth(""); setSearchQuery(""); }} disabled={!connection || (!month && !searchQuery)}>清除筛选</button></div>
     </div>
     {!connection ? <p className="empty-note">连接后显示 Private 仓库中的 JournalEntry。</p> : loading && journalEntryFiles.length === 0 ? <p className="empty-note">正在读取日记…</p> : source.length === 0 ? <p className="empty-note">{view === "active" ? "还没有日记。" : "Journal 回收站是空的。"}</p> : visible.length === 0 ? <p className="empty-note">没有符合当前月份与搜索条件的日记。</p> : <ol className="journal-list">{visible.map((item) => <li key={item.record.id}>
-      <div><span>{item.record.data.journal_date}</span><strong>{item.record.data.title || "未命名日记"}</strong><p>{preview(item.record.data.body_markdown)}</p><small>{[item.record.data.mood && `心情 ${item.record.data.mood}`, item.record.data.weather && `天气 ${item.record.data.weather}`, `v${item.record.version}`, item.record.data.sync_status === "not_configured" && "未连接 Obsidian"].filter(Boolean).join(" · ")}</small></div>
+      <div><span>{item.record.data.journal_date}</span><strong>{item.record.data.title || "未命名日记"}</strong><p>{preview(item.record.data.body_markdown)}</p><small>{[item.record.data.mood && `心情 ${item.record.data.mood}`, item.record.data.weather && `天气 ${item.record.data.weather}`, `v${item.record.version}`, obsidianDocumentFiles.some((document) => document.record.deleted_at === null && document.record.data.journal_entry_id === item.record.id) ? "已有 Obsidian 导出基线" : "尚未导出到 Obsidian"].filter(Boolean).join(" · ")}</small></div>
       <div className="journal-item-actions">{view === "active" ? <><button className="text-button" type="button" onClick={() => beginEdit(item)} disabled={Boolean(savingId) || saving}>编辑</button><button className="text-button" type="button" onClick={() => downloadMarkdown(item)}>下载 Markdown</button></> : null}<button className="text-button" type="button" onClick={() => onDeletionChange(item, view === "active" ? "trash" : "restore")} disabled={Boolean(savingId) || online === false}>{savingId === item.record.id ? "…" : view === "active" ? "移到回收站" : "恢复"}</button></div>
     </li>)}</ol>}
     <LegacyJournalCheckpointHistory connection={connection} adapter={adapter} checkpoints={journalImportCheckpointFiles} loading={loadingLegacyHistory} online={online} onRefresh={onRefreshLegacyHistory} />
+    <ObsidianJournalExport connection={connection} adapter={adapter} online={online} entries={journalEntryFiles} revisions={journalRevisionFiles} documents={obsidianDocumentFiles} onCanonicalChanged={onObsidianCanonicalChanged} />
     <ObsidianVaultPreflight />
     <LegacyJournalImportSection key={connection ? `${connection.ownerLogin}/${connection.repository}/${connection.timezone}` : "disconnected"} connection={connection} adapter={adapter} online={online} onCommitted={onLegacyImportCommitted} />
   </section>;

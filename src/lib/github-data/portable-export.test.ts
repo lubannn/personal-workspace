@@ -10,6 +10,8 @@ import { createJournalEntryData } from "./journal-entries";
 import { createJournalSegmentData } from "./journal-segments";
 import { createJournalRevisionData, sha256JournalRevisionBody } from "./journal-revisions";
 import { createJournalImportCheckpointRecord } from "./journal-import-checkpoints";
+import { createObsidianDocumentData } from "./obsidian-documents";
+import { createSyncConflictRecord } from "./sync-conflicts";
 import { renderJournalSegmentsMarkdown } from "./journal-segment-codec";
 import {
   buildPortableWorkspaceExport,
@@ -241,6 +243,40 @@ async function sampleExport() {
     ],
   });
   const journalCheckpointText = serializeRecord(journalCheckpoint);
+  const obsidianDocumentId = "obsidian_document_20260827020230000_abcd1234";
+  const obsidianDocumentText = serializeRecord(createWorkspaceRecord({
+    entityType: "obsidian_document",
+    id: obsidianDocumentId,
+    ownerId: "github_lubannn",
+    timestamp: journalTimestamp,
+    data: createObsidianDocumentData({
+      vault_mapping_id: "onedrive_personal_vault",
+      journal_entry_id: journalEntryId,
+      relative_path: "Personal Workspace/Journal/2026/2026-08-27.md",
+      source_revision_id: journalRevisionId,
+      source_record_version: 1,
+      source_content_sha256: await sha256JournalRevisionBody(journalBody),
+      document_sha256: "9".repeat(64),
+      exported_at: journalTimestamp,
+    }),
+  }));
+  const syncConflict = createSyncConflictRecord({
+    id: "sync_conflict_20260827020240000_abcd1234",
+    ownerId: "github_lubannn",
+    detectedAt: "2026-08-27T02:03:00.000Z",
+    data: {
+      conflict_kind: "obsidian_document_changed",
+      vault_mapping_id: "onedrive_personal_vault",
+      obsidian_document_id: obsidianDocumentId,
+      journal_entry_id: journalEntryId,
+      source_revision_id: journalRevisionId,
+      relative_path: "Personal Workspace/Journal/2026/2026-08-27.md",
+      baseline_document_sha256: "9".repeat(64),
+      observed_document_sha256: "8".repeat(64),
+      planned_document_sha256: "7".repeat(64),
+    },
+  });
+  const syncConflictText = serializeRecord(syncConflict);
   return buildPortableWorkspaceExport({
     repository: "lubannn/personal-workspace-data",
     branch: "main",
@@ -254,6 +290,8 @@ async function sampleExport() {
     journalSegmentFiles: [storedFile("data/journal-segments/journal_segment_20260827020210000_abcd1234.json", journalSegmentText, "journal-segment-blob")],
     journalRevisionFiles: [storedFile("data/journal-revisions/journal_revision_20260827020220000_abcd1234.json", journalRevisionText, "journal-revision-blob")],
     journalImportCheckpointFiles: [storedFile(`data/journal-import-checkpoints/${journalCheckpoint.id}.json`, journalCheckpointText, "journal-checkpoint-blob")],
+    obsidianDocumentFiles: [storedFile(`data/obsidian-documents/${obsidianDocumentId}.json`, obsidianDocumentText, "obsidian-document-blob")],
+    syncConflictFiles: [storedFile(`data/sync-conflicts/${syncConflict.id}.json`, syncConflictText, "sync-conflict-blob")],
     projectFiles: [storedFile("data/projects/project_20260827014500000_abcd1234.json", projectText, "project-blob")],
     projectPhaseFiles: [storedFile("data/project-phases/phase_20260827015000000_abcd1234.json", projectPhaseText, "phase-blob")],
     milestoneFiles: [storedFile("data/milestones/milestone_20260827015500000_abcd1234.json", milestoneText, "milestone-blob")],
@@ -268,7 +306,7 @@ async function sampleExport() {
 describe("portable GitHub workspace export", () => {
   it("builds a deterministic manifest and passes restore preflight", async () => {
     const exported = await sampleExport();
-    expect(exported.manifest.counts).toEqual({ files: 17, captures: 1, dashboard_layouts: 1, tasks: 1, time_entries: 1, projects: 1, project_phases: 1, milestones: 1, project_notes: 1, project_file_references: 1, activity_events: 1, calendar_events: 1, report_drafts: 1, journal_entries: 1, journal_segments: 1, journal_revisions: 1, journal_import_checkpoints: 1 });
+    expect(exported.manifest.counts).toEqual({ files: 19, captures: 1, dashboard_layouts: 1, tasks: 1, time_entries: 1, projects: 1, project_phases: 1, milestones: 1, project_notes: 1, project_file_references: 1, activity_events: 1, calendar_events: 1, report_drafts: 1, journal_entries: 1, journal_segments: 1, journal_revisions: 1, journal_import_checkpoints: 1, obsidian_documents: 1, sync_conflicts: 1 });
     expect(exported.manifest.files.map((file) => file.path)).toEqual([
       "config/dashboard-layout.json",
       "data/activity-events/activity_20260827015800000_abcd1234.json",
@@ -279,11 +317,13 @@ describe("portable GitHub workspace export", () => {
       "data/journal-revisions/journal_revision_20260827020220000_abcd1234.json",
       "data/journal-segments/journal_segment_20260827020210000_abcd1234.json",
       "data/milestones/milestone_20260827015500000_abcd1234.json",
+      "data/obsidian-documents/obsidian_document_20260827020230000_abcd1234.json",
       "data/project-file-references/project_file_20260827015830000_abcd1234.json",
       "data/project-notes/project_note_20260827015700000_abcd1234.json",
       "data/project-phases/phase_20260827015000000_abcd1234.json",
       "data/projects/project_20260827014500000_abcd1234.json",
       "data/report-drafts/report_draft_20260827020000000_abcd1234.json",
+      "data/sync-conflicts/sync_conflict_20260827020240000_abcd1234.json",
       "data/tasks/task_20260827013000000_abcd1234.json",
       "data/time-entries/time_entry_20260827020100000_abcd1234.json",
       "workspace.json",
@@ -293,7 +333,7 @@ describe("portable GitHub workspace export", () => {
     await expect(inspectPortableWorkspaceExport(exported)).resolves.toMatchObject({
       valid: true,
       repository: "lubannn/personal-workspace-data",
-      counts: { files: 17, captures: 1, dashboardLayouts: 1, tasks: 1, timeEntries: 1, projects: 1, projectPhases: 1, milestones: 1, projectNotes: 1, projectFileReferences: 1, activityEvents: 1, calendarEvents: 1, reportDrafts: 1, journalEntries: 1, journalSegments: 1, journalRevisions: 1, journalImportCheckpoints: 1 },
+      counts: { files: 19, captures: 1, dashboardLayouts: 1, tasks: 1, timeEntries: 1, projects: 1, projectPhases: 1, milestones: 1, projectNotes: 1, projectFileReferences: 1, activityEvents: 1, calendarEvents: 1, reportDrafts: 1, journalEntries: 1, journalSegments: 1, journalRevisions: 1, journalImportCheckpoints: 1, obsidianDocuments: 1, syncConflicts: 1 },
       errors: [],
       workspace: { owner_id: "github_lubannn" },
     });
@@ -419,6 +459,37 @@ describe("portable GitHub workspace export", () => {
     expect(inspection.errors.map((error) => error.code)).toContain("JOURNAL_ENTRY_CURRENT_REVISION_NOT_FOUND");
   });
 
+  it("rejects Obsidian baselines and conflicts with cross-reference mismatches", async () => {
+    const duplicateBaseline = await sampleExport();
+    const originalDocument = duplicateBaseline.files.find((file) => file.path.startsWith("data/obsidian-documents/"))!;
+    const duplicateDocument = JSON.parse(originalDocument.content);
+    duplicateDocument.id = "obsidian_document_duplicate";
+    duplicateDocument.data.journal_entry_id = "journal_entry_other";
+    const duplicateText = `${JSON.stringify(duplicateDocument, null, 2)}\n`;
+    const duplicatePath = "data/obsidian-documents/obsidian_document_duplicate.json";
+    duplicateBaseline.files.push({ path: duplicatePath, content: duplicateText });
+    duplicateBaseline.manifest.files.push({ path: duplicatePath, blob_sha: "duplicate-obsidian-blob", size_bytes: new TextEncoder().encode(duplicateText).byteLength, sha256: await sha256Text(duplicateText) });
+    duplicateBaseline.manifest.counts.files += 1;
+    duplicateBaseline.manifest.counts.obsidian_documents += 1;
+    let inspection = await inspectPortableWorkspaceExport(duplicateBaseline);
+    expect(inspection.errors.map((error) => error.code)).toContain("DUPLICATE_ACTIVE_OBSIDIAN_DOCUMENT");
+
+    const mismatchedConflict = await sampleExport();
+    const conflictFile = mismatchedConflict.files.find((file) => file.path.startsWith("data/sync-conflicts/"))!;
+    const conflict = JSON.parse(conflictFile.content);
+    conflict.data.journal_entry_id = "journal_entry_other";
+    conflictFile.content = `${JSON.stringify(conflict, null, 2)}\n`;
+    const conflictManifest = mismatchedConflict.manifest.files.find((file) => file.path === conflictFile.path)!;
+    conflictManifest.size_bytes = new TextEncoder().encode(conflictFile.content).byteLength;
+    conflictManifest.sha256 = await sha256Text(conflictFile.content);
+    inspection = await inspectPortableWorkspaceExport(mismatchedConflict);
+    expect(inspection.errors.map((error) => error.code)).toEqual(expect.arrayContaining([
+      "SYNC_CONFLICT_ENTRY_MISSING",
+      "SYNC_CONFLICT_REVISION_MISMATCH",
+      "SYNC_CONFLICT_BASELINE_MISMATCH",
+    ]));
+  });
+
   it("continues to accept version 1 exports created before dashboard layouts existed", async () => {
     const exported = await sampleExport();
     exported.files = exported.files.filter((file) => file.path !== "config/dashboard-layout.json");
@@ -428,6 +499,8 @@ describe("portable GitHub workspace export", () => {
     exported.files = exported.files.filter((file) => !file.path.startsWith("data/journal-segments/"));
     exported.files = exported.files.filter((file) => !file.path.startsWith("data/journal-revisions/"));
     exported.files = exported.files.filter((file) => !file.path.startsWith("data/journal-import-checkpoints/"));
+    exported.files = exported.files.filter((file) => !file.path.startsWith("data/obsidian-documents/"));
+    exported.files = exported.files.filter((file) => !file.path.startsWith("data/sync-conflicts/"));
     exported.files = exported.files.filter((file) => !file.path.startsWith("data/projects/"));
     exported.files = exported.files.filter((file) => !file.path.startsWith("data/project-phases/"));
     exported.files = exported.files.filter((file) => !file.path.startsWith("data/milestones/"));
@@ -443,6 +516,8 @@ describe("portable GitHub workspace export", () => {
     exported.manifest.files = exported.manifest.files.filter((file) => !file.path.startsWith("data/journal-segments/"));
     exported.manifest.files = exported.manifest.files.filter((file) => !file.path.startsWith("data/journal-revisions/"));
     exported.manifest.files = exported.manifest.files.filter((file) => !file.path.startsWith("data/journal-import-checkpoints/"));
+    exported.manifest.files = exported.manifest.files.filter((file) => !file.path.startsWith("data/obsidian-documents/"));
+    exported.manifest.files = exported.manifest.files.filter((file) => !file.path.startsWith("data/sync-conflicts/"));
     exported.manifest.files = exported.manifest.files.filter((file) => !file.path.startsWith("data/projects/"));
     exported.manifest.files = exported.manifest.files.filter((file) => !file.path.startsWith("data/project-phases/"));
     exported.manifest.files = exported.manifest.files.filter((file) => !file.path.startsWith("data/milestones/"));
