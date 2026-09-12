@@ -80,6 +80,13 @@ import {
   type TaskPriority,
 } from "../../../src/lib/github-data/tasks";
 import { createTimeEntryData } from "../../../src/lib/github-data/time-entries";
+import {
+  createLearningAreaData,
+  setLearningAreaStatus,
+  updateLearningAreaDetails,
+  type LearningAreaFields,
+  type LearningAreaStatus,
+} from "../../../src/lib/github-data/learning-areas";
 import { createJournalEntryData, hasActiveDailyJournalDate, updateJournalEntryData } from "../../../src/lib/github-data/journal-entries";
 import {
   createJournalEntryAtomically,
@@ -103,6 +110,7 @@ import {
   type SyncedCapture,
   type SyncedCalendarEvent,
   type SyncedJournalEntry,
+  type SyncedLearningArea,
   type SyncedProject,
   type SyncedProjectPhase,
   type SyncedMilestone,
@@ -125,6 +133,7 @@ import { ReportsSection } from "./workspace/reports-section";
 import { TasksSection } from "./workspace/tasks-section";
 import { TimeEntriesSection } from "./workspace/time-entries-section";
 import { JournalSection } from "./workspace/journal-section";
+import { LearningSection } from "./workspace/learning-section";
 
 export default function GitHubWorkspacePage() {
   const adapterRef = useRef<GitHubContentsAdapter | null>(null);
@@ -173,6 +182,8 @@ export default function GitHubWorkspacePage() {
   const [savingCalendarEventId, setSavingCalendarEventId] = useState<string | null>(null);
   const [savingJournalEntry, setSavingJournalEntry] = useState(false);
   const [savingJournalEntryId, setSavingJournalEntryId] = useState<string | null>(null);
+  const [savingLearningArea, setSavingLearningArea] = useState(false);
+  const [savingLearningAreaId, setSavingLearningAreaId] = useState<string | null>(null);
   const [dashboardDirty, setDashboardDirty] = useState(false);
   const [editingDashboard, setEditingDashboard] = useState(false);
   const [savingDashboard, setSavingDashboard] = useState(false);
@@ -223,6 +234,8 @@ export default function GitHubWorkspacePage() {
     setJournalRevisionFiles,
     journalImportCheckpointFiles,
     obsidianDocumentFiles,
+    learningAreaFiles,
+    setLearningAreaFiles,
     dashboardLayout,
     setDashboardLayout,
     dashboardBlobSha,
@@ -242,6 +255,7 @@ export default function GitHubWorkspacePage() {
     loadingJournalSegments,
     loadingJournalRevisions,
     loadingJournalImportCheckpoints,
+    loadingLearningAreas,
     loadingDashboard,
     loadRecentCaptures,
     loadTasks,
@@ -260,6 +274,7 @@ export default function GitHubWorkspacePage() {
     loadJournalImportCheckpoints,
     loadObsidianDocuments,
     loadSyncConflicts,
+    loadLearningAreas,
     loadDashboardLayout,
     clearCollections,
   } = useWorkspaceCollections({ adapterRef, setErrorMessage, setDashboardClean });
@@ -290,6 +305,7 @@ export default function GitHubWorkspacePage() {
     loadJournalImportCheckpoints,
     loadObsidianDocuments,
     loadSyncConflicts,
+    loadLearningAreas,
   });
 
   const workspaceTimezone = connection?.timezone ?? "Asia/Shanghai";
@@ -1557,6 +1573,63 @@ export default function GitHubWorkspacePage() {
     finally { setSavingJournalEntryId(null); }
   }
 
+  async function saveLearningArea(fields: LearningAreaFields) {
+    const adapter = adapterRef.current;
+    if (!adapter || !connection || savingLearningArea || online === false) return false;
+    setSavingLearningArea(true); setErrorMessage(""); setStatusMessage("");
+    const timestamp = new Date().toISOString();
+    const id = `learning_area_${timestamp.replaceAll(/\D/g, "").slice(0, 17)}_${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`;
+    try {
+      const record = createWorkspaceRecord({ entityType: "learning_area", id, ownerId: connection.ownerId, timestamp, data: createLearningAreaData(fields) });
+      const result = await adapter.writeText({ path: recordPath("learning_area", id), text: serializeRecord(record), message: `learning area: create ${id}` });
+      setLearningAreaFiles((current) => [{ record, path: result.path, blobSha: result.blobSha }, ...current]);
+      setStatusMessage("学习领域已保存到 Private GitHub；名称与类型均由你定义。");
+      return true;
+    } catch (error) { setErrorMessage(friendlyError(error)); return false; }
+    finally { setSavingLearningArea(false); }
+  }
+
+  async function saveLearningAreaEdit(item: SyncedLearningArea, fields: LearningAreaFields) {
+    const adapter = adapterRef.current;
+    if (!adapter || !connection || savingLearningAreaId || online === false) return false;
+    setSavingLearningAreaId(item.record.id); setErrorMessage(""); setStatusMessage("");
+    try {
+      const updated = updateLearningAreaDetails(item.record, fields);
+      const result = await adapter.writeText({ path: item.path, text: serializeRecord(updated), message: `learning area: edit ${item.record.id}`, expectedBlobSha: item.blobSha });
+      setLearningAreaFiles((current) => current.map((candidate) => candidate.record.id === item.record.id ? { record: updated, path: result.path, blobSha: result.blobSha } : candidate));
+      setStatusMessage("学习领域已更新；Git 历史和跨设备并发保护保持有效。");
+      return true;
+    } catch (error) { setErrorMessage(friendlyError(error)); return false; }
+    finally { setSavingLearningAreaId(null); }
+  }
+
+  async function updateLearningAreaStatus(item: SyncedLearningArea, status: LearningAreaStatus) {
+    const adapter = adapterRef.current;
+    if (!adapter || !connection || savingLearningAreaId || online === false) return;
+    setSavingLearningAreaId(item.record.id); setErrorMessage(""); setStatusMessage("");
+    try {
+      const updated = setLearningAreaStatus(item.record, status);
+      const result = await adapter.writeText({ path: item.path, text: serializeRecord(updated), message: `learning area: ${status} ${item.record.id}`, expectedBlobSha: item.blobSha });
+      setLearningAreaFiles((current) => current.map((candidate) => candidate.record.id === item.record.id ? { record: updated, path: result.path, blobSha: result.blobSha } : candidate));
+      setStatusMessage(status === "archived" ? "学习领域已归档。" : status === "on_hold" ? "学习领域已暂停。" : "学习领域已恢复进行。");
+    } catch (error) { setErrorMessage(friendlyError(error)); }
+    finally { setSavingLearningAreaId(null); }
+  }
+
+  async function updateLearningAreaDeletion(item: SyncedLearningArea, operation: "trash" | "restore") {
+    const adapter = adapterRef.current;
+    if (!adapter || !connection || savingLearningAreaId || online === false) return;
+    setSavingLearningAreaId(item.record.id); setErrorMessage(""); setStatusMessage("");
+    const timestamp = new Date().toISOString();
+    const updated = setWorkspaceRecordDeleted(item.record, operation === "trash" ? timestamp : null, timestamp);
+    try {
+      const result = await adapter.writeText({ path: item.path, text: serializeRecord(updated), message: `learning area: ${operation} ${item.record.id}`, expectedBlobSha: item.blobSha });
+      setLearningAreaFiles((current) => current.map((candidate) => candidate.record.id === item.record.id ? { record: updated, path: result.path, blobSha: result.blobSha } : candidate));
+      setStatusMessage(operation === "trash" ? "学习领域已移到可恢复回收站。" : "学习领域已恢复到原状态。");
+    } catch (error) { setErrorMessage(friendlyError(error)); }
+    finally { setSavingLearningAreaId(null); }
+  }
+
   async function listCaptureFiles(adapter: GitHubContentsAdapter) {
     try {
       return (await adapter.listDirectory("data/captures"))
@@ -1611,6 +1684,11 @@ export default function GitHubWorkspacePage() {
 
   async function listSyncConflictFiles(adapter: GitHubContentsAdapter) {
     try { return (await adapter.listDirectory("data/sync-conflicts")).filter((item) => item.type === "file" && item.name.endsWith(".json")).sort((left, right) => left.path.localeCompare(right.path)); }
+    catch (error) { if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") return []; throw error; }
+  }
+
+  async function listLearningAreaFiles(adapter: GitHubContentsAdapter) {
+    try { return (await adapter.listDirectory("data/learning-areas")).filter((item) => item.type === "file" && item.name.endsWith(".json")).sort((left, right) => left.path.localeCompare(right.path)); }
     catch (error) { if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") return []; throw error; }
   }
 
@@ -1841,6 +1919,12 @@ export default function GitHubWorkspacePage() {
         setExportProgress(`正在读取 SyncConflict ${Math.min(index + batchSize, syncConflictCandidates.length)} / ${syncConflictCandidates.length}…`);
         syncConflictExportFiles.push(...await Promise.all(syncConflictCandidates.slice(index, index + batchSize).map((item) => adapter.readText(item.path))));
       }
+      const learningAreaCandidates = await listLearningAreaFiles(adapter);
+      const learningAreaExportFiles = [];
+      for (let index = 0; index < learningAreaCandidates.length; index += batchSize) {
+        setExportProgress(`正在读取 LearningArea ${Math.min(index + batchSize, learningAreaCandidates.length)} / ${learningAreaCandidates.length}…`);
+        learningAreaExportFiles.push(...await Promise.all(learningAreaCandidates.slice(index, index + batchSize).map((item) => adapter.readText(item.path))));
+      }
 
       setExportProgress("正在生成 SHA-256 manifest…");
       const generatedAt = new Date().toISOString();
@@ -1866,6 +1950,7 @@ export default function GitHubWorkspacePage() {
         journalImportCheckpointFiles: journalImportCheckpointExportFiles,
         obsidianDocumentFiles: obsidianDocumentExportFiles,
         syncConflictFiles: syncConflictExportFiles,
+        learningAreaFiles: learningAreaExportFiles,
         generatedAt,
       });
       const inspection = await inspectPortableWorkspaceExport(portableExport);
@@ -1905,6 +1990,7 @@ export default function GitHubWorkspacePage() {
         journalImportCheckpoints: inspection.counts.journalImportCheckpoints,
         obsidianDocuments: inspection.counts.obsidianDocuments,
         syncConflicts: inspection.counts.syncConflicts,
+        learningAreas: inspection.counts.learningAreas,
         errors: inspection.errors,
         warnings: inspection.warnings,
       });
@@ -1930,6 +2016,7 @@ export default function GitHubWorkspacePage() {
         journalImportCheckpoints: inspection.counts.journalImportCheckpoints,
         obsidianDocuments: inspection.counts.obsidianDocuments,
         syncConflicts: inspection.counts.syncConflicts,
+        learningAreas: inspection.counts.learningAreas,
         errors: inspection.errors,
         warnings: inspection.warnings,
       });
@@ -1983,6 +2070,7 @@ export default function GitHubWorkspacePage() {
           journalImportCheckpoints: 0,
           obsidianDocuments: 0,
           syncConflicts: 0,
+          learningAreas: 0,
           errors: [{ code: "EXPORT_TOO_LARGE", message: "当前预检仅接受 50 MB 以内的 JSON 文件。" }],
           warnings: [],
         });
@@ -2012,6 +2100,7 @@ export default function GitHubWorkspacePage() {
         journalImportCheckpoints: inspection.counts.journalImportCheckpoints,
         obsidianDocuments: inspection.counts.obsidianDocuments,
         syncConflicts: inspection.counts.syncConflicts,
+        learningAreas: inspection.counts.learningAreas,
         errors: inspection.errors,
         warnings: inspection.warnings,
       });
@@ -2042,6 +2131,7 @@ export default function GitHubWorkspacePage() {
         journalImportCheckpoints: 0,
         obsidianDocuments: 0,
         syncConflicts: 0,
+        learningAreas: 0,
         errors: [{ code: "INVALID_JSON", message: "文件不是有效的 JSON，未执行任何恢复操作。" }],
         warnings: [],
       });
@@ -2371,6 +2461,21 @@ export default function GitHubWorkspacePage() {
         onRefreshLegacyHistory={async () => { await Promise.all([loadJournalEntries(), loadJournalSegments(), loadJournalRevisions(), loadJournalImportCheckpoints()]); }}
         onLegacyImportCommitted={async () => { await Promise.all([loadJournalEntries(), loadJournalSegments(), loadJournalRevisions(), loadJournalImportCheckpoints()]); }}
         onObsidianCanonicalChanged={async () => { await Promise.all([loadObsidianDocuments(), loadSyncConflicts()]); }}
+      />
+
+
+      <LearningSection
+        connection={connection}
+        online={online}
+        items={learningAreaFiles}
+        loading={loadingLearningAreas}
+        saving={savingLearningArea}
+        savingId={savingLearningAreaId}
+        onCreate={saveLearningArea}
+        onEdit={saveLearningAreaEdit}
+        onStatusChange={updateLearningAreaStatus}
+        onDeletionChange={updateLearningAreaDeletion}
+        onRefresh={() => loadLearningAreas()}
       />
 
 

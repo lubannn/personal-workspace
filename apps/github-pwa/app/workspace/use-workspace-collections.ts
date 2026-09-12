@@ -25,8 +25,9 @@ import { parseJournalRevisionRecord } from "../../../../src/lib/github-data/jour
 import { parseJournalImportCheckpointRecord } from "../../../../src/lib/github-data/journal-import-checkpoints";
 import { parseObsidianDocumentRecord } from "../../../../src/lib/github-data/obsidian-documents";
 import { parseSyncConflictRecord } from "../../../../src/lib/github-data/sync-conflicts";
+import { parseLearningAreaRecord } from "../../../../src/lib/github-data/learning-areas";
 import { parseCaptureRecord } from "../../../../src/lib/github-data/workspace";
-import { friendlyError, type SyncedActivityEvent, type SyncedCalendarEvent, type SyncedCapture, type SyncedJournalEntry, type SyncedJournalImportCheckpoint, type SyncedJournalRevision, type SyncedJournalSegment, type SyncedMilestone, type SyncedObsidianDocument, type SyncedProject, type SyncedProjectFileReference, type SyncedProjectNote, type SyncedProjectPhase, type SyncedReportDraft, type SyncedSyncConflict, type SyncedTask, type SyncedTimeEntry } from "./page-model";
+import { friendlyError, type SyncedActivityEvent, type SyncedCalendarEvent, type SyncedCapture, type SyncedJournalEntry, type SyncedJournalImportCheckpoint, type SyncedJournalRevision, type SyncedJournalSegment, type SyncedLearningArea, type SyncedMilestone, type SyncedObsidianDocument, type SyncedProject, type SyncedProjectFileReference, type SyncedProjectNote, type SyncedProjectPhase, type SyncedReportDraft, type SyncedSyncConflict, type SyncedTask, type SyncedTimeEntry } from "./page-model";
 
 type Options = {
   adapterRef: MutableRefObject<GitHubContentsAdapter | null>;
@@ -52,6 +53,7 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
   const [journalImportCheckpointFiles, setJournalImportCheckpointFiles] = useState<SyncedJournalImportCheckpoint[]>([]);
   const [obsidianDocumentFiles, setObsidianDocumentFiles] = useState<SyncedObsidianDocument[]>([]);
   const [syncConflictFiles, setSyncConflictFiles] = useState<SyncedSyncConflict[]>([]);
+  const [learningAreaFiles, setLearningAreaFiles] = useState<SyncedLearningArea[]>([]);
   const [dashboardLayout, setDashboardLayout] = useState<DashboardLayout | null>(null);
   const [dashboardBlobSha, setDashboardBlobSha] = useState<string | null>(null);
   const [loadingCaptures, setLoadingCaptures] = useState(false);
@@ -71,6 +73,7 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
   const [loadingJournalImportCheckpoints, setLoadingJournalImportCheckpoints] = useState(false);
   const [loadingObsidianDocuments, setLoadingObsidianDocuments] = useState(false);
   const [loadingSyncConflicts, setLoadingSyncConflicts] = useState(false);
+  const [loadingLearningAreas, setLoadingLearningAreas] = useState(false);
   const [loadingDashboard, setLoadingDashboard] = useState(false);
 
   const loadRecentCaptures = useCallback(async (adapter = adapterRef.current) => {
@@ -583,6 +586,30 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     finally { setLoadingSyncConflicts(false); }
   }, [adapterRef, setErrorMessage]);
 
+  const loadLearningAreas = useCallback(async (adapter = adapterRef.current) => {
+    if (!adapter) return;
+    setLoadingLearningAreas(true);
+    setErrorMessage("");
+    try {
+      let items;
+      try { items = await adapter.listDirectory("data/learning-areas"); }
+      catch (error) {
+        if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") { setLearningAreaFiles([]); return; }
+        throw error;
+      }
+      const candidates = items.filter((item) => item.type === "file" && item.name.endsWith(".json")).sort((left, right) => right.name.localeCompare(left.name));
+      const records: SyncedLearningArea[] = [];
+      for (let index = 0; index < candidates.length; index += 6) {
+        records.push(...(await Promise.all(candidates.slice(index, index + 6).map(async (item) => {
+          try { const file = await adapter.readText(item.path); return { record: parseLearningAreaRecord(file.text), path: file.path, blobSha: file.blobSha }; }
+          catch { return null; }
+        }))).filter((item): item is SyncedLearningArea => item !== null));
+      }
+      setLearningAreaFiles(records);
+    } catch (error) { setErrorMessage(friendlyError(error)); }
+    finally { setLoadingLearningAreas(false); }
+  }, [adapterRef, setErrorMessage]);
+
   const loadProjectFileReferences = useCallback(async (adapter = adapterRef.current) => {
     if (!adapter) return;
     setLoadingProjectFileReferences(true);
@@ -666,6 +693,7 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     setJournalImportCheckpointFiles([]);
     setObsidianDocumentFiles([]);
     setSyncConflictFiles([]);
+    setLearningAreaFiles([]);
     setDashboardLayout(null);
     setDashboardBlobSha(null);
   }
@@ -701,6 +729,8 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     journalImportCheckpointFiles,
     obsidianDocumentFiles,
     syncConflictFiles,
+    learningAreaFiles,
+    setLearningAreaFiles,
     dashboardLayout,
     setDashboardLayout,
     dashboardBlobSha,
@@ -722,6 +752,7 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     loadingJournalImportCheckpoints,
     loadingObsidianDocuments,
     loadingSyncConflicts,
+    loadingLearningAreas,
     loadingDashboard,
     loadRecentCaptures,
     loadTasks,
@@ -740,6 +771,7 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     loadJournalImportCheckpoints,
     loadObsidianDocuments,
     loadSyncConflicts,
+    loadLearningAreas,
     loadDashboardLayout,
     clearCollections,
   };

@@ -380,6 +380,22 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .journal-list span, .journal-list small { color: var(--muted); font-size: 9px; }
 .journal-list strong { font: 500 15px/1.35 ui-serif, Georgia, "Songti SC", serif; }
 .journal-list p { margin: 0; color: var(--soft); font-size: 10px; line-height: 1.65; overflow-wrap: anywhere; }
+.learning-card { margin-top: 18px; padding: 22px; border: 1px solid var(--line); border-radius: 18px; background: var(--paper); box-shadow: var(--shadow); }
+.learning-subtitle { max-width: 720px; margin: 5px 0 0; color: var(--muted); font-size: 10px; line-height: 1.6; }
+.learning-view-actions, .learning-item-actions, .learning-form > footer > div { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.learning-form { display: grid; grid-template-columns: minmax(180px,1.3fr) minmax(140px,.8fr) 100px 130px; gap: 10px; margin-top: 18px; padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: rgba(255,255,255,.3); }
+.learning-form label { display: grid; gap: 6px; color: var(--muted); font-size: 9px; }
+.learning-description, .learning-form > footer { grid-column: 1 / -1; }
+.learning-description textarea { min-height: 105px; resize: vertical; }
+.learning-form > footer { display: flex; align-items: center; justify-content: space-between; gap: 18px; }
+.learning-form > footer > span { color: var(--muted); font-size: 9px; }
+.learning-list { margin: 16px 0 0; padding: 0; list-style: none; }
+.learning-list > li { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 18px; padding: 16px 0; border-bottom: 1px solid var(--line); }
+.learning-list > li > div:first-child { min-width: 0; display: grid; grid-template-columns: auto auto 1fr; align-items: baseline; gap: 5px 9px; }
+.learning-list strong { font: 500 15px/1.35 ui-serif, Georgia, "Songti SC", serif; }
+.learning-list code, .learning-list small { color: var(--muted); font-size: 9px; }
+.learning-list p, .learning-list small { grid-column: 2 / -1; margin: 0; }
+.learning-list p { color: var(--soft); font-size: 10px; line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; }
 .legacy-checkpoint-history { margin-top: 26px; padding: 18px; border: 1px solid var(--line); border-radius: 16px; background: rgba(255,255,255,.34); }
 .legacy-checkpoint-history-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
 .legacy-checkpoint-history-heading h3 { margin: 3px 0 0; font: 500 19px/1.3 ui-serif, Georgia, "Songti SC", serif; }
@@ -612,6 +628,10 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
   .journal-browser-meta { justify-content: flex-start; }
   .journal-list > li { align-items: stretch; grid-template-columns: 1fr; }
   .journal-form > footer > div, .journal-item-actions { justify-content: flex-start; }
+  .learning-form { grid-template-columns: 1fr 1fr; }
+  .learning-description, .learning-form > footer { grid-column: 1 / -1; }
+  .learning-view-actions, .learning-item-actions { justify-content: flex-start; }
+  .learning-list > li { grid-template-columns: 1fr; }
   .legacy-checkpoint-history-heading { align-items: stretch; flex-direction: column; }
   .legacy-checkpoint-list > li { align-items: stretch; grid-template-columns: 1fr; }
   .legacy-checkpoint-list > li > .secondary-button { justify-self: start; }
@@ -702,6 +722,9 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
   .project-create-form label:first-child, .project-create-form button { grid-column: 1; }
   .task-create-form .task-title-field { grid-column: 1; }
   .task-edit-form { grid-template-columns: 1fr; }
+  .learning-form { grid-template-columns: 1fr; }
+  .learning-description, .learning-form > footer { grid-column: 1; }
+  .learning-form > footer { align-items: stretch; flex-direction: column; }
   .project-edit-form { grid-template-columns: 1fr; }
   .project-edit-form .project-edit-name, .project-edit-form .project-edit-description, .project-edit-form .project-edit-actions { grid-column: 1; }
   .task-edit-form .task-edit-title { grid-column: 1; }

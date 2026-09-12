@@ -17,6 +17,7 @@ import type { JournalRevisionRecord } from "../../../../src/lib/github-data/jour
 import type { JournalImportCheckpointRecord } from "../../../../src/lib/github-data/journal-import-checkpoints";
 import type { ObsidianDocumentRecord } from "../../../../src/lib/github-data/obsidian-documents";
 import type { SyncConflictRecord } from "../../../../src/lib/github-data/sync-conflicts";
+import type { LearningAreaRecord } from "../../../../src/lib/github-data/learning-areas";
 
 export type Connection = {
   repository: string;
@@ -99,6 +100,7 @@ export type SyncedJournalRevision = { record: JournalRevisionRecord; path: strin
 export type SyncedJournalImportCheckpoint = { record: JournalImportCheckpointRecord; path: string; blobSha: string };
 export type SyncedObsidianDocument = { record: ObsidianDocumentRecord; path: string; blobSha: string };
 export type SyncedSyncConflict = { record: SyncConflictRecord; path: string; blobSha: string };
+export type SyncedLearningArea = { record: LearningAreaRecord; path: string; blobSha: string };
 
 export type AuthAvailability = "checking" | "unavailable" | "configured";
 export type ConnectionMethod = "github-app" | "personal-token";
@@ -125,6 +127,7 @@ export type PortabilityResult = {
   journalImportCheckpoints: number;
   obsidianDocuments: number;
   syncConflicts: number;
+  learningAreas: number;
   errors: ExportInspectionIssue[];
   warnings: ExportInspectionIssue[];
 };

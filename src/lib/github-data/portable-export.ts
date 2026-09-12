@@ -17,6 +17,7 @@ import { parseJournalRevisionRecord, sha256JournalRevisionBody } from "./journal
 import { parseJournalImportCheckpointRecord } from "./journal-import-checkpoints";
 import { parseObsidianDocumentRecord } from "./obsidian-documents";
 import { parseSyncConflictRecord } from "./sync-conflicts";
+import { parseLearningAreaRecord } from "./learning-areas";
 import { renderJournalSegmentsMarkdown } from "./journal-segment-codec";
 import { parseCaptureRecord, parseWorkspaceDescriptor, type WorkspaceDescriptor } from "./workspace";
 
@@ -46,7 +47,7 @@ export type PortableWorkspaceExport = {
   manifest: {
     schema_version: 1;
     scope: {
-      modules: Array<"workspace" | "captures" | "dashboard_layout" | "tasks" | "time_entries" | "projects" | "project_phases" | "milestones" | "project_notes" | "project_file_references" | "activity_events" | "calendar_events" | "report_drafts" | "journal_entries" | "journal_segments" | "journal_revisions" | "journal_import_checkpoints" | "obsidian_documents" | "sync_conflicts">;
+      modules: Array<"workspace" | "captures" | "dashboard_layout" | "tasks" | "time_entries" | "projects" | "project_phases" | "milestones" | "project_notes" | "project_file_references" | "activity_events" | "calendar_events" | "report_drafts" | "journal_entries" | "journal_segments" | "journal_revisions" | "journal_import_checkpoints" | "obsidian_documents" | "sync_conflicts" | "learning_areas">;
       complete: true;
     };
     counts: {
@@ -69,6 +70,7 @@ export type PortableWorkspaceExport = {
       journal_import_checkpoints: number;
       obsidian_documents: number;
       sync_conflicts: number;
+      learning_areas: number;
     };
     files: PortableExportManifestFile[];
   };
@@ -106,6 +108,7 @@ export type ExportInspection = {
     journalImportCheckpoints: number;
     obsidianDocuments: number;
     syncConflicts: number;
+    learningAreas: number;
   };
   errors: ExportInspectionIssue[];
   warnings: ExportInspectionIssue[];
@@ -146,6 +149,7 @@ export async function buildPortableWorkspaceExport(input: {
   journalImportCheckpointFiles?: GitHubStoredFile[];
   obsidianDocumentFiles?: GitHubStoredFile[];
   syncConflictFiles?: GitHubStoredFile[];
+  learningAreaFiles?: GitHubStoredFile[];
   generatedAt?: string;
 }): Promise<PortableWorkspaceExport> {
   const dashboardLayoutFiles = input.dashboardLayoutFile ? [input.dashboardLayoutFile] : [];
@@ -165,7 +169,8 @@ export async function buildPortableWorkspaceExport(input: {
   const journalImportCheckpointFiles = input.journalImportCheckpointFiles ?? [];
   const obsidianDocumentFiles = input.obsidianDocumentFiles ?? [];
   const syncConflictFiles = input.syncConflictFiles ?? [];
-  const files = [input.workspaceFile, ...input.captureFiles, ...dashboardLayoutFiles, ...taskFiles, ...timeEntryFiles, ...projectFiles, ...projectPhaseFiles, ...milestoneFiles, ...projectNoteFiles, ...projectFileReferenceFiles, ...activityEventFiles, ...calendarEventFiles, ...reportDraftFiles, ...journalEntryFiles, ...journalSegmentFiles, ...journalRevisionFiles, ...journalImportCheckpointFiles, ...obsidianDocumentFiles, ...syncConflictFiles]
+  const learningAreaFiles = input.learningAreaFiles ?? [];
+  const files = [input.workspaceFile, ...input.captureFiles, ...dashboardLayoutFiles, ...taskFiles, ...timeEntryFiles, ...projectFiles, ...projectPhaseFiles, ...milestoneFiles, ...projectNoteFiles, ...projectFileReferenceFiles, ...activityEventFiles, ...calendarEventFiles, ...reportDraftFiles, ...journalEntryFiles, ...journalSegmentFiles, ...journalRevisionFiles, ...journalImportCheckpointFiles, ...obsidianDocumentFiles, ...syncConflictFiles, ...learningAreaFiles]
     .map((file) => ({ ...file }))
     .sort((left, right) => left.path.localeCompare(right.path));
   const manifestFiles = await Promise.all(files.map(async (file) => ({
@@ -182,7 +187,7 @@ export async function buildPortableWorkspaceExport(input: {
     source: { repository: input.repository, branch: input.branch },
     manifest: {
       schema_version: 1,
-      scope: { modules: ["workspace", "captures", "dashboard_layout", "tasks", "time_entries", "projects", "project_phases", "milestones", "project_notes", "project_file_references", "activity_events", "calendar_events", "report_drafts", "journal_entries", "journal_segments", "journal_revisions", "journal_import_checkpoints", "obsidian_documents", "sync_conflicts"], complete: true },
+      scope: { modules: ["workspace", "captures", "dashboard_layout", "tasks", "time_entries", "projects", "project_phases", "milestones", "project_notes", "project_file_references", "activity_events", "calendar_events", "report_drafts", "journal_entries", "journal_segments", "journal_revisions", "journal_import_checkpoints", "obsidian_documents", "sync_conflicts", "learning_areas"], complete: true },
       counts: {
         files: files.length,
         captures: input.captureFiles.length,
@@ -203,6 +208,7 @@ export async function buildPortableWorkspaceExport(input: {
         journal_import_checkpoints: journalImportCheckpointFiles.length,
         obsidian_documents: obsidianDocumentFiles.length,
         sync_conflicts: syncConflictFiles.length,
+        learning_areas: learningAreaFiles.length,
       },
       files: manifestFiles,
     },
@@ -236,7 +242,7 @@ export async function inspectPortableWorkspaceExport(value: unknown): Promise<Ex
     generatedAt: null,
     repository: null,
     workspace: null,
-    counts: { files: 0, captures: 0, dashboardLayouts: 0, tasks: 0, timeEntries: 0, projects: 0, projectPhases: 0, milestones: 0, projectNotes: 0, projectFileReferences: 0, activityEvents: 0, calendarEvents: 0, reportDrafts: 0, journalEntries: 0, journalSegments: 0, journalRevisions: 0, journalImportCheckpoints: 0, obsidianDocuments: 0, syncConflicts: 0 },
+    counts: { files: 0, captures: 0, dashboardLayouts: 0, tasks: 0, timeEntries: 0, projects: 0, projectPhases: 0, milestones: 0, projectNotes: 0, projectFileReferences: 0, activityEvents: 0, calendarEvents: 0, reportDrafts: 0, journalEntries: 0, journalSegments: 0, journalRevisions: 0, journalImportCheckpoints: 0, obsidianDocuments: 0, syncConflicts: 0, learningAreas: 0 },
     errors,
     warnings,
   };
@@ -858,6 +864,23 @@ export async function inspectPortableWorkspaceExport(value: unknown): Promise<Ex
   const rawSyncConflictCount = manifestCounts?.sync_conflicts;
   if ((rawSyncConflictCount !== undefined || syncConflictFiles.length > 0) && rawSyncConflictCount !== syncConflictFiles.length) errors.push({ code: "SYNC_CONFLICT_COUNT_MISMATCH", message: "SyncConflict 数量与 manifest 不一致。" });
 
+  const learningAreaIds = new Set<string>();
+  const learningAreaFiles = validPayloadFiles.filter((file) => file.path.startsWith("data/learning-areas/"));
+  result.counts.learningAreas = learningAreaFiles.length;
+  for (const file of learningAreaFiles) {
+    try {
+      const record = parseLearningAreaRecord(file.content);
+      if (result.workspace && record.owner_id !== result.workspace.owner_id) errors.push({ code: "OWNER_MISMATCH", message: "LearningArea 的 owner_id 与 workspace 不一致。", path: file.path });
+      if (recordPath("learning_area", record.id) !== file.path) errors.push({ code: "LEARNING_AREA_PATH_MISMATCH", message: "LearningArea 的 ID 与文件路径不一致。", path: file.path });
+      if (learningAreaIds.has(record.id)) errors.push({ code: "DUPLICATE_LEARNING_AREA_ID", message: "导出包中存在重复 LearningArea ID。", path: file.path });
+      learningAreaIds.add(record.id);
+    } catch {
+      errors.push({ code: "INVALID_LEARNING_AREA_RECORD", message: "LearningArea 文件无法通过结构校验。", path: file.path });
+    }
+  }
+  const rawLearningAreaCount = manifestCounts?.learning_areas;
+  if ((rawLearningAreaCount !== undefined || learningAreaFiles.length > 0) && rawLearningAreaCount !== learningAreaFiles.length) errors.push({ code: "LEARNING_AREA_COUNT_MISMATCH", message: "LearningArea 数量与 manifest 不一致。" });
+
   const supportedPaths = new Set(["workspace.json", DASHBOARD_LAYOUT_PATH]);
   const unexpectedFiles = validPayloadFiles.filter((file) => (
     !supportedPaths.has(file.path)
@@ -878,6 +901,7 @@ export async function inspectPortableWorkspaceExport(value: unknown): Promise<Ex
     && !file.path.startsWith("data/journal-import-checkpoints/")
     && !file.path.startsWith("data/obsidian-documents/")
     && !file.path.startsWith("data/sync-conflicts/")
+    && !file.path.startsWith("data/learning-areas/")
   ));
   for (const file of unexpectedFiles) {
     errors.push({ code: "UNEXPECTED_FILE", message: "当前版本不支持此导出路径。", path: file.path });
