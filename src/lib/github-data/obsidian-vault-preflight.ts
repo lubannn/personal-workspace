@@ -29,7 +29,7 @@ export async function buildObsidianVaultPreflightPlan(input: {
   vaultName: string;
   subdirectory: string;
 }): Promise<ObsidianVaultPreflightPlan> {
-  const vaultName = normalizeVaultName(input.vaultName);
+  const vaultName = normalizeObsidianVaultName(input.vaultName);
   const subdirectory = normalizeObsidianSubdirectory(input.subdirectory);
   const relativePath = `${subdirectory}/${OBSIDIAN_PREFLIGHT_FILE_NAME}`;
   const first = await stage(1);
@@ -99,7 +99,7 @@ function renderFixture(stageNumber: 1 | 2) {
   ].join("\n");
 }
 
-function normalizeVaultName(value: string) {
+export function normalizeObsidianVaultName(value: string) {
   const normalized = value.normalize("NFC").trim();
   if (!normalized || normalized.length > 120 || normalized.includes("/") || UNSAFE_SEGMENT.test(normalized) || normalized === "." || normalized === "..") {
     throw new Error("INVALID_OBSIDIAN_VAULT_NAME");

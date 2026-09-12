@@ -219,8 +219,10 @@ export default function GitHubWorkspacePage() {
     setReportDraftFiles,
     journalEntryFiles,
     setJournalEntryFiles,
+    journalRevisionFiles,
     setJournalRevisionFiles,
     journalImportCheckpointFiles,
+    obsidianDocumentFiles,
     dashboardLayout,
     setDashboardLayout,
     dashboardBlobSha,
@@ -256,6 +258,8 @@ export default function GitHubWorkspacePage() {
     loadJournalSegments,
     loadJournalRevisions,
     loadJournalImportCheckpoints,
+    loadObsidianDocuments,
+    loadSyncConflicts,
     loadDashboardLayout,
     clearCollections,
   } = useWorkspaceCollections({ adapterRef, setErrorMessage, setDashboardClean });
@@ -284,6 +288,8 @@ export default function GitHubWorkspacePage() {
     loadJournalSegments,
     loadJournalRevisions,
     loadJournalImportCheckpoints,
+    loadObsidianDocuments,
+    loadSyncConflicts,
   });
 
   const workspaceTimezone = connection?.timezone ?? "Asia/Shanghai";
@@ -474,6 +480,8 @@ export default function GitHubWorkspacePage() {
         loadJournalSegments(opened.adapter),
         loadJournalRevisions(opened.adapter),
         loadJournalImportCheckpoints(opened.adapter),
+        loadObsidianDocuments(opened.adapter),
+        loadSyncConflicts(opened.adapter),
       ]);
     } catch (error) {
       adapterRef.current = null;
@@ -1596,6 +1604,16 @@ export default function GitHubWorkspacePage() {
     catch (error) { if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") return []; throw error; }
   }
 
+  async function listObsidianDocumentFiles(adapter: GitHubContentsAdapter) {
+    try { return (await adapter.listDirectory("data/obsidian-documents")).filter((item) => item.type === "file" && item.name.endsWith(".json")).sort((left, right) => left.path.localeCompare(right.path)); }
+    catch (error) { if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") return []; throw error; }
+  }
+
+  async function listSyncConflictFiles(adapter: GitHubContentsAdapter) {
+    try { return (await adapter.listDirectory("data/sync-conflicts")).filter((item) => item.type === "file" && item.name.endsWith(".json")).sort((left, right) => left.path.localeCompare(right.path)); }
+    catch (error) { if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") return []; throw error; }
+  }
+
   async function listProjectFiles(adapter: GitHubContentsAdapter) {
     try {
       return (await adapter.listDirectory("data/projects"))
@@ -1811,6 +1829,18 @@ export default function GitHubWorkspacePage() {
         setExportProgress(`正在读取 JournalImportCheckpoint ${Math.min(index + batchSize, journalImportCheckpointCandidates.length)} / ${journalImportCheckpointCandidates.length}…`);
         journalImportCheckpointExportFiles.push(...await Promise.all(journalImportCheckpointCandidates.slice(index, index + batchSize).map((item) => adapter.readText(item.path))));
       }
+      const obsidianDocumentCandidates = await listObsidianDocumentFiles(adapter);
+      const obsidianDocumentExportFiles = [];
+      for (let index = 0; index < obsidianDocumentCandidates.length; index += batchSize) {
+        setExportProgress(`正在读取 ObsidianDocument ${Math.min(index + batchSize, obsidianDocumentCandidates.length)} / ${obsidianDocumentCandidates.length}…`);
+        obsidianDocumentExportFiles.push(...await Promise.all(obsidianDocumentCandidates.slice(index, index + batchSize).map((item) => adapter.readText(item.path))));
+      }
+      const syncConflictCandidates = await listSyncConflictFiles(adapter);
+      const syncConflictExportFiles = [];
+      for (let index = 0; index < syncConflictCandidates.length; index += batchSize) {
+        setExportProgress(`正在读取 SyncConflict ${Math.min(index + batchSize, syncConflictCandidates.length)} / ${syncConflictCandidates.length}…`);
+        syncConflictExportFiles.push(...await Promise.all(syncConflictCandidates.slice(index, index + batchSize).map((item) => adapter.readText(item.path))));
+      }
 
       setExportProgress("正在生成 SHA-256 manifest…");
       const generatedAt = new Date().toISOString();
@@ -1834,6 +1864,8 @@ export default function GitHubWorkspacePage() {
         journalSegmentFiles: journalSegmentExportFiles,
         journalRevisionFiles: journalRevisionExportFiles,
         journalImportCheckpointFiles: journalImportCheckpointExportFiles,
+        obsidianDocumentFiles: obsidianDocumentExportFiles,
+        syncConflictFiles: syncConflictExportFiles,
         generatedAt,
       });
       const inspection = await inspectPortableWorkspaceExport(portableExport);
@@ -1871,6 +1903,8 @@ export default function GitHubWorkspacePage() {
         journalSegments: inspection.counts.journalSegments,
         journalRevisions: inspection.counts.journalRevisions,
         journalImportCheckpoints: inspection.counts.journalImportCheckpoints,
+        obsidianDocuments: inspection.counts.obsidianDocuments,
+        syncConflicts: inspection.counts.syncConflicts,
         errors: inspection.errors,
         warnings: inspection.warnings,
       });
@@ -1894,6 +1928,8 @@ export default function GitHubWorkspacePage() {
         journalSegments: inspection.counts.journalSegments,
         journalRevisions: inspection.counts.journalRevisions,
         journalImportCheckpoints: inspection.counts.journalImportCheckpoints,
+        obsidianDocuments: inspection.counts.obsidianDocuments,
+        syncConflicts: inspection.counts.syncConflicts,
         errors: inspection.errors,
         warnings: inspection.warnings,
       });
@@ -1945,6 +1981,8 @@ export default function GitHubWorkspacePage() {
           journalSegments: 0,
           journalRevisions: 0,
           journalImportCheckpoints: 0,
+          obsidianDocuments: 0,
+          syncConflicts: 0,
           errors: [{ code: "EXPORT_TOO_LARGE", message: "当前预检仅接受 50 MB 以内的 JSON 文件。" }],
           warnings: [],
         });
@@ -1972,6 +2010,8 @@ export default function GitHubWorkspacePage() {
         journalSegments: inspection.counts.journalSegments,
         journalRevisions: inspection.counts.journalRevisions,
         journalImportCheckpoints: inspection.counts.journalImportCheckpoints,
+        obsidianDocuments: inspection.counts.obsidianDocuments,
+        syncConflicts: inspection.counts.syncConflicts,
         errors: inspection.errors,
         warnings: inspection.warnings,
       });
@@ -2000,6 +2040,8 @@ export default function GitHubWorkspacePage() {
         journalSegments: 0,
         journalRevisions: 0,
         journalImportCheckpoints: 0,
+        obsidianDocuments: 0,
+        syncConflicts: 0,
         errors: [{ code: "INVALID_JSON", message: "文件不是有效的 JSON，未执行任何恢复操作。" }],
         warnings: [],
       });
@@ -2315,7 +2357,9 @@ export default function GitHubWorkspacePage() {
         online={online}
         todayDate={currentTaskDate}
         journalEntryFiles={journalEntryFiles}
+        journalRevisionFiles={journalRevisionFiles}
         journalImportCheckpointFiles={journalImportCheckpointFiles}
+        obsidianDocumentFiles={obsidianDocumentFiles}
         loading={loadingJournalEntries}
         loadingLegacyHistory={loadingJournalEntries || loadingJournalSegments || loadingJournalRevisions || loadingJournalImportCheckpoints}
         saving={savingJournalEntry}
@@ -2326,6 +2370,7 @@ export default function GitHubWorkspacePage() {
         onRefresh={() => loadJournalEntries()}
         onRefreshLegacyHistory={async () => { await Promise.all([loadJournalEntries(), loadJournalSegments(), loadJournalRevisions(), loadJournalImportCheckpoints()]); }}
         onLegacyImportCommitted={async () => { await Promise.all([loadJournalEntries(), loadJournalSegments(), loadJournalRevisions(), loadJournalImportCheckpoints()]); }}
+        onObsidianCanonicalChanged={async () => { await Promise.all([loadObsidianDocuments(), loadSyncConflicts()]); }}
       />
 
 

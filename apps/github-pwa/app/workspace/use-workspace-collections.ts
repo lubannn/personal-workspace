@@ -23,8 +23,10 @@ import { parseJournalEntryRecord } from "../../../../src/lib/github-data/journal
 import { parseJournalSegmentRecord } from "../../../../src/lib/github-data/journal-segments";
 import { parseJournalRevisionRecord } from "../../../../src/lib/github-data/journal-revisions";
 import { parseJournalImportCheckpointRecord } from "../../../../src/lib/github-data/journal-import-checkpoints";
+import { parseObsidianDocumentRecord } from "../../../../src/lib/github-data/obsidian-documents";
+import { parseSyncConflictRecord } from "../../../../src/lib/github-data/sync-conflicts";
 import { parseCaptureRecord } from "../../../../src/lib/github-data/workspace";
-import { friendlyError, type SyncedActivityEvent, type SyncedCalendarEvent, type SyncedCapture, type SyncedJournalEntry, type SyncedJournalImportCheckpoint, type SyncedJournalRevision, type SyncedJournalSegment, type SyncedMilestone, type SyncedProject, type SyncedProjectFileReference, type SyncedProjectNote, type SyncedProjectPhase, type SyncedReportDraft, type SyncedTask, type SyncedTimeEntry } from "./page-model";
+import { friendlyError, type SyncedActivityEvent, type SyncedCalendarEvent, type SyncedCapture, type SyncedJournalEntry, type SyncedJournalImportCheckpoint, type SyncedJournalRevision, type SyncedJournalSegment, type SyncedMilestone, type SyncedObsidianDocument, type SyncedProject, type SyncedProjectFileReference, type SyncedProjectNote, type SyncedProjectPhase, type SyncedReportDraft, type SyncedSyncConflict, type SyncedTask, type SyncedTimeEntry } from "./page-model";
 
 type Options = {
   adapterRef: MutableRefObject<GitHubContentsAdapter | null>;
@@ -48,6 +50,8 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
   const [journalSegmentFiles, setJournalSegmentFiles] = useState<SyncedJournalSegment[]>([]);
   const [journalRevisionFiles, setJournalRevisionFiles] = useState<SyncedJournalRevision[]>([]);
   const [journalImportCheckpointFiles, setJournalImportCheckpointFiles] = useState<SyncedJournalImportCheckpoint[]>([]);
+  const [obsidianDocumentFiles, setObsidianDocumentFiles] = useState<SyncedObsidianDocument[]>([]);
+  const [syncConflictFiles, setSyncConflictFiles] = useState<SyncedSyncConflict[]>([]);
   const [dashboardLayout, setDashboardLayout] = useState<DashboardLayout | null>(null);
   const [dashboardBlobSha, setDashboardBlobSha] = useState<string | null>(null);
   const [loadingCaptures, setLoadingCaptures] = useState(false);
@@ -65,6 +69,8 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
   const [loadingJournalSegments, setLoadingJournalSegments] = useState(false);
   const [loadingJournalRevisions, setLoadingJournalRevisions] = useState(false);
   const [loadingJournalImportCheckpoints, setLoadingJournalImportCheckpoints] = useState(false);
+  const [loadingObsidianDocuments, setLoadingObsidianDocuments] = useState(false);
+  const [loadingSyncConflicts, setLoadingSyncConflicts] = useState(false);
   const [loadingDashboard, setLoadingDashboard] = useState(false);
 
   const loadRecentCaptures = useCallback(async (adapter = adapterRef.current) => {
@@ -529,6 +535,54 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     finally { setLoadingJournalImportCheckpoints(false); }
   }, [adapterRef, setErrorMessage]);
 
+  const loadObsidianDocuments = useCallback(async (adapter = adapterRef.current) => {
+    if (!adapter) return;
+    setLoadingObsidianDocuments(true);
+    setErrorMessage("");
+    try {
+      let items;
+      try { items = await adapter.listDirectory("data/obsidian-documents"); }
+      catch (error) {
+        if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") { setObsidianDocumentFiles([]); return; }
+        throw error;
+      }
+      const candidates = items.filter((item) => item.type === "file" && item.name.endsWith(".json")).sort((left, right) => right.name.localeCompare(left.name));
+      const records: SyncedObsidianDocument[] = [];
+      for (let index = 0; index < candidates.length; index += 6) {
+        records.push(...(await Promise.all(candidates.slice(index, index + 6).map(async (item) => {
+          try { const file = await adapter.readText(item.path); return { record: parseObsidianDocumentRecord(file.text), path: file.path, blobSha: file.blobSha }; }
+          catch { return null; }
+        }))).filter((item): item is SyncedObsidianDocument => item !== null));
+      }
+      setObsidianDocumentFiles(records);
+    } catch (error) { setErrorMessage(friendlyError(error)); }
+    finally { setLoadingObsidianDocuments(false); }
+  }, [adapterRef, setErrorMessage]);
+
+  const loadSyncConflicts = useCallback(async (adapter = adapterRef.current) => {
+    if (!adapter) return;
+    setLoadingSyncConflicts(true);
+    setErrorMessage("");
+    try {
+      let items;
+      try { items = await adapter.listDirectory("data/sync-conflicts"); }
+      catch (error) {
+        if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") { setSyncConflictFiles([]); return; }
+        throw error;
+      }
+      const candidates = items.filter((item) => item.type === "file" && item.name.endsWith(".json")).sort((left, right) => right.name.localeCompare(left.name));
+      const records: SyncedSyncConflict[] = [];
+      for (let index = 0; index < candidates.length; index += 6) {
+        records.push(...(await Promise.all(candidates.slice(index, index + 6).map(async (item) => {
+          try { const file = await adapter.readText(item.path); return { record: parseSyncConflictRecord(file.text), path: file.path, blobSha: file.blobSha }; }
+          catch { return null; }
+        }))).filter((item): item is SyncedSyncConflict => item !== null));
+      }
+      setSyncConflictFiles(records);
+    } catch (error) { setErrorMessage(friendlyError(error)); }
+    finally { setLoadingSyncConflicts(false); }
+  }, [adapterRef, setErrorMessage]);
+
   const loadProjectFileReferences = useCallback(async (adapter = adapterRef.current) => {
     if (!adapter) return;
     setLoadingProjectFileReferences(true);
@@ -610,6 +664,8 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     setJournalSegmentFiles([]);
     setJournalRevisionFiles([]);
     setJournalImportCheckpointFiles([]);
+    setObsidianDocumentFiles([]);
+    setSyncConflictFiles([]);
     setDashboardLayout(null);
     setDashboardBlobSha(null);
   }
@@ -643,6 +699,8 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     journalRevisionFiles,
     setJournalRevisionFiles,
     journalImportCheckpointFiles,
+    obsidianDocumentFiles,
+    syncConflictFiles,
     dashboardLayout,
     setDashboardLayout,
     dashboardBlobSha,
@@ -662,6 +720,8 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     loadingJournalSegments,
     loadingJournalRevisions,
     loadingJournalImportCheckpoints,
+    loadingObsidianDocuments,
+    loadingSyncConflicts,
     loadingDashboard,
     loadRecentCaptures,
     loadTasks,
@@ -678,6 +738,8 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     loadJournalSegments,
     loadJournalRevisions,
     loadJournalImportCheckpoints,
+    loadObsidianDocuments,
+    loadSyncConflicts,
     loadDashboardLayout,
     clearCollections,
   };
