@@ -18,6 +18,9 @@ import type { JournalImportCheckpointRecord } from "../../../../src/lib/github-d
 import type { ObsidianDocumentRecord } from "../../../../src/lib/github-data/obsidian-documents";
 import type { SyncConflictRecord } from "../../../../src/lib/github-data/sync-conflicts";
 import type { LearningAreaRecord } from "../../../../src/lib/github-data/learning-areas";
+import type { HabitRecord } from "../../../../src/lib/github-data/habits";
+import type { HabitRuleRecord } from "../../../../src/lib/github-data/habit-rules";
+import type { HabitCheckInRecord } from "../../../../src/lib/github-data/habit-check-ins";
 
 export type Connection = {
   repository: string;
@@ -101,6 +104,9 @@ export type SyncedJournalImportCheckpoint = { record: JournalImportCheckpointRec
 export type SyncedObsidianDocument = { record: ObsidianDocumentRecord; path: string; blobSha: string };
 export type SyncedSyncConflict = { record: SyncConflictRecord; path: string; blobSha: string };
 export type SyncedLearningArea = { record: LearningAreaRecord; path: string; blobSha: string };
+export type SyncedHabit = { record: HabitRecord; path: string; blobSha: string };
+export type SyncedHabitRule = { record: HabitRuleRecord; path: string; blobSha: string };
+export type SyncedHabitCheckIn = { record: HabitCheckInRecord; path: string; blobSha: string };
 
 export type AuthAvailability = "checking" | "unavailable" | "configured";
 export type ConnectionMethod = "github-app" | "personal-token";
@@ -128,6 +134,9 @@ export type PortabilityResult = {
   obsidianDocuments: number;
   syncConflicts: number;
   learningAreas: number;
+  habits: number;
+  habitRules: number;
+  habitCheckIns: number;
   errors: ExportInspectionIssue[];
   warnings: ExportInspectionIssue[];
 };

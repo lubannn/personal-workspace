@@ -13,6 +13,9 @@ import { createJournalImportCheckpointRecord } from "./journal-import-checkpoint
 import { createObsidianDocumentData } from "./obsidian-documents";
 import { createSyncConflictRecord } from "./sync-conflicts";
 import { createLearningAreaData } from "./learning-areas";
+import { createHabitData } from "./habits";
+import { createHabitRuleData } from "./habit-rules";
+import { createAutomaticHabitCheckInData } from "./habit-check-ins";
 import { renderJournalSegmentsMarkdown } from "./journal-segment-codec";
 import {
   buildPortableWorkspaceExport,
@@ -286,6 +289,21 @@ async function sampleExport() {
     timestamp: "2026-08-27T02:04:00.000Z",
     data: createLearningAreaData({ name: "数据分析", description_markdown: "长期能力边界", area_type: "professional", icon: "📊", color: "#5f7459" }),
   }));
+  const habitId = "habit_20260827020500000_abcd1234";
+  const habitRuleId = "habit_rule_20260827020510000_abcd1234";
+  const habitCheckInId = "habit_check_in_20260827020520000_abcd1234";
+  const habitText = serializeRecord(createWorkspaceRecord({
+    entityType: "habit", id: habitId, ownerId: "github_lubannn", timestamp: "2026-08-27T02:05:00.000Z",
+    data: createHabitData({ name: "阅读", description_markdown: "每日阅读", schedule_json: { frequency: "daily", weekdays: [] }, timezone: "Asia/Shanghai", tracking_type: "duration", target_json: { value: 30, unit: "minutes" }, automation_mode: "rule_assisted", start_date: "2026-08-27", end_date: null }),
+  }));
+  const habitRuleText = serializeRecord(createWorkspaceRecord({
+    entityType: "habit_rule", id: habitRuleId, ownerId: "github_lubannn", timestamp: "2026-08-27T02:05:10.000Z",
+    data: createHabitRuleData({ habit_id: habitId, rule_type: "duration_threshold", rule_version: 1, config_json: { minimum_minutes: 30 }, active_from: "2026-08-27", active_to: null, enabled: true }),
+  }));
+  const habitCheckInText = serializeRecord(createWorkspaceRecord({
+    entityType: "habit_check_in", id: habitCheckInId, ownerId: "github_lubannn", timestamp: "2026-08-27T02:05:20.000Z",
+    data: createAutomaticHabitCheckInData({ habitId, localDate: "2026-08-27", timezone: "Asia/Shanghai", status: "completed", valueJson: { minutes: 35 }, evidenceType: "learning_activity", evidenceId: "learning_activity_fixture", ruleId: habitRuleId, ruleVersion: 1, evaluatedAt: "2026-08-27T02:05:15.000Z", confirmedAt: "2026-08-27T02:05:20.000Z" }),
+  }));
   return buildPortableWorkspaceExport({
     repository: "lubannn/personal-workspace-data",
     branch: "main",
@@ -302,6 +320,9 @@ async function sampleExport() {
     obsidianDocumentFiles: [storedFile(`data/obsidian-documents/${obsidianDocumentId}.json`, obsidianDocumentText, "obsidian-document-blob")],
     syncConflictFiles: [storedFile(`data/sync-conflicts/${syncConflict.id}.json`, syncConflictText, "sync-conflict-blob")],
     learningAreaFiles: [storedFile(`data/learning-areas/${learningAreaId}.json`, learningAreaText, "learning-area-blob")],
+    habitFiles: [storedFile(`data/habits/${habitId}.json`, habitText, "habit-blob")],
+    habitRuleFiles: [storedFile(`data/habit-rules/${habitRuleId}.json`, habitRuleText, "habit-rule-blob")],
+    habitCheckInFiles: [storedFile(`data/habit-check-ins/${habitCheckInId}.json`, habitCheckInText, "habit-check-in-blob")],
     projectFiles: [storedFile("data/projects/project_20260827014500000_abcd1234.json", projectText, "project-blob")],
     projectPhaseFiles: [storedFile("data/project-phases/phase_20260827015000000_abcd1234.json", projectPhaseText, "phase-blob")],
     milestoneFiles: [storedFile("data/milestones/milestone_20260827015500000_abcd1234.json", milestoneText, "milestone-blob")],
@@ -316,12 +337,15 @@ async function sampleExport() {
 describe("portable GitHub workspace export", () => {
   it("builds a deterministic manifest and passes restore preflight", async () => {
     const exported = await sampleExport();
-    expect(exported.manifest.counts).toEqual({ files: 20, captures: 1, dashboard_layouts: 1, tasks: 1, time_entries: 1, projects: 1, project_phases: 1, milestones: 1, project_notes: 1, project_file_references: 1, activity_events: 1, calendar_events: 1, report_drafts: 1, journal_entries: 1, journal_segments: 1, journal_revisions: 1, journal_import_checkpoints: 1, obsidian_documents: 1, sync_conflicts: 1, learning_areas: 1 });
+    expect(exported.manifest.counts).toEqual({ files: 23, captures: 1, dashboard_layouts: 1, tasks: 1, time_entries: 1, projects: 1, project_phases: 1, milestones: 1, project_notes: 1, project_file_references: 1, activity_events: 1, calendar_events: 1, report_drafts: 1, journal_entries: 1, journal_segments: 1, journal_revisions: 1, journal_import_checkpoints: 1, obsidian_documents: 1, sync_conflicts: 1, learning_areas: 1, habits: 1, habit_rules: 1, habit_check_ins: 1 });
     expect(exported.manifest.files.map((file) => file.path)).toEqual([
       "config/dashboard-layout.json",
       "data/activity-events/activity_20260827015800000_abcd1234.json",
       "data/calendar-events/calendar_event_20260827015900000_abcd1234.json",
       "data/captures/capture_20260827010000000_abcd1234.json",
+      "data/habit-check-ins/habit_check_in_20260827020520000_abcd1234.json",
+      "data/habit-rules/habit_rule_20260827020510000_abcd1234.json",
+      "data/habits/habit_20260827020500000_abcd1234.json",
       "data/journal-entries/journal_entry_20260827020200000_abcd1234.json",
       `data/journal-import-checkpoints/journal_import_checkpoint_${"b".repeat(32)}.json`,
       "data/journal-revisions/journal_revision_20260827020220000_abcd1234.json",
@@ -344,7 +368,7 @@ describe("portable GitHub workspace export", () => {
     await expect(inspectPortableWorkspaceExport(exported)).resolves.toMatchObject({
       valid: true,
       repository: "lubannn/personal-workspace-data",
-      counts: { files: 20, captures: 1, dashboardLayouts: 1, tasks: 1, timeEntries: 1, projects: 1, projectPhases: 1, milestones: 1, projectNotes: 1, projectFileReferences: 1, activityEvents: 1, calendarEvents: 1, reportDrafts: 1, journalEntries: 1, journalSegments: 1, journalRevisions: 1, journalImportCheckpoints: 1, obsidianDocuments: 1, syncConflicts: 1, learningAreas: 1 },
+      counts: { files: 23, captures: 1, dashboardLayouts: 1, tasks: 1, timeEntries: 1, projects: 1, projectPhases: 1, milestones: 1, projectNotes: 1, projectFileReferences: 1, activityEvents: 1, calendarEvents: 1, reportDrafts: 1, journalEntries: 1, journalSegments: 1, journalRevisions: 1, journalImportCheckpoints: 1, obsidianDocuments: 1, syncConflicts: 1, learningAreas: 1, habits: 1, habitRules: 1, habitCheckIns: 1 },
       errors: [],
       workspace: { owner_id: "github_lubannn" },
     });
@@ -521,6 +545,9 @@ describe("portable GitHub workspace export", () => {
     exported.files = exported.files.filter((file) => !file.path.startsWith("data/calendar-events/"));
     exported.files = exported.files.filter((file) => !file.path.startsWith("data/report-drafts/"));
     exported.files = exported.files.filter((file) => !file.path.startsWith("data/learning-areas/"));
+    exported.files = exported.files.filter((file) => !file.path.startsWith("data/habits/"));
+    exported.files = exported.files.filter((file) => !file.path.startsWith("data/habit-rules/"));
+    exported.files = exported.files.filter((file) => !file.path.startsWith("data/habit-check-ins/"));
     exported.manifest.files = exported.manifest.files.filter((file) => file.path !== "config/dashboard-layout.json");
     exported.manifest.files = exported.manifest.files.filter((file) => !file.path.startsWith("data/tasks/"));
     exported.manifest.files = exported.manifest.files.filter((file) => !file.path.startsWith("data/time-entries/"));
@@ -539,6 +566,9 @@ describe("portable GitHub workspace export", () => {
     exported.manifest.files = exported.manifest.files.filter((file) => !file.path.startsWith("data/calendar-events/"));
     exported.manifest.files = exported.manifest.files.filter((file) => !file.path.startsWith("data/report-drafts/"));
     exported.manifest.files = exported.manifest.files.filter((file) => !file.path.startsWith("data/learning-areas/"));
+    exported.manifest.files = exported.manifest.files.filter((file) => !file.path.startsWith("data/habits/"));
+    exported.manifest.files = exported.manifest.files.filter((file) => !file.path.startsWith("data/habit-rules/"));
+    exported.manifest.files = exported.manifest.files.filter((file) => !file.path.startsWith("data/habit-check-ins/"));
     exported.manifest.scope.modules = ["workspace", "captures"];
     exported.manifest.counts = { files: 2, captures: 1 } as typeof exported.manifest.counts;
     await expect(inspectPortableWorkspaceExport(exported)).resolves.toMatchObject({

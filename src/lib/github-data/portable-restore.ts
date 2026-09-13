@@ -5,6 +5,7 @@ import type {
 } from "./github-contents";
 import {
   inspectPortableWorkspaceExport,
+  type ExportInspection,
   type ExportInspectionIssue,
   type PortableWorkspaceExport,
 } from "./portable-export";
@@ -33,7 +34,7 @@ export type PortableRestorePlan = {
   branch: string;
   expectedHeadCommitSha: string;
   baseTreeSha: string;
-  counts: { files: number; captures: number; dashboardLayouts: number; tasks: number; timeEntries: number; projects: number; projectPhases: number; milestones: number; projectNotes: number; projectFileReferences: number; activityEvents: number; calendarEvents: number; reportDrafts: number; journalEntries: number; journalSegments: number; journalRevisions: number; journalImportCheckpoints: number; obsidianDocuments: number; syncConflicts: number; learningAreas: number };
+  counts: ExportInspection["counts"];
   files: Array<{ path: string; text: string }>;
   errors: ExportInspectionIssue[];
   warnings: ExportInspectionIssue[];

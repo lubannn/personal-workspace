@@ -87,6 +87,8 @@ import {
   type LearningAreaFields,
   type LearningAreaStatus,
 } from "../../../src/lib/github-data/learning-areas";
+import { createHabitData, setHabitStatus, type HabitFields, type HabitStatus } from "../../../src/lib/github-data/habits";
+import { createManualHabitCheckInData, type HabitCheckInStatus } from "../../../src/lib/github-data/habit-check-ins";
 import { createJournalEntryData, hasActiveDailyJournalDate, updateJournalEntryData } from "../../../src/lib/github-data/journal-entries";
 import {
   createJournalEntryAtomically,
@@ -110,6 +112,7 @@ import {
   type SyncedCapture,
   type SyncedCalendarEvent,
   type SyncedJournalEntry,
+  type SyncedHabit,
   type SyncedLearningArea,
   type SyncedProject,
   type SyncedProjectPhase,
@@ -134,6 +137,7 @@ import { TasksSection } from "./workspace/tasks-section";
 import { TimeEntriesSection } from "./workspace/time-entries-section";
 import { JournalSection } from "./workspace/journal-section";
 import { LearningSection } from "./workspace/learning-section";
+import { HabitsSection } from "./workspace/habits-section";
 
 export default function GitHubWorkspacePage() {
   const adapterRef = useRef<GitHubContentsAdapter | null>(null);
@@ -184,6 +188,8 @@ export default function GitHubWorkspacePage() {
   const [savingJournalEntryId, setSavingJournalEntryId] = useState<string | null>(null);
   const [savingLearningArea, setSavingLearningArea] = useState(false);
   const [savingLearningAreaId, setSavingLearningAreaId] = useState<string | null>(null);
+  const [savingHabit, setSavingHabit] = useState(false);
+  const [savingHabitId, setSavingHabitId] = useState<string | null>(null);
   const [dashboardDirty, setDashboardDirty] = useState(false);
   const [editingDashboard, setEditingDashboard] = useState(false);
   const [savingDashboard, setSavingDashboard] = useState(false);
@@ -236,6 +242,11 @@ export default function GitHubWorkspacePage() {
     obsidianDocumentFiles,
     learningAreaFiles,
     setLearningAreaFiles,
+    habitFiles,
+    setHabitFiles,
+    habitRuleFiles,
+    habitCheckInFiles,
+    setHabitCheckInFiles,
     dashboardLayout,
     setDashboardLayout,
     dashboardBlobSha,
@@ -256,6 +267,7 @@ export default function GitHubWorkspacePage() {
     loadingJournalRevisions,
     loadingJournalImportCheckpoints,
     loadingLearningAreas,
+    loadingHabits,
     loadingDashboard,
     loadRecentCaptures,
     loadTasks,
@@ -275,6 +287,7 @@ export default function GitHubWorkspacePage() {
     loadObsidianDocuments,
     loadSyncConflicts,
     loadLearningAreas,
+    loadHabitDomain,
     loadDashboardLayout,
     clearCollections,
   } = useWorkspaceCollections({ adapterRef, setErrorMessage, setDashboardClean });
@@ -306,6 +319,7 @@ export default function GitHubWorkspacePage() {
     loadObsidianDocuments,
     loadSyncConflicts,
     loadLearningAreas,
+    loadHabitDomain,
   });
 
   const workspaceTimezone = connection?.timezone ?? "Asia/Shanghai";
@@ -1630,6 +1644,73 @@ export default function GitHubWorkspacePage() {
     finally { setSavingLearningAreaId(null); }
   }
 
+  async function saveHabit(fields: HabitFields) {
+    const adapter = adapterRef.current;
+    if (!adapter || !connection || savingHabit || online === false) return false;
+    setSavingHabit(true); setErrorMessage(""); setStatusMessage("");
+    const timestamp = new Date().toISOString();
+    const id = `habit_${timestamp.replaceAll(/\D/g, "").slice(0, 17)}_${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`;
+    try {
+      const record = createWorkspaceRecord({ entityType: "habit", id, ownerId: connection.ownerId, timestamp, data: createHabitData(fields) });
+      const result = await adapter.writeText({ path: recordPath("habit", id), text: serializeRecord(record), message: `habit: create ${id}` });
+      setHabitFiles((current) => [{ record, path: result.path, blobSha: result.blobSha }, ...current]);
+      setStatusMessage("习惯已保存到 Private GitHub；首版默认只接受手工打卡。");
+      return true;
+    } catch (error) { setErrorMessage(friendlyError(error)); return false; }
+    finally { setSavingHabit(false); }
+  }
+
+  async function updateHabitStatus(item: SyncedHabit, status: HabitStatus) {
+    const adapter = adapterRef.current;
+    if (!adapter || !connection || savingHabitId || online === false) return;
+    setSavingHabitId(item.record.id); setErrorMessage(""); setStatusMessage("");
+    try {
+      const updated = setHabitStatus(item.record, status);
+      const result = await adapter.writeText({ path: item.path, text: serializeRecord(updated), message: `habit: ${status} ${item.record.id}`, expectedBlobSha: item.blobSha });
+      setHabitFiles((current) => current.map((candidate) => candidate.record.id === item.record.id ? { record: updated, path: result.path, blobSha: result.blobSha } : candidate));
+      setStatusMessage(status === "archived" ? "习惯已归档。" : status === "paused" ? "习惯已暂停。" : "习惯已恢复进行。");
+    } catch (error) { setErrorMessage(friendlyError(error)); }
+    finally { setSavingHabitId(null); }
+  }
+
+  async function updateHabitDeletion(item: SyncedHabit, operation: "trash" | "restore") {
+    const adapter = adapterRef.current;
+    if (!adapter || !connection || savingHabitId || online === false) return;
+    setSavingHabitId(item.record.id); setErrorMessage(""); setStatusMessage("");
+    const timestamp = new Date().toISOString();
+    const updated = setWorkspaceRecordDeleted(item.record, operation === "trash" ? timestamp : null, timestamp);
+    try {
+      const result = await adapter.writeText({ path: item.path, text: serializeRecord(updated), message: `habit: ${operation} ${item.record.id}`, expectedBlobSha: item.blobSha });
+      setHabitFiles((current) => current.map((candidate) => candidate.record.id === item.record.id ? { record: updated, path: result.path, blobSha: result.blobSha } : candidate));
+      setStatusMessage(operation === "trash" ? "习惯已移到可恢复回收站；既有打卡历史仍保留。" : "习惯已恢复。");
+    } catch (error) { setErrorMessage(friendlyError(error)); }
+    finally { setSavingHabitId(null); }
+  }
+
+  async function saveManualHabitCheckIn(item: SyncedHabit, date: string, status: HabitCheckInStatus) {
+    const adapter = adapterRef.current;
+    if (!adapter || !connection || savingHabitId || online === false) return false;
+    setSavingHabitId(item.record.id); setErrorMessage(""); setStatusMessage("");
+    const timestamp = new Date().toISOString();
+    const existing = habitCheckInFiles.find((candidate) => candidate.record.deleted_at === null && candidate.record.data.habit_id === item.record.id && candidate.record.data.local_date === date);
+    try {
+      const data = createManualHabitCheckInData({ habitId: item.record.id, localDate: date, timezone: connection.timezone, status, confirmedAt: timestamp });
+      if (existing) {
+        const updated = updateWorkspaceRecord(existing.record, data, timestamp);
+        const result = await adapter.writeText({ path: existing.path, text: serializeRecord(updated), message: `habit check-in: update ${existing.record.id}`, expectedBlobSha: existing.blobSha });
+        setHabitCheckInFiles((current) => current.map((candidate) => candidate.record.id === existing.record.id ? { record: updated, path: result.path, blobSha: result.blobSha } : candidate));
+      } else {
+        const id = `habit_check_in_${timestamp.replaceAll(/\D/g, "").slice(0, 17)}_${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`;
+        const record = createWorkspaceRecord({ entityType: "habit_check_in", id, ownerId: connection.ownerId, timestamp, data });
+        const result = await adapter.writeText({ path: recordPath("habit_check_in", id), text: serializeRecord(record), message: `habit check-in: create ${id}` });
+        setHabitCheckInFiles((current) => [{ record, path: result.path, blobSha: result.blobSha }, ...current]);
+      }
+      setStatusMessage(status === "completed" ? `${item.record.data.name} 今日已完成。` : `${item.record.data.name} 今日打卡已撤销为待确认。`);
+      return true;
+    } catch (error) { setErrorMessage(friendlyError(error)); return false; }
+    finally { setSavingHabitId(null); }
+  }
+
   async function listCaptureFiles(adapter: GitHubContentsAdapter) {
     try {
       return (await adapter.listDirectory("data/captures"))
@@ -1689,6 +1770,21 @@ export default function GitHubWorkspacePage() {
 
   async function listLearningAreaFiles(adapter: GitHubContentsAdapter) {
     try { return (await adapter.listDirectory("data/learning-areas")).filter((item) => item.type === "file" && item.name.endsWith(".json")).sort((left, right) => left.path.localeCompare(right.path)); }
+    catch (error) { if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") return []; throw error; }
+  }
+
+  async function listHabitFiles(adapter: GitHubContentsAdapter) {
+    try { return (await adapter.listDirectory("data/habits")).filter((item) => item.type === "file" && item.name.endsWith(".json")).sort((left, right) => left.path.localeCompare(right.path)); }
+    catch (error) { if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") return []; throw error; }
+  }
+
+  async function listHabitRuleFiles(adapter: GitHubContentsAdapter) {
+    try { return (await adapter.listDirectory("data/habit-rules")).filter((item) => item.type === "file" && item.name.endsWith(".json")).sort((left, right) => left.path.localeCompare(right.path)); }
+    catch (error) { if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") return []; throw error; }
+  }
+
+  async function listHabitCheckInFiles(adapter: GitHubContentsAdapter) {
+    try { return (await adapter.listDirectory("data/habit-check-ins")).filter((item) => item.type === "file" && item.name.endsWith(".json")).sort((left, right) => left.path.localeCompare(right.path)); }
     catch (error) { if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") return []; throw error; }
   }
 
@@ -1925,6 +2021,15 @@ export default function GitHubWorkspacePage() {
         setExportProgress(`正在读取 LearningArea ${Math.min(index + batchSize, learningAreaCandidates.length)} / ${learningAreaCandidates.length}…`);
         learningAreaExportFiles.push(...await Promise.all(learningAreaCandidates.slice(index, index + batchSize).map((item) => adapter.readText(item.path))));
       }
+      const habitCandidates = await listHabitFiles(adapter);
+      const habitExportFiles = [];
+      for (let index = 0; index < habitCandidates.length; index += batchSize) habitExportFiles.push(...await Promise.all(habitCandidates.slice(index, index + batchSize).map((item) => adapter.readText(item.path))));
+      const habitRuleCandidates = await listHabitRuleFiles(adapter);
+      const habitRuleExportFiles = [];
+      for (let index = 0; index < habitRuleCandidates.length; index += batchSize) habitRuleExportFiles.push(...await Promise.all(habitRuleCandidates.slice(index, index + batchSize).map((item) => adapter.readText(item.path))));
+      const habitCheckInCandidates = await listHabitCheckInFiles(adapter);
+      const habitCheckInExportFiles = [];
+      for (let index = 0; index < habitCheckInCandidates.length; index += batchSize) habitCheckInExportFiles.push(...await Promise.all(habitCheckInCandidates.slice(index, index + batchSize).map((item) => adapter.readText(item.path))));
 
       setExportProgress("正在生成 SHA-256 manifest…");
       const generatedAt = new Date().toISOString();
@@ -1951,6 +2056,9 @@ export default function GitHubWorkspacePage() {
         obsidianDocumentFiles: obsidianDocumentExportFiles,
         syncConflictFiles: syncConflictExportFiles,
         learningAreaFiles: learningAreaExportFiles,
+        habitFiles: habitExportFiles,
+        habitRuleFiles: habitRuleExportFiles,
+        habitCheckInFiles: habitCheckInExportFiles,
         generatedAt,
       });
       const inspection = await inspectPortableWorkspaceExport(portableExport);
@@ -1991,6 +2099,9 @@ export default function GitHubWorkspacePage() {
         obsidianDocuments: inspection.counts.obsidianDocuments,
         syncConflicts: inspection.counts.syncConflicts,
         learningAreas: inspection.counts.learningAreas,
+        habits: inspection.counts.habits,
+        habitRules: inspection.counts.habitRules,
+        habitCheckIns: inspection.counts.habitCheckIns,
         errors: inspection.errors,
         warnings: inspection.warnings,
       });
@@ -2017,6 +2128,9 @@ export default function GitHubWorkspacePage() {
         obsidianDocuments: inspection.counts.obsidianDocuments,
         syncConflicts: inspection.counts.syncConflicts,
         learningAreas: inspection.counts.learningAreas,
+        habits: inspection.counts.habits,
+        habitRules: inspection.counts.habitRules,
+        habitCheckIns: inspection.counts.habitCheckIns,
         errors: inspection.errors,
         warnings: inspection.warnings,
       });
@@ -2071,6 +2185,9 @@ export default function GitHubWorkspacePage() {
           obsidianDocuments: 0,
           syncConflicts: 0,
           learningAreas: 0,
+          habits: 0,
+          habitRules: 0,
+          habitCheckIns: 0,
           errors: [{ code: "EXPORT_TOO_LARGE", message: "当前预检仅接受 50 MB 以内的 JSON 文件。" }],
           warnings: [],
         });
@@ -2101,6 +2218,9 @@ export default function GitHubWorkspacePage() {
         obsidianDocuments: inspection.counts.obsidianDocuments,
         syncConflicts: inspection.counts.syncConflicts,
         learningAreas: inspection.counts.learningAreas,
+        habits: inspection.counts.habits,
+        habitRules: inspection.counts.habitRules,
+        habitCheckIns: inspection.counts.habitCheckIns,
         errors: inspection.errors,
         warnings: inspection.warnings,
       });
@@ -2132,6 +2252,9 @@ export default function GitHubWorkspacePage() {
         obsidianDocuments: 0,
         syncConflicts: 0,
         learningAreas: 0,
+        habits: 0,
+        habitRules: 0,
+        habitCheckIns: 0,
         errors: [{ code: "INVALID_JSON", message: "文件不是有效的 JSON，未执行任何恢复操作。" }],
         warnings: [],
       });
@@ -2476,6 +2599,24 @@ export default function GitHubWorkspacePage() {
         onStatusChange={updateLearningAreaStatus}
         onDeletionChange={updateLearningAreaDeletion}
         onRefresh={() => loadLearningAreas()}
+      />
+
+
+      <HabitsSection
+        connection={connection}
+        online={online}
+        todayDate={currentTaskDate}
+        habits={habitFiles}
+        rules={habitRuleFiles}
+        checkIns={habitCheckInFiles}
+        loading={loadingHabits}
+        saving={savingHabit}
+        savingId={savingHabitId}
+        onCreate={saveHabit}
+        onStatusChange={updateHabitStatus}
+        onDeletionChange={updateHabitDeletion}
+        onCheckIn={saveManualHabitCheckIn}
+        onRefresh={() => loadHabitDomain()}
       />
 
 
