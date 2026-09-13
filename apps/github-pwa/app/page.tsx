@@ -88,7 +88,8 @@ import {
   type LearningAreaStatus,
 } from "../../../src/lib/github-data/learning-areas";
 import { createHabitData, setHabitStatus, type HabitFields, type HabitStatus } from "../../../src/lib/github-data/habits";
-import { createManualHabitCheckInData, type HabitCheckInStatus } from "../../../src/lib/github-data/habit-check-ins";
+import { correctHabitCheckIn, createAutomaticHabitCheckInData, createManualHabitCheckInData, type HabitCheckInStatus } from "../../../src/lib/github-data/habit-check-ins";
+import { createSleepHabitRuleData, evaluateSleepHabitRule, type SleepHabitRuleFields } from "../../../src/lib/github-data/sleep-habit-rules";
 import { confirmHealthStaging, correctPendingHealthStaging, correctPendingSleepHealthStaging, createHealthStagingData, createSleepHealthStagingData, rejectHealthStaging, type HealthStagingFields, type SleepStagingFields } from "../../../src/lib/github-data/health-staging-records";
 import { createConfirmedHealthMetricData } from "../../../src/lib/github-data/health-metrics";
 import { createConfirmedSleepSessionData } from "../../../src/lib/github-data/sleep-sessions";
@@ -116,6 +117,7 @@ import {
   type SyncedCalendarEvent,
   type SyncedJournalEntry,
   type SyncedHabit,
+  type SyncedHabitRule,
   type SyncedHealthStagingRecord,
   type SyncedLearningArea,
   type SyncedProject,
@@ -123,6 +125,7 @@ import {
   type SyncedMilestone,
   type SyncedProjectNote,
   type SyncedReportDraft,
+  type SyncedSleepSession,
   type SyncedTask,
   type SyncedTimeEntry,
 } from "./workspace/page-model";
@@ -252,6 +255,7 @@ export default function GitHubWorkspacePage() {
     habitFiles,
     setHabitFiles,
     habitRuleFiles,
+    setHabitRuleFiles,
     habitCheckInFiles,
     setHabitCheckInFiles,
     healthStagingFiles,
@@ -1660,7 +1664,7 @@ export default function GitHubWorkspacePage() {
     finally { setSavingLearningAreaId(null); }
   }
 
-  async function saveHabit(fields: HabitFields) {
+  async function saveHabit(fields: HabitFields, sleepRule?: SleepHabitRuleFields) {
     const adapter = adapterRef.current;
     if (!adapter || !connection || savingHabit || online === false) return false;
     setSavingHabit(true); setErrorMessage(""); setStatusMessage("");
@@ -1668,9 +1672,20 @@ export default function GitHubWorkspacePage() {
     const id = `habit_${timestamp.replaceAll(/\D/g, "").slice(0, 17)}_${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`;
     try {
       const record = createWorkspaceRecord({ entityType: "habit", id, ownerId: connection.ownerId, timestamp, data: createHabitData(fields) });
-      const result = await adapter.writeText({ path: recordPath("habit", id), text: serializeRecord(record), message: `habit: create ${id}` });
-      setHabitFiles((current) => [{ record, path: result.path, blobSha: result.blobSha }, ...current]);
-      setStatusMessage("习惯已保存到 Private GitHub；首版默认只接受手工打卡。");
+      if (sleepRule) {
+        const ruleId = `habit_rule_${timestamp.replaceAll(/\D/g, "").slice(0, 17)}_${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`;
+        const rule = createWorkspaceRecord({ entityType: "habit_rule", id: ruleId, ownerId: connection.ownerId, timestamp, data: createSleepHabitRuleData({ habitId: id, timezone: fields.timezone, activeFrom: fields.start_date, fields: sleepRule }) });
+        const snapshot = await adapter.readBranchSnapshot();
+        const habitPath = recordPath("habit", id); const rulePath = recordPath("habit_rule", ruleId);
+        const result = await adapter.writeAtomicFiles({ files: [{ path: habitPath, text: serializeRecord(record) }, { path: rulePath, text: serializeRecord(rule) }], message: `habit: create assisted ${id}`, expectedHeadCommitSha: snapshot.headCommitSha, baseTreeSha: snapshot.rootTreeSha });
+        setHabitFiles((current) => [{ record, path: habitPath, blobSha: result.files.find((file) => file.path === habitPath)!.blobSha }, ...current]);
+        setHabitRuleFiles((current) => [{ record: rule, path: rulePath, blobSha: result.files.find((file) => file.path === rulePath)!.blobSha }, ...current]);
+        setStatusMessage("睡眠辅助习惯及规则已原子保存；只生成可解释建议，不会自动打卡。");
+      } else {
+        const result = await adapter.writeText({ path: recordPath("habit", id), text: serializeRecord(record), message: `habit: create ${id}` });
+        setHabitFiles((current) => [{ record, path: result.path, blobSha: result.blobSha }, ...current]);
+        setStatusMessage("习惯已保存到 Private GitHub；默认只接受手工打卡。");
+      }
       return true;
     } catch (error) { setErrorMessage(friendlyError(error)); return false; }
     finally { setSavingHabit(false); }
@@ -1710,7 +1725,9 @@ export default function GitHubWorkspacePage() {
     const timestamp = new Date().toISOString();
     const existing = habitCheckInFiles.find((candidate) => candidate.record.deleted_at === null && candidate.record.data.habit_id === item.record.id && candidate.record.data.local_date === date);
     try {
-      const data = createManualHabitCheckInData({ habitId: item.record.id, localDate: date, timezone: connection.timezone, status, confirmedAt: timestamp });
+      const data = existing && existing.record.data.entry_method !== "manual"
+        ? correctHabitCheckIn(existing.record, { status, valueJson: existing.record.data.value_json, reason: "用户在习惯面板更正规则判定", confirmedAt: timestamp }).data
+        : createManualHabitCheckInData({ habitId: item.record.id, localDate: date, timezone: connection.timezone, status, confirmedAt: timestamp });
       if (existing) {
         const updated = updateWorkspaceRecord(existing.record, data, timestamp);
         const result = await adapter.writeText({ path: existing.path, text: serializeRecord(updated), message: `habit check-in: update ${existing.record.id}`, expectedBlobSha: existing.blobSha });
@@ -1724,6 +1741,30 @@ export default function GitHubWorkspacePage() {
       setStatusMessage(status === "completed" ? `${item.record.data.name} 今日已完成。` : `${item.record.data.name} 今日打卡已撤销为待确认。`);
       return true;
     } catch (error) { setErrorMessage(friendlyError(error)); return false; }
+    finally { setSavingHabitId(null); }
+  }
+
+  async function confirmSleepHabitSuggestion(item: SyncedHabit, rule: SyncedHabitRule, session: SyncedSleepSession) {
+    const adapter = adapterRef.current;
+    if (!adapter || !connection || savingHabitId || online === false) return false;
+    setSavingHabitId(item.record.id); setErrorMessage(""); setStatusMessage("");
+    const timestamp = new Date().toISOString();
+    try {
+      const evaluation = evaluateSleepHabitRule(rule.record, session.record);
+      if (habitCheckInFiles.some((candidate) => candidate.record.deleted_at === null && candidate.record.data.habit_id === item.record.id && candidate.record.data.local_date === evaluation.local_date)) throw new Error("HABIT_CHECK_IN_ALREADY_EXISTS");
+      const id = `habit_check_in_${timestamp.replaceAll(/\D/g, "").slice(0, 17)}_${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`;
+      const data = createAutomaticHabitCheckInData({ habitId: item.record.id, localDate: evaluation.local_date, timezone: item.record.data.timezone, status: evaluation.status, valueJson: evaluation.value_json, evidenceType: "health_sleep_session", evidenceId: session.record.id, ruleId: rule.record.id, ruleVersion: rule.record.data.rule_version, evaluatedAt: timestamp, confirmedAt: timestamp });
+      const record = createWorkspaceRecord({ entityType: "habit_check_in", id, ownerId: connection.ownerId, timestamp, data });
+      const result = await adapter.writeText({ path: recordPath("habit_check_in", id), text: serializeRecord(record), message: `habit check-in: confirm sleep suggestion ${id}` });
+      setHabitCheckInFiles((current) => [{ record, path: result.path, blobSha: result.blobSha }, ...current]);
+      setStatusMessage(`${item.record.data.name}：${evaluation.explanation} 已由你确认写入。`);
+      return true;
+    } catch (error) {
+      setErrorMessage(error instanceof Error && error.message === "HABIT_CHECK_IN_ALREADY_EXISTS"
+        ? "该日期已经有打卡记录，请刷新后查看。"
+        : friendlyError(error));
+      return false;
+    }
     finally { setSavingHabitId(null); }
   }
 
@@ -2774,6 +2815,7 @@ export default function GitHubWorkspacePage() {
         habits={habitFiles}
         rules={habitRuleFiles}
         checkIns={habitCheckInFiles}
+        sleepSessions={sleepSessionFiles}
         loading={loadingHabits}
         saving={savingHabit}
         savingId={savingHabitId}
@@ -2781,6 +2823,7 @@ export default function GitHubWorkspacePage() {
         onStatusChange={updateHabitStatus}
         onDeletionChange={updateHabitDeletion}
         onCheckIn={saveManualHabitCheckIn}
+        onConfirmSleepSuggestion={confirmSleepHabitSuggestion}
         onRefresh={() => loadHabitDomain()}
       />
 
