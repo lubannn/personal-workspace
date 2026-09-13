@@ -389,6 +389,17 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .learning-description textarea { min-height: 105px; resize: vertical; }
 .learning-form > footer { display: flex; align-items: center; justify-content: space-between; gap: 18px; }
 .learning-form > footer > span { color: var(--muted); font-size: 9px; }
+.habit-card { overflow: hidden; }
+.habit-form select { width: 100%; min-height: 38px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); color: var(--ink); padding: 8px 10px; }
+.habit-heatmap { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); display: grid; gap: 10px; }
+.habit-heatmap > div:first-child { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 14px; }
+.habit-heatmap > div:first-child span { color: var(--muted); font-size: 9px; }
+.habit-heatmap-grid { display: grid; grid-template-columns: repeat(16, minmax(24px, 1fr)); gap: 5px; }
+.habit-heatmap-grid button { aspect-ratio: 1; min-width: 0; border: 1px solid var(--line); border-radius: 6px; background: rgba(112,105,88,.08); color: var(--muted); cursor: default; }
+.habit-heatmap-grid button[data-status="completed"] { background: #78916f; border-color: #657d5e; color: #fff; }
+.habit-heatmap-grid button[data-status="missed"] { background: #ead5cf; border-color: #cda99f; color: #734a40; }
+.habit-heatmap-grid button[data-status="skipped"], .habit-heatmap-grid button[data-status="unknown"] { background: #eee8d8; border-color: #d4c8a7; color: #6e654d; }
+.habit-heatmap-grid span { font-size: 9px; }
 .learning-list { margin: 16px 0 0; padding: 0; list-style: none; }
 .learning-list > li { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 18px; padding: 16px 0; border-bottom: 1px solid var(--line); }
 .learning-list > li > div:first-child { min-width: 0; display: grid; grid-template-columns: auto auto 1fr; align-items: baseline; gap: 5px 9px; }
@@ -715,6 +726,7 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 }
 
 @media (max-width: 480px) {
+  .habit-heatmap-grid { grid-template-columns: repeat(8, minmax(24px, 1fr)); }
   .connection-form { grid-template-columns: 1fr; }
   .connection-form label, .connection-form .token-field, .connection-form button { grid-column: 1; }
   .task-create-form { grid-template-columns: 1fr; }
