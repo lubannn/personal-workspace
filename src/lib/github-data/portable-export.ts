@@ -18,6 +18,9 @@ import { parseJournalImportCheckpointRecord } from "./journal-import-checkpoints
 import { parseObsidianDocumentRecord } from "./obsidian-documents";
 import { parseSyncConflictRecord } from "./sync-conflicts";
 import { parseLearningAreaRecord } from "./learning-areas";
+import { parseHabitRecord } from "./habits";
+import { parseHabitRuleRecord } from "./habit-rules";
+import { parseHabitCheckInRecord } from "./habit-check-ins";
 import { renderJournalSegmentsMarkdown } from "./journal-segment-codec";
 import { parseCaptureRecord, parseWorkspaceDescriptor, type WorkspaceDescriptor } from "./workspace";
 
@@ -47,7 +50,7 @@ export type PortableWorkspaceExport = {
   manifest: {
     schema_version: 1;
     scope: {
-      modules: Array<"workspace" | "captures" | "dashboard_layout" | "tasks" | "time_entries" | "projects" | "project_phases" | "milestones" | "project_notes" | "project_file_references" | "activity_events" | "calendar_events" | "report_drafts" | "journal_entries" | "journal_segments" | "journal_revisions" | "journal_import_checkpoints" | "obsidian_documents" | "sync_conflicts" | "learning_areas">;
+      modules: Array<"workspace" | "captures" | "dashboard_layout" | "tasks" | "time_entries" | "projects" | "project_phases" | "milestones" | "project_notes" | "project_file_references" | "activity_events" | "calendar_events" | "report_drafts" | "journal_entries" | "journal_segments" | "journal_revisions" | "journal_import_checkpoints" | "obsidian_documents" | "sync_conflicts" | "learning_areas" | "habits" | "habit_rules" | "habit_check_ins">;
       complete: true;
     };
     counts: {
@@ -71,6 +74,9 @@ export type PortableWorkspaceExport = {
       obsidian_documents: number;
       sync_conflicts: number;
       learning_areas: number;
+      habits: number;
+      habit_rules: number;
+      habit_check_ins: number;
     };
     files: PortableExportManifestFile[];
   };
@@ -109,6 +115,9 @@ export type ExportInspection = {
     obsidianDocuments: number;
     syncConflicts: number;
     learningAreas: number;
+    habits: number;
+    habitRules: number;
+    habitCheckIns: number;
   };
   errors: ExportInspectionIssue[];
   warnings: ExportInspectionIssue[];
@@ -150,6 +159,9 @@ export async function buildPortableWorkspaceExport(input: {
   obsidianDocumentFiles?: GitHubStoredFile[];
   syncConflictFiles?: GitHubStoredFile[];
   learningAreaFiles?: GitHubStoredFile[];
+  habitFiles?: GitHubStoredFile[];
+  habitRuleFiles?: GitHubStoredFile[];
+  habitCheckInFiles?: GitHubStoredFile[];
   generatedAt?: string;
 }): Promise<PortableWorkspaceExport> {
   const dashboardLayoutFiles = input.dashboardLayoutFile ? [input.dashboardLayoutFile] : [];
@@ -170,7 +182,10 @@ export async function buildPortableWorkspaceExport(input: {
   const obsidianDocumentFiles = input.obsidianDocumentFiles ?? [];
   const syncConflictFiles = input.syncConflictFiles ?? [];
   const learningAreaFiles = input.learningAreaFiles ?? [];
-  const files = [input.workspaceFile, ...input.captureFiles, ...dashboardLayoutFiles, ...taskFiles, ...timeEntryFiles, ...projectFiles, ...projectPhaseFiles, ...milestoneFiles, ...projectNoteFiles, ...projectFileReferenceFiles, ...activityEventFiles, ...calendarEventFiles, ...reportDraftFiles, ...journalEntryFiles, ...journalSegmentFiles, ...journalRevisionFiles, ...journalImportCheckpointFiles, ...obsidianDocumentFiles, ...syncConflictFiles, ...learningAreaFiles]
+  const habitFiles = input.habitFiles ?? [];
+  const habitRuleFiles = input.habitRuleFiles ?? [];
+  const habitCheckInFiles = input.habitCheckInFiles ?? [];
+  const files = [input.workspaceFile, ...input.captureFiles, ...dashboardLayoutFiles, ...taskFiles, ...timeEntryFiles, ...projectFiles, ...projectPhaseFiles, ...milestoneFiles, ...projectNoteFiles, ...projectFileReferenceFiles, ...activityEventFiles, ...calendarEventFiles, ...reportDraftFiles, ...journalEntryFiles, ...journalSegmentFiles, ...journalRevisionFiles, ...journalImportCheckpointFiles, ...obsidianDocumentFiles, ...syncConflictFiles, ...learningAreaFiles, ...habitFiles, ...habitRuleFiles, ...habitCheckInFiles]
     .map((file) => ({ ...file }))
     .sort((left, right) => left.path.localeCompare(right.path));
   const manifestFiles = await Promise.all(files.map(async (file) => ({
@@ -187,7 +202,7 @@ export async function buildPortableWorkspaceExport(input: {
     source: { repository: input.repository, branch: input.branch },
     manifest: {
       schema_version: 1,
-      scope: { modules: ["workspace", "captures", "dashboard_layout", "tasks", "time_entries", "projects", "project_phases", "milestones", "project_notes", "project_file_references", "activity_events", "calendar_events", "report_drafts", "journal_entries", "journal_segments", "journal_revisions", "journal_import_checkpoints", "obsidian_documents", "sync_conflicts", "learning_areas"], complete: true },
+      scope: { modules: ["workspace", "captures", "dashboard_layout", "tasks", "time_entries", "projects", "project_phases", "milestones", "project_notes", "project_file_references", "activity_events", "calendar_events", "report_drafts", "journal_entries", "journal_segments", "journal_revisions", "journal_import_checkpoints", "obsidian_documents", "sync_conflicts", "learning_areas", "habits", "habit_rules", "habit_check_ins"], complete: true },
       counts: {
         files: files.length,
         captures: input.captureFiles.length,
@@ -209,6 +224,9 @@ export async function buildPortableWorkspaceExport(input: {
         obsidian_documents: obsidianDocumentFiles.length,
         sync_conflicts: syncConflictFiles.length,
         learning_areas: learningAreaFiles.length,
+        habits: habitFiles.length,
+        habit_rules: habitRuleFiles.length,
+        habit_check_ins: habitCheckInFiles.length,
       },
       files: manifestFiles,
     },
@@ -242,7 +260,7 @@ export async function inspectPortableWorkspaceExport(value: unknown): Promise<Ex
     generatedAt: null,
     repository: null,
     workspace: null,
-    counts: { files: 0, captures: 0, dashboardLayouts: 0, tasks: 0, timeEntries: 0, projects: 0, projectPhases: 0, milestones: 0, projectNotes: 0, projectFileReferences: 0, activityEvents: 0, calendarEvents: 0, reportDrafts: 0, journalEntries: 0, journalSegments: 0, journalRevisions: 0, journalImportCheckpoints: 0, obsidianDocuments: 0, syncConflicts: 0, learningAreas: 0 },
+    counts: { files: 0, captures: 0, dashboardLayouts: 0, tasks: 0, timeEntries: 0, projects: 0, projectPhases: 0, milestones: 0, projectNotes: 0, projectFileReferences: 0, activityEvents: 0, calendarEvents: 0, reportDrafts: 0, journalEntries: 0, journalSegments: 0, journalRevisions: 0, journalImportCheckpoints: 0, obsidianDocuments: 0, syncConflicts: 0, learningAreas: 0, habits: 0, habitRules: 0, habitCheckIns: 0 },
     errors,
     warnings,
   };
@@ -881,6 +899,68 @@ export async function inspectPortableWorkspaceExport(value: unknown): Promise<Ex
   const rawLearningAreaCount = manifestCounts?.learning_areas;
   if ((rawLearningAreaCount !== undefined || learningAreaFiles.length > 0) && rawLearningAreaCount !== learningAreaFiles.length) errors.push({ code: "LEARNING_AREA_COUNT_MISMATCH", message: "LearningArea 数量与 manifest 不一致。" });
 
+  const habitIds = new Set<string>();
+  const habitFiles = validPayloadFiles.filter((file) => file.path.startsWith("data/habits/"));
+  result.counts.habits = habitFiles.length;
+  for (const file of habitFiles) {
+    try {
+      const record = parseHabitRecord(file.content);
+      if (result.workspace && record.owner_id !== result.workspace.owner_id) errors.push({ code: "OWNER_MISMATCH", message: "Habit 的 owner_id 与 workspace 不一致。", path: file.path });
+      if (recordPath("habit", record.id) !== file.path) errors.push({ code: "HABIT_PATH_MISMATCH", message: "Habit 的 ID 与文件路径不一致。", path: file.path });
+      if (habitIds.has(record.id)) errors.push({ code: "DUPLICATE_HABIT_ID", message: "导出包中存在重复 Habit ID。", path: file.path });
+      habitIds.add(record.id);
+    } catch {
+      errors.push({ code: "INVALID_HABIT_RECORD", message: "Habit 文件无法通过结构校验。", path: file.path });
+    }
+  }
+  const rawHabitCount = manifestCounts?.habits;
+  if ((rawHabitCount !== undefined || habitFiles.length > 0) && rawHabitCount !== habitFiles.length) errors.push({ code: "HABIT_COUNT_MISMATCH", message: "Habit 数量与 manifest 不一致。" });
+
+  const habitRuleIds = new Set<string>();
+  const habitRuleVersions = new Set<string>();
+  const habitRuleFiles = validPayloadFiles.filter((file) => file.path.startsWith("data/habit-rules/"));
+  result.counts.habitRules = habitRuleFiles.length;
+  for (const file of habitRuleFiles) {
+    try {
+      const record = parseHabitRuleRecord(file.content);
+      if (result.workspace && record.owner_id !== result.workspace.owner_id) errors.push({ code: "OWNER_MISMATCH", message: "HabitRule 的 owner_id 与 workspace 不一致。", path: file.path });
+      if (recordPath("habit_rule", record.id) !== file.path) errors.push({ code: "HABIT_RULE_PATH_MISMATCH", message: "HabitRule 的 ID 与文件路径不一致。", path: file.path });
+      if (habitRuleIds.has(record.id)) errors.push({ code: "DUPLICATE_HABIT_RULE_ID", message: "导出包中存在重复 HabitRule ID。", path: file.path });
+      habitRuleIds.add(record.id);
+      if (!habitIds.has(record.data.habit_id)) errors.push({ code: "HABIT_RULE_HABIT_MISSING", message: "HabitRule 引用的 Habit 不在导出包中。", path: file.path });
+      const versionKey = `${record.data.habit_id}:${record.data.rule_version}`;
+      if (habitRuleVersions.has(versionKey)) errors.push({ code: "DUPLICATE_HABIT_RULE_VERSION", message: "同一 Habit 存在重复规则版本。", path: file.path });
+      habitRuleVersions.add(versionKey);
+    } catch {
+      errors.push({ code: "INVALID_HABIT_RULE_RECORD", message: "HabitRule 文件无法通过结构校验。", path: file.path });
+    }
+  }
+  const rawHabitRuleCount = manifestCounts?.habit_rules;
+  if ((rawHabitRuleCount !== undefined || habitRuleFiles.length > 0) && rawHabitRuleCount !== habitRuleFiles.length) errors.push({ code: "HABIT_RULE_COUNT_MISMATCH", message: "HabitRule 数量与 manifest 不一致。" });
+
+  const habitCheckInIds = new Set<string>();
+  const habitCheckInDates = new Set<string>();
+  const habitCheckInFiles = validPayloadFiles.filter((file) => file.path.startsWith("data/habit-check-ins/"));
+  result.counts.habitCheckIns = habitCheckInFiles.length;
+  for (const file of habitCheckInFiles) {
+    try {
+      const record = parseHabitCheckInRecord(file.content);
+      if (result.workspace && record.owner_id !== result.workspace.owner_id) errors.push({ code: "OWNER_MISMATCH", message: "HabitCheckIn 的 owner_id 与 workspace 不一致。", path: file.path });
+      if (recordPath("habit_check_in", record.id) !== file.path) errors.push({ code: "HABIT_CHECK_IN_PATH_MISMATCH", message: "HabitCheckIn 的 ID 与文件路径不一致。", path: file.path });
+      if (habitCheckInIds.has(record.id)) errors.push({ code: "DUPLICATE_HABIT_CHECK_IN_ID", message: "导出包中存在重复 HabitCheckIn ID。", path: file.path });
+      habitCheckInIds.add(record.id);
+      if (!habitIds.has(record.data.habit_id)) errors.push({ code: "HABIT_CHECK_IN_HABIT_MISSING", message: "HabitCheckIn 引用的 Habit 不在导出包中。", path: file.path });
+      if (record.data.rule_id !== null && !habitRuleIds.has(record.data.rule_id)) errors.push({ code: "HABIT_CHECK_IN_RULE_MISSING", message: "HabitCheckIn 引用的规则版本不在导出包中。", path: file.path });
+      const dateKey = `${record.data.habit_id}:${record.data.local_date}`;
+      if (habitCheckInDates.has(dateKey)) errors.push({ code: "DUPLICATE_HABIT_CHECK_IN_DATE", message: "同一 Habit 在同一天存在多个 check-in。", path: file.path });
+      habitCheckInDates.add(dateKey);
+    } catch {
+      errors.push({ code: "INVALID_HABIT_CHECK_IN_RECORD", message: "HabitCheckIn 文件无法通过结构校验。", path: file.path });
+    }
+  }
+  const rawHabitCheckInCount = manifestCounts?.habit_check_ins;
+  if ((rawHabitCheckInCount !== undefined || habitCheckInFiles.length > 0) && rawHabitCheckInCount !== habitCheckInFiles.length) errors.push({ code: "HABIT_CHECK_IN_COUNT_MISMATCH", message: "HabitCheckIn 数量与 manifest 不一致。" });
+
   const supportedPaths = new Set(["workspace.json", DASHBOARD_LAYOUT_PATH]);
   const unexpectedFiles = validPayloadFiles.filter((file) => (
     !supportedPaths.has(file.path)
@@ -902,6 +982,9 @@ export async function inspectPortableWorkspaceExport(value: unknown): Promise<Ex
     && !file.path.startsWith("data/obsidian-documents/")
     && !file.path.startsWith("data/sync-conflicts/")
     && !file.path.startsWith("data/learning-areas/")
+    && !file.path.startsWith("data/habits/")
+    && !file.path.startsWith("data/habit-rules/")
+    && !file.path.startsWith("data/habit-check-ins/")
   ));
   for (const file of unexpectedFiles) {
     errors.push({ code: "UNEXPECTED_FILE", message: "当前版本不支持此导出路径。", path: file.path });

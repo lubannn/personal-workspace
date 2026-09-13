@@ -19,6 +19,8 @@ export type EntityType =
   | "obsidian_document"
   | "sync_conflict"
   | "learning_area"
+  | "habit_rule"
+  | "habit_check_in"
   | "journal"
   | "learning"
   | "habit"
@@ -55,6 +57,8 @@ const ENTITY_DIRECTORIES: Record<Exclude<EntityType, "journal">, string> = {
   obsidian_document: "obsidian-documents",
   sync_conflict: "sync-conflicts",
   learning_area: "learning-areas",
+  habit_rule: "habit-rules",
+  habit_check_in: "habit-check-ins",
   learning: "learning",
   habit: "habits",
   health: "health",
