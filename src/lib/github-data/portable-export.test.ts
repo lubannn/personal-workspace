@@ -16,6 +16,7 @@ import { createLearningAreaData } from "./learning-areas";
 import { createHabitData } from "./habits";
 import { createHabitRuleData } from "./habit-rules";
 import { createAutomaticHabitCheckInData } from "./habit-check-ins";
+import { createSleepHabitRuleData } from "./sleep-habit-rules";
 import { confirmHealthStaging, createHealthStagingData, createSleepHealthStagingData } from "./health-staging-records";
 import { createConfirmedHealthMetricData } from "./health-metrics";
 import { createConfirmedSleepSessionData } from "./sleep-sessions";
@@ -414,6 +415,34 @@ describe("portable GitHub workspace export", () => {
       sleepSessionFiles: [storedFile(`data/sleep-sessions/${session.id}.json`, serializeRecord(session), "sleep-blob")],
     });
     await expect(inspectPortableWorkspaceExport(exported)).resolves.toMatchObject({ valid: true, counts: { healthStagingRecords: 1, sleepSessions: 1 } });
+  });
+
+  it("rejects a sleep-assisted HabitCheckIn whose SleepSession evidence is missing", async () => {
+    const timestamp = "2026-09-13T02:05:00.000Z";
+    const habitId = "habit_sleep_fixture";
+    const ruleId = "habit_rule_sleep_fixture";
+    const checkInId = "habit_check_in_sleep_fixture";
+    const habit = createWorkspaceRecord({
+      entityType: "habit", id: habitId, ownerId: "github_lubannn", timestamp,
+      data: createHabitData({ name: "按时入睡", description_markdown: "", schedule_json: { frequency: "daily", weekdays: [] }, timezone: "Asia/Shanghai", tracking_type: "boolean", target_json: { value: 1, unit: null }, automation_mode: "rule_assisted", start_date: "2026-09-13", end_date: null }),
+    });
+    const rule = createWorkspaceRecord({
+      entityType: "habit_rule", id: ruleId, ownerId: "github_lubannn", timestamp,
+      data: createSleepHabitRuleData({ habitId, timezone: "Asia/Shanghai", activeFrom: "2026-09-13", fields: { rule_type: "sleep_start_before", threshold_local_time: "23:30" } }),
+    });
+    const checkIn = createWorkspaceRecord({
+      entityType: "habit_check_in", id: checkInId, ownerId: "github_lubannn", timestamp,
+      data: createAutomaticHabitCheckInData({ habitId, localDate: "2026-09-13", timezone: "Asia/Shanghai", status: "completed", valueJson: { observed_local_time: "23:00" }, evidenceType: "health_sleep_session", evidenceId: "sleep_session_missing", ruleId, ruleVersion: 1, evaluatedAt: timestamp, confirmedAt: timestamp }),
+    });
+    const exported = await buildPortableWorkspaceExport({
+      repository: "lubannn/personal-workspace-data", branch: "main", workspaceFile: storedFile("workspace.json", workspaceText, "workspace-blob"), captureFiles: [],
+      habitFiles: [storedFile(`data/habits/${habit.id}.json`, serializeRecord(habit), "habit-blob")],
+      habitRuleFiles: [storedFile(`data/habit-rules/${rule.id}.json`, serializeRecord(rule), "rule-blob")],
+      habitCheckInFiles: [storedFile(`data/habit-check-ins/${checkIn.id}.json`, serializeRecord(checkIn), "check-in-blob")],
+    });
+    const inspection = await inspectPortableWorkspaceExport(exported);
+    expect(inspection.valid).toBe(false);
+    expect(inspection.errors.map((error) => error.code)).toContain("HABIT_CHECK_IN_SLEEP_EVIDENCE_MISSING");
   });
 
   it("rejects owner and path mismatches even when hashes are rebuilt", async () => {

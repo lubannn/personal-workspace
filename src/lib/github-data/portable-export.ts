@@ -958,6 +958,7 @@ export async function inspectPortableWorkspaceExport(value: unknown): Promise<Ex
 
   const habitCheckInIds = new Set<string>();
   const habitCheckInDates = new Set<string>();
+  const sleepEvidenceLinks: Array<{ evidenceId: string; path: string }> = [];
   const habitCheckInFiles = validPayloadFiles.filter((file) => file.path.startsWith("data/habit-check-ins/"));
   result.counts.habitCheckIns = habitCheckInFiles.length;
   for (const file of habitCheckInFiles) {
@@ -969,6 +970,7 @@ export async function inspectPortableWorkspaceExport(value: unknown): Promise<Ex
       habitCheckInIds.add(record.id);
       if (!habitIds.has(record.data.habit_id)) errors.push({ code: "HABIT_CHECK_IN_HABIT_MISSING", message: "HabitCheckIn 引用的 Habit 不在导出包中。", path: file.path });
       if (record.data.rule_id !== null && !habitRuleIds.has(record.data.rule_id)) errors.push({ code: "HABIT_CHECK_IN_RULE_MISSING", message: "HabitCheckIn 引用的规则版本不在导出包中。", path: file.path });
+      if (record.data.evidence_type === "health_sleep_session" && record.data.evidence_id) sleepEvidenceLinks.push({ evidenceId: record.data.evidence_id, path: file.path });
       const dateKey = `${record.data.habit_id}:${record.data.local_date}`;
       if (habitCheckInDates.has(dateKey)) errors.push({ code: "DUPLICATE_HABIT_CHECK_IN_DATE", message: "同一 Habit 在同一天存在多个 check-in。", path: file.path });
       habitCheckInDates.add(dateKey);
@@ -1027,6 +1029,9 @@ export async function inspectPortableWorkspaceExport(value: unknown): Promise<Ex
   }
   const rawSleepSessionCount = manifestCounts?.sleep_sessions;
   if ((rawSleepSessionCount !== undefined || sleepSessionFiles.length > 0) && rawSleepSessionCount !== sleepSessionFiles.length) errors.push({ code: "SLEEP_SESSION_COUNT_MISMATCH", message: "SleepSession 数量与 manifest 不一致。" });
+  for (const link of sleepEvidenceLinks) {
+    if (!sleepSessionIds.has(link.evidenceId)) errors.push({ code: "HABIT_CHECK_IN_SLEEP_EVIDENCE_MISSING", message: "HabitCheckIn 引用的正式睡眠证据不在导出包中。", path: link.path });
+  }
 
   const supportedPaths = new Set(["workspace.json", DASHBOARD_LAYOUT_PATH]);
   const unexpectedFiles = validPayloadFiles.filter((file) => (

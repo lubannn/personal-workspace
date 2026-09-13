@@ -372,6 +372,8 @@ canonical 文件位于 `data/journal-import-checkpoints/<id>.json`，固定 `ver
 - `id`, `habit_id`, `rule_type`, `rule_version`
 - `config_json`, `active_from`, `active_to`, `enabled`
 
+睡眠辅助规则 v1 使用 `sleep_start_before` 或 `wake_before`，配置中保存 `threshold_local_time` 与 IANA `timezone`。规则与 Habit 在同一个 Git commit 中创建；规则只读取已确认且分类为 `main_sleep` 的 `SleepSession`。入睡规则归属睡眠开始日，起床规则归属睡眠结束日。
+
 ### HabitCheckIn
 
 - `id`, `habit_id`, `local_date`, `timezone`
@@ -382,7 +384,9 @@ canonical 文件位于 `data/journal-import-checkpoints/<id>.json`，固定 `ver
 - `confirmed_at`, `correction_reason`
 - 唯一约束通常为 `habit_id + local_date`，多次型习惯可改用独立 occurrence。
 
-睡眠相关习惯的 `local_date` 固定为“该次睡眠开始日”；UI 用“某日晚睡眠”，内部同时记录 sleep session 的精确开始和结束时间。
+规则计算只生成可解释的待确认建议，不会自行写入。用户点击确认后，CheckIn 记录判定结果、观察时间、阈值、SleepSession 证据 ID 和规则版本；后续人工更正必须保留这些来源并记录原因。
+
+睡眠相关习惯按规则选择 `local_date`：入睡规则使用睡眠开始日，起床规则使用睡眠结束日；UI 用明确日期展示判定，内部同时记录 sleep session 的精确开始和结束时间。
 
 ## 11. Health 与外部数据
 
