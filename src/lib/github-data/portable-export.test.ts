@@ -16,8 +16,9 @@ import { createLearningAreaData } from "./learning-areas";
 import { createHabitData } from "./habits";
 import { createHabitRuleData } from "./habit-rules";
 import { createAutomaticHabitCheckInData } from "./habit-check-ins";
-import { confirmHealthStaging, createHealthStagingData } from "./health-staging-records";
+import { confirmHealthStaging, createHealthStagingData, createSleepHealthStagingData } from "./health-staging-records";
 import { createConfirmedHealthMetricData } from "./health-metrics";
+import { createConfirmedSleepSessionData } from "./sleep-sessions";
 import { renderJournalSegmentsMarkdown } from "./journal-segment-codec";
 import {
   buildPortableWorkspaceExport,
@@ -339,7 +340,7 @@ async function sampleExport() {
 describe("portable GitHub workspace export", () => {
   it("builds a deterministic manifest and passes restore preflight", async () => {
     const exported = await sampleExport();
-    expect(exported.manifest.counts).toEqual({ files: 23, captures: 1, dashboard_layouts: 1, tasks: 1, time_entries: 1, projects: 1, project_phases: 1, milestones: 1, project_notes: 1, project_file_references: 1, activity_events: 1, calendar_events: 1, report_drafts: 1, journal_entries: 1, journal_segments: 1, journal_revisions: 1, journal_import_checkpoints: 1, obsidian_documents: 1, sync_conflicts: 1, learning_areas: 1, habits: 1, habit_rules: 1, habit_check_ins: 1, health_staging_records: 0, health_metrics: 0 });
+    expect(exported.manifest.counts).toEqual({ files: 23, captures: 1, dashboard_layouts: 1, tasks: 1, time_entries: 1, projects: 1, project_phases: 1, milestones: 1, project_notes: 1, project_file_references: 1, activity_events: 1, calendar_events: 1, report_drafts: 1, journal_entries: 1, journal_segments: 1, journal_revisions: 1, journal_import_checkpoints: 1, obsidian_documents: 1, sync_conflicts: 1, learning_areas: 1, habits: 1, habit_rules: 1, habit_check_ins: 1, health_staging_records: 0, health_metrics: 0, sleep_sessions: 0 });
     expect(exported.manifest.files.map((file) => file.path)).toEqual([
       "config/dashboard-layout.json",
       "data/activity-events/activity_20260827015800000_abcd1234.json",
@@ -370,7 +371,7 @@ describe("portable GitHub workspace export", () => {
     await expect(inspectPortableWorkspaceExport(exported)).resolves.toMatchObject({
       valid: true,
       repository: "lubannn/personal-workspace-data",
-      counts: { files: 23, captures: 1, dashboardLayouts: 1, tasks: 1, timeEntries: 1, projects: 1, projectPhases: 1, milestones: 1, projectNotes: 1, projectFileReferences: 1, activityEvents: 1, calendarEvents: 1, reportDrafts: 1, journalEntries: 1, journalSegments: 1, journalRevisions: 1, journalImportCheckpoints: 1, obsidianDocuments: 1, syncConflicts: 1, learningAreas: 1, habits: 1, habitRules: 1, habitCheckIns: 1, healthStagingRecords: 0, healthMetrics: 0 },
+      counts: { files: 23, captures: 1, dashboardLayouts: 1, tasks: 1, timeEntries: 1, projects: 1, projectPhases: 1, milestones: 1, projectNotes: 1, projectFileReferences: 1, activityEvents: 1, calendarEvents: 1, reportDrafts: 1, journalEntries: 1, journalSegments: 1, journalRevisions: 1, journalImportCheckpoints: 1, obsidianDocuments: 1, syncConflicts: 1, learningAreas: 1, habits: 1, habitRules: 1, habitCheckIns: 1, healthStagingRecords: 0, healthMetrics: 0, sleepSessions: 0 },
       errors: [],
       workspace: { owner_id: "github_lubannn" },
     });
@@ -399,6 +400,20 @@ describe("portable GitHub workspace export", () => {
       healthMetricFiles: [storedFile(`data/health-metrics/${metric.id}.json`, serializeRecord(metric), "metric-blob")],
     });
     await expect(inspectPortableWorkspaceExport(exported)).resolves.toMatchObject({ valid: true, counts: { healthStagingRecords: 1, healthMetrics: 1 } });
+  });
+
+  it("exports sleep sessions only with a matching confirmed staging source", async () => {
+    const timestamp = "2026-09-13T01:00:00.000Z";
+    const pending = createWorkspaceRecord({ entityType: "health_staging_record", id: "health_staging_sleep", ownerId: "github_lubannn", timestamp, data: createSleepHealthStagingData({ source_label: "手工录入", normalized_json: { start_at: "2026-09-12T15:00:00.000Z", end_at: "2026-09-12T23:00:00.000Z", local_date: "2026-09-12", timezone: "Asia/Shanghai", session_type: "main_sleep" } }, timestamp) });
+    const staging = confirmHealthStaging(pending, "sleep_session_fixture", "2026-09-13T02:00:00.000Z");
+    if (staging.data.health_type !== "sleep_session") throw new Error("unexpected staging type");
+    const session = createWorkspaceRecord({ entityType: "sleep_session", id: "sleep_session_fixture", ownerId: "github_lubannn", timestamp: staging.updated_at, data: createConfirmedSleepSessionData(staging.data.normalized_json, staging.id) });
+    const exported = await buildPortableWorkspaceExport({
+      repository: "lubannn/personal-workspace-data", branch: "main", workspaceFile: storedFile("workspace.json", workspaceText, "workspace-blob"), captureFiles: [],
+      healthStagingFiles: [storedFile(`data/health-staging-records/${staging.id}.json`, serializeRecord(staging), "staging-blob")],
+      sleepSessionFiles: [storedFile(`data/sleep-sessions/${session.id}.json`, serializeRecord(session), "sleep-blob")],
+    });
+    await expect(inspectPortableWorkspaceExport(exported)).resolves.toMatchObject({ valid: true, counts: { healthStagingRecords: 1, sleepSessions: 1 } });
   });
 
   it("rejects owner and path mismatches even when hashes are rebuilt", async () => {

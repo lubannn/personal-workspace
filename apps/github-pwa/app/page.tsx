@@ -89,8 +89,9 @@ import {
 } from "../../../src/lib/github-data/learning-areas";
 import { createHabitData, setHabitStatus, type HabitFields, type HabitStatus } from "../../../src/lib/github-data/habits";
 import { createManualHabitCheckInData, type HabitCheckInStatus } from "../../../src/lib/github-data/habit-check-ins";
-import { confirmHealthStaging, correctPendingHealthStaging, createHealthStagingData, rejectHealthStaging, type HealthStagingFields } from "../../../src/lib/github-data/health-staging-records";
+import { confirmHealthStaging, correctPendingHealthStaging, correctPendingSleepHealthStaging, createHealthStagingData, createSleepHealthStagingData, rejectHealthStaging, type HealthStagingFields, type SleepStagingFields } from "../../../src/lib/github-data/health-staging-records";
 import { createConfirmedHealthMetricData } from "../../../src/lib/github-data/health-metrics";
+import { createConfirmedSleepSessionData } from "../../../src/lib/github-data/sleep-sessions";
 import { createJournalEntryData, hasActiveDailyJournalDate, updateJournalEntryData } from "../../../src/lib/github-data/journal-entries";
 import {
   createJournalEntryAtomically,
@@ -257,6 +258,8 @@ export default function GitHubWorkspacePage() {
     setHealthStagingFiles,
     healthMetricFiles,
     setHealthMetricFiles,
+    sleepSessionFiles,
+    setSleepSessionFiles,
     dashboardLayout,
     setDashboardLayout,
     dashboardBlobSha,
@@ -1754,6 +1757,36 @@ export default function GitHubWorkspacePage() {
     finally { setSavingHealthId(null); }
   }
 
+  async function saveSleepHealthStaging(fields: SleepStagingFields) {
+    const adapter = adapterRef.current;
+    if (!adapter || !connection || savingHealth || online === false) return false;
+    setSavingHealth(true); setErrorMessage(""); setStatusMessage("");
+    const timestamp = new Date().toISOString();
+    const id = `health_staging_${timestamp.replaceAll(/\D/g, "").slice(0, 17)}_${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`;
+    try {
+      const record = createWorkspaceRecord({ entityType: "health_staging_record", id, ownerId: connection.ownerId, timestamp, data: createSleepHealthStagingData(fields, timestamp) });
+      const result = await adapter.writeText({ path: recordPath("health_staging_record", id), text: serializeRecord(record), message: `health staging: create sleep ${id}` });
+      setHealthStagingFiles((current) => [{ record, path: result.path, blobSha: result.blobSha }, ...current]);
+      setStatusMessage("睡眠记录已加入待确认区；尚未进入正式健康记录。");
+      return true;
+    } catch (error) { setErrorMessage(friendlyError(error)); return false; }
+    finally { setSavingHealth(false); }
+  }
+
+  async function correctSleepHealthStaging(item: SyncedHealthStagingRecord, fields: SleepStagingFields) {
+    const adapter = adapterRef.current;
+    if (!adapter || !connection || savingHealthId || online === false) return false;
+    setSavingHealthId(item.record.id); setErrorMessage(""); setStatusMessage("");
+    try {
+      const updated = correctPendingSleepHealthStaging(item.record, fields);
+      const result = await adapter.writeText({ path: item.path, text: serializeRecord(updated), message: `health staging: correct sleep ${item.record.id}`, expectedBlobSha: item.blobSha });
+      setHealthStagingFiles((current) => current.map((candidate) => candidate.record.id === item.record.id ? { record: updated, path: result.path, blobSha: result.blobSha } : candidate));
+      setStatusMessage("睡眠暂存记录已更正；仍需确认才会入库。");
+      return true;
+    } catch (error) { setErrorMessage(friendlyError(error)); return false; }
+    finally { setSavingHealthId(null); }
+  }
+
   async function rejectHealthStagingItem(item: SyncedHealthStagingRecord, reason: string) {
     const adapter = adapterRef.current;
     if (!adapter || !connection || savingHealthId || online === false) return;
@@ -1772,21 +1805,31 @@ export default function GitHubWorkspacePage() {
     if (!adapter || !connection || savingHealthId || online === false) return;
     setSavingHealthId(item.record.id); setErrorMessage(""); setStatusMessage("");
     const timestamp = new Date().toISOString();
-    const metricId = `health_metric_${timestamp.replaceAll(/\D/g, "").slice(0, 17)}_${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`;
     try {
       const snapshot = await adapter.readBranchSnapshot();
       const latest = await adapter.readText(item.path, snapshot.headCommitSha);
       if (latest.blobSha !== item.blobSha) throw new GitHubDataError("Health staging changed on another device.", 409, "GITHUB_SYNC_CONFLICT");
-      const reviewed = confirmHealthStaging(item.record, metricId, timestamp);
-      const metric = createWorkspaceRecord({ entityType: "health_metric", id: metricId, ownerId: connection.ownerId, timestamp, data: createConfirmedHealthMetricData(reviewed.data.normalized_json, item.record.id) });
+      const canonicalType = item.record.data.health_type === "metric" ? "health_metric" : "sleep_session";
+      const canonicalId = `${canonicalType}_${timestamp.replaceAll(/\D/g, "").slice(0, 17)}_${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`;
+      const reviewed = confirmHealthStaging(item.record, canonicalId, timestamp);
       const stagingPath = recordPath("health_staging_record", item.record.id);
-      const metricPath = recordPath("health_metric", metricId);
-      const result = await adapter.writeAtomicFiles({ files: [{ path: stagingPath, text: serializeRecord(reviewed) }, { path: metricPath, text: serializeRecord(metric) }], message: `health: confirm ${item.record.id}`, expectedHeadCommitSha: snapshot.headCommitSha, baseTreeSha: snapshot.rootTreeSha });
-      const stagingBlob = result.files.find((file) => file.path === stagingPath)!.blobSha;
-      const metricBlob = result.files.find((file) => file.path === metricPath)!.blobSha;
-      setHealthStagingFiles((current) => current.map((candidate) => candidate.record.id === item.record.id ? { record: reviewed, path: stagingPath, blobSha: stagingBlob } : candidate));
-      setHealthMetricFiles((current) => [{ record: metric, path: metricPath, blobSha: metricBlob }, ...current]);
-      setStatusMessage("健康指标已由你确认，并与审核决定通过同一个 Git 提交写入正式记录。");
+      const canonicalPath = recordPath(canonicalType, canonicalId);
+      if (reviewed.data.health_type === "metric") {
+        const metric = createWorkspaceRecord({ entityType: "health_metric", id: canonicalId, ownerId: connection.ownerId, timestamp, data: createConfirmedHealthMetricData(reviewed.data.normalized_json, item.record.id) });
+        const result = await adapter.writeAtomicFiles({ files: [{ path: stagingPath, text: serializeRecord(reviewed) }, { path: canonicalPath, text: serializeRecord(metric) }], message: `health: confirm ${item.record.id}`, expectedHeadCommitSha: snapshot.headCommitSha, baseTreeSha: snapshot.rootTreeSha });
+        const stagingBlob = result.files.find((file) => file.path === stagingPath)!.blobSha;
+        const canonicalBlob = result.files.find((file) => file.path === canonicalPath)!.blobSha;
+        setHealthStagingFiles((current) => current.map((candidate) => candidate.record.id === item.record.id ? { record: reviewed, path: stagingPath, blobSha: stagingBlob } : candidate));
+        setHealthMetricFiles((current) => [{ record: metric, path: canonicalPath, blobSha: canonicalBlob }, ...current]);
+      } else {
+        const session = createWorkspaceRecord({ entityType: "sleep_session", id: canonicalId, ownerId: connection.ownerId, timestamp, data: createConfirmedSleepSessionData(reviewed.data.normalized_json, item.record.id) });
+        const result = await adapter.writeAtomicFiles({ files: [{ path: stagingPath, text: serializeRecord(reviewed) }, { path: canonicalPath, text: serializeRecord(session) }], message: `health: confirm ${item.record.id}`, expectedHeadCommitSha: snapshot.headCommitSha, baseTreeSha: snapshot.rootTreeSha });
+        const stagingBlob = result.files.find((file) => file.path === stagingPath)!.blobSha;
+        const canonicalBlob = result.files.find((file) => file.path === canonicalPath)!.blobSha;
+        setHealthStagingFiles((current) => current.map((candidate) => candidate.record.id === item.record.id ? { record: reviewed, path: stagingPath, blobSha: stagingBlob } : candidate));
+        setSleepSessionFiles((current) => [{ record: session, path: canonicalPath, blobSha: canonicalBlob }, ...current]);
+      }
+      setStatusMessage(`${reviewed.data.health_type === "metric" ? "健康指标" : "睡眠记录"}已由你确认，并与审核决定通过同一个 Git 提交写入正式记录。`);
     } catch (error) { setErrorMessage(friendlyError(error)); }
     finally { setSavingHealthId(null); }
   }
@@ -1875,6 +1918,11 @@ export default function GitHubWorkspacePage() {
 
   async function listHealthMetricFiles(adapter: GitHubContentsAdapter) {
     try { return (await adapter.listDirectory("data/health-metrics")).filter((item) => item.type === "file" && item.name.endsWith(".json")).sort((left, right) => left.path.localeCompare(right.path)); }
+    catch (error) { if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") return []; throw error; }
+  }
+
+  async function listSleepSessionFiles(adapter: GitHubContentsAdapter) {
+    try { return (await adapter.listDirectory("data/sleep-sessions")).filter((item) => item.type === "file" && item.name.endsWith(".json")).sort((left, right) => left.path.localeCompare(right.path)); }
     catch (error) { if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") return []; throw error; }
   }
 
@@ -2126,6 +2174,9 @@ export default function GitHubWorkspacePage() {
       const healthMetricCandidates = await listHealthMetricFiles(adapter);
       const healthMetricExportFiles = [];
       for (let index = 0; index < healthMetricCandidates.length; index += batchSize) healthMetricExportFiles.push(...await Promise.all(healthMetricCandidates.slice(index, index + batchSize).map((item) => adapter.readText(item.path))));
+      const sleepSessionCandidates = await listSleepSessionFiles(adapter);
+      const sleepSessionExportFiles = [];
+      for (let index = 0; index < sleepSessionCandidates.length; index += batchSize) sleepSessionExportFiles.push(...await Promise.all(sleepSessionCandidates.slice(index, index + batchSize).map((item) => adapter.readText(item.path))));
 
       setExportProgress("正在生成 SHA-256 manifest…");
       const generatedAt = new Date().toISOString();
@@ -2157,6 +2208,7 @@ export default function GitHubWorkspacePage() {
         habitCheckInFiles: habitCheckInExportFiles,
         healthStagingFiles: healthStagingExportFiles,
         healthMetricFiles: healthMetricExportFiles,
+        sleepSessionFiles: sleepSessionExportFiles,
         generatedAt,
       });
       const inspection = await inspectPortableWorkspaceExport(portableExport);
@@ -2202,6 +2254,7 @@ export default function GitHubWorkspacePage() {
         habitCheckIns: inspection.counts.habitCheckIns,
         healthStagingRecords: inspection.counts.healthStagingRecords,
         healthMetrics: inspection.counts.healthMetrics,
+        sleepSessions: inspection.counts.sleepSessions,
         errors: inspection.errors,
         warnings: inspection.warnings,
       });
@@ -2233,6 +2286,7 @@ export default function GitHubWorkspacePage() {
         habitCheckIns: inspection.counts.habitCheckIns,
         healthStagingRecords: inspection.counts.healthStagingRecords,
         healthMetrics: inspection.counts.healthMetrics,
+        sleepSessions: inspection.counts.sleepSessions,
         errors: inspection.errors,
         warnings: inspection.warnings,
       });
@@ -2292,6 +2346,7 @@ export default function GitHubWorkspacePage() {
           habitCheckIns: 0,
           healthStagingRecords: 0,
           healthMetrics: 0,
+          sleepSessions: 0,
           errors: [{ code: "EXPORT_TOO_LARGE", message: "当前预检仅接受 50 MB 以内的 JSON 文件。" }],
           warnings: [],
         });
@@ -2327,6 +2382,7 @@ export default function GitHubWorkspacePage() {
         habitCheckIns: inspection.counts.habitCheckIns,
         healthStagingRecords: inspection.counts.healthStagingRecords,
         healthMetrics: inspection.counts.healthMetrics,
+        sleepSessions: inspection.counts.sleepSessions,
         errors: inspection.errors,
         warnings: inspection.warnings,
       });
@@ -2363,6 +2419,7 @@ export default function GitHubWorkspacePage() {
         habitCheckIns: 0,
         healthStagingRecords: 0,
         healthMetrics: 0,
+        sleepSessions: 0,
         errors: [{ code: "INVALID_JSON", message: "文件不是有效的 JSON，未执行任何恢复操作。" }],
         warnings: [],
       });
@@ -2734,11 +2791,14 @@ export default function GitHubWorkspacePage() {
         todayDate={currentTaskDate}
         staging={healthStagingFiles}
         metrics={healthMetricFiles}
+        sleepSessions={sleepSessionFiles}
         loading={loadingHealth}
         saving={savingHealth}
         savingId={savingHealthId}
         onCreate={saveHealthStaging}
         onCorrect={correctHealthStaging}
+        onCreateSleep={saveSleepHealthStaging}
+        onCorrectSleep={correctSleepHealthStaging}
         onConfirm={confirmHealthStagingItem}
         onReject={rejectHealthStagingItem}
         onRefresh={() => loadHealthDomain()}

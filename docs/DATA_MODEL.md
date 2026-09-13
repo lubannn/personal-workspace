@@ -382,7 +382,7 @@ canonical 文件位于 `data/journal-import-checkpoints/<id>.json`，固定 `ver
 - `confirmed_at`, `correction_reason`
 - 唯一约束通常为 `habit_id + local_date`，多次型习惯可改用独立 occurrence。
 
-早睡的 `local_date` 指“该次主要夜间睡眠开始日”还是“醒来日”必须由用户确认后固定；建议 UI 用“某日晚睡眠”，内部同时记录 sleep session 的精确时间。
+睡眠相关习惯的 `local_date` 固定为“该次睡眠开始日”；UI 用“某日晚睡眠”，内部同时记录 sleep session 的精确开始和结束时间。
 
 ## 11. Health 与外部数据
 
@@ -406,7 +406,7 @@ canonical 文件位于 `data/journal-import-checkpoints/<id>.json`，固定 `ver
 - `confidence`, `status`：pending、confirmed、rejected、superseded
 - `diagnostics_json`, `reviewed_at`
 
-当前 GitHub canonical v1 已实现手工指标 adapter：文件位于 `data/health-staging-records/`，创建时固定为 `pending`。来源标签、规范化指标和每次人工更正都进入 Git 版本；`confirmed` 必须同时记录 `canonical_record_id`，`rejected` 必须记录原因。确认操作通过单个 Git commit 同时更新暂存记录并创建 `HealthMetric`，避免只完成一半。
+当前 GitHub canonical v1 已实现手工指标与手工睡眠 adapter：文件位于 `data/health-staging-records/`，创建时固定为 `pending`。来源标签、规范化内容、人工睡眠分类和每次更正都进入 Git 版本；`confirmed` 必须同时记录 `canonical_record_id`，`rejected` 必须记录原因。确认操作通过单个 Git commit 同时更新暂存记录并创建匹配类型的 `HealthMetric` 或 `SleepSession`，避免只完成一半。
 
 ### SleepSession
 
@@ -415,6 +415,8 @@ canonical 文件位于 `data/journal-import-checkpoints/<id>.json`，固定 `ver
 - `duration_minutes`, `sleep_metrics_json`
 - `confirmation_status`, `staging_record_id`
 - `user_adjusted`, `adjustment_reason`
+
+当前 v1 文件位于 `data/sleep-sessions/`，只接受最长 36 小时且结束晚于开始的记录。`local_date` 固定使用睡眠开始日；夜间睡眠、小睡和未确定都必须由用户在暂存区显式选择后确认。正式记录必须反向指向匹配的已确认 `HealthStagingRecord`。本切片不接入 COROS，也不自动触发 Habit。
 
 ### HealthMetric
 

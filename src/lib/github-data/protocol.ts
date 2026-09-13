@@ -23,6 +23,7 @@ export type EntityType =
   | "habit_check_in"
   | "health_staging_record"
   | "health_metric"
+  | "sleep_session"
   | "journal"
   | "learning"
   | "habit"
@@ -63,6 +64,7 @@ const ENTITY_DIRECTORIES: Record<Exclude<EntityType, "journal">, string> = {
   habit_check_in: "habit-check-ins",
   health_staging_record: "health-staging-records",
   health_metric: "health-metrics",
+  sleep_session: "sleep-sessions",
   learning: "learning",
   habit: "habits",
   health: "health",

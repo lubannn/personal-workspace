@@ -23,6 +23,7 @@ import { parseHabitRuleRecord } from "./habit-rules";
 import { parseHabitCheckInRecord } from "./habit-check-ins";
 import { parseHealthStagingRecord } from "./health-staging-records";
 import { parseHealthMetricRecord } from "./health-metrics";
+import { parseSleepSessionRecord } from "./sleep-sessions";
 import { renderJournalSegmentsMarkdown } from "./journal-segment-codec";
 import { parseCaptureRecord, parseWorkspaceDescriptor, type WorkspaceDescriptor } from "./workspace";
 
@@ -52,7 +53,7 @@ export type PortableWorkspaceExport = {
   manifest: {
     schema_version: 1;
     scope: {
-      modules: Array<"workspace" | "captures" | "dashboard_layout" | "tasks" | "time_entries" | "projects" | "project_phases" | "milestones" | "project_notes" | "project_file_references" | "activity_events" | "calendar_events" | "report_drafts" | "journal_entries" | "journal_segments" | "journal_revisions" | "journal_import_checkpoints" | "obsidian_documents" | "sync_conflicts" | "learning_areas" | "habits" | "habit_rules" | "habit_check_ins" | "health_staging_records" | "health_metrics">;
+      modules: Array<"workspace" | "captures" | "dashboard_layout" | "tasks" | "time_entries" | "projects" | "project_phases" | "milestones" | "project_notes" | "project_file_references" | "activity_events" | "calendar_events" | "report_drafts" | "journal_entries" | "journal_segments" | "journal_revisions" | "journal_import_checkpoints" | "obsidian_documents" | "sync_conflicts" | "learning_areas" | "habits" | "habit_rules" | "habit_check_ins" | "health_staging_records" | "health_metrics" | "sleep_sessions">;
       complete: true;
     };
     counts: {
@@ -81,6 +82,7 @@ export type PortableWorkspaceExport = {
       habit_check_ins: number;
       health_staging_records: number;
       health_metrics: number;
+      sleep_sessions: number;
     };
     files: PortableExportManifestFile[];
   };
@@ -124,6 +126,7 @@ export type ExportInspection = {
     habitCheckIns: number;
     healthStagingRecords: number;
     healthMetrics: number;
+    sleepSessions: number;
   };
   errors: ExportInspectionIssue[];
   warnings: ExportInspectionIssue[];
@@ -170,6 +173,7 @@ export async function buildPortableWorkspaceExport(input: {
   habitCheckInFiles?: GitHubStoredFile[];
   healthStagingFiles?: GitHubStoredFile[];
   healthMetricFiles?: GitHubStoredFile[];
+  sleepSessionFiles?: GitHubStoredFile[];
   generatedAt?: string;
 }): Promise<PortableWorkspaceExport> {
   const dashboardLayoutFiles = input.dashboardLayoutFile ? [input.dashboardLayoutFile] : [];
@@ -195,7 +199,8 @@ export async function buildPortableWorkspaceExport(input: {
   const habitCheckInFiles = input.habitCheckInFiles ?? [];
   const healthStagingFiles = input.healthStagingFiles ?? [];
   const healthMetricFiles = input.healthMetricFiles ?? [];
-  const files = [input.workspaceFile, ...input.captureFiles, ...dashboardLayoutFiles, ...taskFiles, ...timeEntryFiles, ...projectFiles, ...projectPhaseFiles, ...milestoneFiles, ...projectNoteFiles, ...projectFileReferenceFiles, ...activityEventFiles, ...calendarEventFiles, ...reportDraftFiles, ...journalEntryFiles, ...journalSegmentFiles, ...journalRevisionFiles, ...journalImportCheckpointFiles, ...obsidianDocumentFiles, ...syncConflictFiles, ...learningAreaFiles, ...habitFiles, ...habitRuleFiles, ...habitCheckInFiles, ...healthStagingFiles, ...healthMetricFiles]
+  const sleepSessionFiles = input.sleepSessionFiles ?? [];
+  const files = [input.workspaceFile, ...input.captureFiles, ...dashboardLayoutFiles, ...taskFiles, ...timeEntryFiles, ...projectFiles, ...projectPhaseFiles, ...milestoneFiles, ...projectNoteFiles, ...projectFileReferenceFiles, ...activityEventFiles, ...calendarEventFiles, ...reportDraftFiles, ...journalEntryFiles, ...journalSegmentFiles, ...journalRevisionFiles, ...journalImportCheckpointFiles, ...obsidianDocumentFiles, ...syncConflictFiles, ...learningAreaFiles, ...habitFiles, ...habitRuleFiles, ...habitCheckInFiles, ...healthStagingFiles, ...healthMetricFiles, ...sleepSessionFiles]
     .map((file) => ({ ...file }))
     .sort((left, right) => left.path.localeCompare(right.path));
   const manifestFiles = await Promise.all(files.map(async (file) => ({
@@ -212,7 +217,7 @@ export async function buildPortableWorkspaceExport(input: {
     source: { repository: input.repository, branch: input.branch },
     manifest: {
       schema_version: 1,
-      scope: { modules: ["workspace", "captures", "dashboard_layout", "tasks", "time_entries", "projects", "project_phases", "milestones", "project_notes", "project_file_references", "activity_events", "calendar_events", "report_drafts", "journal_entries", "journal_segments", "journal_revisions", "journal_import_checkpoints", "obsidian_documents", "sync_conflicts", "learning_areas", "habits", "habit_rules", "habit_check_ins", "health_staging_records", "health_metrics"], complete: true },
+      scope: { modules: ["workspace", "captures", "dashboard_layout", "tasks", "time_entries", "projects", "project_phases", "milestones", "project_notes", "project_file_references", "activity_events", "calendar_events", "report_drafts", "journal_entries", "journal_segments", "journal_revisions", "journal_import_checkpoints", "obsidian_documents", "sync_conflicts", "learning_areas", "habits", "habit_rules", "habit_check_ins", "health_staging_records", "health_metrics", "sleep_sessions"], complete: true },
       counts: {
         files: files.length,
         captures: input.captureFiles.length,
@@ -239,6 +244,7 @@ export async function buildPortableWorkspaceExport(input: {
         habit_check_ins: habitCheckInFiles.length,
         health_staging_records: healthStagingFiles.length,
         health_metrics: healthMetricFiles.length,
+        sleep_sessions: sleepSessionFiles.length,
       },
       files: manifestFiles,
     },
@@ -272,7 +278,7 @@ export async function inspectPortableWorkspaceExport(value: unknown): Promise<Ex
     generatedAt: null,
     repository: null,
     workspace: null,
-    counts: { files: 0, captures: 0, dashboardLayouts: 0, tasks: 0, timeEntries: 0, projects: 0, projectPhases: 0, milestones: 0, projectNotes: 0, projectFileReferences: 0, activityEvents: 0, calendarEvents: 0, reportDrafts: 0, journalEntries: 0, journalSegments: 0, journalRevisions: 0, journalImportCheckpoints: 0, obsidianDocuments: 0, syncConflicts: 0, learningAreas: 0, habits: 0, habitRules: 0, habitCheckIns: 0, healthStagingRecords: 0, healthMetrics: 0 },
+    counts: { files: 0, captures: 0, dashboardLayouts: 0, tasks: 0, timeEntries: 0, projects: 0, projectPhases: 0, milestones: 0, projectNotes: 0, projectFileReferences: 0, activityEvents: 0, calendarEvents: 0, reportDrafts: 0, journalEntries: 0, journalSegments: 0, journalRevisions: 0, journalImportCheckpoints: 0, obsidianDocuments: 0, syncConflicts: 0, learningAreas: 0, habits: 0, habitRules: 0, habitCheckIns: 0, healthStagingRecords: 0, healthMetrics: 0, sleepSessions: 0 },
     errors,
     warnings,
   };
@@ -1006,6 +1012,22 @@ export async function inspectPortableWorkspaceExport(value: unknown): Promise<Ex
   const rawHealthMetricCount = manifestCounts?.health_metrics;
   if ((rawHealthMetricCount !== undefined || healthMetricFiles.length > 0) && rawHealthMetricCount !== healthMetricFiles.length) errors.push({ code: "HEALTH_METRIC_COUNT_MISMATCH", message: "HealthMetric 数量与 manifest 不一致。" });
 
+  const sleepSessionIds = new Set<string>();
+  const sleepSessionFiles = validPayloadFiles.filter((file) => file.path.startsWith("data/sleep-sessions/"));
+  result.counts.sleepSessions = sleepSessionFiles.length;
+  for (const file of sleepSessionFiles) {
+    try {
+      const record = parseSleepSessionRecord(file.content);
+      if (result.workspace && record.owner_id !== result.workspace.owner_id) errors.push({ code: "OWNER_MISMATCH", message: "SleepSession 的 owner_id 与 workspace 不一致。", path: file.path });
+      if (recordPath("sleep_session", record.id) !== file.path) errors.push({ code: "SLEEP_SESSION_PATH_MISMATCH", message: "SleepSession 的 ID 与文件路径不一致。", path: file.path });
+      if (sleepSessionIds.has(record.id)) errors.push({ code: "DUPLICATE_SLEEP_SESSION_ID", message: "导出包中存在重复 SleepSession ID。", path: file.path });
+      sleepSessionIds.add(record.id);
+      if (!healthStagingIds.has(record.data.staging_record_id) || confirmedHealthLinks.get(record.id) !== record.data.staging_record_id) errors.push({ code: "SLEEP_SESSION_STAGING_MISMATCH", message: "SleepSession 缺少匹配的已确认暂存来源。", path: file.path });
+    } catch { errors.push({ code: "INVALID_SLEEP_SESSION_RECORD", message: "SleepSession 文件无法通过结构校验。", path: file.path }); }
+  }
+  const rawSleepSessionCount = manifestCounts?.sleep_sessions;
+  if ((rawSleepSessionCount !== undefined || sleepSessionFiles.length > 0) && rawSleepSessionCount !== sleepSessionFiles.length) errors.push({ code: "SLEEP_SESSION_COUNT_MISMATCH", message: "SleepSession 数量与 manifest 不一致。" });
+
   const supportedPaths = new Set(["workspace.json", DASHBOARD_LAYOUT_PATH]);
   const unexpectedFiles = validPayloadFiles.filter((file) => (
     !supportedPaths.has(file.path)
@@ -1032,6 +1054,7 @@ export async function inspectPortableWorkspaceExport(value: unknown): Promise<Ex
     && !file.path.startsWith("data/habit-check-ins/")
     && !file.path.startsWith("data/health-staging-records/")
     && !file.path.startsWith("data/health-metrics/")
+    && !file.path.startsWith("data/sleep-sessions/")
   ));
   for (const file of unexpectedFiles) {
     errors.push({ code: "UNEXPECTED_FILE", message: "当前版本不支持此导出路径。", path: file.path });
