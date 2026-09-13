@@ -29,8 +29,10 @@ import { parseLearningAreaRecord } from "../../../../src/lib/github-data/learnin
 import { parseHabitRecord } from "../../../../src/lib/github-data/habits";
 import { parseHabitRuleRecord } from "../../../../src/lib/github-data/habit-rules";
 import { parseHabitCheckInRecord } from "../../../../src/lib/github-data/habit-check-ins";
+import { parseHealthStagingRecord } from "../../../../src/lib/github-data/health-staging-records";
+import { parseHealthMetricRecord } from "../../../../src/lib/github-data/health-metrics";
 import { parseCaptureRecord } from "../../../../src/lib/github-data/workspace";
-import { friendlyError, type SyncedActivityEvent, type SyncedCalendarEvent, type SyncedCapture, type SyncedHabit, type SyncedHabitCheckIn, type SyncedHabitRule, type SyncedJournalEntry, type SyncedJournalImportCheckpoint, type SyncedJournalRevision, type SyncedJournalSegment, type SyncedLearningArea, type SyncedMilestone, type SyncedObsidianDocument, type SyncedProject, type SyncedProjectFileReference, type SyncedProjectNote, type SyncedProjectPhase, type SyncedReportDraft, type SyncedSyncConflict, type SyncedTask, type SyncedTimeEntry } from "./page-model";
+import { friendlyError, type SyncedActivityEvent, type SyncedCalendarEvent, type SyncedCapture, type SyncedHabit, type SyncedHabitCheckIn, type SyncedHabitRule, type SyncedHealthMetric, type SyncedHealthStagingRecord, type SyncedJournalEntry, type SyncedJournalImportCheckpoint, type SyncedJournalRevision, type SyncedJournalSegment, type SyncedLearningArea, type SyncedMilestone, type SyncedObsidianDocument, type SyncedProject, type SyncedProjectFileReference, type SyncedProjectNote, type SyncedProjectPhase, type SyncedReportDraft, type SyncedSyncConflict, type SyncedTask, type SyncedTimeEntry } from "./page-model";
 
 type Options = {
   adapterRef: MutableRefObject<GitHubContentsAdapter | null>;
@@ -60,6 +62,8 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
   const [habitFiles, setHabitFiles] = useState<SyncedHabit[]>([]);
   const [habitRuleFiles, setHabitRuleFiles] = useState<SyncedHabitRule[]>([]);
   const [habitCheckInFiles, setHabitCheckInFiles] = useState<SyncedHabitCheckIn[]>([]);
+  const [healthStagingFiles, setHealthStagingFiles] = useState<SyncedHealthStagingRecord[]>([]);
+  const [healthMetricFiles, setHealthMetricFiles] = useState<SyncedHealthMetric[]>([]);
   const [dashboardLayout, setDashboardLayout] = useState<DashboardLayout | null>(null);
   const [dashboardBlobSha, setDashboardBlobSha] = useState<string | null>(null);
   const [loadingCaptures, setLoadingCaptures] = useState(false);
@@ -81,6 +85,7 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
   const [loadingSyncConflicts, setLoadingSyncConflicts] = useState(false);
   const [loadingLearningAreas, setLoadingLearningAreas] = useState(false);
   const [loadingHabits, setLoadingHabits] = useState(false);
+  const [loadingHealth, setLoadingHealth] = useState(false);
   const [loadingDashboard, setLoadingDashboard] = useState(false);
 
   const loadRecentCaptures = useCallback(async (adapter = adapterRef.current) => {
@@ -651,6 +656,30 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     finally { setLoadingHabits(false); }
   }, [adapterRef, setErrorMessage]);
 
+  const loadHealthDomain = useCallback(async (adapter = adapterRef.current) => {
+    if (!adapter) return;
+    setLoadingHealth(true); setErrorMessage("");
+    async function loadDirectory<T>(directory: string, parse: (text: string) => T) {
+      let items;
+      try { items = await adapter!.listDirectory(directory); }
+      catch (error) { if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") return []; throw error; }
+      const candidates = items.filter((item) => item.type === "file" && item.name.endsWith(".json")).sort((left, right) => right.name.localeCompare(left.name));
+      const records: Array<{ record: T; path: string; blobSha: string }> = [];
+      for (let index = 0; index < candidates.length; index += 6) records.push(...(await Promise.all(candidates.slice(index, index + 6).map(async (item) => {
+        try { const file = await adapter!.readText(item.path); return { record: parse(file.text), path: file.path, blobSha: file.blobSha }; } catch { return null; }
+      }))).filter((item): item is { record: T; path: string; blobSha: string } => item !== null));
+      return records;
+    }
+    try {
+      const [staging, metrics] = await Promise.all([
+        loadDirectory("data/health-staging-records", parseHealthStagingRecord),
+        loadDirectory("data/health-metrics", parseHealthMetricRecord),
+      ]);
+      setHealthStagingFiles(staging); setHealthMetricFiles(metrics);
+    } catch (error) { setErrorMessage(friendlyError(error)); }
+    finally { setLoadingHealth(false); }
+  }, [adapterRef, setErrorMessage]);
+
   const loadProjectFileReferences = useCallback(async (adapter = adapterRef.current) => {
     if (!adapter) return;
     setLoadingProjectFileReferences(true);
@@ -738,6 +767,8 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     setHabitFiles([]);
     setHabitRuleFiles([]);
     setHabitCheckInFiles([]);
+    setHealthStagingFiles([]);
+    setHealthMetricFiles([]);
     setDashboardLayout(null);
     setDashboardBlobSha(null);
   }
@@ -781,6 +812,10 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     setHabitRuleFiles,
     habitCheckInFiles,
     setHabitCheckInFiles,
+    healthStagingFiles,
+    setHealthStagingFiles,
+    healthMetricFiles,
+    setHealthMetricFiles,
     dashboardLayout,
     setDashboardLayout,
     dashboardBlobSha,
@@ -804,6 +839,7 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     loadingSyncConflicts,
     loadingLearningAreas,
     loadingHabits,
+    loadingHealth,
     loadingDashboard,
     loadRecentCaptures,
     loadTasks,
@@ -824,6 +860,7 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     loadSyncConflicts,
     loadLearningAreas,
     loadHabitDomain,
+    loadHealthDomain,
     loadDashboardLayout,
     clearCollections,
   };

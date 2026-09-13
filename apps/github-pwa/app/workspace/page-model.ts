@@ -21,6 +21,8 @@ import type { LearningAreaRecord } from "../../../../src/lib/github-data/learnin
 import type { HabitRecord } from "../../../../src/lib/github-data/habits";
 import type { HabitRuleRecord } from "../../../../src/lib/github-data/habit-rules";
 import type { HabitCheckInRecord } from "../../../../src/lib/github-data/habit-check-ins";
+import type { HealthStagingRecord } from "../../../../src/lib/github-data/health-staging-records";
+import type { HealthMetricRecord } from "../../../../src/lib/github-data/health-metrics";
 
 export type Connection = {
   repository: string;
@@ -107,6 +109,8 @@ export type SyncedLearningArea = { record: LearningAreaRecord; path: string; blo
 export type SyncedHabit = { record: HabitRecord; path: string; blobSha: string };
 export type SyncedHabitRule = { record: HabitRuleRecord; path: string; blobSha: string };
 export type SyncedHabitCheckIn = { record: HabitCheckInRecord; path: string; blobSha: string };
+export type SyncedHealthStagingRecord = { record: HealthStagingRecord; path: string; blobSha: string };
+export type SyncedHealthMetric = { record: HealthMetricRecord; path: string; blobSha: string };
 
 export type AuthAvailability = "checking" | "unavailable" | "configured";
 export type ConnectionMethod = "github-app" | "personal-token";
@@ -137,6 +141,8 @@ export type PortabilityResult = {
   habits: number;
   habitRules: number;
   habitCheckIns: number;
+  healthStagingRecords: number;
+  healthMetrics: number;
   errors: ExportInspectionIssue[];
   warnings: ExportInspectionIssue[];
 };

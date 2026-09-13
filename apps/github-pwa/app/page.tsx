@@ -89,6 +89,8 @@ import {
 } from "../../../src/lib/github-data/learning-areas";
 import { createHabitData, setHabitStatus, type HabitFields, type HabitStatus } from "../../../src/lib/github-data/habits";
 import { createManualHabitCheckInData, type HabitCheckInStatus } from "../../../src/lib/github-data/habit-check-ins";
+import { confirmHealthStaging, correctPendingHealthStaging, createHealthStagingData, rejectHealthStaging, type HealthStagingFields } from "../../../src/lib/github-data/health-staging-records";
+import { createConfirmedHealthMetricData } from "../../../src/lib/github-data/health-metrics";
 import { createJournalEntryData, hasActiveDailyJournalDate, updateJournalEntryData } from "../../../src/lib/github-data/journal-entries";
 import {
   createJournalEntryAtomically,
@@ -113,6 +115,7 @@ import {
   type SyncedCalendarEvent,
   type SyncedJournalEntry,
   type SyncedHabit,
+  type SyncedHealthStagingRecord,
   type SyncedLearningArea,
   type SyncedProject,
   type SyncedProjectPhase,
@@ -138,6 +141,7 @@ import { TimeEntriesSection } from "./workspace/time-entries-section";
 import { JournalSection } from "./workspace/journal-section";
 import { LearningSection } from "./workspace/learning-section";
 import { HabitsSection } from "./workspace/habits-section";
+import { HealthStagingSection } from "./workspace/health-staging-section";
 
 export default function GitHubWorkspacePage() {
   const adapterRef = useRef<GitHubContentsAdapter | null>(null);
@@ -190,6 +194,8 @@ export default function GitHubWorkspacePage() {
   const [savingLearningAreaId, setSavingLearningAreaId] = useState<string | null>(null);
   const [savingHabit, setSavingHabit] = useState(false);
   const [savingHabitId, setSavingHabitId] = useState<string | null>(null);
+  const [savingHealth, setSavingHealth] = useState(false);
+  const [savingHealthId, setSavingHealthId] = useState<string | null>(null);
   const [dashboardDirty, setDashboardDirty] = useState(false);
   const [editingDashboard, setEditingDashboard] = useState(false);
   const [savingDashboard, setSavingDashboard] = useState(false);
@@ -247,6 +253,10 @@ export default function GitHubWorkspacePage() {
     habitRuleFiles,
     habitCheckInFiles,
     setHabitCheckInFiles,
+    healthStagingFiles,
+    setHealthStagingFiles,
+    healthMetricFiles,
+    setHealthMetricFiles,
     dashboardLayout,
     setDashboardLayout,
     dashboardBlobSha,
@@ -268,6 +278,7 @@ export default function GitHubWorkspacePage() {
     loadingJournalImportCheckpoints,
     loadingLearningAreas,
     loadingHabits,
+    loadingHealth,
     loadingDashboard,
     loadRecentCaptures,
     loadTasks,
@@ -288,6 +299,7 @@ export default function GitHubWorkspacePage() {
     loadSyncConflicts,
     loadLearningAreas,
     loadHabitDomain,
+    loadHealthDomain,
     loadDashboardLayout,
     clearCollections,
   } = useWorkspaceCollections({ adapterRef, setErrorMessage, setDashboardClean });
@@ -320,6 +332,7 @@ export default function GitHubWorkspacePage() {
     loadSyncConflicts,
     loadLearningAreas,
     loadHabitDomain,
+    loadHealthDomain,
   });
 
   const workspaceTimezone = connection?.timezone ?? "Asia/Shanghai";
@@ -1711,6 +1724,73 @@ export default function GitHubWorkspacePage() {
     finally { setSavingHabitId(null); }
   }
 
+  async function saveHealthStaging(fields: HealthStagingFields) {
+    const adapter = adapterRef.current;
+    if (!adapter || !connection || savingHealth || online === false) return false;
+    setSavingHealth(true); setErrorMessage(""); setStatusMessage("");
+    const timestamp = new Date().toISOString();
+    const id = `health_staging_${timestamp.replaceAll(/\D/g, "").slice(0, 17)}_${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`;
+    try {
+      const record = createWorkspaceRecord({ entityType: "health_staging_record", id, ownerId: connection.ownerId, timestamp, data: createHealthStagingData(fields, timestamp) });
+      const result = await adapter.writeText({ path: recordPath("health_staging_record", id), text: serializeRecord(record), message: `health staging: create ${id}` });
+      setHealthStagingFiles((current) => [{ record, path: result.path, blobSha: result.blobSha }, ...current]);
+      setStatusMessage("健康指标已加入待确认区；尚未进入正式健康记录。");
+      return true;
+    } catch (error) { setErrorMessage(friendlyError(error)); return false; }
+    finally { setSavingHealth(false); }
+  }
+
+  async function correctHealthStaging(item: SyncedHealthStagingRecord, fields: HealthStagingFields) {
+    const adapter = adapterRef.current;
+    if (!adapter || !connection || savingHealthId || online === false) return false;
+    setSavingHealthId(item.record.id); setErrorMessage(""); setStatusMessage("");
+    try {
+      const updated = correctPendingHealthStaging(item.record, fields);
+      const result = await adapter.writeText({ path: item.path, text: serializeRecord(updated), message: `health staging: correct ${item.record.id}`, expectedBlobSha: item.blobSha });
+      setHealthStagingFiles((current) => current.map((candidate) => candidate.record.id === item.record.id ? { record: updated, path: result.path, blobSha: result.blobSha } : candidate));
+      setStatusMessage("暂存记录已更正并保留版本历史；仍需确认才会入库。");
+      return true;
+    } catch (error) { setErrorMessage(friendlyError(error)); return false; }
+    finally { setSavingHealthId(null); }
+  }
+
+  async function rejectHealthStagingItem(item: SyncedHealthStagingRecord, reason: string) {
+    const adapter = adapterRef.current;
+    if (!adapter || !connection || savingHealthId || online === false) return;
+    setSavingHealthId(item.record.id); setErrorMessage(""); setStatusMessage("");
+    try {
+      const updated = rejectHealthStaging(item.record, reason);
+      const result = await adapter.writeText({ path: item.path, text: serializeRecord(updated), message: `health staging: reject ${item.record.id}`, expectedBlobSha: item.blobSha });
+      setHealthStagingFiles((current) => current.map((candidate) => candidate.record.id === item.record.id ? { record: updated, path: result.path, blobSha: result.blobSha } : candidate));
+      setStatusMessage("暂存记录已拒绝；没有创建正式健康记录。");
+    } catch (error) { setErrorMessage(friendlyError(error)); }
+    finally { setSavingHealthId(null); }
+  }
+
+  async function confirmHealthStagingItem(item: SyncedHealthStagingRecord) {
+    const adapter = adapterRef.current;
+    if (!adapter || !connection || savingHealthId || online === false) return;
+    setSavingHealthId(item.record.id); setErrorMessage(""); setStatusMessage("");
+    const timestamp = new Date().toISOString();
+    const metricId = `health_metric_${timestamp.replaceAll(/\D/g, "").slice(0, 17)}_${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`;
+    try {
+      const snapshot = await adapter.readBranchSnapshot();
+      const latest = await adapter.readText(item.path, snapshot.headCommitSha);
+      if (latest.blobSha !== item.blobSha) throw new GitHubDataError("Health staging changed on another device.", 409, "GITHUB_SYNC_CONFLICT");
+      const reviewed = confirmHealthStaging(item.record, metricId, timestamp);
+      const metric = createWorkspaceRecord({ entityType: "health_metric", id: metricId, ownerId: connection.ownerId, timestamp, data: createConfirmedHealthMetricData(reviewed.data.normalized_json, item.record.id) });
+      const stagingPath = recordPath("health_staging_record", item.record.id);
+      const metricPath = recordPath("health_metric", metricId);
+      const result = await adapter.writeAtomicFiles({ files: [{ path: stagingPath, text: serializeRecord(reviewed) }, { path: metricPath, text: serializeRecord(metric) }], message: `health: confirm ${item.record.id}`, expectedHeadCommitSha: snapshot.headCommitSha, baseTreeSha: snapshot.rootTreeSha });
+      const stagingBlob = result.files.find((file) => file.path === stagingPath)!.blobSha;
+      const metricBlob = result.files.find((file) => file.path === metricPath)!.blobSha;
+      setHealthStagingFiles((current) => current.map((candidate) => candidate.record.id === item.record.id ? { record: reviewed, path: stagingPath, blobSha: stagingBlob } : candidate));
+      setHealthMetricFiles((current) => [{ record: metric, path: metricPath, blobSha: metricBlob }, ...current]);
+      setStatusMessage("健康指标已由你确认，并与审核决定通过同一个 Git 提交写入正式记录。");
+    } catch (error) { setErrorMessage(friendlyError(error)); }
+    finally { setSavingHealthId(null); }
+  }
+
   async function listCaptureFiles(adapter: GitHubContentsAdapter) {
     try {
       return (await adapter.listDirectory("data/captures"))
@@ -1785,6 +1865,16 @@ export default function GitHubWorkspacePage() {
 
   async function listHabitCheckInFiles(adapter: GitHubContentsAdapter) {
     try { return (await adapter.listDirectory("data/habit-check-ins")).filter((item) => item.type === "file" && item.name.endsWith(".json")).sort((left, right) => left.path.localeCompare(right.path)); }
+    catch (error) { if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") return []; throw error; }
+  }
+
+  async function listHealthStagingFiles(adapter: GitHubContentsAdapter) {
+    try { return (await adapter.listDirectory("data/health-staging-records")).filter((item) => item.type === "file" && item.name.endsWith(".json")).sort((left, right) => left.path.localeCompare(right.path)); }
+    catch (error) { if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") return []; throw error; }
+  }
+
+  async function listHealthMetricFiles(adapter: GitHubContentsAdapter) {
+    try { return (await adapter.listDirectory("data/health-metrics")).filter((item) => item.type === "file" && item.name.endsWith(".json")).sort((left, right) => left.path.localeCompare(right.path)); }
     catch (error) { if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") return []; throw error; }
   }
 
@@ -2030,6 +2120,12 @@ export default function GitHubWorkspacePage() {
       const habitCheckInCandidates = await listHabitCheckInFiles(adapter);
       const habitCheckInExportFiles = [];
       for (let index = 0; index < habitCheckInCandidates.length; index += batchSize) habitCheckInExportFiles.push(...await Promise.all(habitCheckInCandidates.slice(index, index + batchSize).map((item) => adapter.readText(item.path))));
+      const healthStagingCandidates = await listHealthStagingFiles(adapter);
+      const healthStagingExportFiles = [];
+      for (let index = 0; index < healthStagingCandidates.length; index += batchSize) healthStagingExportFiles.push(...await Promise.all(healthStagingCandidates.slice(index, index + batchSize).map((item) => adapter.readText(item.path))));
+      const healthMetricCandidates = await listHealthMetricFiles(adapter);
+      const healthMetricExportFiles = [];
+      for (let index = 0; index < healthMetricCandidates.length; index += batchSize) healthMetricExportFiles.push(...await Promise.all(healthMetricCandidates.slice(index, index + batchSize).map((item) => adapter.readText(item.path))));
 
       setExportProgress("正在生成 SHA-256 manifest…");
       const generatedAt = new Date().toISOString();
@@ -2059,6 +2155,8 @@ export default function GitHubWorkspacePage() {
         habitFiles: habitExportFiles,
         habitRuleFiles: habitRuleExportFiles,
         habitCheckInFiles: habitCheckInExportFiles,
+        healthStagingFiles: healthStagingExportFiles,
+        healthMetricFiles: healthMetricExportFiles,
         generatedAt,
       });
       const inspection = await inspectPortableWorkspaceExport(portableExport);
@@ -2102,6 +2200,8 @@ export default function GitHubWorkspacePage() {
         habits: inspection.counts.habits,
         habitRules: inspection.counts.habitRules,
         habitCheckIns: inspection.counts.habitCheckIns,
+        healthStagingRecords: inspection.counts.healthStagingRecords,
+        healthMetrics: inspection.counts.healthMetrics,
         errors: inspection.errors,
         warnings: inspection.warnings,
       });
@@ -2131,6 +2231,8 @@ export default function GitHubWorkspacePage() {
         habits: inspection.counts.habits,
         habitRules: inspection.counts.habitRules,
         habitCheckIns: inspection.counts.habitCheckIns,
+        healthStagingRecords: inspection.counts.healthStagingRecords,
+        healthMetrics: inspection.counts.healthMetrics,
         errors: inspection.errors,
         warnings: inspection.warnings,
       });
@@ -2188,6 +2290,8 @@ export default function GitHubWorkspacePage() {
           habits: 0,
           habitRules: 0,
           habitCheckIns: 0,
+          healthStagingRecords: 0,
+          healthMetrics: 0,
           errors: [{ code: "EXPORT_TOO_LARGE", message: "当前预检仅接受 50 MB 以内的 JSON 文件。" }],
           warnings: [],
         });
@@ -2221,6 +2325,8 @@ export default function GitHubWorkspacePage() {
         habits: inspection.counts.habits,
         habitRules: inspection.counts.habitRules,
         habitCheckIns: inspection.counts.habitCheckIns,
+        healthStagingRecords: inspection.counts.healthStagingRecords,
+        healthMetrics: inspection.counts.healthMetrics,
         errors: inspection.errors,
         warnings: inspection.warnings,
       });
@@ -2255,6 +2361,8 @@ export default function GitHubWorkspacePage() {
         habits: 0,
         habitRules: 0,
         habitCheckIns: 0,
+        healthStagingRecords: 0,
+        healthMetrics: 0,
         errors: [{ code: "INVALID_JSON", message: "文件不是有效的 JSON，未执行任何恢复操作。" }],
         warnings: [],
       });
@@ -2617,6 +2725,23 @@ export default function GitHubWorkspacePage() {
         onDeletionChange={updateHabitDeletion}
         onCheckIn={saveManualHabitCheckIn}
         onRefresh={() => loadHabitDomain()}
+      />
+
+
+      <HealthStagingSection
+        connection={connection}
+        online={online}
+        todayDate={currentTaskDate}
+        staging={healthStagingFiles}
+        metrics={healthMetricFiles}
+        loading={loadingHealth}
+        saving={savingHealth}
+        savingId={savingHealthId}
+        onCreate={saveHealthStaging}
+        onCorrect={correctHealthStaging}
+        onConfirm={confirmHealthStagingItem}
+        onReject={rejectHealthStagingItem}
+        onRefresh={() => loadHealthDomain()}
       />
 
 
