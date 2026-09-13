@@ -406,6 +406,8 @@ canonical 文件位于 `data/journal-import-checkpoints/<id>.json`，固定 `ver
 - `confidence`, `status`：pending、confirmed、rejected、superseded
 - `diagnostics_json`, `reviewed_at`
 
+当前 GitHub canonical v1 已实现手工指标 adapter：文件位于 `data/health-staging-records/`，创建时固定为 `pending`。来源标签、规范化指标和每次人工更正都进入 Git 版本；`confirmed` 必须同时记录 `canonical_record_id`，`rejected` 必须记录原因。确认操作通过单个 Git commit 同时更新暂存记录并创建 `HealthMetric`，避免只完成一半。
+
 ### SleepSession
 
 - `id`, `owner_id`, `start_at`, `end_at`, `timezone`
@@ -420,6 +422,8 @@ canonical 文件位于 `data/journal-import-checkpoints/<id>.json`，固定 `ver
 - `measured_at`, `local_date`, `timezone`
 - `value`, `unit`, `aggregation_period`
 - `confirmation_status`, `staging_record_id`
+
+当前 v1 文件位于 `data/health-metrics/`，仅接受 `confirmation_status = confirmed`，并必须反向指向已确认的 `HealthStagingRecord`。暂存数据不会出现在此目录，也不会参与 Habit 派生。
 
 ### Workout
 
