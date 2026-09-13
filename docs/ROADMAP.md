@@ -152,6 +152,8 @@
 
 支持可扩展学习领域、可信习惯记录和健康数据人工确认流程。
 
+当前切片已覆盖 Learning Area、Habit v1、健康指标暂存，以及手工睡眠的夜间睡眠/小睡/未确定分类、人工更正和原子确认入库。睡眠归属日固定为开始日；COROS 接入和基于睡眠的自动 Habit 打卡仍保持关闭。
+
 ### 建议范围
 
 - Learning Area、Goal、Activity、Resource。

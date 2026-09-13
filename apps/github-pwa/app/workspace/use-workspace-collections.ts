@@ -31,8 +31,9 @@ import { parseHabitRuleRecord } from "../../../../src/lib/github-data/habit-rule
 import { parseHabitCheckInRecord } from "../../../../src/lib/github-data/habit-check-ins";
 import { parseHealthStagingRecord } from "../../../../src/lib/github-data/health-staging-records";
 import { parseHealthMetricRecord } from "../../../../src/lib/github-data/health-metrics";
+import { parseSleepSessionRecord } from "../../../../src/lib/github-data/sleep-sessions";
 import { parseCaptureRecord } from "../../../../src/lib/github-data/workspace";
-import { friendlyError, type SyncedActivityEvent, type SyncedCalendarEvent, type SyncedCapture, type SyncedHabit, type SyncedHabitCheckIn, type SyncedHabitRule, type SyncedHealthMetric, type SyncedHealthStagingRecord, type SyncedJournalEntry, type SyncedJournalImportCheckpoint, type SyncedJournalRevision, type SyncedJournalSegment, type SyncedLearningArea, type SyncedMilestone, type SyncedObsidianDocument, type SyncedProject, type SyncedProjectFileReference, type SyncedProjectNote, type SyncedProjectPhase, type SyncedReportDraft, type SyncedSyncConflict, type SyncedTask, type SyncedTimeEntry } from "./page-model";
+import { friendlyError, type SyncedActivityEvent, type SyncedCalendarEvent, type SyncedCapture, type SyncedHabit, type SyncedHabitCheckIn, type SyncedHabitRule, type SyncedHealthMetric, type SyncedHealthStagingRecord, type SyncedJournalEntry, type SyncedJournalImportCheckpoint, type SyncedJournalRevision, type SyncedJournalSegment, type SyncedLearningArea, type SyncedMilestone, type SyncedObsidianDocument, type SyncedProject, type SyncedProjectFileReference, type SyncedProjectNote, type SyncedProjectPhase, type SyncedReportDraft, type SyncedSleepSession, type SyncedSyncConflict, type SyncedTask, type SyncedTimeEntry } from "./page-model";
 
 type Options = {
   adapterRef: MutableRefObject<GitHubContentsAdapter | null>;
@@ -64,6 +65,7 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
   const [habitCheckInFiles, setHabitCheckInFiles] = useState<SyncedHabitCheckIn[]>([]);
   const [healthStagingFiles, setHealthStagingFiles] = useState<SyncedHealthStagingRecord[]>([]);
   const [healthMetricFiles, setHealthMetricFiles] = useState<SyncedHealthMetric[]>([]);
+  const [sleepSessionFiles, setSleepSessionFiles] = useState<SyncedSleepSession[]>([]);
   const [dashboardLayout, setDashboardLayout] = useState<DashboardLayout | null>(null);
   const [dashboardBlobSha, setDashboardBlobSha] = useState<string | null>(null);
   const [loadingCaptures, setLoadingCaptures] = useState(false);
@@ -671,11 +673,12 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
       return records;
     }
     try {
-      const [staging, metrics] = await Promise.all([
+      const [staging, metrics, sleepSessions] = await Promise.all([
         loadDirectory("data/health-staging-records", parseHealthStagingRecord),
         loadDirectory("data/health-metrics", parseHealthMetricRecord),
+        loadDirectory("data/sleep-sessions", parseSleepSessionRecord),
       ]);
-      setHealthStagingFiles(staging); setHealthMetricFiles(metrics);
+      setHealthStagingFiles(staging); setHealthMetricFiles(metrics); setSleepSessionFiles(sleepSessions);
     } catch (error) { setErrorMessage(friendlyError(error)); }
     finally { setLoadingHealth(false); }
   }, [adapterRef, setErrorMessage]);
@@ -769,6 +772,7 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     setHabitCheckInFiles([]);
     setHealthStagingFiles([]);
     setHealthMetricFiles([]);
+    setSleepSessionFiles([]);
     setDashboardLayout(null);
     setDashboardBlobSha(null);
   }
@@ -816,6 +820,8 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     setHealthStagingFiles,
     healthMetricFiles,
     setHealthMetricFiles,
+    sleepSessionFiles,
+    setSleepSessionFiles,
     dashboardLayout,
     setDashboardLayout,
     dashboardBlobSha,

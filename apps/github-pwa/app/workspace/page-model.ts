@@ -23,6 +23,7 @@ import type { HabitRuleRecord } from "../../../../src/lib/github-data/habit-rule
 import type { HabitCheckInRecord } from "../../../../src/lib/github-data/habit-check-ins";
 import type { HealthStagingRecord } from "../../../../src/lib/github-data/health-staging-records";
 import type { HealthMetricRecord } from "../../../../src/lib/github-data/health-metrics";
+import type { SleepSessionRecord } from "../../../../src/lib/github-data/sleep-sessions";
 
 export type Connection = {
   repository: string;
@@ -111,6 +112,7 @@ export type SyncedHabitRule = { record: HabitRuleRecord; path: string; blobSha: 
 export type SyncedHabitCheckIn = { record: HabitCheckInRecord; path: string; blobSha: string };
 export type SyncedHealthStagingRecord = { record: HealthStagingRecord; path: string; blobSha: string };
 export type SyncedHealthMetric = { record: HealthMetricRecord; path: string; blobSha: string };
+export type SyncedSleepSession = { record: SleepSessionRecord; path: string; blobSha: string };
 
 export type AuthAvailability = "checking" | "unavailable" | "configured";
 export type ConnectionMethod = "github-app" | "personal-token";
@@ -143,6 +145,7 @@ export type PortabilityResult = {
   habitCheckIns: number;
   healthStagingRecords: number;
   healthMetrics: number;
+  sleepSessions: number;
   errors: ExportInspectionIssue[];
   warnings: ExportInspectionIssue[];
 };
