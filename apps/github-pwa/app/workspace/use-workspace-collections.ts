@@ -26,8 +26,11 @@ import { parseJournalImportCheckpointRecord } from "../../../../src/lib/github-d
 import { parseObsidianDocumentRecord } from "../../../../src/lib/github-data/obsidian-documents";
 import { parseSyncConflictRecord } from "../../../../src/lib/github-data/sync-conflicts";
 import { parseLearningAreaRecord } from "../../../../src/lib/github-data/learning-areas";
+import { parseHabitRecord } from "../../../../src/lib/github-data/habits";
+import { parseHabitRuleRecord } from "../../../../src/lib/github-data/habit-rules";
+import { parseHabitCheckInRecord } from "../../../../src/lib/github-data/habit-check-ins";
 import { parseCaptureRecord } from "../../../../src/lib/github-data/workspace";
-import { friendlyError, type SyncedActivityEvent, type SyncedCalendarEvent, type SyncedCapture, type SyncedJournalEntry, type SyncedJournalImportCheckpoint, type SyncedJournalRevision, type SyncedJournalSegment, type SyncedLearningArea, type SyncedMilestone, type SyncedObsidianDocument, type SyncedProject, type SyncedProjectFileReference, type SyncedProjectNote, type SyncedProjectPhase, type SyncedReportDraft, type SyncedSyncConflict, type SyncedTask, type SyncedTimeEntry } from "./page-model";
+import { friendlyError, type SyncedActivityEvent, type SyncedCalendarEvent, type SyncedCapture, type SyncedHabit, type SyncedHabitCheckIn, type SyncedHabitRule, type SyncedJournalEntry, type SyncedJournalImportCheckpoint, type SyncedJournalRevision, type SyncedJournalSegment, type SyncedLearningArea, type SyncedMilestone, type SyncedObsidianDocument, type SyncedProject, type SyncedProjectFileReference, type SyncedProjectNote, type SyncedProjectPhase, type SyncedReportDraft, type SyncedSyncConflict, type SyncedTask, type SyncedTimeEntry } from "./page-model";
 
 type Options = {
   adapterRef: MutableRefObject<GitHubContentsAdapter | null>;
@@ -54,6 +57,9 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
   const [obsidianDocumentFiles, setObsidianDocumentFiles] = useState<SyncedObsidianDocument[]>([]);
   const [syncConflictFiles, setSyncConflictFiles] = useState<SyncedSyncConflict[]>([]);
   const [learningAreaFiles, setLearningAreaFiles] = useState<SyncedLearningArea[]>([]);
+  const [habitFiles, setHabitFiles] = useState<SyncedHabit[]>([]);
+  const [habitRuleFiles, setHabitRuleFiles] = useState<SyncedHabitRule[]>([]);
+  const [habitCheckInFiles, setHabitCheckInFiles] = useState<SyncedHabitCheckIn[]>([]);
   const [dashboardLayout, setDashboardLayout] = useState<DashboardLayout | null>(null);
   const [dashboardBlobSha, setDashboardBlobSha] = useState<string | null>(null);
   const [loadingCaptures, setLoadingCaptures] = useState(false);
@@ -74,6 +80,7 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
   const [loadingObsidianDocuments, setLoadingObsidianDocuments] = useState(false);
   const [loadingSyncConflicts, setLoadingSyncConflicts] = useState(false);
   const [loadingLearningAreas, setLoadingLearningAreas] = useState(false);
+  const [loadingHabits, setLoadingHabits] = useState(false);
   const [loadingDashboard, setLoadingDashboard] = useState(false);
 
   const loadRecentCaptures = useCallback(async (adapter = adapterRef.current) => {
@@ -610,6 +617,40 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     finally { setLoadingLearningAreas(false); }
   }, [adapterRef, setErrorMessage]);
 
+  const loadHabitDomain = useCallback(async (adapter = adapterRef.current) => {
+    if (!adapter) return;
+    setLoadingHabits(true);
+    setErrorMessage("");
+    async function loadDirectory<T>(directory: string, parse: (text: string) => T) {
+      let items;
+      try { items = await adapter!.listDirectory(directory); }
+      catch (error) {
+        if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") return [];
+        throw error;
+      }
+      const candidates = items.filter((item) => item.type === "file" && item.name.endsWith(".json")).sort((left, right) => right.name.localeCompare(left.name));
+      const records: Array<{ record: T; path: string; blobSha: string }> = [];
+      for (let index = 0; index < candidates.length; index += 6) {
+        records.push(...(await Promise.all(candidates.slice(index, index + 6).map(async (item) => {
+          try { const file = await adapter!.readText(item.path); return { record: parse(file.text), path: file.path, blobSha: file.blobSha }; }
+          catch { return null; }
+        }))).filter((item): item is { record: T; path: string; blobSha: string } => item !== null));
+      }
+      return records;
+    }
+    try {
+      const [habits, rules, checkIns] = await Promise.all([
+        loadDirectory("data/habits", parseHabitRecord),
+        loadDirectory("data/habit-rules", parseHabitRuleRecord),
+        loadDirectory("data/habit-check-ins", parseHabitCheckInRecord),
+      ]);
+      setHabitFiles(habits);
+      setHabitRuleFiles(rules);
+      setHabitCheckInFiles(checkIns);
+    } catch (error) { setErrorMessage(friendlyError(error)); }
+    finally { setLoadingHabits(false); }
+  }, [adapterRef, setErrorMessage]);
+
   const loadProjectFileReferences = useCallback(async (adapter = adapterRef.current) => {
     if (!adapter) return;
     setLoadingProjectFileReferences(true);
@@ -694,6 +735,9 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     setObsidianDocumentFiles([]);
     setSyncConflictFiles([]);
     setLearningAreaFiles([]);
+    setHabitFiles([]);
+    setHabitRuleFiles([]);
+    setHabitCheckInFiles([]);
     setDashboardLayout(null);
     setDashboardBlobSha(null);
   }
@@ -731,6 +775,12 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     syncConflictFiles,
     learningAreaFiles,
     setLearningAreaFiles,
+    habitFiles,
+    setHabitFiles,
+    habitRuleFiles,
+    setHabitRuleFiles,
+    habitCheckInFiles,
+    setHabitCheckInFiles,
     dashboardLayout,
     setDashboardLayout,
     dashboardBlobSha,
@@ -753,6 +803,7 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     loadingObsidianDocuments,
     loadingSyncConflicts,
     loadingLearningAreas,
+    loadingHabits,
     loadingDashboard,
     loadRecentCaptures,
     loadTasks,
@@ -772,6 +823,7 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     loadObsidianDocuments,
     loadSyncConflicts,
     loadLearningAreas,
+    loadHabitDomain,
     loadDashboardLayout,
     clearCollections,
   };
