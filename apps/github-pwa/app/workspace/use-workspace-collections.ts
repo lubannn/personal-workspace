@@ -26,6 +26,7 @@ import { parseJournalImportCheckpointRecord } from "../../../../src/lib/github-d
 import { parseObsidianDocumentRecord } from "../../../../src/lib/github-data/obsidian-documents";
 import { parseSyncConflictRecord } from "../../../../src/lib/github-data/sync-conflicts";
 import { parseLearningAreaRecord } from "../../../../src/lib/github-data/learning-areas";
+import { parseLearningGoalRecord } from "../../../../src/lib/github-data/learning-goals";
 import { parseHabitRecord } from "../../../../src/lib/github-data/habits";
 import { parseHabitRuleRecord } from "../../../../src/lib/github-data/habit-rules";
 import { parseHabitCheckInRecord } from "../../../../src/lib/github-data/habit-check-ins";
@@ -33,7 +34,7 @@ import { parseHealthStagingRecord } from "../../../../src/lib/github-data/health
 import { parseHealthMetricRecord } from "../../../../src/lib/github-data/health-metrics";
 import { parseSleepSessionRecord } from "../../../../src/lib/github-data/sleep-sessions";
 import { parseCaptureRecord } from "../../../../src/lib/github-data/workspace";
-import { friendlyError, type SyncedActivityEvent, type SyncedCalendarEvent, type SyncedCapture, type SyncedHabit, type SyncedHabitCheckIn, type SyncedHabitRule, type SyncedHealthMetric, type SyncedHealthStagingRecord, type SyncedJournalEntry, type SyncedJournalImportCheckpoint, type SyncedJournalRevision, type SyncedJournalSegment, type SyncedLearningArea, type SyncedMilestone, type SyncedObsidianDocument, type SyncedProject, type SyncedProjectFileReference, type SyncedProjectNote, type SyncedProjectPhase, type SyncedReportDraft, type SyncedSleepSession, type SyncedSyncConflict, type SyncedTask, type SyncedTimeEntry } from "./page-model";
+import { friendlyError, type SyncedActivityEvent, type SyncedCalendarEvent, type SyncedCapture, type SyncedHabit, type SyncedHabitCheckIn, type SyncedHabitRule, type SyncedHealthMetric, type SyncedHealthStagingRecord, type SyncedJournalEntry, type SyncedJournalImportCheckpoint, type SyncedJournalRevision, type SyncedJournalSegment, type SyncedLearningArea, type SyncedLearningGoal, type SyncedMilestone, type SyncedObsidianDocument, type SyncedProject, type SyncedProjectFileReference, type SyncedProjectNote, type SyncedProjectPhase, type SyncedReportDraft, type SyncedSleepSession, type SyncedSyncConflict, type SyncedTask, type SyncedTimeEntry } from "./page-model";
 
 type Options = {
   adapterRef: MutableRefObject<GitHubContentsAdapter | null>;
@@ -60,6 +61,7 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
   const [obsidianDocumentFiles, setObsidianDocumentFiles] = useState<SyncedObsidianDocument[]>([]);
   const [syncConflictFiles, setSyncConflictFiles] = useState<SyncedSyncConflict[]>([]);
   const [learningAreaFiles, setLearningAreaFiles] = useState<SyncedLearningArea[]>([]);
+  const [learningGoalFiles, setLearningGoalFiles] = useState<SyncedLearningGoal[]>([]);
   const [habitFiles, setHabitFiles] = useState<SyncedHabit[]>([]);
   const [habitRuleFiles, setHabitRuleFiles] = useState<SyncedHabitRule[]>([]);
   const [habitCheckInFiles, setHabitCheckInFiles] = useState<SyncedHabitCheckIn[]>([]);
@@ -604,22 +606,30 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     if (!adapter) return;
     setLoadingLearningAreas(true);
     setErrorMessage("");
-    try {
+    async function loadDirectory<T>(directory: string, parse: (text: string) => T) {
       let items;
-      try { items = await adapter.listDirectory("data/learning-areas"); }
+      try { items = await adapter!.listDirectory(directory); }
       catch (error) {
-        if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") { setLearningAreaFiles([]); return; }
+        if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") return [];
         throw error;
       }
       const candidates = items.filter((item) => item.type === "file" && item.name.endsWith(".json")).sort((left, right) => right.name.localeCompare(left.name));
-      const records: SyncedLearningArea[] = [];
+      const records: Array<{ record: T; path: string; blobSha: string }> = [];
       for (let index = 0; index < candidates.length; index += 6) {
         records.push(...(await Promise.all(candidates.slice(index, index + 6).map(async (item) => {
-          try { const file = await adapter.readText(item.path); return { record: parseLearningAreaRecord(file.text), path: file.path, blobSha: file.blobSha }; }
+          try { const file = await adapter!.readText(item.path); return { record: parse(file.text), path: file.path, blobSha: file.blobSha }; }
           catch { return null; }
-        }))).filter((item): item is SyncedLearningArea => item !== null));
+        }))).filter((item): item is { record: T; path: string; blobSha: string } => item !== null));
       }
-      setLearningAreaFiles(records);
+      return records;
+    }
+    try {
+      const [areas, goals] = await Promise.all([
+        loadDirectory("data/learning-areas", parseLearningAreaRecord),
+        loadDirectory("data/learning-goals", parseLearningGoalRecord),
+      ]);
+      setLearningAreaFiles(areas);
+      setLearningGoalFiles(goals);
     } catch (error) { setErrorMessage(friendlyError(error)); }
     finally { setLoadingLearningAreas(false); }
   }, [adapterRef, setErrorMessage]);
@@ -767,6 +777,7 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     setObsidianDocumentFiles([]);
     setSyncConflictFiles([]);
     setLearningAreaFiles([]);
+    setLearningGoalFiles([]);
     setHabitFiles([]);
     setHabitRuleFiles([]);
     setHabitCheckInFiles([]);
@@ -810,6 +821,8 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     syncConflictFiles,
     learningAreaFiles,
     setLearningAreaFiles,
+    learningGoalFiles,
+    setLearningGoalFiles,
     habitFiles,
     setHabitFiles,
     habitRuleFiles,
