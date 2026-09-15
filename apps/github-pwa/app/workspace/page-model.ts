@@ -20,6 +20,7 @@ import type { SyncConflictRecord } from "../../../../src/lib/github-data/sync-co
 import type { LearningAreaRecord } from "../../../../src/lib/github-data/learning-areas";
 import type { LearningGoalRecord } from "../../../../src/lib/github-data/learning-goals";
 import type { LearningActivityRecord } from "../../../../src/lib/github-data/learning-activities";
+import type { LearningResourceRecord } from "../../../../src/lib/github-data/learning-resources";
 import type { HabitRecord } from "../../../../src/lib/github-data/habits";
 import type { HabitRuleRecord } from "../../../../src/lib/github-data/habit-rules";
 import type { HabitCheckInRecord } from "../../../../src/lib/github-data/habit-check-ins";
@@ -111,6 +112,7 @@ export type SyncedSyncConflict = { record: SyncConflictRecord; path: string; blo
 export type SyncedLearningArea = { record: LearningAreaRecord; path: string; blobSha: string };
 export type SyncedLearningGoal = { record: LearningGoalRecord; path: string; blobSha: string };
 export type SyncedLearningActivity = { record: LearningActivityRecord; path: string; blobSha: string };
+export type SyncedLearningResource = { record: LearningResourceRecord; path: string; blobSha: string };
 export type SyncedHabit = { record: HabitRecord; path: string; blobSha: string };
 export type SyncedHabitRule = { record: HabitRuleRecord; path: string; blobSha: string };
 export type SyncedHabitCheckIn = { record: HabitCheckInRecord; path: string; blobSha: string };
@@ -146,6 +148,7 @@ export type PortabilityResult = {
   learningAreas: number;
   learningGoals: number;
   learningActivities: number;
+  learningResources: number;
   habits: number;
   habitRules: number;
   habitCheckIns: number;
