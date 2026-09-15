@@ -5,6 +5,7 @@ import { createDefaultDashboardLayout, serializeDashboardLayout } from "./dashbo
 import { createWorkspaceRecord, serializeRecord } from "./protocol";
 import { createJournalImportCheckpointRecord } from "./journal-import-checkpoints";
 import { createLearningAreaData } from "./learning-areas";
+import { createLearningGoalData } from "./learning-goals";
 import {
   dryRunPortableWorkspaceMigrations,
   planSchemaMigration,
@@ -78,6 +79,17 @@ describe("schema migration registry", () => {
         })),
         "learning-area-blob",
       )],
+      learningGoalFiles: [storedFile(
+        "data/learning-goals/learning_goal_schema.json",
+        serializeRecord(createWorkspaceRecord({
+          entityType: "learning_goal",
+          id: "learning_goal_schema",
+          ownerId: "github_lubannn",
+          timestamp: "2026-08-27T01:51:00.000Z",
+          data: createLearningGoalData({ learning_area_id: "learning_area_schema", title: "形成学习闭环", description: "", target_date: null, success_criteria_markdown: "" }),
+        })),
+        "learning-goal-blob",
+      )],
     });
     const before = JSON.stringify(exported);
     const dryRun = await dryRunPortableWorkspaceMigrations(exported);
@@ -85,7 +97,7 @@ describe("schema migration registry", () => {
     expect(dryRun).toMatchObject({
       valid: true,
       registryVersion: 1,
-      counts: { files: 5, current: 5, migratable: 0, blocked: 0, steps: 0 },
+      counts: { files: 6, current: 6, migratable: 0, blocked: 0, steps: 0 },
       errors: [],
     });
     expect(dryRun.files.find((file) => file.path === "config/dashboard-layout.json")?.kind).toBe("dashboard_layout");

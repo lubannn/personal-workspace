@@ -341,7 +341,10 @@ canonical 文件位于 `data/journal-import-checkpoints/<id>.json`，固定 `ver
 ### LearningGoal
 
 - `id`, `learning_area_id`, `title`, `description`
-- `target_date`, `status`, `success_criteria_markdown`
+- `target_date`（date-only，可空）、`status`：`active`、`completed`、`archived`
+- `success_criteria_markdown`、`learning_goal_version = 1` 与通用 envelope 字段
+
+canonical 文件位于 `data/learning-goals/<id>.json`。Goal 必须引用同一 portable package 中可解析且 owner 一致的 LearningArea；创建时 UI 只允许引用未删除且 `status = active` 的 Area，并在固定 HEAD 快照上复核引用后以单个 Git commit 写入。编辑不改变 `learning_area_id`。Area 暂停、归档或软删除不会级联删除 Goal；Goal 仍保留并展示，但在 Area 恢复为 active 前只读。portable inspection 对缺失或无效 Area 引用 fail closed，对已暂停、归档或软删除的 Area 引用给出只读 warning。
 
 ### LearningActivity
 
