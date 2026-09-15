@@ -348,10 +348,12 @@ canonical 文件位于 `data/learning-goals/<id>.json`。Goal 必须引用同一
 
 ### LearningActivity
 
-- `id`, `learning_area_id`, `goal_id`
-- `activity_type`, `title`, `occurred_at`, `duration_minutes`
-- `quantity`, `unit`, `notes_markdown`
-- `linked_task_id`, `source_ref`
+- `id`, `learning_area_id`（必填）、`goal_id`（可空）
+- `activity_type`（可配置 slug）、`title`、`occurred_at`（ISO instant）、`duration_minutes`（1–10080）
+- `quantity` 与 `unit`（必须同时为空或同时有效）、`notes_markdown`
+- `linked_task_id`、`source_ref`（均可空）、`learning_activity_version = 1` 与通用 envelope 字段
+
+canonical 文件位于 `data/learning-activities/<id>.json`。v1 只支持用户手工记录，不抓取或上传来源正文。Activity 必须引用同一 portable package 中可解析且 owner 一致的 LearningArea；可选 Goal 必须存在、owner 一致且属于同一 Area。创建时 UI 只允许未删除且 `status = active` 的 Area，以及该 Area 下未删除、非归档的 Goal，并在固定 HEAD 快照上复核所有引用后以单个 Git commit 写入。编辑不改变 Area/Goal 引用。Area 或 Goal 失效不会级联删除历史 Activity；记录仍展示，但在引用恢复前只读。portable inspection 对缺失、跨 owner 或跨 Area 引用 fail closed，对不可管理的父级给出只读 warning。
 
 ### LearningResource
 

@@ -6,6 +6,7 @@ import { createWorkspaceRecord, serializeRecord } from "./protocol";
 import { createJournalImportCheckpointRecord } from "./journal-import-checkpoints";
 import { createLearningAreaData } from "./learning-areas";
 import { createLearningGoalData } from "./learning-goals";
+import { createLearningActivityData } from "./learning-activities";
 import {
   dryRunPortableWorkspaceMigrations,
   planSchemaMigration,
@@ -90,6 +91,17 @@ describe("schema migration registry", () => {
         })),
         "learning-goal-blob",
       )],
+      learningActivityFiles: [storedFile(
+        "data/learning-activities/learning_activity_schema.json",
+        serializeRecord(createWorkspaceRecord({
+          entityType: "learning_activity",
+          id: "learning_activity_schema",
+          ownerId: "github_lubannn",
+          timestamp: "2026-08-27T01:52:00.000Z",
+          data: createLearningActivityData({ learning_area_id: "learning_area_schema", goal_id: "learning_goal_schema", activity_type: "study", title: "完成一节学习", occurred_at: "2026-08-27T01:52:00.000Z", duration_minutes: 30, quantity: null, unit: null, notes_markdown: "", linked_task_id: null, source_ref: null }),
+        })),
+        "learning-activity-blob",
+      )],
     });
     const before = JSON.stringify(exported);
     const dryRun = await dryRunPortableWorkspaceMigrations(exported);
@@ -97,7 +109,7 @@ describe("schema migration registry", () => {
     expect(dryRun).toMatchObject({
       valid: true,
       registryVersion: 1,
-      counts: { files: 6, current: 6, migratable: 0, blocked: 0, steps: 0 },
+      counts: { files: 7, current: 7, migratable: 0, blocked: 0, steps: 0 },
       errors: [],
     });
     expect(dryRun.files.find((file) => file.path === "config/dashboard-layout.json")?.kind).toBe("dashboard_layout");

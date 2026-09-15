@@ -20,6 +20,7 @@ export type EntityType =
   | "sync_conflict"
   | "learning_area"
   | "learning_goal"
+  | "learning_activity"
   | "habit_rule"
   | "habit_check_in"
   | "health_staging_record"
@@ -62,6 +63,7 @@ const ENTITY_DIRECTORIES: Record<Exclude<EntityType, "journal">, string> = {
   sync_conflict: "sync-conflicts",
   learning_area: "learning-areas",
   learning_goal: "learning-goals",
+  learning_activity: "learning-activities",
   habit_rule: "habit-rules",
   habit_check_in: "habit-check-ins",
   health_staging_record: "health-staging-records",
