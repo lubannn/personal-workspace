@@ -3,6 +3,7 @@
 import { type ChangeEvent, type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { GitHubConflictError, GitHubContentsAdapter, GitHubDataError } from "../../../src/lib/github-data/github-contents";
+import { writeLearningChildWithParents } from "../../../src/lib/github-data/learning-parent-write";
 import {
   DASHBOARD_LAYOUT_PATH,
   createDefaultDashboardLayout,
@@ -1732,9 +1733,9 @@ export default function GitHubWorkspacePage() {
     if (!adapter || !connection || savingLearningGoalId || online === false) return false;
     setSavingLearningGoalId(item.record.id); setErrorMessage(""); setStatusMessage("");
     try {
-      currentManageableLearningArea(item.record.data.learning_area_id);
+      const area = currentManageableLearningArea(item.record.data.learning_area_id);
       const updated = updateLearningGoalDetails(item.record, fields);
-      const result = await adapter.writeText({ path: item.path, text: serializeRecord(updated), message: `learning goal: edit ${item.record.id}`, expectedBlobSha: item.blobSha });
+      const result = await writeLearningChildWithParents({ adapter, ownerId: connection.ownerId, area, child: item, text: serializeRecord(updated), message: `learning goal: edit ${item.record.id}` });
       setLearningGoalFiles((current) => current.map((candidate) => candidate.record.id === item.record.id ? { record: updated, path: result.path, blobSha: result.blobSha } : candidate));
       setStatusMessage("学习目标已更新；Area 引用保持不变，blob SHA 并发保护有效。");
       return true;
@@ -1749,9 +1750,9 @@ export default function GitHubWorkspacePage() {
     if (!adapter || !connection || savingLearningGoalId || online === false) return;
     setSavingLearningGoalId(item.record.id); setErrorMessage(""); setStatusMessage("");
     try {
-      currentManageableLearningArea(item.record.data.learning_area_id);
+      const area = currentManageableLearningArea(item.record.data.learning_area_id);
       const updated = setLearningGoalStatus(item.record, status);
-      const result = await adapter.writeText({ path: item.path, text: serializeRecord(updated), message: `learning goal: ${status} ${item.record.id}`, expectedBlobSha: item.blobSha });
+      const result = await writeLearningChildWithParents({ adapter, ownerId: connection.ownerId, area, child: item, text: serializeRecord(updated), message: `learning goal: ${status} ${item.record.id}` });
       setLearningGoalFiles((current) => current.map((candidate) => candidate.record.id === item.record.id ? { record: updated, path: result.path, blobSha: result.blobSha } : candidate));
       setStatusMessage(status === "completed" ? "学习目标已完成。" : status === "archived" ? "学习目标已归档。" : "学习目标已恢复进行。" );
     } catch (error) { setErrorMessage(error instanceof Error && error.message === "LEARNING_GOAL_AREA_UNAVAILABLE" ? "目标所属领域当前不可管理；恢复领域后再更改 Goal。" : friendlyError(error)); }
@@ -1763,10 +1764,10 @@ export default function GitHubWorkspacePage() {
     if (!adapter || !connection || savingLearningGoalId || online === false) return;
     setSavingLearningGoalId(item.record.id); setErrorMessage(""); setStatusMessage("");
     try {
-      currentManageableLearningArea(item.record.data.learning_area_id);
+      const area = currentManageableLearningArea(item.record.data.learning_area_id);
       const timestamp = new Date().toISOString();
       const updated = setWorkspaceRecordDeleted(item.record, operation === "trash" ? timestamp : null, timestamp);
-      const result = await adapter.writeText({ path: item.path, text: serializeRecord(updated), message: `learning goal: ${operation} ${item.record.id}`, expectedBlobSha: item.blobSha });
+      const result = await writeLearningChildWithParents({ adapter, ownerId: connection.ownerId, area, child: item, text: serializeRecord(updated), message: `learning goal: ${operation} ${item.record.id}` });
       setLearningGoalFiles((current) => current.map((candidate) => candidate.record.id === item.record.id ? { record: updated, path: result.path, blobSha: result.blobSha } : candidate));
       setStatusMessage(operation === "trash" ? "学习目标已移到可恢复回收站。" : "学习目标已恢复到原状态。");
     } catch (error) { setErrorMessage(error instanceof Error && error.message === "LEARNING_GOAL_AREA_UNAVAILABLE" ? "目标所属领域当前不可管理；恢复领域后再更改 Goal。" : friendlyError(error)); }
@@ -1816,9 +1817,9 @@ export default function GitHubWorkspacePage() {
     if (!adapter || !connection || savingLearningActivityId || online === false) return false;
     setSavingLearningActivityId(item.record.id); setErrorMessage(""); setStatusMessage("");
     try {
-      currentManageableLearningActivityParents(item.record.data.learning_area_id, item.record.data.goal_id);
+      const { area, goal } = currentManageableLearningActivityParents(item.record.data.learning_area_id, item.record.data.goal_id);
       const updated = updateLearningActivityDetails(item.record, fields);
-      const result = await adapter.writeText({ path: item.path, text: serializeRecord(updated), message: `learning activity: edit ${item.record.id}`, expectedBlobSha: item.blobSha });
+      const result = await writeLearningChildWithParents({ adapter, ownerId: connection.ownerId, area, goal, child: item, text: serializeRecord(updated), message: `learning activity: edit ${item.record.id}` });
       setLearningActivityFiles((current) => current.map((candidate) => candidate.record.id === item.record.id ? { record: updated, path: result.path, blobSha: result.blobSha } : candidate));
       setStatusMessage("学习活动已更新；Area 与 Goal 引用保持不变。");
       return true;
@@ -1833,10 +1834,10 @@ export default function GitHubWorkspacePage() {
     if (!adapter || !connection || savingLearningActivityId || online === false) return;
     setSavingLearningActivityId(item.record.id); setErrorMessage(""); setStatusMessage("");
     try {
-      currentManageableLearningActivityParents(item.record.data.learning_area_id, item.record.data.goal_id);
+      const { area, goal } = currentManageableLearningActivityParents(item.record.data.learning_area_id, item.record.data.goal_id);
       const timestamp = new Date().toISOString();
       const updated = setWorkspaceRecordDeleted(item.record, operation === "trash" ? timestamp : null, timestamp);
-      const result = await adapter.writeText({ path: item.path, text: serializeRecord(updated), message: `learning activity: ${operation} ${item.record.id}`, expectedBlobSha: item.blobSha });
+      const result = await writeLearningChildWithParents({ adapter, ownerId: connection.ownerId, area, goal, child: item, text: serializeRecord(updated), message: `learning activity: ${operation} ${item.record.id}` });
       setLearningActivityFiles((current) => current.map((candidate) => candidate.record.id === item.record.id ? { record: updated, path: result.path, blobSha: result.blobSha } : candidate));
       setStatusMessage(operation === "trash" ? "学习活动已移到可恢复回收站。" : "学习活动已恢复。");
     } catch (error) {
@@ -1873,9 +1874,9 @@ export default function GitHubWorkspacePage() {
     if (!adapter || !connection || savingLearningResourceId || online === false) return false;
     setSavingLearningResourceId(item.record.id); setErrorMessage(""); setStatusMessage("");
     try {
-      currentManageableLearningArea(item.record.data.learning_area_id);
+      const area = currentManageableLearningArea(item.record.data.learning_area_id);
       const updated = updateLearningResourceDetails(item.record, fields);
-      const result = await adapter.writeText({ path: item.path, text: serializeRecord(updated), message: `learning resource: edit ${item.record.id}`, expectedBlobSha: item.blobSha });
+      const result = await writeLearningChildWithParents({ adapter, ownerId: connection.ownerId, area, child: item, text: serializeRecord(updated), message: `learning resource: edit ${item.record.id}` });
       setLearningResourceFiles((current) => current.map((candidate) => candidate.record.id === item.record.id ? { record: updated, path: result.path, blobSha: result.blobSha } : candidate));
       setStatusMessage("学习资源元数据已更新；Area 引用保持不变。");
       return true;
@@ -1888,9 +1889,9 @@ export default function GitHubWorkspacePage() {
     if (!adapter || !connection || savingLearningResourceId || online === false) return;
     setSavingLearningResourceId(item.record.id); setErrorMessage(""); setStatusMessage("");
     try {
-      currentManageableLearningArea(item.record.data.learning_area_id);
+      const area = currentManageableLearningArea(item.record.data.learning_area_id);
       const updated = setLearningResourceStatus(item.record, status);
-      const result = await adapter.writeText({ path: item.path, text: serializeRecord(updated), message: `learning resource: ${status} ${item.record.id}`, expectedBlobSha: item.blobSha });
+      const result = await writeLearningChildWithParents({ adapter, ownerId: connection.ownerId, area, child: item, text: serializeRecord(updated), message: `learning resource: ${status} ${item.record.id}` });
       setLearningResourceFiles((current) => current.map((candidate) => candidate.record.id === item.record.id ? { record: updated, path: result.path, blobSha: result.blobSha } : candidate));
       setStatusMessage(status === "completed" ? "学习资源已标记完成。" : status === "archived" ? "学习资源已归档。" : "学习资源已恢复使用。");
     } catch (error) { setErrorMessage(error instanceof Error && error.message === "LEARNING_GOAL_AREA_UNAVAILABLE" ? "资源所属 Area 当前不可管理；恢复 Area 后再操作。" : friendlyError(error)); }
@@ -1902,10 +1903,10 @@ export default function GitHubWorkspacePage() {
     if (!adapter || !connection || savingLearningResourceId || online === false) return;
     setSavingLearningResourceId(item.record.id); setErrorMessage(""); setStatusMessage("");
     try {
-      currentManageableLearningArea(item.record.data.learning_area_id);
+      const area = currentManageableLearningArea(item.record.data.learning_area_id);
       const timestamp = new Date().toISOString();
       const updated = setWorkspaceRecordDeleted(item.record, operation === "trash" ? timestamp : null, timestamp);
-      const result = await adapter.writeText({ path: item.path, text: serializeRecord(updated), message: `learning resource: ${operation} ${item.record.id}`, expectedBlobSha: item.blobSha });
+      const result = await writeLearningChildWithParents({ adapter, ownerId: connection.ownerId, area, child: item, text: serializeRecord(updated), message: `learning resource: ${operation} ${item.record.id}` });
       setLearningResourceFiles((current) => current.map((candidate) => candidate.record.id === item.record.id ? { record: updated, path: result.path, blobSha: result.blobSha } : candidate));
       setStatusMessage(operation === "trash" ? "学习资源已移到可恢复回收站。" : "学习资源已恢复。");
     } catch (error) { setErrorMessage(error instanceof Error && error.message === "LEARNING_GOAL_AREA_UNAVAILABLE" ? "资源所属 Area 当前不可管理；恢复 Area 后再操作。" : friendlyError(error)); }
