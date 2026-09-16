@@ -357,8 +357,10 @@ canonical 文件位于 `data/learning-activities/<id>.json`。v1 只支持用户
 
 ### LearningResource
 
-- `id`, `learning_area_id`, `title`, `resource_type`, `url`
-- `notes_markdown`, `status`
+- `id`, `learning_area_id`（必填）、`title`、`resource_type`（可配置 slug）、`url`（绝对 `http/https` URL）
+- `notes_markdown`、`status`（`active`、`completed` 或 `archived`）、`learning_resource_version = 1` 与通用 envelope 字段
+
+canonical 文件位于 `data/learning-resources/<id>.json`。v1 仅保存用户输入的资源元数据和网页引用，不抓取、代理、缓存或上传外部文件正文。Resource 必须引用同一 portable package 中可解析且 owner 一致的 LearningArea。创建时 UI 只允许未删除且 `status = active` 的 Area，并在固定 HEAD 快照复核引用后以单个 Git commit 写入；编辑不改变 Area 引用。Area 暂停、归档或删除不会级联删除历史 Resource，记录保留但在 Area 恢复前只读。portable inspection 对缺失或跨 owner 引用 fail closed，对不可管理的 Area 给出只读 warning。
 
 领域特有字段放入版本化 `details_json` 前，应先确认其查询和报告需求；常用字段应提升为正式列或子实体。
 

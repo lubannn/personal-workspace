@@ -21,6 +21,7 @@ export type EntityType =
   | "learning_area"
   | "learning_goal"
   | "learning_activity"
+  | "learning_resource"
   | "habit_rule"
   | "habit_check_in"
   | "health_staging_record"
@@ -64,6 +65,7 @@ const ENTITY_DIRECTORIES: Record<Exclude<EntityType, "journal">, string> = {
   learning_area: "learning-areas",
   learning_goal: "learning-goals",
   learning_activity: "learning-activities",
+  learning_resource: "learning-resources",
   habit_rule: "habit-rules",
   habit_check_in: "habit-check-ins",
   health_staging_record: "health-staging-records",

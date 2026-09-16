@@ -20,6 +20,7 @@ import { parseSyncConflictRecord } from "./sync-conflicts";
 import { parseLearningAreaRecord } from "./learning-areas";
 import { parseLearningGoalRecord } from "./learning-goals";
 import { parseLearningActivityRecord } from "./learning-activities";
+import { parseLearningResourceRecord } from "./learning-resources";
 import { parseHabitRecord } from "./habits";
 import { parseHabitRuleRecord } from "./habit-rules";
 import { parseHabitCheckInRecord } from "./habit-check-ins";
@@ -55,7 +56,7 @@ export type PortableWorkspaceExport = {
   manifest: {
     schema_version: 1;
     scope: {
-      modules: Array<"workspace" | "captures" | "dashboard_layout" | "tasks" | "time_entries" | "projects" | "project_phases" | "milestones" | "project_notes" | "project_file_references" | "activity_events" | "calendar_events" | "report_drafts" | "journal_entries" | "journal_segments" | "journal_revisions" | "journal_import_checkpoints" | "obsidian_documents" | "sync_conflicts" | "learning_areas" | "learning_goals" | "learning_activities" | "habits" | "habit_rules" | "habit_check_ins" | "health_staging_records" | "health_metrics" | "sleep_sessions">;
+      modules: Array<"workspace" | "captures" | "dashboard_layout" | "tasks" | "time_entries" | "projects" | "project_phases" | "milestones" | "project_notes" | "project_file_references" | "activity_events" | "calendar_events" | "report_drafts" | "journal_entries" | "journal_segments" | "journal_revisions" | "journal_import_checkpoints" | "obsidian_documents" | "sync_conflicts" | "learning_areas" | "learning_goals" | "learning_activities" | "learning_resources" | "habits" | "habit_rules" | "habit_check_ins" | "health_staging_records" | "health_metrics" | "sleep_sessions">;
       complete: true;
     };
     counts: {
@@ -81,6 +82,7 @@ export type PortableWorkspaceExport = {
       learning_areas: number;
       learning_goals: number;
       learning_activities: number;
+      learning_resources: number;
       habits: number;
       habit_rules: number;
       habit_check_ins: number;
@@ -127,6 +129,7 @@ export type ExportInspection = {
     learningAreas: number;
     learningGoals: number;
     learningActivities: number;
+    learningResources: number;
     habits: number;
     habitRules: number;
     habitCheckIns: number;
@@ -176,6 +179,7 @@ export async function buildPortableWorkspaceExport(input: {
   learningAreaFiles?: GitHubStoredFile[];
   learningGoalFiles?: GitHubStoredFile[];
   learningActivityFiles?: GitHubStoredFile[];
+  learningResourceFiles?: GitHubStoredFile[];
   habitFiles?: GitHubStoredFile[];
   habitRuleFiles?: GitHubStoredFile[];
   habitCheckInFiles?: GitHubStoredFile[];
@@ -204,13 +208,14 @@ export async function buildPortableWorkspaceExport(input: {
   const learningAreaFiles = input.learningAreaFiles ?? [];
   const learningGoalFiles = input.learningGoalFiles ?? [];
   const learningActivityFiles = input.learningActivityFiles ?? [];
+  const learningResourceFiles = input.learningResourceFiles ?? [];
   const habitFiles = input.habitFiles ?? [];
   const habitRuleFiles = input.habitRuleFiles ?? [];
   const habitCheckInFiles = input.habitCheckInFiles ?? [];
   const healthStagingFiles = input.healthStagingFiles ?? [];
   const healthMetricFiles = input.healthMetricFiles ?? [];
   const sleepSessionFiles = input.sleepSessionFiles ?? [];
-  const files = [input.workspaceFile, ...input.captureFiles, ...dashboardLayoutFiles, ...taskFiles, ...timeEntryFiles, ...projectFiles, ...projectPhaseFiles, ...milestoneFiles, ...projectNoteFiles, ...projectFileReferenceFiles, ...activityEventFiles, ...calendarEventFiles, ...reportDraftFiles, ...journalEntryFiles, ...journalSegmentFiles, ...journalRevisionFiles, ...journalImportCheckpointFiles, ...obsidianDocumentFiles, ...syncConflictFiles, ...learningAreaFiles, ...learningGoalFiles, ...learningActivityFiles, ...habitFiles, ...habitRuleFiles, ...habitCheckInFiles, ...healthStagingFiles, ...healthMetricFiles, ...sleepSessionFiles]
+  const files = [input.workspaceFile, ...input.captureFiles, ...dashboardLayoutFiles, ...taskFiles, ...timeEntryFiles, ...projectFiles, ...projectPhaseFiles, ...milestoneFiles, ...projectNoteFiles, ...projectFileReferenceFiles, ...activityEventFiles, ...calendarEventFiles, ...reportDraftFiles, ...journalEntryFiles, ...journalSegmentFiles, ...journalRevisionFiles, ...journalImportCheckpointFiles, ...obsidianDocumentFiles, ...syncConflictFiles, ...learningAreaFiles, ...learningGoalFiles, ...learningActivityFiles, ...learningResourceFiles, ...habitFiles, ...habitRuleFiles, ...habitCheckInFiles, ...healthStagingFiles, ...healthMetricFiles, ...sleepSessionFiles]
     .map((file) => ({ ...file }))
     .sort((left, right) => left.path.localeCompare(right.path));
   const manifestFiles = await Promise.all(files.map(async (file) => ({
@@ -227,7 +232,7 @@ export async function buildPortableWorkspaceExport(input: {
     source: { repository: input.repository, branch: input.branch },
     manifest: {
       schema_version: 1,
-      scope: { modules: ["workspace", "captures", "dashboard_layout", "tasks", "time_entries", "projects", "project_phases", "milestones", "project_notes", "project_file_references", "activity_events", "calendar_events", "report_drafts", "journal_entries", "journal_segments", "journal_revisions", "journal_import_checkpoints", "obsidian_documents", "sync_conflicts", "learning_areas", "learning_goals", "learning_activities", "habits", "habit_rules", "habit_check_ins", "health_staging_records", "health_metrics", "sleep_sessions"], complete: true },
+      scope: { modules: ["workspace", "captures", "dashboard_layout", "tasks", "time_entries", "projects", "project_phases", "milestones", "project_notes", "project_file_references", "activity_events", "calendar_events", "report_drafts", "journal_entries", "journal_segments", "journal_revisions", "journal_import_checkpoints", "obsidian_documents", "sync_conflicts", "learning_areas", "learning_goals", "learning_activities", "learning_resources", "habits", "habit_rules", "habit_check_ins", "health_staging_records", "health_metrics", "sleep_sessions"], complete: true },
       counts: {
         files: files.length,
         captures: input.captureFiles.length,
@@ -251,6 +256,7 @@ export async function buildPortableWorkspaceExport(input: {
         learning_areas: learningAreaFiles.length,
         learning_goals: learningGoalFiles.length,
         learning_activities: learningActivityFiles.length,
+        learning_resources: learningResourceFiles.length,
         habits: habitFiles.length,
         habit_rules: habitRuleFiles.length,
         habit_check_ins: habitCheckInFiles.length,
@@ -290,7 +296,7 @@ export async function inspectPortableWorkspaceExport(value: unknown): Promise<Ex
     generatedAt: null,
     repository: null,
     workspace: null,
-    counts: { files: 0, captures: 0, dashboardLayouts: 0, tasks: 0, timeEntries: 0, projects: 0, projectPhases: 0, milestones: 0, projectNotes: 0, projectFileReferences: 0, activityEvents: 0, calendarEvents: 0, reportDrafts: 0, journalEntries: 0, journalSegments: 0, journalRevisions: 0, journalImportCheckpoints: 0, obsidianDocuments: 0, syncConflicts: 0, learningAreas: 0, learningGoals: 0, learningActivities: 0, habits: 0, habitRules: 0, habitCheckIns: 0, healthStagingRecords: 0, healthMetrics: 0, sleepSessions: 0 },
+    counts: { files: 0, captures: 0, dashboardLayouts: 0, tasks: 0, timeEntries: 0, projects: 0, projectPhases: 0, milestones: 0, projectNotes: 0, projectFileReferences: 0, activityEvents: 0, calendarEvents: 0, reportDrafts: 0, journalEntries: 0, journalSegments: 0, journalRevisions: 0, journalImportCheckpoints: 0, obsidianDocuments: 0, syncConflicts: 0, learningAreas: 0, learningGoals: 0, learningActivities: 0, learningResources: 0, habits: 0, habitRules: 0, habitCheckIns: 0, healthStagingRecords: 0, healthMetrics: 0, sleepSessions: 0 },
     errors,
     warnings,
   };
@@ -986,6 +992,27 @@ export async function inspectPortableWorkspaceExport(value: unknown): Promise<Ex
   const rawLearningActivityCount = manifestCounts?.learning_activities;
   if ((rawLearningActivityCount !== undefined || learningActivityFiles.length > 0) && rawLearningActivityCount !== learningActivityFiles.length) errors.push({ code: "LEARNING_ACTIVITY_COUNT_MISMATCH", message: "LearningActivity 数量与 manifest 不一致。" });
 
+  const learningResourceIds = new Set<string>();
+  const learningResourceFiles = validPayloadFiles.filter((file) => file.path.startsWith("data/learning-resources/"));
+  result.counts.learningResources = learningResourceFiles.length;
+  for (const file of learningResourceFiles) {
+    try {
+      const record = parseLearningResourceRecord(file.content);
+      if (result.workspace && record.owner_id !== result.workspace.owner_id) errors.push({ code: "OWNER_MISMATCH", message: "LearningResource 的 owner_id 与 workspace 不一致。", path: file.path });
+      if (recordPath("learning_resource", record.id) !== file.path) errors.push({ code: "LEARNING_RESOURCE_PATH_MISMATCH", message: "LearningResource 的 ID 与文件路径不一致。", path: file.path });
+      if (learningResourceIds.has(record.id)) errors.push({ code: "DUPLICATE_LEARNING_RESOURCE_ID", message: "导出包中存在重复 LearningResource ID。", path: file.path });
+      learningResourceIds.add(record.id);
+      const area = learningAreaRecords.get(record.data.learning_area_id);
+      if (!area) errors.push({ code: "LEARNING_RESOURCE_AREA_MISSING", message: "LearningResource 引用的 LearningArea 不在导出包中或无法通过校验。", path: file.path });
+      else {
+        if (area.owner_id !== record.owner_id) errors.push({ code: "LEARNING_RESOURCE_AREA_OWNER_MISMATCH", message: "LearningResource 与引用的 LearningArea owner 不一致。", path: file.path });
+        if (area.deleted_at !== null || area.data.status !== "active") warnings.push({ code: "LEARNING_RESOURCE_AREA_READ_ONLY", message: "LearningResource 的 Area 当前不可管理；资源保留并只读。", path: file.path });
+      }
+    } catch { errors.push({ code: "INVALID_LEARNING_RESOURCE_RECORD", message: "LearningResource 文件无法通过结构校验。", path: file.path }); }
+  }
+  const rawLearningResourceCount = manifestCounts?.learning_resources;
+  if ((rawLearningResourceCount !== undefined || learningResourceFiles.length > 0) && rawLearningResourceCount !== learningResourceFiles.length) errors.push({ code: "LEARNING_RESOURCE_COUNT_MISMATCH", message: "LearningResource 数量与 manifest 不一致。" });
+
   const habitIds = new Set<string>();
   const habitFiles = validPayloadFiles.filter((file) => file.path.startsWith("data/habits/"));
   result.counts.habits = habitFiles.length;
@@ -1125,6 +1152,7 @@ export async function inspectPortableWorkspaceExport(value: unknown): Promise<Ex
     && !file.path.startsWith("data/learning-areas/")
     && !file.path.startsWith("data/learning-goals/")
     && !file.path.startsWith("data/learning-activities/")
+    && !file.path.startsWith("data/learning-resources/")
     && !file.path.startsWith("data/habits/")
     && !file.path.startsWith("data/habit-rules/")
     && !file.path.startsWith("data/habit-check-ins/")

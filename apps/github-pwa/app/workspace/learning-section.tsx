@@ -22,7 +22,8 @@ import {
   trashedLearningActivities,
   type LearningActivityFields,
 } from "../../../../src/lib/github-data/learning-activities";
-import type { Connection, SyncedLearningActivity, SyncedLearningArea, SyncedLearningGoal } from "./page-model";
+import { activeLearningResources, archivedLearningResources, completedLearningResources, trashedLearningResources, type LearningResourceFields, type LearningResourceStatus } from "../../../../src/lib/github-data/learning-resources";
+import type { Connection, SyncedLearningActivity, SyncedLearningArea, SyncedLearningGoal, SyncedLearningResource } from "./page-model";
 
 type Props = {
   connection: Connection | null;
@@ -30,6 +31,7 @@ type Props = {
   areaItems: SyncedLearningArea[];
   goalItems: SyncedLearningGoal[];
   activityItems: SyncedLearningActivity[];
+  resourceItems: SyncedLearningResource[];
   loading: boolean;
   savingArea: boolean;
   savingAreaId: string | null;
@@ -37,6 +39,8 @@ type Props = {
   savingGoalId: string | null;
   savingActivity: boolean;
   savingActivityId: string | null;
+  savingResource: boolean;
+  savingResourceId: string | null;
   onCreateArea: (fields: LearningAreaFields) => Promise<boolean>;
   onEditArea: (item: SyncedLearningArea, fields: LearningAreaFields) => Promise<boolean>;
   onAreaStatusChange: (item: SyncedLearningArea, status: LearningAreaStatus) => void;
@@ -48,6 +52,10 @@ type Props = {
   onCreateActivity: (fields: LearningActivityFields) => Promise<boolean>;
   onEditActivity: (item: SyncedLearningActivity, fields: Omit<LearningActivityFields, "learning_area_id" | "goal_id">) => Promise<boolean>;
   onActivityDeletionChange: (item: SyncedLearningActivity, operation: "trash" | "restore") => void;
+  onCreateResource: (fields: LearningResourceFields) => Promise<boolean>;
+  onEditResource: (item: SyncedLearningResource, fields: Omit<LearningResourceFields, "learning_area_id">) => Promise<boolean>;
+  onResourceStatusChange: (item: SyncedLearningResource, status: LearningResourceStatus) => void;
+  onResourceDeletionChange: (item: SyncedLearningResource, operation: "trash" | "restore") => void;
   onRefresh: () => void;
 };
 
@@ -63,18 +71,22 @@ function localDateTimeValue(instant: string) {
   const date = new Date(instant);
   return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
 }
+const EMPTY_RESOURCE_FIELDS: LearningResourceFields = { learning_area_id: "", title: "", resource_type: "article", url: "", notes_markdown: "" };
 
 export function LearningSection(props: Props) {
-  const { connection, online, areaItems, goalItems, activityItems, loading, savingArea, savingAreaId, savingGoal, savingGoalId, savingActivity, savingActivityId, onCreateArea, onEditArea, onAreaStatusChange, onAreaDeletionChange, onCreateGoal, onEditGoal, onGoalStatusChange, onGoalDeletionChange, onCreateActivity, onEditActivity, onActivityDeletionChange, onRefresh } = props;
+  const { connection, online, areaItems, goalItems, activityItems, resourceItems, loading, savingArea, savingAreaId, savingGoal, savingGoalId, savingActivity, savingActivityId, savingResource, savingResourceId, onCreateArea, onEditArea, onAreaStatusChange, onAreaDeletionChange, onCreateGoal, onEditGoal, onGoalStatusChange, onGoalDeletionChange, onCreateActivity, onEditActivity, onActivityDeletionChange, onCreateResource, onEditResource, onResourceStatusChange, onResourceDeletionChange, onRefresh } = props;
   const [areaView, setAreaView] = useState<"active" | "archived" | "trash">("active");
   const [goalView, setGoalView] = useState<"active" | "completed" | "archived" | "trash">("active");
   const [activityView, setActivityView] = useState<"active" | "trash">("active");
+  const [resourceView, setResourceView] = useState<"active" | "completed" | "archived" | "trash">("active");
   const [editingAreaId, setEditingAreaId] = useState<string | null>(null);
   const [editingGoalId, setEditingGoalId] = useState<string | null>(null);
   const [editingActivityId, setEditingActivityId] = useState<string | null>(null);
+  const [editingResourceId, setEditingResourceId] = useState<string | null>(null);
   const [areaFields, setAreaFields] = useState<LearningAreaFields>(EMPTY_AREA_FIELDS);
   const [goalFields, setGoalFields] = useState<LearningGoalFields>(EMPTY_GOAL_FIELDS);
   const [activityFields, setActivityFields] = useState<LearningActivityFields>(() => emptyActivityFields());
+  const [resourceFields, setResourceFields] = useState<LearningResourceFields>(EMPTY_RESOURCE_FIELDS);
 
   const areaById = useMemo(() => new Map(areaItems.map((item) => [item.record.id, item])), [areaItems]);
   const goalById = useMemo(() => new Map(goalItems.map((item) => [item.record.id, item])), [goalItems]);
@@ -82,6 +94,8 @@ export function LearningSection(props: Props) {
   const goalRecords = useMemo(() => goalItems.map((item) => item.record), [goalItems]);
   const activityById = useMemo(() => new Map(activityItems.map((item) => [item.record.id, item])), [activityItems]);
   const activityRecords = useMemo(() => activityItems.map((item) => item.record), [activityItems]);
+  const resourceById = useMemo(() => new Map(resourceItems.map((item) => [item.record.id, item])), [resourceItems]);
+  const resourceRecords = useMemo(() => resourceItems.map((item) => item.record), [resourceItems]);
   const activeAreas = useMemo(() => activeLearningAreas(areaRecords).map((record) => areaById.get(record.id)!), [areaById, areaRecords]);
   const archivedAreas = useMemo(() => archivedLearningAreas(areaRecords).map((record) => areaById.get(record.id)!), [areaById, areaRecords]);
   const trashedAreas = useMemo(() => trashedLearningAreas(areaRecords).map((record) => areaById.get(record.id)!), [areaById, areaRecords]);
@@ -95,10 +109,16 @@ export function LearningSection(props: Props) {
   const activeActivities = useMemo(() => activeLearningActivities(activityRecords).map((record) => activityById.get(record.id)!), [activityById, activityRecords]);
   const trashedActivities = useMemo(() => trashedLearningActivities(activityRecords).map((record) => activityById.get(record.id)!), [activityById, activityRecords]);
   const visibleActivities = activityView === "active" ? activeActivities : trashedActivities;
+  const activeResources = useMemo(() => activeLearningResources(resourceRecords).map((record) => resourceById.get(record.id)!), [resourceById, resourceRecords]);
+  const completedResources = useMemo(() => completedLearningResources(resourceRecords).map((record) => resourceById.get(record.id)!), [resourceById, resourceRecords]);
+  const archivedResources = useMemo(() => archivedLearningResources(resourceRecords).map((record) => resourceById.get(record.id)!), [resourceById, resourceRecords]);
+  const trashedResources = useMemo(() => trashedLearningResources(resourceRecords).map((record) => resourceById.get(record.id)!), [resourceById, resourceRecords]);
+  const visibleResources = resourceView === "active" ? activeResources : resourceView === "completed" ? completedResources : resourceView === "archived" ? archivedResources : trashedResources;
   const selectableGoals = useMemo(() => goalItems.filter((item) => item.record.data.learning_area_id === activityFields.learning_area_id && item.record.deleted_at === null && item.record.data.status !== "archived"), [activityFields.learning_area_id, goalItems]);
   const busyArea = savingArea || savingAreaId !== null;
   const busyGoal = savingGoal || savingGoalId !== null;
   const busyActivity = savingActivity || savingActivityId !== null;
+  const busyResource = savingResource || savingResourceId !== null;
 
   async function submitArea(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -129,6 +149,14 @@ export function LearningSection(props: Props) {
     if (saved) resetActivityForm();
   }
 
+  async function submitResource(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!resourceFields.learning_area_id || !resourceFields.title.trim() || !resourceFields.url.trim()) return;
+    const editing = editingResourceId ? resourceById.get(editingResourceId) : null;
+    const saved = editing ? await onEditResource(editing, { title: resourceFields.title, resource_type: resourceFields.resource_type, url: resourceFields.url, notes_markdown: resourceFields.notes_markdown }) : await onCreateResource(resourceFields);
+    if (saved) resetResourceForm();
+  }
+
   function beginAreaEdit(item: SyncedLearningArea) {
     setEditingAreaId(item.record.id);
     setAreaFields({ name: item.record.data.name, description_markdown: item.record.data.description_markdown, area_type: item.record.data.area_type, icon: item.record.data.icon, color: item.record.data.color });
@@ -143,13 +171,16 @@ export function LearningSection(props: Props) {
     setEditingActivityId(item.record.id);
     setActivityFields({ ...item.record.data, occurred_at: localDateTimeValue(item.record.data.occurred_at) });
   }
+  function beginResourceEdit(item: SyncedLearningResource) { setEditingResourceId(item.record.id); setResourceFields({ learning_area_id: item.record.data.learning_area_id, title: item.record.data.title, resource_type: item.record.data.resource_type, url: item.record.data.url, notes_markdown: item.record.data.notes_markdown }); }
 
   function resetAreaForm() { setEditingAreaId(null); setAreaFields(EMPTY_AREA_FIELDS); }
   function resetGoalForm() { setEditingGoalId(null); setGoalFields(EMPTY_GOAL_FIELDS); }
   function resetActivityForm() { setEditingActivityId(null); setActivityFields(emptyActivityFields()); }
+  function resetResourceForm() { setEditingResourceId(null); setResourceFields(EMPTY_RESOURCE_FIELDS); }
   function setAreaField<Key extends keyof LearningAreaFields>(key: Key, value: LearningAreaFields[Key]) { setAreaFields((current) => ({ ...current, [key]: value })); }
   function setGoalField<Key extends keyof LearningGoalFields>(key: Key, value: LearningGoalFields[Key]) { setGoalFields((current) => ({ ...current, [key]: value })); }
   function setActivityField<Key extends keyof LearningActivityFields>(key: Key, value: LearningActivityFields[Key]) { setActivityFields((current) => ({ ...current, [key]: value })); }
+  function setResourceField<Key extends keyof LearningResourceFields>(key: Key, value: LearningResourceFields[Key]) { setResourceFields((current) => ({ ...current, [key]: value })); }
   function areaAvailability(item: SyncedLearningArea | undefined) {
     if (!item) return "引用领域缺失";
     if (item.record.deleted_at !== null) return "领域在回收站，Goal 只读";
@@ -240,6 +271,29 @@ export function LearningSection(props: Props) {
       return <li key={item.record.id}>
         <div><span>◷</span><strong>{item.record.data.title}</strong><code>{item.record.data.activity_type}</code><p>{area?.record.data.name ?? item.record.data.learning_area_id}{goal ? ` · ${goal.record.data.title}` : ""}</p>{item.record.data.notes_markdown ? <p>{item.record.data.notes_markdown}</p> : null}{item.record.data.source_ref ? <p className="learning-goal-criteria">来源：{item.record.data.source_ref}</p> : null}<small>{new Date(item.record.data.occurred_at).toLocaleString("zh-CN")} · {item.record.data.duration_minutes} 分钟{item.record.data.quantity !== null ? ` · ${item.record.data.quantity} ${item.record.data.unit}` : ""} · v{item.record.version}{unavailable ? ` · ${unavailable}` : ""}</small></div>
         <div className="learning-item-actions">{activityView === "active" ? <button className="text-button" type="button" onClick={() => beginActivityEdit(item)} disabled={busyActivity || unavailable !== null}>编辑</button> : null}<button className="text-button" type="button" onClick={() => onActivityDeletionChange(item, activityView === "trash" ? "restore" : "trash")} disabled={busyActivity || unavailable !== null || online === false}>{savingActivityId === item.record.id ? "…" : activityView === "trash" ? "恢复" : "移到回收站"}</button></div>
+      </li>;
+    })}</ol>}
+
+    <div className="learning-subsection-heading learning-goals-heading"><div><h3>学习资源</h3><p>只保存标题、类型、网页引用和笔记；不会抓取或上传外部正文。</p></div><div className="learning-view-actions">
+      <button className="view-button" type="button" aria-pressed={resourceView === "active"} onClick={() => setResourceView("active")}>使用中 {activeResources.length}</button>
+      <button className="view-button" type="button" aria-pressed={resourceView === "completed"} onClick={() => { setResourceView("completed"); resetResourceForm(); }}>已完成 {completedResources.length}</button>
+      <button className="view-button" type="button" aria-pressed={resourceView === "archived"} onClick={() => { setResourceView("archived"); resetResourceForm(); }}>已归档 {archivedResources.length}</button>
+      <button className="view-button" type="button" aria-pressed={resourceView === "trash"} onClick={() => { setResourceView("trash"); resetResourceForm(); }}>回收站 {trashedResources.length}</button>
+    </div></div>
+    {resourceView === "active" ? <form className="learning-form learning-goal-form" onSubmit={submitResource}>
+      <label>学习领域<select value={resourceFields.learning_area_id} onChange={(event) => setResourceField("learning_area_id", event.target.value)} disabled={!connection || busyResource || editingResourceId !== null}><option value="">选择可用领域</option>{manageableAreas.map((item) => <option key={item.record.id} value={item.record.id}>{item.record.data.name}</option>)}</select></label>
+      <label>资源标题<input value={resourceFields.title} maxLength={300} onChange={(event) => setResourceField("title", event.target.value)} placeholder="例如：统计学公开课" disabled={!connection || busyResource} /></label>
+      <label>资源类型<input value={resourceFields.resource_type} maxLength={64} pattern="[a-z0-9][a-z0-9_-]*" onChange={(event) => setResourceField("resource_type", event.target.value)} placeholder="例如：course" disabled={!connection || busyResource} /></label>
+      <label className="learning-description">网页地址<input type="url" value={resourceFields.url} maxLength={2_000} pattern="https?://.*" onChange={(event) => setResourceField("url", event.target.value)} placeholder="https://example.com/resource" disabled={!connection || busyResource} /></label>
+      <label className="learning-description">笔记（支持 Markdown）<textarea value={resourceFields.notes_markdown} maxLength={50_000} onChange={(event) => setResourceField("notes_markdown", event.target.value)} placeholder="为什么保留这个资源？" disabled={!connection || busyResource} /></label>
+      <footer><span>编辑不会改变 Area 引用；外部网页内容不进入 Workspace。</span><div>{editingResourceId ? <button className="secondary-button" type="button" onClick={resetResourceForm} disabled={busyResource}>取消编辑</button> : null}<button className="primary-button" type="submit" disabled={!connection || !resourceFields.learning_area_id || !resourceFields.title.trim() || !resourceFields.url.trim() || busyResource || online === false}>{busyResource ? "保存中…" : editingResourceId ? "保存修改" : "保存资源"}</button></div></footer>
+    </form> : null}
+    {!connection ? <p className="empty-note">连接后显示 Private 仓库中的 LearningResource。</p> : loading && resourceItems.length === 0 ? <p className="empty-note">正在读取学习资源…</p> : visibleResources.length === 0 ? <p className="empty-note">当前视图还没有学习资源。</p> : <ol className="learning-list">{visibleResources.map((item) => {
+      const area = areaById.get(item.record.data.learning_area_id);
+      const unavailable = areaAvailability(area);
+      return <li key={item.record.id}>
+        <div><span>↗</span><strong>{item.record.data.title}</strong><code>{item.record.data.resource_type}</code><p>{area?.record.data.name ?? item.record.data.learning_area_id}</p><a href={item.record.data.url} target="_blank" rel="noreferrer">打开资源</a>{item.record.data.notes_markdown ? <p>{item.record.data.notes_markdown}</p> : null}<small>{item.record.data.status === "completed" ? "已完成" : item.record.data.status === "archived" ? "已归档" : "使用中"} · v{item.record.version}{unavailable ? ` · ${unavailable.replace("Goal", "Resource")}` : ""}</small></div>
+        <div className="learning-item-actions">{resourceView === "active" ? <><button className="text-button" type="button" onClick={() => beginResourceEdit(item)} disabled={busyResource || unavailable !== null}>编辑</button><button className="text-button" type="button" onClick={() => onResourceStatusChange(item, "completed")} disabled={busyResource || unavailable !== null || online === false}>完成</button><button className="text-button" type="button" onClick={() => onResourceStatusChange(item, "archived")} disabled={busyResource || unavailable !== null || online === false}>归档</button></> : resourceView === "completed" || resourceView === "archived" ? <button className="text-button" type="button" onClick={() => onResourceStatusChange(item, "active")} disabled={busyResource || unavailable !== null || online === false}>恢复使用</button> : null}<button className="text-button" type="button" onClick={() => onResourceDeletionChange(item, resourceView === "trash" ? "restore" : "trash")} disabled={busyResource || unavailable !== null || online === false}>{savingResourceId === item.record.id ? "…" : resourceView === "trash" ? "恢复" : "移到回收站"}</button></div>
       </li>;
     })}</ol>}
   </section>;

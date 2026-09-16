@@ -15,6 +15,7 @@ import { createSyncConflictRecord } from "./sync-conflicts";
 import { createLearningAreaData } from "./learning-areas";
 import { createLearningGoalData } from "./learning-goals";
 import { createLearningActivityData } from "./learning-activities";
+import { createLearningResourceData } from "./learning-resources";
 import { createHabitData } from "./habits";
 import { createHabitRuleData } from "./habit-rules";
 import { createAutomaticHabitCheckInData } from "./habit-check-ins";
@@ -323,6 +324,8 @@ async function sampleExport() {
       source_ref: "课程：统计学基础",
     }),
   }));
+  const learningResourceId = "learning_resource_20260827020450000_abcd1234";
+  const learningResourceText = serializeRecord(createWorkspaceRecord({ entityType: "learning_resource", id: learningResourceId, ownerId: "github_lubannn", timestamp: "2026-08-27T02:04:50.000Z", data: createLearningResourceData({ learning_area_id: learningAreaId, title: "统计学公开课", resource_type: "course", url: "https://example.com/statistics", notes_markdown: "资源元数据" }) }));
   const habitId = "habit_20260827020500000_abcd1234";
   const habitRuleId = "habit_rule_20260827020510000_abcd1234";
   const habitCheckInId = "habit_check_in_20260827020520000_abcd1234";
@@ -356,6 +359,7 @@ async function sampleExport() {
     learningAreaFiles: [storedFile(`data/learning-areas/${learningAreaId}.json`, learningAreaText, "learning-area-blob")],
     learningGoalFiles: [storedFile(`data/learning-goals/${learningGoalId}.json`, learningGoalText, "learning-goal-blob")],
     learningActivityFiles: [storedFile(`data/learning-activities/${learningActivityId}.json`, learningActivityText, "learning-activity-blob")],
+    learningResourceFiles: [storedFile(`data/learning-resources/${learningResourceId}.json`, learningResourceText, "learning-resource-blob")],
     habitFiles: [storedFile(`data/habits/${habitId}.json`, habitText, "habit-blob")],
     habitRuleFiles: [storedFile(`data/habit-rules/${habitRuleId}.json`, habitRuleText, "habit-rule-blob")],
     habitCheckInFiles: [storedFile(`data/habit-check-ins/${habitCheckInId}.json`, habitCheckInText, "habit-check-in-blob")],
@@ -373,7 +377,7 @@ async function sampleExport() {
 describe("portable GitHub workspace export", () => {
   it("builds a deterministic manifest and passes restore preflight", async () => {
     const exported = await sampleExport();
-    expect(exported.manifest.counts).toEqual({ files: 25, captures: 1, dashboard_layouts: 1, tasks: 1, time_entries: 1, projects: 1, project_phases: 1, milestones: 1, project_notes: 1, project_file_references: 1, activity_events: 1, calendar_events: 1, report_drafts: 1, journal_entries: 1, journal_segments: 1, journal_revisions: 1, journal_import_checkpoints: 1, obsidian_documents: 1, sync_conflicts: 1, learning_areas: 1, learning_goals: 1, learning_activities: 1, habits: 1, habit_rules: 1, habit_check_ins: 1, health_staging_records: 0, health_metrics: 0, sleep_sessions: 0 });
+    expect(exported.manifest.counts).toEqual({ files: 26, captures: 1, dashboard_layouts: 1, tasks: 1, time_entries: 1, projects: 1, project_phases: 1, milestones: 1, project_notes: 1, project_file_references: 1, activity_events: 1, calendar_events: 1, report_drafts: 1, journal_entries: 1, journal_segments: 1, journal_revisions: 1, journal_import_checkpoints: 1, obsidian_documents: 1, sync_conflicts: 1, learning_areas: 1, learning_goals: 1, learning_activities: 1, learning_resources: 1, habits: 1, habit_rules: 1, habit_check_ins: 1, health_staging_records: 0, health_metrics: 0, sleep_sessions: 0 });
     expect(exported.manifest.files.map((file) => file.path)).toEqual([
       "config/dashboard-layout.json",
       "data/activity-events/activity_20260827015800000_abcd1234.json",
@@ -389,6 +393,7 @@ describe("portable GitHub workspace export", () => {
       "data/learning-activities/learning_activity_20260827020440000_abcd1234.json",
       "data/learning-areas/learning_area_20260827020400000_abcd1234.json",
       "data/learning-goals/learning_goal_20260827020430000_abcd1234.json",
+      "data/learning-resources/learning_resource_20260827020450000_abcd1234.json",
       "data/milestones/milestone_20260827015500000_abcd1234.json",
       "data/obsidian-documents/obsidian_document_20260827020230000_abcd1234.json",
       "data/project-file-references/project_file_20260827015830000_abcd1234.json",
@@ -406,13 +411,13 @@ describe("portable GitHub workspace export", () => {
     await expect(inspectPortableWorkspaceExport(exported)).resolves.toMatchObject({
       valid: true,
       repository: "lubannn/personal-workspace-data",
-      counts: { files: 25, captures: 1, dashboardLayouts: 1, tasks: 1, timeEntries: 1, projects: 1, projectPhases: 1, milestones: 1, projectNotes: 1, projectFileReferences: 1, activityEvents: 1, calendarEvents: 1, reportDrafts: 1, journalEntries: 1, journalSegments: 1, journalRevisions: 1, journalImportCheckpoints: 1, obsidianDocuments: 1, syncConflicts: 1, learningAreas: 1, learningGoals: 1, learningActivities: 1, habits: 1, habitRules: 1, habitCheckIns: 1, healthStagingRecords: 0, healthMetrics: 0, sleepSessions: 0 },
+      counts: { files: 26, captures: 1, dashboardLayouts: 1, tasks: 1, timeEntries: 1, projects: 1, projectPhases: 1, milestones: 1, projectNotes: 1, projectFileReferences: 1, activityEvents: 1, calendarEvents: 1, reportDrafts: 1, journalEntries: 1, journalSegments: 1, journalRevisions: 1, journalImportCheckpoints: 1, obsidianDocuments: 1, syncConflicts: 1, learningAreas: 1, learningGoals: 1, learningActivities: 1, learningResources: 1, habits: 1, habitRules: 1, habitCheckIns: 1, healthStagingRecords: 0, healthMetrics: 0, sleepSessions: 0 },
       errors: [],
       workspace: { owner_id: "github_lubannn" },
     });
   });
 
-  it("rejects a LearningGoal whose LearningArea is missing from the package", async () => {
+  it("rejects Learning children whose LearningArea is missing from the package", async () => {
     const exported = await sampleExport();
     const goalPath = "data/learning-goals/learning_goal_20260827020430000_abcd1234.json";
     exported.files = exported.files.filter((file) => !file.path.startsWith("data/learning-areas/"));
@@ -422,6 +427,7 @@ describe("portable GitHub workspace export", () => {
     const inspection = await inspectPortableWorkspaceExport(exported);
     expect(inspection.valid).toBe(false);
     expect(inspection.errors).toContainEqual(expect.objectContaining({ code: "LEARNING_GOAL_AREA_MISSING", path: goalPath }));
+    expect(inspection.errors).toContainEqual(expect.objectContaining({ code: "LEARNING_RESOURCE_AREA_MISSING", path: "data/learning-resources/learning_resource_20260827020450000_abcd1234.json" }));
   });
 
   it("rejects a LearningActivity whose optional LearningGoal is missing", async () => {
@@ -460,7 +466,7 @@ describe("portable GitHub workspace export", () => {
     expect(inspection.errors.map((error) => error.code)).toContain("LEARNING_ACTIVITY_GOAL_AREA_MISMATCH");
   });
 
-  it("keeps goals valid but warns when their area is soft-deleted", async () => {
+  it("keeps Learning children valid but warns when their area is soft-deleted", async () => {
     const timestamp = "2026-09-15T08:00:00.000Z";
     const area = setWorkspaceRecordDeleted(createWorkspaceRecord({
       entityType: "learning_area", id: "learning_area_deleted", ownerId: "github_lubannn", timestamp,
@@ -470,15 +476,23 @@ describe("portable GitHub workspace export", () => {
       entityType: "learning_goal", id: "learning_goal_retained", ownerId: "github_lubannn", timestamp,
       data: createLearningGoalData({ learning_area_id: area.id, title: "保留的目标", description: "", target_date: null, success_criteria_markdown: "" }),
     });
+    const resource = createWorkspaceRecord({
+      entityType: "learning_resource", id: "learning_resource_retained", ownerId: "github_lubannn", timestamp,
+      data: createLearningResourceData({ learning_area_id: area.id, title: "保留的资源", resource_type: "article", url: "https://example.com/retained", notes_markdown: "" }),
+    });
     const exported = await buildPortableWorkspaceExport({
       repository: "lubannn/personal-workspace-data", branch: "main", workspaceFile: storedFile("workspace.json", workspaceText, "workspace-blob"), captureFiles: [],
       learningAreaFiles: [storedFile(`data/learning-areas/${area.id}.json`, serializeRecord(area), "area-blob")],
       learningGoalFiles: [storedFile(`data/learning-goals/${goal.id}.json`, serializeRecord(goal), "goal-blob")],
+      learningResourceFiles: [storedFile(`data/learning-resources/${resource.id}.json`, serializeRecord(resource), "resource-blob")],
     });
     await expect(inspectPortableWorkspaceExport(exported)).resolves.toMatchObject({
       valid: true,
       errors: [],
-      warnings: expect.arrayContaining([expect.objectContaining({ code: "LEARNING_GOAL_AREA_READ_ONLY" })]),
+      warnings: expect.arrayContaining([
+        expect.objectContaining({ code: "LEARNING_GOAL_AREA_READ_ONLY" }),
+        expect.objectContaining({ code: "LEARNING_RESOURCE_AREA_READ_ONLY" }),
+      ]),
     });
   });
 
@@ -711,6 +725,7 @@ describe("portable GitHub workspace export", () => {
     exported.files = exported.files.filter((file) => !file.path.startsWith("data/learning-areas/"));
     exported.files = exported.files.filter((file) => !file.path.startsWith("data/learning-goals/"));
     exported.files = exported.files.filter((file) => !file.path.startsWith("data/learning-activities/"));
+    exported.files = exported.files.filter((file) => !file.path.startsWith("data/learning-resources/"));
     exported.files = exported.files.filter((file) => !file.path.startsWith("data/habits/"));
     exported.files = exported.files.filter((file) => !file.path.startsWith("data/habit-rules/"));
     exported.files = exported.files.filter((file) => !file.path.startsWith("data/habit-check-ins/"));
@@ -734,6 +749,7 @@ describe("portable GitHub workspace export", () => {
     exported.manifest.files = exported.manifest.files.filter((file) => !file.path.startsWith("data/learning-areas/"));
     exported.manifest.files = exported.manifest.files.filter((file) => !file.path.startsWith("data/learning-goals/"));
     exported.manifest.files = exported.manifest.files.filter((file) => !file.path.startsWith("data/learning-activities/"));
+    exported.manifest.files = exported.manifest.files.filter((file) => !file.path.startsWith("data/learning-resources/"));
     exported.manifest.files = exported.manifest.files.filter((file) => !file.path.startsWith("data/habits/"));
     exported.manifest.files = exported.manifest.files.filter((file) => !file.path.startsWith("data/habit-rules/"));
     exported.manifest.files = exported.manifest.files.filter((file) => !file.path.startsWith("data/habit-check-ins/"));

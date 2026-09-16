@@ -101,6 +101,7 @@ import {
   updateLearningActivityDetails,
   type LearningActivityFields,
 } from "../../../src/lib/github-data/learning-activities";
+import { createLearningResourceData, setLearningResourceStatus, updateLearningResourceDetails, type LearningResourceFields, type LearningResourceStatus } from "../../../src/lib/github-data/learning-resources";
 import { createHabitData, setHabitStatus, type HabitFields, type HabitStatus } from "../../../src/lib/github-data/habits";
 import { correctHabitCheckIn, createAutomaticHabitCheckInData, createManualHabitCheckInData, type HabitCheckInStatus } from "../../../src/lib/github-data/habit-check-ins";
 import { createSleepHabitRuleData, evaluateSleepHabitRule, type SleepHabitRuleFields } from "../../../src/lib/github-data/sleep-habit-rules";
@@ -136,6 +137,7 @@ import {
   type SyncedLearningArea,
   type SyncedLearningActivity,
   type SyncedLearningGoal,
+  type SyncedLearningResource,
   type SyncedProject,
   type SyncedProjectPhase,
   type SyncedMilestone,
@@ -216,6 +218,8 @@ export default function GitHubWorkspacePage() {
   const [savingLearningGoalId, setSavingLearningGoalId] = useState<string | null>(null);
   const [savingLearningActivity, setSavingLearningActivity] = useState(false);
   const [savingLearningActivityId, setSavingLearningActivityId] = useState<string | null>(null);
+  const [savingLearningResource, setSavingLearningResource] = useState(false);
+  const [savingLearningResourceId, setSavingLearningResourceId] = useState<string | null>(null);
   const [savingHabit, setSavingHabit] = useState(false);
   const [savingHabitId, setSavingHabitId] = useState<string | null>(null);
   const [savingHealth, setSavingHealth] = useState(false);
@@ -276,6 +280,8 @@ export default function GitHubWorkspacePage() {
     setLearningGoalFiles,
     learningActivityFiles,
     setLearningActivityFiles,
+    learningResourceFiles,
+    setLearningResourceFiles,
     habitFiles,
     setHabitFiles,
     habitRuleFiles,
@@ -1838,6 +1844,74 @@ export default function GitHubWorkspacePage() {
     } finally { setSavingLearningActivityId(null); }
   }
 
+  async function saveLearningResource(fields: LearningResourceFields) {
+    const adapter = adapterRef.current;
+    if (!adapter || !connection || savingLearningResource || online === false) return false;
+    setSavingLearningResource(true); setErrorMessage(""); setStatusMessage("");
+    const timestamp = new Date().toISOString();
+    const id = `learning_resource_${timestamp.replaceAll(/\D/g, "").slice(0, 17)}_${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`;
+    try {
+      const area = currentManageableLearningArea(fields.learning_area_id);
+      const snapshot = await adapter.readBranchSnapshot();
+      const currentAreaFile = await adapter.readText(area.path, snapshot.headCommitSha);
+      const currentArea = parseLearningAreaRecord(currentAreaFile.text);
+      if (currentAreaFile.blobSha !== area.blobSha || currentArea.owner_id !== connection.ownerId || currentArea.deleted_at !== null || currentArea.data.status !== "active") throw new GitHubConflictError("LearningArea changed before resource creation.");
+      const record = createWorkspaceRecord({ entityType: "learning_resource", id, ownerId: connection.ownerId, timestamp, data: createLearningResourceData(fields) });
+      const path = recordPath("learning_resource", id);
+      const result = await adapter.writeAtomicFiles({ files: [{ path, text: serializeRecord(record) }], message: `learning resource: create ${id}`, expectedHeadCommitSha: snapshot.headCommitSha, baseTreeSha: snapshot.rootTreeSha });
+      setLearningResourceFiles((current) => [{ record, path, blobSha: result.files[0]!.blobSha }, ...current]);
+      setStatusMessage("学习资源元数据已原子保存；未抓取或上传外部正文。");
+      return true;
+    } catch (error) {
+      setErrorMessage(error instanceof Error && error.message === "LEARNING_GOAL_AREA_UNAVAILABLE" ? "所选 Area 当前不可用；请刷新后重新选择。" : friendlyError(error));
+      return false;
+    } finally { setSavingLearningResource(false); }
+  }
+
+  async function saveLearningResourceEdit(item: SyncedLearningResource, fields: Omit<LearningResourceFields, "learning_area_id">) {
+    const adapter = adapterRef.current;
+    if (!adapter || !connection || savingLearningResourceId || online === false) return false;
+    setSavingLearningResourceId(item.record.id); setErrorMessage(""); setStatusMessage("");
+    try {
+      currentManageableLearningArea(item.record.data.learning_area_id);
+      const updated = updateLearningResourceDetails(item.record, fields);
+      const result = await adapter.writeText({ path: item.path, text: serializeRecord(updated), message: `learning resource: edit ${item.record.id}`, expectedBlobSha: item.blobSha });
+      setLearningResourceFiles((current) => current.map((candidate) => candidate.record.id === item.record.id ? { record: updated, path: result.path, blobSha: result.blobSha } : candidate));
+      setStatusMessage("学习资源元数据已更新；Area 引用保持不变。");
+      return true;
+    } catch (error) { setErrorMessage(error instanceof Error && error.message === "LEARNING_GOAL_AREA_UNAVAILABLE" ? "资源所属 Area 当前不可管理；恢复 Area 后再修改。" : friendlyError(error)); return false; }
+    finally { setSavingLearningResourceId(null); }
+  }
+
+  async function updateLearningResourceStatus(item: SyncedLearningResource, status: LearningResourceStatus) {
+    const adapter = adapterRef.current;
+    if (!adapter || !connection || savingLearningResourceId || online === false) return;
+    setSavingLearningResourceId(item.record.id); setErrorMessage(""); setStatusMessage("");
+    try {
+      currentManageableLearningArea(item.record.data.learning_area_id);
+      const updated = setLearningResourceStatus(item.record, status);
+      const result = await adapter.writeText({ path: item.path, text: serializeRecord(updated), message: `learning resource: ${status} ${item.record.id}`, expectedBlobSha: item.blobSha });
+      setLearningResourceFiles((current) => current.map((candidate) => candidate.record.id === item.record.id ? { record: updated, path: result.path, blobSha: result.blobSha } : candidate));
+      setStatusMessage(status === "completed" ? "学习资源已标记完成。" : status === "archived" ? "学习资源已归档。" : "学习资源已恢复使用。");
+    } catch (error) { setErrorMessage(error instanceof Error && error.message === "LEARNING_GOAL_AREA_UNAVAILABLE" ? "资源所属 Area 当前不可管理；恢复 Area 后再操作。" : friendlyError(error)); }
+    finally { setSavingLearningResourceId(null); }
+  }
+
+  async function updateLearningResourceDeletion(item: SyncedLearningResource, operation: "trash" | "restore") {
+    const adapter = adapterRef.current;
+    if (!adapter || !connection || savingLearningResourceId || online === false) return;
+    setSavingLearningResourceId(item.record.id); setErrorMessage(""); setStatusMessage("");
+    try {
+      currentManageableLearningArea(item.record.data.learning_area_id);
+      const timestamp = new Date().toISOString();
+      const updated = setWorkspaceRecordDeleted(item.record, operation === "trash" ? timestamp : null, timestamp);
+      const result = await adapter.writeText({ path: item.path, text: serializeRecord(updated), message: `learning resource: ${operation} ${item.record.id}`, expectedBlobSha: item.blobSha });
+      setLearningResourceFiles((current) => current.map((candidate) => candidate.record.id === item.record.id ? { record: updated, path: result.path, blobSha: result.blobSha } : candidate));
+      setStatusMessage(operation === "trash" ? "学习资源已移到可恢复回收站。" : "学习资源已恢复。");
+    } catch (error) { setErrorMessage(error instanceof Error && error.message === "LEARNING_GOAL_AREA_UNAVAILABLE" ? "资源所属 Area 当前不可管理；恢复 Area 后再操作。" : friendlyError(error)); }
+    finally { setSavingLearningResourceId(null); }
+  }
+
   async function saveHabit(fields: HabitFields, sleepRule?: SleepHabitRuleFields) {
     const adapter = adapterRef.current;
     if (!adapter || !connection || savingHabit || online === false) return false;
@@ -2121,6 +2195,11 @@ export default function GitHubWorkspacePage() {
     catch (error) { if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") return []; throw error; }
   }
 
+  async function listLearningResourceFiles(adapter: GitHubContentsAdapter) {
+    try { return (await adapter.listDirectory("data/learning-resources")).filter((item) => item.type === "file" && item.name.endsWith(".json")).sort((left, right) => left.path.localeCompare(right.path)); }
+    catch (error) { if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") return []; throw error; }
+  }
+
   async function listHabitFiles(adapter: GitHubContentsAdapter) {
     try { return (await adapter.listDirectory("data/habits")).filter((item) => item.type === "file" && item.name.endsWith(".json")).sort((left, right) => left.path.localeCompare(right.path)); }
     catch (error) { if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") return []; throw error; }
@@ -2396,6 +2475,12 @@ export default function GitHubWorkspacePage() {
         setExportProgress(`正在读取 LearningActivity ${Math.min(index + batchSize, learningActivityCandidates.length)} / ${learningActivityCandidates.length}…`);
         learningActivityExportFiles.push(...await Promise.all(learningActivityCandidates.slice(index, index + batchSize).map((item) => adapter.readText(item.path))));
       }
+      const learningResourceCandidates = await listLearningResourceFiles(adapter);
+      const learningResourceExportFiles = [];
+      for (let index = 0; index < learningResourceCandidates.length; index += batchSize) {
+        setExportProgress(`正在读取 LearningResource ${Math.min(index + batchSize, learningResourceCandidates.length)} / ${learningResourceCandidates.length}…`);
+        learningResourceExportFiles.push(...await Promise.all(learningResourceCandidates.slice(index, index + batchSize).map((item) => adapter.readText(item.path))));
+      }
       const habitCandidates = await listHabitFiles(adapter);
       const habitExportFiles = [];
       for (let index = 0; index < habitCandidates.length; index += batchSize) habitExportFiles.push(...await Promise.all(habitCandidates.slice(index, index + batchSize).map((item) => adapter.readText(item.path))));
@@ -2442,6 +2527,7 @@ export default function GitHubWorkspacePage() {
         learningAreaFiles: learningAreaExportFiles,
         learningGoalFiles: learningGoalExportFiles,
         learningActivityFiles: learningActivityExportFiles,
+        learningResourceFiles: learningResourceExportFiles,
         habitFiles: habitExportFiles,
         habitRuleFiles: habitRuleExportFiles,
         habitCheckInFiles: habitCheckInExportFiles,
@@ -2490,6 +2576,7 @@ export default function GitHubWorkspacePage() {
         learningAreas: inspection.counts.learningAreas,
         learningGoals: inspection.counts.learningGoals,
         learningActivities: inspection.counts.learningActivities,
+        learningResources: inspection.counts.learningResources,
         habits: inspection.counts.habits,
         habitRules: inspection.counts.habitRules,
         habitCheckIns: inspection.counts.habitCheckIns,
@@ -2524,6 +2611,7 @@ export default function GitHubWorkspacePage() {
         learningAreas: inspection.counts.learningAreas,
         learningGoals: inspection.counts.learningGoals,
         learningActivities: inspection.counts.learningActivities,
+        learningResources: inspection.counts.learningResources,
         habits: inspection.counts.habits,
         habitRules: inspection.counts.habitRules,
         habitCheckIns: inspection.counts.habitCheckIns,
@@ -2586,6 +2674,7 @@ export default function GitHubWorkspacePage() {
           learningAreas: 0,
           learningGoals: 0,
           learningActivities: 0,
+          learningResources: 0,
           habits: 0,
           habitRules: 0,
           habitCheckIns: 0,
@@ -2624,6 +2713,7 @@ export default function GitHubWorkspacePage() {
         learningAreas: inspection.counts.learningAreas,
         learningGoals: inspection.counts.learningGoals,
         learningActivities: inspection.counts.learningActivities,
+        learningResources: inspection.counts.learningResources,
         habits: inspection.counts.habits,
         habitRules: inspection.counts.habitRules,
         habitCheckIns: inspection.counts.habitCheckIns,
@@ -2663,6 +2753,7 @@ export default function GitHubWorkspacePage() {
         learningAreas: 0,
         learningGoals: 0,
         learningActivities: 0,
+        learningResources: 0,
         habits: 0,
         habitRules: 0,
         habitCheckIns: 0,
@@ -3007,6 +3098,7 @@ export default function GitHubWorkspacePage() {
         areaItems={learningAreaFiles}
         goalItems={learningGoalFiles}
         activityItems={learningActivityFiles}
+        resourceItems={learningResourceFiles}
         loading={loadingLearningAreas}
         savingArea={savingLearningArea}
         savingAreaId={savingLearningAreaId}
@@ -3014,6 +3106,8 @@ export default function GitHubWorkspacePage() {
         savingGoalId={savingLearningGoalId}
         savingActivity={savingLearningActivity}
         savingActivityId={savingLearningActivityId}
+        savingResource={savingLearningResource}
+        savingResourceId={savingLearningResourceId}
         onCreateArea={saveLearningArea}
         onEditArea={saveLearningAreaEdit}
         onAreaStatusChange={updateLearningAreaStatus}
@@ -3025,6 +3119,10 @@ export default function GitHubWorkspacePage() {
         onCreateActivity={saveLearningActivity}
         onEditActivity={saveLearningActivityEdit}
         onActivityDeletionChange={updateLearningActivityDeletion}
+        onCreateResource={saveLearningResource}
+        onEditResource={saveLearningResourceEdit}
+        onResourceStatusChange={updateLearningResourceStatus}
+        onResourceDeletionChange={updateLearningResourceDeletion}
         onRefresh={() => loadLearningAreas()}
       />
 

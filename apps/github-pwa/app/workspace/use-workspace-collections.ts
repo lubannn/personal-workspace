@@ -28,6 +28,7 @@ import { parseSyncConflictRecord } from "../../../../src/lib/github-data/sync-co
 import { parseLearningAreaRecord } from "../../../../src/lib/github-data/learning-areas";
 import { parseLearningGoalRecord } from "../../../../src/lib/github-data/learning-goals";
 import { parseLearningActivityRecord } from "../../../../src/lib/github-data/learning-activities";
+import { parseLearningResourceRecord } from "../../../../src/lib/github-data/learning-resources";
 import { parseHabitRecord } from "../../../../src/lib/github-data/habits";
 import { parseHabitRuleRecord } from "../../../../src/lib/github-data/habit-rules";
 import { parseHabitCheckInRecord } from "../../../../src/lib/github-data/habit-check-ins";
@@ -35,7 +36,7 @@ import { parseHealthStagingRecord } from "../../../../src/lib/github-data/health
 import { parseHealthMetricRecord } from "../../../../src/lib/github-data/health-metrics";
 import { parseSleepSessionRecord } from "../../../../src/lib/github-data/sleep-sessions";
 import { parseCaptureRecord } from "../../../../src/lib/github-data/workspace";
-import { friendlyError, type SyncedActivityEvent, type SyncedCalendarEvent, type SyncedCapture, type SyncedHabit, type SyncedHabitCheckIn, type SyncedHabitRule, type SyncedHealthMetric, type SyncedHealthStagingRecord, type SyncedJournalEntry, type SyncedJournalImportCheckpoint, type SyncedJournalRevision, type SyncedJournalSegment, type SyncedLearningActivity, type SyncedLearningArea, type SyncedLearningGoal, type SyncedMilestone, type SyncedObsidianDocument, type SyncedProject, type SyncedProjectFileReference, type SyncedProjectNote, type SyncedProjectPhase, type SyncedReportDraft, type SyncedSleepSession, type SyncedSyncConflict, type SyncedTask, type SyncedTimeEntry } from "./page-model";
+import { friendlyError, type SyncedActivityEvent, type SyncedCalendarEvent, type SyncedCapture, type SyncedHabit, type SyncedHabitCheckIn, type SyncedHabitRule, type SyncedHealthMetric, type SyncedHealthStagingRecord, type SyncedJournalEntry, type SyncedJournalImportCheckpoint, type SyncedJournalRevision, type SyncedJournalSegment, type SyncedLearningActivity, type SyncedLearningArea, type SyncedLearningGoal, type SyncedLearningResource, type SyncedMilestone, type SyncedObsidianDocument, type SyncedProject, type SyncedProjectFileReference, type SyncedProjectNote, type SyncedProjectPhase, type SyncedReportDraft, type SyncedSleepSession, type SyncedSyncConflict, type SyncedTask, type SyncedTimeEntry } from "./page-model";
 
 type Options = {
   adapterRef: MutableRefObject<GitHubContentsAdapter | null>;
@@ -64,6 +65,7 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
   const [learningAreaFiles, setLearningAreaFiles] = useState<SyncedLearningArea[]>([]);
   const [learningGoalFiles, setLearningGoalFiles] = useState<SyncedLearningGoal[]>([]);
   const [learningActivityFiles, setLearningActivityFiles] = useState<SyncedLearningActivity[]>([]);
+  const [learningResourceFiles, setLearningResourceFiles] = useState<SyncedLearningResource[]>([]);
   const [habitFiles, setHabitFiles] = useState<SyncedHabit[]>([]);
   const [habitRuleFiles, setHabitRuleFiles] = useState<SyncedHabitRule[]>([]);
   const [habitCheckInFiles, setHabitCheckInFiles] = useState<SyncedHabitCheckIn[]>([]);
@@ -626,14 +628,16 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
       return records;
     }
     try {
-      const [areas, goals, activities] = await Promise.all([
+      const [areas, goals, activities, resources] = await Promise.all([
         loadDirectory("data/learning-areas", parseLearningAreaRecord),
         loadDirectory("data/learning-goals", parseLearningGoalRecord),
         loadDirectory("data/learning-activities", parseLearningActivityRecord),
+        loadDirectory("data/learning-resources", parseLearningResourceRecord),
       ]);
       setLearningAreaFiles(areas);
       setLearningGoalFiles(goals);
       setLearningActivityFiles(activities);
+      setLearningResourceFiles(resources);
     } catch (error) { setErrorMessage(friendlyError(error)); }
     finally { setLoadingLearningAreas(false); }
   }, [adapterRef, setErrorMessage]);
@@ -783,6 +787,7 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     setLearningAreaFiles([]);
     setLearningGoalFiles([]);
     setLearningActivityFiles([]);
+    setLearningResourceFiles([]);
     setHabitFiles([]);
     setHabitRuleFiles([]);
     setHabitCheckInFiles([]);
@@ -830,6 +835,8 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     setLearningGoalFiles,
     learningActivityFiles,
     setLearningActivityFiles,
+    learningResourceFiles,
+    setLearningResourceFiles,
     habitFiles,
     setHabitFiles,
     habitRuleFiles,
