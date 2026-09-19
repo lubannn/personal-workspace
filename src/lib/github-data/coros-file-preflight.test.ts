@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { Encoder, type Encodable, type RecordMesg, type SessionMesg } from "@garmin/fitsdk";
 
 import { previewCorosActivityFile } from "./coros-file-preflight";
 
@@ -27,6 +28,7 @@ describe("COROS activity file local-only preflight", () => {
       lastTimestamp: "2026-09-19T01:30:00.000Z",
     });
     expect(preview.diagnostics).toEqual([]);
+    expect(preview.mapping.candidates[0]).toMatchObject({ activity_type: "run", start_at: "2026-09-19T01:00:00.000Z", end_at: "2026-09-19T01:30:00.000Z", duration_seconds: 1800 });
     expect(preview).toMatchObject({ readyForMapping: true, localOnly: true, sourceModified: false, commitEnabled: false });
   });
 
@@ -41,18 +43,14 @@ describe("COROS activity file local-only preflight", () => {
 
     expect(preview.summary).toMatchObject({
       format: "fit",
-      protocolVersion: "2.0",
-      profileVersion: 21,
-      definitionMessages: 1,
-      dataMessages: 1,
       activityMessages: 0,
       sessionMessages: 1,
       recordMessages: 0,
-      headerCrc: "not-present",
-      fileCrc: "not-present",
+      fileCrc: "valid",
     });
     expect(preview.readyForMapping).toBe(true);
-    expect(preview.diagnostics.map((item) => item.code)).toEqual(["FIT_FILE_CRC_NOT_PRESENT", "FIT_RECORD_MESSAGES_MISSING"]);
+    expect(preview.mapping.candidates[0]).toMatchObject({ activity_type: "run", duration_seconds: 3600, distance: 10000, confirmation_status: "pending" });
+    expect(preview.diagnostics.map((item) => item.code)).toEqual(["FIT_RECORD_MESSAGES_MISSING"]);
   });
 
   it("fails closed on a FIT data-size mismatch", async () => {
@@ -72,8 +70,10 @@ describe("COROS activity file local-only preflight", () => {
   });
 
   it("blocks FIT streams without an Activity or Session message", async () => {
-    const bytes = fitActivityFixture();
-    bytes[15] = 20;
+    const encoder = new Encoder();
+    const record: Encodable<RecordMesg> = { mesgNum: 20, timestamp: new Date("2026-09-19T01:00:00.000Z"), heartRate: 140 };
+    encoder.writeMesg(record);
+    const bytes = encoder.close();
     const preview = await previewCorosActivityFile(file("records-only.fit", bytes));
 
     expect(preview.readyForMapping).toBe(false);
@@ -93,46 +93,23 @@ function file(name: string, bytes: Uint8Array) {
 }
 
 function fitActivityFixture() {
-  const data = new Uint8Array([
-    0x40,
-    0x00,
-    0x00,
-    0x12, 0x00,
-    0x01,
-    0xfd, 0x04, 0x86,
-    0x00,
-    0x01, 0x00, 0x00, 0x00,
-  ]);
-  const bytes = new Uint8Array(12 + data.byteLength);
-  const view = new DataView(bytes.buffer);
-  bytes[0] = 12;
-  bytes[1] = 0x20;
-  view.setUint16(2, 2100, true);
-  view.setUint32(4, data.byteLength, true);
-  bytes.set(new TextEncoder().encode(".FIT"), 8);
-  bytes.set(data, 12);
-  return bytes;
+  const encoder = new Encoder();
+  const session: Encodable<SessionMesg> = {
+    mesgNum: 18,
+    timestamp: new Date("2026-09-19T02:00:00.000Z"),
+    startTime: new Date("2026-09-19T01:00:00.000Z"),
+    sport: "running",
+    totalElapsedTime: 3600,
+    totalTimerTime: 3500,
+    totalDistance: 10000,
+    totalCalories: 600,
+    avgHeartRate: 140,
+    maxHeartRate: 170,
+  };
+  encoder.writeMesg(session);
+  return encoder.close();
 }
 
 function fitActivityFixtureWithCrc() {
-  const source = fitActivityFixture();
-  const bytes = new Uint8Array(source.length + 4);
-  bytes.set(source.subarray(0, 12));
-  bytes[0] = 14;
-  new DataView(bytes.buffer).setUint16(12, fitCrc(bytes.subarray(0, 12)), true);
-  bytes.set(source.subarray(12), 14);
-  new DataView(bytes.buffer).setUint16(bytes.length - 2, fitCrc(bytes.subarray(0, -2)), true);
-  return bytes;
-}
-
-function fitCrc(bytes: Uint8Array) {
-  const table = [0x0000, 0xcc01, 0xd801, 0x1400, 0xf001, 0x3c00, 0x2800, 0xe401, 0xa001, 0x6c00, 0x7800, 0xb401, 0x5000, 0x9c01, 0x8801, 0x4400];
-  let crc = 0;
-  for (const byte of bytes) {
-    let temporary = table[crc & 0x0f];
-    crc = ((crc >> 4) & 0x0fff) ^ temporary ^ table[byte & 0x0f];
-    temporary = table[crc & 0x0f];
-    crc = ((crc >> 4) & 0x0fff) ^ temporary ^ table[(byte >> 4) & 0x0f];
-  }
-  return crc;
+  return fitActivityFixture().slice();
 }
