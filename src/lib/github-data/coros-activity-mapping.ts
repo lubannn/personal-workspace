@@ -22,6 +22,7 @@ export type CorosWorkoutProposal = {
   importKey: string;
   duplicate: boolean;
   duplicateReason: "same-preview" | "known-import" | null;
+  diagnostics: CorosFileDiagnostic[];
   activity_type: "run" | "ride" | "swim" | "walk" | "hike" | "strength" | "other";
   start_at: string;
   end_at: string;
@@ -79,19 +80,26 @@ export async function mapCorosActivities(options: {
     const derivedEnd = start && elapsed ? new Date(start.valueOf() + elapsed * 1000) : null;
     const end = explicitEnd ?? derivedEnd;
     const duration = elapsed ?? (start && end ? (end.valueOf() - start.valueOf()) / 1000 : null);
+    const candidateDiagnostics: CorosFileDiagnostic[] = [];
+    const diagnose = (code: string, message: string, severity: CorosFileDiagnostic["severity"]) => {
+      const diagnostic = problem(code, message, severity, activity.sourceIdentity);
+      candidateDiagnostics.push(diagnostic);
+      diagnostics.push(diagnostic);
+    };
 
-    if (!start) diagnostics.push(problem("ACTIVITY_START_MISSING", "活动缺少有效开始时间，不能建立 Workout 候选。", "blocking", activity.sourceIdentity));
-    if (!end) diagnostics.push(problem("ACTIVITY_END_MISSING", "活动缺少结束时间和可用时长，不能建立 Workout 候选。", "blocking", activity.sourceIdentity));
-    if (!duration || duration > 7 * 24 * 60 * 60) diagnostics.push(problem("ACTIVITY_DURATION_INVALID", "活动时长必须大于 0 且不超过 7 天。", "blocking", activity.sourceIdentity));
-    if (!explicitEnd && derivedEnd) diagnostics.push(problem("ACTIVITY_END_DERIVED", "结束时间由开始时间与 elapsed time 推导。", "warning", activity.sourceIdentity));
-    if (activity.trackpoints === 0) diagnostics.push(problem("ACTIVITY_TRACKPOINTS_MISSING", "没有轨迹点；只保留活动摘要，不生成 GPS 或时序明细。", "warning", activity.sourceIdentity));
-    if (samePreview || knownImport) diagnostics.push(problem("ACTIVITY_DUPLICATE", samePreview ? "同一预览内出现重复活动身份。" : "该活动身份已在本地会话中预览过。", "warning", activity.sourceIdentity));
+    if (!start) diagnose("ACTIVITY_START_MISSING", "活动缺少有效开始时间，不能建立 Workout 候选。", "blocking");
+    if (!end) diagnose("ACTIVITY_END_MISSING", "活动缺少结束时间和可用时长，不能建立 Workout 候选。", "blocking");
+    if (!duration || duration > 7 * 24 * 60 * 60) diagnose("ACTIVITY_DURATION_INVALID", "活动时长必须大于 0 且不超过 7 天。", "blocking");
+    if (!explicitEnd && derivedEnd) diagnose("ACTIVITY_END_DERIVED", "结束时间由开始时间与 elapsed time 推导。", "warning");
+    if (activity.trackpoints === 0) diagnose("ACTIVITY_TRACKPOINTS_MISSING", "没有轨迹点；只保留活动摘要，不生成 GPS 或时序明细。", "warning");
+    if (samePreview || knownImport) diagnose("ACTIVITY_DUPLICATE", samePreview ? "同一预览内出现重复活动身份。" : "该活动身份已在本地会话中预览过。", "warning");
 
     if (!start || !end || !duration || duration > 7 * 24 * 60 * 60) continue;
     candidates.push({
       importKey,
       duplicate: samePreview || knownImport,
       duplicateReason: samePreview ? "same-preview" : knownImport ? "known-import" : null,
+      diagnostics: candidateDiagnostics,
       activity_type: normalizeSport(activity.sport),
       start_at: start.toISOString(),
       end_at: end.toISOString(),

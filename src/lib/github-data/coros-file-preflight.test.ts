@@ -29,6 +29,8 @@ describe("COROS activity file local-only preflight", () => {
     });
     expect(preview.diagnostics).toEqual([]);
     expect(preview.mapping.candidates[0]).toMatchObject({ activity_type: "run", start_at: "2026-09-19T01:00:00.000Z", end_at: "2026-09-19T01:30:00.000Z", duration_seconds: 1800 });
+    expect(preview.stagingPlan.items[0]).toMatchObject({ writeMode: "create_only", expectedBlobSha: null });
+    expect(preview.stagingPlan).toMatchObject({ protocolAccepted: false, commitEnabled: false });
     expect(preview).toMatchObject({ readyForMapping: true, localOnly: true, sourceModified: false, commitEnabled: false });
   });
 

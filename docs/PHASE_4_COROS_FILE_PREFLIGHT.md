@@ -14,8 +14,10 @@
 - 将每个活动映射为只读 `Workout` 候选，统一运动类型、时间、时长、米制距离、热量、心率、步频/踏频与功率摘要；
 - `import key = SHA-256(source sha256 + parser version + source activity identity)`；批次身份额外包含 mapping version 与排序后的活动身份；
 - 在当前浏览器会话识别重复活动，展示字段映射与 warning/blocking 诊断；
+- 为每个非重复候选生成稳定的 `health_staging_record` create-only envelope 计划、目标路径和 payload SHA-256；
+- 明示最小数据策略与未来动作时确认文案；当前 parser 不接受拟议 Workout staging，协议和提交能力保持关闭；
 - 诊断明确区分 warning 与 blocking；
-- 预检和 mapping 结果固定为 `localOnly: true`、`sourceModified: false`、`commitEnabled: false`。
+- 预检、mapping 和 staging plan 结果固定为 `localOnly: true`、`sourceModified: false`、`protocolAccepted: false`、`commitEnabled: false`。
 
 ## 未开放
 
@@ -27,7 +29,7 @@
 
 ## 下一切片
 
-1. 决定 `Workout` 是否进入共享协议，并定义正式 staging record envelope；
-2. 设计只保存必要摘要、默认丢弃原始 FIT/TCX 与 GPS 轨迹的 Private 数据策略；
-3. 为 staging 写入增加独立的动作时精确确认、幂等提交与冲突处理；
-4. staging 审核通过后，再单独实现 canonical `Workout` 写入；禁止自动确认。
+1. 同步扩展 Health staging parser、collection、portable export/inspection/restore/migration 和 UI 审核，使拟议 envelope 成为正式协议；
+2. 为 staging 写入增加独立的动作时精确确认、create-only 幂等提交与冲突处理；
+3. 注册 canonical `workout` 与 `data/workouts/`，并以单个 Git commit 同时确认 staging 和创建 Workout；
+4. staging 审核通过后才生成 canonical Workout；禁止自动确认或从未审核候选驱动 Habit/Recommendation。
