@@ -1,3 +1,5 @@
+import { mapCorosActivities, type CorosMappingDryRun, type CorosSourceActivity } from "./coros-activity-mapping";
+
 export const COROS_FILE_PREFLIGHT_VERSION = "1";
 export const COROS_IMPORT_MAX_FILE_BYTES = 64 * 1024 * 1024;
 
@@ -48,6 +50,7 @@ export type CorosFilePreflight = {
   parserVersion: typeof COROS_FILE_PREFLIGHT_VERSION;
   summary: CorosFitSummary | CorosTcxSummary;
   diagnostics: CorosFileDiagnostic[];
+  mapping: CorosMappingDryRun;
   readyForMapping: boolean;
   localOnly: true;
   sourceModified: false;
@@ -56,7 +59,7 @@ export type CorosFilePreflight = {
 
 type FitDefinition = { globalMessageNumber: number; dataSize: number };
 
-export async function previewCorosActivityFile(file: CorosImportFile): Promise<CorosFilePreflight> {
+export async function previewCorosActivityFile(file: CorosImportFile, options: { timezone?: string; knownImportKeys?: Iterable<string> } = {}): Promise<CorosFilePreflight> {
   const extension = file.name.toLowerCase().match(/\.(fit|tcx)$/u)?.[1] as "fit" | "tcx" | undefined;
   if (!extension) throw new Error("COROS_IMPORT_FIT_OR_TCX_REQUIRED");
   if (!Number.isSafeInteger(file.size) || file.size <= 0) throw new Error("COROS_IMPORT_EMPTY_FILE");
@@ -66,7 +69,14 @@ export async function previewCorosActivityFile(file: CorosImportFile): Promise<C
   if (buffer.byteLength !== file.size) throw new Error("COROS_IMPORT_FILE_SIZE_MISMATCH");
   const bytes = new Uint8Array(buffer);
   const sha256 = await sha256Hex(bytes);
-  const parsed = extension === "fit" ? inspectFit(bytes) : inspectTcx(bytes);
+  const parsed = extension === "fit" ? await inspectFit(bytes) : inspectTcx(bytes);
+  const mapping = await mapCorosActivities({
+    sourceSha256: sha256,
+    parserVersion: COROS_FILE_PREFLIGHT_VERSION,
+    timezone: options.timezone ?? "Asia/Shanghai",
+    activities: parsed.activities,
+    knownImportKeys: options.knownImportKeys,
+  });
 
   return {
     source: {
@@ -78,14 +88,15 @@ export async function previewCorosActivityFile(file: CorosImportFile): Promise<C
     parserVersion: COROS_FILE_PREFLIGHT_VERSION,
     summary: parsed.summary,
     diagnostics: parsed.diagnostics,
-    readyForMapping: parsed.readyForMapping,
+    mapping,
+    readyForMapping: parsed.readyForMapping && mapping.readyForStagingDesign,
     localOnly: true,
     sourceModified: false,
     commitEnabled: false,
   };
 }
 
-function inspectFit(bytes: Uint8Array): { summary: CorosFitSummary; diagnostics: CorosFileDiagnostic[]; readyForMapping: boolean } {
+async function inspectFit(bytes: Uint8Array): Promise<{ summary: CorosFitSummary; diagnostics: CorosFileDiagnostic[]; readyForMapping: boolean; activities: CorosSourceActivity[] }> {
   if (bytes.byteLength < 12) throw new Error("COROS_IMPORT_INVALID_FIT_HEADER");
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const headerSize = view.getUint8(0);
@@ -113,6 +124,7 @@ function inspectFit(bytes: Uint8Array): { summary: CorosFitSummary; diagnostics:
   }
 
   const messages = inspectFitMessages(bytes, headerSize, dataEnd);
+  const activities = messages.activityMessages + messages.sessionMessages > 0 ? await decodeFitActivities(bytes, messages.recordMessages) : [];
   const diagnostics: CorosFileDiagnostic[] = [];
   if (fileCrc === "not-present") diagnostics.push({ code: "FIT_FILE_CRC_NOT_PRESENT", severity: "warning", message: "文件没有尾部 CRC；可以继续预览，但正式映射前应保留来源哈希。" });
   if (messages.activityMessages + messages.sessionMessages === 0) diagnostics.push({ code: "FIT_ACTIVITY_MESSAGES_MISSING", severity: "blocking", message: "FIT 中没有 Activity 或 Session 消息，不能作为活动导入来源。" });
@@ -129,7 +141,8 @@ function inspectFit(bytes: Uint8Array): { summary: CorosFitSummary; diagnostics:
       fileCrc,
     },
     diagnostics,
-    readyForMapping: messages.activityMessages + messages.sessionMessages > 0,
+    readyForMapping: messages.activityMessages + messages.sessionMessages > 0 && activities.length > 0,
+    activities,
   };
 }
 
@@ -195,7 +208,7 @@ function inspectFitMessages(bytes: Uint8Array, start: number, end: number) {
   return { definitionMessages, dataMessages, activityMessages, sessionMessages, recordMessages };
 }
 
-function inspectTcx(bytes: Uint8Array): { summary: CorosTcxSummary; diagnostics: CorosFileDiagnostic[]; readyForMapping: boolean } {
+function inspectTcx(bytes: Uint8Array): { summary: CorosTcxSummary; diagnostics: CorosFileDiagnostic[]; readyForMapping: boolean; activities: CorosSourceActivity[] } {
   const xml = decodeUtf8(bytes).replace(/^\uFEFF/u, "");
   if (/<!DOCTYPE\b|<!ENTITY\b/iu.test(xml)) throw new Error("COROS_IMPORT_TCX_EXTERNAL_ENTITY_FORBIDDEN");
   const root = xml.match(/^(?:\s|<\?xml\b[^?]*\?>|<!--[\s\S]*?-->)*<(?:(?:[A-Za-z_][\w.-]*):)?([A-Za-z_][\w.-]*)\b/iu)?.[1];
@@ -212,6 +225,7 @@ function inspectTcx(bytes: Uint8Array): { summary: CorosTcxSummary; diagnostics:
     .sort();
 
   const diagnostics: CorosFileDiagnostic[] = [];
+  const sourceActivities = parseTcxActivities(xml);
   if (activities === 0) diagnostics.push({ code: "TCX_ACTIVITY_MISSING", severity: "blocking", message: "TCX 中没有 Activity，不能生成活动映射计划。" });
   if (laps === 0) diagnostics.push({ code: "TCX_LAP_MISSING", severity: "warning", message: "TCX 中没有 Lap；只能保留有限的活动摘要。" });
   if (trackpoints === 0) diagnostics.push({ code: "TCX_TRACKPOINT_MISSING", severity: "warning", message: "TCX 中没有 Trackpoint；不会生成轨迹或时序明细。" });
@@ -228,9 +242,80 @@ function inspectTcx(bytes: Uint8Array): { summary: CorosTcxSummary; diagnostics:
       lastTimestamp: timestamps.at(-1) ?? null,
     },
     diagnostics,
-    readyForMapping: activities > 0 && timestamps.length > 0,
+    readyForMapping: activities > 0 && timestamps.length > 0 && sourceActivities.length > 0,
+    activities: sourceActivities,
   };
 }
+
+async function decodeFitActivities(bytes: Uint8Array, trackpoints: number): Promise<CorosSourceActivity[]> {
+  const { Decoder, Stream } = await import("@garmin/fitsdk");
+  const decoded = new Decoder(Stream.fromByteArray(bytes)).read({ applyScaleAndOffset: true, convertDateTimesToDates: true, convertTypesToStrings: true });
+  if (decoded.errors.length > 0) throw new Error("COROS_IMPORT_FIT_SEMANTIC_DECODE_FAILED", { cause: decoded.errors[0] });
+  return (decoded.messages.sessionMesgs ?? []).map((session) => {
+    const startAt = isoInstant(session.startTime);
+    const endAt = isoInstant(session.timestamp);
+    const distanceMeters = finiteNumber(session.totalDistance);
+    return {
+      sourceIdentity: `fit-session:${startAt ?? "missing"}:${String(session.sport ?? "unknown")}:${endAt ?? "missing"}:${distanceMeters ?? "missing"}`,
+      sport: typeof session.sport === "string" ? session.sport : null,
+      startAt,
+      endAt,
+      elapsedSeconds: finiteNumber(session.totalElapsedTime),
+      movingSeconds: finiteNumber(session.totalTimerTime),
+      distanceMeters,
+      calories: finiteNumber(session.totalCalories),
+      averageHeartRate: finiteNumber(session.avgHeartRate),
+      maximumHeartRate: finiteNumber(session.maxHeartRate),
+      averageCadence: finiteNumber(session.avgCadence ?? session.avgRunningCadence),
+      averagePower: finiteNumber(session.avgPower),
+      trackpoints,
+    };
+  });
+}
+
+function parseTcxActivities(xml: string): CorosSourceActivity[] {
+  const blocks = [...xml.matchAll(/<(?:[A-Za-z_][\w.-]*:)?Activity\b([^>]*)>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?Activity\s*>/giu)];
+  return blocks.map((match) => {
+    const attributes = match[1];
+    const body = match[2];
+    const sport = decodeXmlEntities(attributes.match(/\bSport\s*=\s*(?:"([^"]*)"|'([^']*)')/iu)?.slice(1).find(Boolean) ?? "") || null;
+    const id = tagText(body, "Id");
+    const lapStart = body.match(/<(?:[A-Za-z_][\w.-]*:)?Lap\b[^>]*\bStartTime\s*=\s*(?:"([^"]*)"|'([^']*)')/iu)?.slice(1).find(Boolean) ?? null;
+    const lapBodies = [...body.matchAll(/<(?:[A-Za-z_][\w.-]*:)?Lap\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?Lap\s*>/giu)].map((lap) => lap[1]);
+    const times = tagTexts(body, "Time").filter(validInstant).sort();
+    const startAt = firstValid(id, lapStart, times[0] ?? null);
+    const totalSeconds = sumNumbers(lapBodies.map((lap) => tagText(lap, "TotalTimeSeconds")).filter((value): value is string => value !== null));
+    const endAt = times.at(-1) ?? (startAt && totalSeconds ? new Date(Date.parse(startAt) + totalSeconds * 1000).toISOString() : null);
+    const distanceMeters = sumNumbers(lapBodies.map((lap) => tagText(lap, "DistanceMeters")).filter((value): value is string => value !== null));
+    return {
+      sourceIdentity: `tcx-activity:${id ?? startAt ?? "missing"}:${sport ?? "unknown"}:${endAt ?? "missing"}:${distanceMeters ?? "missing"}`,
+      sport,
+      startAt,
+      endAt,
+      elapsedSeconds: totalSeconds,
+      movingSeconds: totalSeconds,
+      distanceMeters,
+      calories: sumNumbers(lapBodies.map((lap) => tagText(lap, "Calories")).filter((value): value is string => value !== null)),
+      averageHeartRate: firstNumber(body, "AverageHeartRateBpm"),
+      maximumHeartRate: firstNumber(body, "MaximumHeartRateBpm"),
+      averageCadence: firstNumber(body, "Cadence"),
+      averagePower: null,
+      trackpoints: countOpeningTags(body, "Trackpoint"),
+    };
+  });
+}
+
+function tagTexts(xml: string, name: string) {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+  return [...xml.matchAll(new RegExp(`<(?:[A-Za-z_][\\w.-]*:)?${escaped}\\b[^>]*>\\s*([^<]{1,128})\\s*</(?:[A-Za-z_][\\w.-]*:)?${escaped}\\s*>`, "giu"))].map((match) => decodeXmlEntities(match[1].trim()));
+}
+function tagText(xml: string, name: string) { return tagTexts(xml, name)[0] ?? null; }
+function firstNumber(xml: string, container: string) { const block = xml.match(new RegExp(`<(?:[A-Za-z_][\\w.-]*:)?${container}\\b[^>]*>([\\s\\S]*?)</(?:[A-Za-z_][\\w.-]*:)?${container}\\s*>`, "iu"))?.[1]; return block ? finiteNumber(Number(tagText(block, "Value"))) : null; }
+function sumNumbers(values: string[]) { const numbers = values.map(Number).filter((value) => Number.isFinite(value) && value >= 0); return numbers.length ? numbers.reduce((sum, value) => sum + value, 0) : null; }
+function validInstant(value: string) { return !Number.isNaN(Date.parse(value)); }
+function firstValid(...values: Array<string | null>) { const value = values.find((item) => item !== null && validInstant(item)); return value ? new Date(value).toISOString() : null; }
+function isoInstant(value: Date | number | string | undefined) { if (value === undefined) return null; const date = new Date(value); return Number.isNaN(date.valueOf()) ? null : date.toISOString(); }
+function finiteNumber(value: unknown) { return typeof value === "number" && Number.isFinite(value) ? value : null; }
 
 function countOpeningTags(xml: string, localName: string) {
   const escaped = localName.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");

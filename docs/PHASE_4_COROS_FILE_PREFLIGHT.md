@@ -9,21 +9,25 @@
 - 文件只在当前浏览器读取；最大 64 MiB；
 - 计算 SHA-256，并保留安全文件名、字节数和可信时的修改时间；
 - FIT：校验头部、声明长度、可选 header/file CRC、definition/data message 边界，统计 Activity、Session 与 Record 消息；
+- FIT：通过 Garmin 官方 JavaScript SDK 读取 Session 摘要，并保留 elapsed time 与排除暂停的 timer time；
 - TCX：拒绝 `DOCTYPE` / `ENTITY`，要求 `TrainingCenterDatabase` 根元素，统计 Activity、Lap、Trackpoint、运动类型和时间范围；
+- 将每个活动映射为只读 `Workout` 候选，统一运动类型、时间、时长、米制距离、热量、心率、步频/踏频与功率摘要；
+- `import key = SHA-256(source sha256 + parser version + source activity identity)`；批次身份额外包含 mapping version 与排序后的活动身份；
+- 在当前浏览器会话识别重复活动，展示字段映射与 warning/blocking 诊断；
 - 诊断明确区分 warning 与 blocking；
-- 预检结果固定为 `localOnly: true`、`sourceModified: false`、`commitEnabled: false`。
+- 预检和 mapping 结果固定为 `localOnly: true`、`sourceModified: false`、`commitEnabled: false`。
 
 ## 未开放
 
 - 不解析或保存完整 GPS 轨迹；
-- 不生成 `ExternalRawRecord`、Health/Activity staging 或 canonical 记录；
+- 不生成 `ExternalRawRecord`、Health/Activity staging 或 canonical 记录；`pending` 仅描述候选目标形状；
 - 不做批量导入、后台扫描或目录遍历；
 - 不连接 COROS MCP、Partner API 或任何第三方服务；
 - 不把结构可读误报为字段已完整映射。
 
 ## 下一切片
 
-1. 定义活动 canonical 与 staging 字段映射；
-2. 用脱敏 FIT/TCX fixtures 覆盖跑步、骑行、无轨迹活动和重复文件；
-3. 基于 `source sha256 + parser version + source activity identity` 生成稳定批次身份；
-4. 先展示 mapping/dedup dry run，再单独设计 Private 写入与动作时确认。
+1. 决定 `Workout` 是否进入共享协议，并定义正式 staging record envelope；
+2. 设计只保存必要摘要、默认丢弃原始 FIT/TCX 与 GPS 轨迹的 Private 数据策略；
+3. 为 staging 写入增加独立的动作时精确确认、幂等提交与冲突处理；
+4. staging 审核通过后，再单独实现 canonical `Workout` 写入；禁止自动确认。

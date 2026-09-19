@@ -1,14 +1,15 @@
 "use client";
 
-import { useState, type ChangeEvent } from "react";
+import { useRef, useState, type ChangeEvent } from "react";
 
 import { previewCorosActivityFile, type CorosFilePreflight } from "../../../../src/lib/github-data/coros-file-preflight";
 
-export function CorosFilePreflightSection() {
+export function CorosFilePreflightSection({ timezone = "Asia/Shanghai" }: { timezone?: string }) {
   const [preview, setPreview] = useState<CorosFilePreflight | null>(null);
   const [error, setError] = useState("");
   const [checking, setChecking] = useState(false);
   const [pickerKey, setPickerKey] = useState(0);
+  const knownImportKeys = useRef(new Set<string>());
 
   async function inspect(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -17,7 +18,9 @@ export function CorosFilePreflightSection() {
     setPreview(null);
     setError("");
     try {
-      setPreview(await previewCorosActivityFile(file));
+      const next = await previewCorosActivityFile(file, { timezone, knownImportKeys: knownImportKeys.current });
+      setPreview(next);
+      next.mapping.candidates.forEach((candidate) => knownImportKeys.current.add(candidate.importKey));
     } catch (caught) {
       setError(friendlyError(caught));
     } finally {
@@ -63,7 +66,9 @@ export function CorosFilePreflightSection() {
         </>}
       </div>
       <div className={`legacy-import-gate ${preview.readyForMapping ? "ready" : "blocked"}`} role="status"><strong>{preview.readyForMapping ? "结构预检通过" : "结构预检被阻断"}</strong><p>{preview.readyForMapping ? "该文件可进入后续确定性 mapping 设计；当前不会生成 staging 或 canonical 记录。" : "文件缺少建立稳定活动身份所需的结构或时间信息。"}</p></div>
-      <div className="legacy-import-diagnostics"><h4>诊断</h4>{preview.diagnostics.length ? <ul>{preview.diagnostics.map((item) => <li key={item.code} data-severity={item.severity}><code>{item.code}</code><span>{item.message}</span></li>)}</ul> : <p>没有发现结构诊断。</p>}</div>
+      <div className="legacy-import-source"><div><strong>映射批次</strong><span>mapping v{preview.mapping.mappingVersion}</span></div><code>{preview.mapping.batchIdentity}</code><small>{preview.mapping.candidates.length} 个 Workout 候选 · 时区 {timezone} · 仍未创建 staging</small></div>
+      {preview.mapping.candidates.length ? <ol className="learning-list">{preview.mapping.candidates.map((candidate) => <li key={candidate.importKey}><div><strong>{activityLabel(candidate.activity_type)}{candidate.duplicate ? " · 重复" : ""}</strong><code>{candidate.start_at} → {candidate.end_at}</code><small>{Math.round(candidate.duration_seconds / 60)} 分钟 · {candidate.distance === null ? "距离缺失" : `${candidate.distance} m`} · {candidate.metrics_json.trackpoints} 个轨迹点</small><small>import key {candidate.importKey}</small></div><span className="memory-pill">{candidate.confirmation_status}</span></li>)}</ol> : null}
+      <div className="legacy-import-diagnostics"><h4>诊断</h4>{preview.diagnostics.length + preview.mapping.diagnostics.length ? <ul>{[...preview.diagnostics, ...preview.mapping.diagnostics].map((item, index) => <li key={`${item.code}-${index}`} data-severity={item.severity}><code>{item.code}</code><span>{item.message}</span></li>)}</ul> : <p>没有发现结构或映射诊断。</p>}</div>
       <div className="legacy-import-boundary"><strong>当前没有写入能力</strong><p>预检结果只证明文件容器可读，不证明全部字段已映射。正式导入仍需重复检测、字段预览、批次确认和 staging 审核；原始 FIT、TCX 与 GPS 轨迹默认不会进入 Git。</p></div>
     </> : null}
   </div>;
@@ -79,6 +84,10 @@ function formatBytes(value: number) {
   return `${(value / 1024 / 1024).toFixed(1)} MiB`;
 }
 
+function activityLabel(value: string) {
+  return ({ run: "跑步", ride: "骑行", swim: "游泳", walk: "步行", hike: "徒步", strength: "力量训练", other: "其他活动" } as Record<string, string>)[value] ?? value;
+}
+
 function friendlyError(error: unknown) {
   if (!(error instanceof Error)) return "文件无法读取；没有上传或写入任何数据。";
   const messages: Record<string, string> = {
@@ -90,6 +99,7 @@ function friendlyError(error: unknown) {
     COROS_IMPORT_FIT_SIZE_MISMATCH: "FIT 声明的数据长度与实际文件不一致。",
     COROS_IMPORT_FIT_HEADER_CRC_MISMATCH: "FIT 头部 CRC 校验失败。",
     COROS_IMPORT_FIT_FILE_CRC_MISMATCH: "FIT 文件 CRC 校验失败。",
+    COROS_IMPORT_FIT_SEMANTIC_DECODE_FAILED: "FIT 结构存在，但官方 Garmin 解码器无法读取活动字段。",
     COROS_IMPORT_FIT_DEFINITION_MISSING: "FIT 数据消息缺少对应定义。",
     COROS_IMPORT_TRUNCATED_FIT_DEFINITION: "FIT 定义消息不完整。",
     COROS_IMPORT_TRUNCATED_FIT_DATA: "FIT 数据消息不完整。",
