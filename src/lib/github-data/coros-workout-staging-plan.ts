@@ -1,5 +1,6 @@
 import { recordPath } from "./protocol";
 import type { CorosMappingDryRun, CorosWorkoutProposal } from "./coros-activity-mapping";
+import { createCorosWorkoutStagingData, type WorkoutHealthStagingData } from "./health-staging-records";
 
 export const COROS_WORKOUT_STAGING_PLAN_VERSION = "1";
 
@@ -8,30 +9,7 @@ export const COROS_WORKOUT_RETENTION_POLICY = {
   discarded: ["original_file", "file_name", "gps_coordinates", "trackpoint_series", "fit_developer_fields", "tcx_extensions"],
 } as const;
 
-export type ProposedCorosWorkoutStagingData = {
-  health_staging_version: 1;
-  source: {
-    kind: "coros_file";
-    label: "COROS FIT file" | "COROS TCX file";
-    format: "fit" | "tcx";
-    source_sha256: string;
-    parser_version: string;
-    mapping_version: string;
-    batch_identity: string;
-  };
-  raw_record_id: null;
-  health_type: "workout";
-  normalized_json: Omit<CorosWorkoutProposal, "duplicate" | "duplicateReason" | "diagnostics" | "confirmation_status" | "staging_record_id">;
-  import_key: string;
-  classifier_version: "coros-mapping-v1";
-  classification: "workout";
-  confidence: null;
-  status: "pending";
-  diagnostics_json: Array<{ code: string; message: string }>;
-  reviewed_at: null;
-  review_reason: null;
-  canonical_record_id: null;
-};
+export type ProposedCorosWorkoutStagingData = WorkoutHealthStagingData;
 
 export type CorosWorkoutStagingPlanItem = {
   stagingRecordId: string;
@@ -47,6 +25,7 @@ export type CorosWorkoutStagingPlan = {
   protocolDecision: {
     stagingEntity: "health_staging_record";
     canonicalEntity: "workout";
+    stagingProtocolRegistered: true;
     canonicalProtocolRegistered: false;
     reason: string;
   };
@@ -56,7 +35,7 @@ export type CorosWorkoutStagingPlan = {
   exactConfirmationPreview: string;
   readyForProtocolActivation: boolean;
   localOnly: true;
-  protocolAccepted: false;
+  protocolAccepted: true;
   commitEnabled: false;
 };
 
@@ -70,8 +49,7 @@ export async function planCorosWorkoutStaging(input: {
   const eligible = input.mapping.candidates.filter((candidate) => !candidate.duplicate);
   const items = await Promise.all(eligible.map(async (candidate) => {
     const stagingRecordId = `coros_workout_${candidate.importKey}`;
-    const proposedData: ProposedCorosWorkoutStagingData = {
-      health_staging_version: 1,
+    const proposedData = createCorosWorkoutStagingData({
       source: {
         kind: "coros_file",
         label: input.format === "fit" ? "COROS FIT file" : "COROS TCX file",
@@ -81,19 +59,10 @@ export async function planCorosWorkoutStaging(input: {
         mapping_version: input.mapping.mappingVersion,
         batch_identity: input.mapping.batchIdentity,
       },
-      raw_record_id: null,
-      health_type: "workout",
       normalized_json: normalizedCandidate(candidate),
       import_key: candidate.importKey,
-      classifier_version: "coros-mapping-v1",
-      classification: "workout",
-      confidence: null,
-      status: "pending",
       diagnostics_json: candidate.diagnostics.filter((item) => item.code !== "ACTIVITY_DUPLICATE").map((item) => ({ code: item.code, message: item.message })),
-      reviewed_at: null,
-      review_reason: null,
-      canonical_record_id: null,
-    };
+    });
     return {
       stagingRecordId,
       path: recordPath("health_staging_record", stagingRecordId),
@@ -109,8 +78,9 @@ export async function planCorosWorkoutStaging(input: {
     protocolDecision: {
       stagingEntity: "health_staging_record",
       canonicalEntity: "workout",
+      stagingProtocolRegistered: true,
       canonicalProtocolRegistered: false,
-      reason: "Workout 先复用 HealthStagingRecord 审核边界；canonical workout 仅在确认/导出/恢复语义同时就绪后注册。",
+      reason: "Workout staging 已注册为 HealthStagingRecord 的正式变体；canonical workout 仅在确认/导出/恢复语义同时就绪后注册。",
     },
     items,
     skippedDuplicateCount: input.mapping.candidates.length - eligible.length,
@@ -118,14 +88,13 @@ export async function planCorosWorkoutStaging(input: {
     exactConfirmationPreview: confirmationPreview(items),
     readyForProtocolActivation: items.length > 0 && input.mapping.readyForStagingDesign,
     localOnly: true,
-    protocolAccepted: false,
+    protocolAccepted: true,
     commitEnabled: false,
   };
 }
 
 function normalizedCandidate(candidate: CorosWorkoutProposal): ProposedCorosWorkoutStagingData["normalized_json"] {
   return {
-    importKey: candidate.importKey,
     activity_type: candidate.activity_type,
     start_at: candidate.start_at,
     end_at: candidate.end_at,
@@ -141,7 +110,7 @@ function normalizedCandidate(candidate: CorosWorkoutProposal): ProposedCorosWork
 function confirmationPreview(items: CorosWorkoutStagingPlanItem[]) {
   if (items.length === 0) return "没有可写入的非重复 Workout staging 候选。";
   const paths = items.map((item) => item.path).join("、");
-  return `未来若启用，将以 create-only 方式向 Private 数据仓库创建 ${items.length} 条 pending HealthStagingRecord：${paths}。只保存活动摘要与来源哈希，不保存原始 FIT/TCX、文件名、GPS 坐标或轨迹点序列；执行时必须重新获得精确确认。`;
+  return `未来若启用写入，将以 create-only 方式向 Private 数据仓库创建 ${items.length} 条 pending HealthStagingRecord：${paths}。Workout staging 协议已注册，但当前仍不会写入；只保存活动摘要与来源哈希，不保存原始 FIT/TCX、文件名、GPS 坐标或轨迹点序列；执行时必须重新获得精确确认。`;
 }
 
 function stableJson(value: unknown) { return `${JSON.stringify(value)}\n`; }

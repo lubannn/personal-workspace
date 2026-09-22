@@ -8,6 +8,7 @@ import { createLearningAreaData } from "./learning-areas";
 import { createLearningGoalData } from "./learning-goals";
 import { createLearningActivityData } from "./learning-activities";
 import { createLearningResourceData } from "./learning-resources";
+import { createCorosWorkoutStagingData } from "./health-staging-records";
 import {
   dryRunPortableWorkspaceMigrations,
   planSchemaMigration,
@@ -30,6 +31,27 @@ function storedFile(path: string, text: string, blobSha: string) {
 }
 
 describe("schema migration registry", () => {
+  it("recognizes a formal Workout staging record as a current record envelope", async () => {
+    const timestamp = "2026-09-19T02:00:00.000Z";
+    const id = `coros_workout_${"c".repeat(64)}`;
+    const staging = createWorkspaceRecord({
+      entityType: "health_staging_record", id, ownerId: "github_lubannn", timestamp,
+      data: createCorosWorkoutStagingData({
+        source: { kind: "coros_file", label: "COROS TCX file", format: "tcx", source_sha256: "a".repeat(64), parser_version: "1", mapping_version: "1", batch_identity: "b".repeat(64) },
+        import_key: "c".repeat(64),
+        normalized_json: { activity_type: "ride", start_at: "2026-09-19T01:00:00.000Z", end_at: "2026-09-19T01:30:00.000Z", timezone: "Asia/Shanghai", duration_seconds: 1800, distance: 12000, distance_unit: "m", training_load: null, metrics_json: { elapsed_seconds: 1800, moving_seconds: 1750, calories: 320, average_heart_rate_bpm: 138, maximum_heart_rate_bpm: 166, average_cadence_rpm: 84, average_power_watts: 190, trackpoints: 2 } },
+        diagnostics_json: [],
+      }),
+    });
+    const exported = await buildPortableWorkspaceExport({
+      repository: "lubannn/personal-workspace-data", branch: "main", workspaceFile: storedFile("workspace.json", workspaceText, "workspace-blob"), captureFiles: [],
+      healthStagingFiles: [storedFile(`data/health-staging-records/${id}.json`, serializeRecord(staging), "workout-staging-blob")],
+    });
+    const dryRun = await dryRunPortableWorkspaceMigrations(exported);
+    expect(dryRun).toMatchObject({ valid: true, counts: { files: 2, current: 2, migratable: 0, blocked: 0, steps: 0 } });
+    expect(dryRun.files.find((file) => file.path.includes(id))).toMatchObject({ kind: "record", status: "current" });
+  });
+
   it("reports current canonical files without modifying them", async () => {
     const record = createWorkspaceRecord({
       entityType: "capture",

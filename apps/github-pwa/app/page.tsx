@@ -2093,6 +2093,11 @@ export default function GitHubWorkspacePage() {
   async function confirmHealthStagingItem(item: SyncedHealthStagingRecord) {
     const adapter = adapterRef.current;
     if (!adapter || !connection || savingHealthId || online === false) return;
+    if (item.record.data.health_type === "workout") {
+      setStatusMessage("");
+      setErrorMessage("Workout 暂存审核协议已注册，但 canonical Workout 与确认事务尚未开放；本次没有写入任何数据。");
+      return;
+    }
     setSavingHealthId(item.record.id); setErrorMessage(""); setStatusMessage("");
     const timestamp = new Date().toISOString();
     try {
@@ -2111,13 +2116,15 @@ export default function GitHubWorkspacePage() {
         const canonicalBlob = result.files.find((file) => file.path === canonicalPath)!.blobSha;
         setHealthStagingFiles((current) => current.map((candidate) => candidate.record.id === item.record.id ? { record: reviewed, path: stagingPath, blobSha: stagingBlob } : candidate));
         setHealthMetricFiles((current) => [{ record: metric, path: canonicalPath, blobSha: canonicalBlob }, ...current]);
-      } else {
+      } else if (reviewed.data.health_type === "sleep_session") {
         const session = createWorkspaceRecord({ entityType: "sleep_session", id: canonicalId, ownerId: connection.ownerId, timestamp, data: createConfirmedSleepSessionData(reviewed.data.normalized_json, item.record.id) });
         const result = await adapter.writeAtomicFiles({ files: [{ path: stagingPath, text: serializeRecord(reviewed) }, { path: canonicalPath, text: serializeRecord(session) }], message: `health: confirm ${item.record.id}`, expectedHeadCommitSha: snapshot.headCommitSha, baseTreeSha: snapshot.rootTreeSha });
         const stagingBlob = result.files.find((file) => file.path === stagingPath)!.blobSha;
         const canonicalBlob = result.files.find((file) => file.path === canonicalPath)!.blobSha;
         setHealthStagingFiles((current) => current.map((candidate) => candidate.record.id === item.record.id ? { record: reviewed, path: stagingPath, blobSha: stagingBlob } : candidate));
         setSleepSessionFiles((current) => [{ record: session, path: canonicalPath, blobSha: canonicalBlob }, ...current]);
+      } else {
+        throw new Error("HEALTH_STAGING_CANONICAL_NOT_REGISTERED");
       }
       setStatusMessage(`${reviewed.data.health_type === "metric" ? "健康指标" : "睡眠记录"}已由你确认，并与审核决定通过同一个 Git 提交写入正式记录。`);
     } catch (error) { setErrorMessage(friendlyError(error)); }

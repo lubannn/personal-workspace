@@ -2,10 +2,16 @@ import { describe, expect, it } from "vitest";
 import { createWorkspaceRecord, serializeRecord } from "./protocol";
 import { createConfirmedHealthMetricData, parseHealthMetricRecord } from "./health-metrics";
 import { createConfirmedSleepSessionData, parseSleepSessionRecord } from "./sleep-sessions";
-import { confirmHealthStaging, correctPendingHealthStaging, correctPendingSleepHealthStaging, createHealthStagingData, createSleepHealthStagingData, parseHealthStagingRecord, rejectHealthStaging } from "./health-staging-records";
+import { confirmHealthStaging, correctPendingHealthStaging, correctPendingSleepHealthStaging, createCorosWorkoutStagingData, createHealthStagingData, createSleepHealthStagingData, parseHealthStagingRecord, rejectHealthStaging } from "./health-staging-records";
 
 const candidate = { metric_type: "resting_heart_rate", measured_at: "2026-09-13T00:00:00.000Z", local_date: "2026-09-13", timezone: "Asia/Shanghai", value: 58, unit: "bpm", aggregation_period: "instant" as const };
 const timestamp = "2026-09-13T01:00:00.000Z";
+const workoutData = () => createCorosWorkoutStagingData({
+  source: { kind: "coros_file", label: "COROS TCX file", format: "tcx", source_sha256: "a".repeat(64), parser_version: "1", mapping_version: "1", batch_identity: "b".repeat(64) },
+  import_key: "c".repeat(64),
+  normalized_json: { activity_type: "ride", start_at: "2026-09-19T01:00:00.000Z", end_at: "2026-09-19T01:30:00.000Z", timezone: "Asia/Shanghai", duration_seconds: 1800, distance: 12000, distance_unit: "m", training_load: null, metrics_json: { elapsed_seconds: 1800, moving_seconds: 1750, calories: 320, average_heart_rate_bpm: 138, maximum_heart_rate_bpm: 166, average_cadence_rpm: 84, average_power_watts: 190, trackpoints: 2 } },
+  diagnostics_json: [],
+});
 
 describe("Health staging confirmation boundary", () => {
   it("keeps a new manual metric pending", () => {
@@ -53,5 +59,26 @@ describe("Health staging confirmation boundary", () => {
   it("rejects impossible sleep ranges", () => {
     expect(() => createSleepHealthStagingData({ source_label: "manual", normalized_json: { start_at: "2026-09-13T01:00:00.000Z", end_at: "2026-09-13T00:00:00.000Z", local_date: "2026-09-13", timezone: "Asia/Shanghai", session_type: "nap" } }, timestamp)).toThrow("INVALID_HEALTH_STAGING_DETAILS");
     expect(() => createSleepHealthStagingData({ source_label: "manual", normalized_json: { start_at: "2026-09-12T15:00:00.000Z", end_at: "2026-09-12T23:00:00.000Z", local_date: "2026-09-13", timezone: "Asia/Shanghai", session_type: "main_sleep" } }, timestamp)).toThrow("INVALID_HEALTH_STAGING_DETAILS");
+  });
+
+  it("accepts a formal pending Workout staging record but keeps canonical confirmation closed", () => {
+    const record = createWorkspaceRecord({ entityType: "health_staging_record", id: `coros_workout_${"c".repeat(64)}`, ownerId: "github_lubannn", timestamp, data: workoutData() });
+    expect(parseHealthStagingRecord(serializeRecord(record))).toEqual(record);
+    expect(() => confirmHealthStaging(record, "workout_1", "2026-09-19T02:00:00.000Z")).toThrow("HEALTH_STAGING_CANONICAL_NOT_REGISTERED");
+
+    const rejected = rejectHealthStaging(record, "用户拒绝候选", "2026-09-19T02:00:00.000Z");
+    expect(rejected).toMatchObject({ version: 2, data: { health_type: "workout", status: "rejected", canonical_record_id: null } });
+    expect(parseHealthStagingRecord(serializeRecord(rejected))).toEqual(rejected);
+  });
+
+  it("rejects malformed or location-rich Workout staging payloads", () => {
+    const record = createWorkspaceRecord({ entityType: "health_staging_record", id: `coros_workout_${"c".repeat(64)}`, ownerId: "github_lubannn", timestamp, data: workoutData() });
+    const invalidHash = structuredClone(record) as unknown as { data: { source: { source_sha256: string } } };
+    invalidHash.data.source.source_sha256 = "not-a-hash";
+    expect(() => parseHealthStagingRecord(JSON.stringify(invalidHash))).toThrow("INVALID_HEALTH_STAGING_RECORD");
+
+    const locationRich = structuredClone(record) as unknown as { data: { normalized_json: Record<string, unknown> } };
+    locationRich.data.normalized_json.gps_coordinates = [[31.2, 121.5]];
+    expect(() => parseHealthStagingRecord(JSON.stringify(locationRich))).toThrow("INVALID_HEALTH_STAGING_RECORD");
   });
 });

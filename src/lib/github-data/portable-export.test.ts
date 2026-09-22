@@ -20,7 +20,7 @@ import { createHabitData } from "./habits";
 import { createHabitRuleData } from "./habit-rules";
 import { createAutomaticHabitCheckInData } from "./habit-check-ins";
 import { createSleepHabitRuleData } from "./sleep-habit-rules";
-import { confirmHealthStaging, createHealthStagingData, createSleepHealthStagingData } from "./health-staging-records";
+import { confirmHealthStaging, createCorosWorkoutStagingData, createHealthStagingData, createSleepHealthStagingData } from "./health-staging-records";
 import { createConfirmedHealthMetricData } from "./health-metrics";
 import { createConfirmedSleepSessionData } from "./sleep-sessions";
 import { renderJournalSegmentsMarkdown } from "./journal-segment-codec";
@@ -533,6 +533,24 @@ describe("portable GitHub workspace export", () => {
       sleepSessionFiles: [storedFile(`data/sleep-sessions/${session.id}.json`, serializeRecord(session), "sleep-blob")],
     });
     await expect(inspectPortableWorkspaceExport(exported)).resolves.toMatchObject({ valid: true, counts: { healthStagingRecords: 1, sleepSessions: 1 } });
+  });
+
+  it("exports and inspects a pending formal Workout staging record without requiring a canonical record", async () => {
+    const timestamp = "2026-09-19T02:00:00.000Z";
+    const staging = createWorkspaceRecord({
+      entityType: "health_staging_record", id: `coros_workout_${"c".repeat(64)}`, ownerId: "github_lubannn", timestamp,
+      data: createCorosWorkoutStagingData({
+        source: { kind: "coros_file", label: "COROS TCX file", format: "tcx", source_sha256: "a".repeat(64), parser_version: "1", mapping_version: "1", batch_identity: "b".repeat(64) },
+        import_key: "c".repeat(64),
+        normalized_json: { activity_type: "ride", start_at: "2026-09-19T01:00:00.000Z", end_at: "2026-09-19T01:30:00.000Z", timezone: "Asia/Shanghai", duration_seconds: 1800, distance: 12000, distance_unit: "m", training_load: null, metrics_json: { elapsed_seconds: 1800, moving_seconds: 1750, calories: 320, average_heart_rate_bpm: 138, maximum_heart_rate_bpm: 166, average_cadence_rpm: 84, average_power_watts: 190, trackpoints: 2 } },
+        diagnostics_json: [],
+      }),
+    });
+    const exported = await buildPortableWorkspaceExport({
+      repository: "lubannn/personal-workspace-data", branch: "main", workspaceFile: storedFile("workspace.json", workspaceText, "workspace-blob"), captureFiles: [],
+      healthStagingFiles: [storedFile(`data/health-staging-records/${staging.id}.json`, serializeRecord(staging), "workout-staging-blob")],
+    });
+    await expect(inspectPortableWorkspaceExport(exported)).resolves.toMatchObject({ valid: true, counts: { healthStagingRecords: 1, healthMetrics: 0, sleepSessions: 0 } });
   });
 
   it("rejects a sleep-assisted HabitCheckIn whose SleepSession evidence is missing", async () => {

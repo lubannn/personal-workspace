@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import { mapCorosActivities, type CorosSourceActivity } from "./coros-activity-mapping";
 import { planCorosWorkoutStaging } from "./coros-workout-staging-plan";
+import { parseHealthStagingRecord } from "./health-staging-records";
+import { createWorkspaceRecord, serializeRecord } from "./protocol";
 
 const activity: CorosSourceActivity = {
   sourceIdentity: "tcx-activity:2026-09-19T01:00:00Z:Biking:2026-09-19T01:30:00.000Z:12000",
@@ -20,7 +22,7 @@ const activity: CorosSourceActivity = {
 };
 
 describe("COROS Workout staging plan", () => {
-  it("builds deterministic create-only paths without enabling the protocol or commit", async () => {
+  it("builds deterministic create-only paths for the registered staging protocol without enabling commit", async () => {
     const mapping = await mapCorosActivities({ sourceSha256: "a".repeat(64), parserVersion: "1", timezone: "Asia/Shanghai", activities: [activity] });
     const first = await planCorosWorkoutStaging({ format: "tcx", sourceSha256: "a".repeat(64), parserVersion: "1", mapping });
     const second = await planCorosWorkoutStaging({ format: "tcx", sourceSha256: "a".repeat(64), parserVersion: "1", mapping });
@@ -40,7 +42,15 @@ describe("COROS Workout staging plan", () => {
       },
     });
     expect(first.items[0].payloadSha256).toMatch(/^[0-9a-f]{64}$/u);
-    expect(first).toMatchObject({ readyForProtocolActivation: true, localOnly: true, protocolAccepted: false, commitEnabled: false });
+    expect(first).toMatchObject({
+      protocolDecision: { stagingProtocolRegistered: true, canonicalProtocolRegistered: false },
+      readyForProtocolActivation: true,
+      localOnly: true,
+      protocolAccepted: true,
+      commitEnabled: false,
+    });
+    const record = createWorkspaceRecord({ entityType: "health_staging_record", id: first.items[0].stagingRecordId, ownerId: "github_lubannn", timestamp: "2026-09-19T02:00:00.000Z", data: first.items[0].proposedData });
+    expect(parseHealthStagingRecord(serializeRecord(record))).toEqual(record);
   });
 
   it("drops raw and location-rich fields from the proposed retained payload", async () => {
@@ -53,6 +63,7 @@ describe("COROS Workout staging plan", () => {
     expect(serialized).not.toContain("file_name");
     expect(serialized).not.toContain("gps");
     expect(serialized).not.toContain("trackpoint_series");
+    expect(plan.items[0].proposedData.normalized_json).not.toHaveProperty("importKey");
   });
 
   it("skips duplicate candidates instead of planning an overwrite", async () => {
