@@ -1,4 +1,5 @@
 import { mapCorosActivities, type CorosMappingDryRun, type CorosSourceActivity } from "./coros-activity-mapping";
+import { planCorosWorkoutStaging, type CorosWorkoutStagingPlan } from "./coros-workout-staging-plan";
 
 export const COROS_FILE_PREFLIGHT_VERSION = "1";
 export const COROS_IMPORT_MAX_FILE_BYTES = 64 * 1024 * 1024;
@@ -51,6 +52,7 @@ export type CorosFilePreflight = {
   summary: CorosFitSummary | CorosTcxSummary;
   diagnostics: CorosFileDiagnostic[];
   mapping: CorosMappingDryRun;
+  stagingPlan: CorosWorkoutStagingPlan;
   readyForMapping: boolean;
   localOnly: true;
   sourceModified: false;
@@ -77,6 +79,12 @@ export async function previewCorosActivityFile(file: CorosImportFile, options: {
     activities: parsed.activities,
     knownImportKeys: options.knownImportKeys,
   });
+  const stagingPlan = await planCorosWorkoutStaging({
+    format: parsed.summary.format,
+    sourceSha256: sha256,
+    parserVersion: COROS_FILE_PREFLIGHT_VERSION,
+    mapping,
+  });
 
   return {
     source: {
@@ -89,6 +97,7 @@ export async function previewCorosActivityFile(file: CorosImportFile, options: {
     summary: parsed.summary,
     diagnostics: parsed.diagnostics,
     mapping,
+    stagingPlan,
     readyForMapping: parsed.readyForMapping && mapping.readyForStagingDesign,
     localOnly: true,
     sourceModified: false,
