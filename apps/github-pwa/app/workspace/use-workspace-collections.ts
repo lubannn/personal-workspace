@@ -35,8 +35,9 @@ import { parseHabitCheckInRecord } from "../../../../src/lib/github-data/habit-c
 import { parseHealthStagingRecord } from "../../../../src/lib/github-data/health-staging-records";
 import { parseHealthMetricRecord } from "../../../../src/lib/github-data/health-metrics";
 import { parseSleepSessionRecord } from "../../../../src/lib/github-data/sleep-sessions";
+import { isWorkoutLinkedToStaging, parseWorkoutRecord } from "../../../../src/lib/github-data/workouts";
 import { parseCaptureRecord } from "../../../../src/lib/github-data/workspace";
-import { friendlyError, type SyncedActivityEvent, type SyncedCalendarEvent, type SyncedCapture, type SyncedHabit, type SyncedHabitCheckIn, type SyncedHabitRule, type SyncedHealthMetric, type SyncedHealthStagingRecord, type SyncedJournalEntry, type SyncedJournalImportCheckpoint, type SyncedJournalRevision, type SyncedJournalSegment, type SyncedLearningActivity, type SyncedLearningArea, type SyncedLearningGoal, type SyncedLearningResource, type SyncedMilestone, type SyncedObsidianDocument, type SyncedProject, type SyncedProjectFileReference, type SyncedProjectNote, type SyncedProjectPhase, type SyncedReportDraft, type SyncedSleepSession, type SyncedSyncConflict, type SyncedTask, type SyncedTimeEntry } from "./page-model";
+import { friendlyError, type SyncedActivityEvent, type SyncedCalendarEvent, type SyncedCapture, type SyncedHabit, type SyncedHabitCheckIn, type SyncedHabitRule, type SyncedHealthMetric, type SyncedHealthStagingRecord, type SyncedJournalEntry, type SyncedJournalImportCheckpoint, type SyncedJournalRevision, type SyncedJournalSegment, type SyncedLearningActivity, type SyncedLearningArea, type SyncedLearningGoal, type SyncedLearningResource, type SyncedMilestone, type SyncedObsidianDocument, type SyncedProject, type SyncedProjectFileReference, type SyncedProjectNote, type SyncedProjectPhase, type SyncedReportDraft, type SyncedSleepSession, type SyncedSyncConflict, type SyncedTask, type SyncedTimeEntry, type SyncedWorkout } from "./page-model";
 
 type Options = {
   adapterRef: MutableRefObject<GitHubContentsAdapter | null>;
@@ -72,6 +73,7 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
   const [healthStagingFiles, setHealthStagingFiles] = useState<SyncedHealthStagingRecord[]>([]);
   const [healthMetricFiles, setHealthMetricFiles] = useState<SyncedHealthMetric[]>([]);
   const [sleepSessionFiles, setSleepSessionFiles] = useState<SyncedSleepSession[]>([]);
+  const [workoutFiles, setWorkoutFiles] = useState<SyncedWorkout[]>([]);
   const [dashboardLayout, setDashboardLayout] = useState<DashboardLayout | null>(null);
   const [dashboardBlobSha, setDashboardBlobSha] = useState<string | null>(null);
   const [loadingCaptures, setLoadingCaptures] = useState(false);
@@ -691,12 +693,18 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
       return records;
     }
     try {
-      const [staging, metrics, sleepSessions] = await Promise.all([
+      const [staging, metrics, sleepSessions, workouts] = await Promise.all([
         loadDirectory("data/health-staging-records", parseHealthStagingRecord),
         loadDirectory("data/health-metrics", parseHealthMetricRecord),
         loadDirectory("data/sleep-sessions", parseSleepSessionRecord),
+        loadDirectory("data/workouts", parseWorkoutRecord),
       ]);
+      const stagingById = new Map(staging.map((item) => [item.record.id, item.record]));
       setHealthStagingFiles(staging); setHealthMetricFiles(metrics); setSleepSessionFiles(sleepSessions);
+      setWorkoutFiles(workouts.filter((item) => {
+        const source = stagingById.get(item.record.data.staging_record_id);
+        return source ? isWorkoutLinkedToStaging(item.record, source) : false;
+      }));
     } catch (error) { setErrorMessage(friendlyError(error)); }
     finally { setLoadingHealth(false); }
   }, [adapterRef, setErrorMessage]);
@@ -794,6 +802,7 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     setHealthStagingFiles([]);
     setHealthMetricFiles([]);
     setSleepSessionFiles([]);
+    setWorkoutFiles([]);
     setDashboardLayout(null);
     setDashboardBlobSha(null);
   }
@@ -849,6 +858,8 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     setHealthMetricFiles,
     sleepSessionFiles,
     setSleepSessionFiles,
+    workoutFiles,
+    setWorkoutFiles,
     dashboardLayout,
     setDashboardLayout,
     dashboardBlobSha,

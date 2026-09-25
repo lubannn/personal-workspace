@@ -4,7 +4,8 @@ import { buildPortableWorkspaceExport } from "./portable-export";
 import { createPortableRestorePlan, type PortableRestoreTarget } from "./portable-restore";
 import { createWorkspaceRecord, serializeRecord } from "./protocol";
 import { createDefaultDashboardLayout, serializeDashboardLayout } from "./dashboard-layout";
-import { createCorosWorkoutStagingData } from "./health-staging-records";
+import { confirmWorkoutHealthStaging, createCorosWorkoutStagingData } from "./health-staging-records";
+import { createConfirmedWorkoutData } from "./workouts";
 
 const workspaceText = `${JSON.stringify({
   schema_version: 1,
@@ -169,5 +170,35 @@ describe("portable restore planning", () => {
     const plan = await createPortableRestorePlan(exported, target());
     expect(plan).toMatchObject({ ready: true, counts: { files: 2, healthStagingRecords: 1 } });
     expect(plan.files.map((file) => file.path)).toContain(`data/health-staging-records/${id}.json`);
+  });
+
+  it("restores a confirmed Workout only with its matching staging decision", async () => {
+    const timestamp = "2026-09-19T02:00:00.000Z";
+    const importKey = "c".repeat(64);
+    const pending = createWorkspaceRecord({
+      entityType: "health_staging_record", id: `coros_workout_${importKey}`, ownerId: "github_lubannn", timestamp,
+      data: createCorosWorkoutStagingData({
+        source: { kind: "coros_file", label: "COROS TCX file", format: "tcx", source_sha256: "a".repeat(64), parser_version: "1", mapping_version: "1", batch_identity: "b".repeat(64) },
+        import_key: importKey,
+        normalized_json: { activity_type: "ride", start_at: "2026-09-19T01:00:00.000Z", end_at: "2026-09-19T01:30:00.000Z", timezone: "Asia/Shanghai", duration_seconds: 1800, distance: 12000, distance_unit: "m", training_load: null, metrics_json: { elapsed_seconds: 1800, moving_seconds: 1750, calories: 320, average_heart_rate_bpm: 138, maximum_heart_rate_bpm: 166, average_cadence_rpm: 84, average_power_watts: 190, trackpoints: 2 } },
+        diagnostics_json: [],
+      }),
+    });
+    const reviewed = confirmWorkoutHealthStaging(pending, timestamp);
+    const workout = createWorkspaceRecord({ entityType: "workout", id: `workout_${importKey}`, ownerId: pending.owner_id, timestamp, data: createConfirmedWorkoutData(pending, timestamp) });
+    const stagingFile = storedFile(`data/health-staging-records/${reviewed.id}.json`, serializeRecord(reviewed), "staging-blob");
+    const workoutFile = storedFile(`data/workouts/${workout.id}.json`, serializeRecord(workout), "workout-blob");
+    const build = (workoutFiles = [workoutFile]) => buildPortableWorkspaceExport({
+      repository: "lubannn/personal-workspace-data", branch: "main", workspaceFile: storedFile("workspace.json", workspaceText, "workspace-blob"), captureFiles: [],
+      healthStagingFiles: [stagingFile], workoutFiles,
+    });
+    const ready = await createPortableRestorePlan(await build(), target());
+    expect(ready).toMatchObject({ ready: true, counts: { workouts: 1, healthStagingRecords: 1 } });
+    expect(ready.files.map((file) => file.path)).toEqual(expect.arrayContaining([stagingFile.path, workoutFile.path]));
+
+    const incomplete = await createPortableRestorePlan(await build([]), target());
+    expect(incomplete.ready).toBe(false);
+    expect(incomplete.errors.map((error) => error.code)).toContain("WORKOUT_CANONICAL_MISSING");
+    expect(incomplete.files).toEqual([]);
   });
 });

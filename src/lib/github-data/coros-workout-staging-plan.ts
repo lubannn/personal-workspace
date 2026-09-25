@@ -110,7 +110,7 @@ function normalizedCandidate(candidate: CorosWorkoutProposal): ProposedCorosWork
 function confirmationPreview(items: CorosWorkoutStagingPlanItem[]) {
   if (items.length === 0) return "没有可写入的非重复 Workout staging 候选。";
   const paths = items.map((item) => item.path).join("、");
-  return `未来若启用写入，将以 create-only 方式向 Private 数据仓库创建 ${items.length} 条 pending HealthStagingRecord：${paths}。Workout staging 协议已注册，但当前仍不会写入；只保存活动摘要与来源哈希，不保存原始 FIT/TCX、文件名、GPS 坐标或轨迹点序列；执行时必须重新获得精确确认。`;
+  return `本地提案包含 ${items.length} 条待创建的 pending HealthStagingRecord：${paths}。预检本身不会写入；独立的暂存操作会重新核对远端，并要求当次精确确认。只保存活动摘要与来源哈希，不保存原始 FIT/TCX、文件名、GPS 坐标或轨迹点序列。`;
 }
 
 function stableJson(value: unknown) { return `${JSON.stringify(value)}\n`; }

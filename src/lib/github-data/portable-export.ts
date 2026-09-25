@@ -27,6 +27,7 @@ import { parseHabitCheckInRecord } from "./habit-check-ins";
 import { parseHealthStagingRecord } from "./health-staging-records";
 import { parseHealthMetricRecord } from "./health-metrics";
 import { parseSleepSessionRecord } from "./sleep-sessions";
+import { isWorkoutLinkedToStaging, parseWorkoutRecord } from "./workouts";
 import { renderJournalSegmentsMarkdown } from "./journal-segment-codec";
 import { parseCaptureRecord, parseWorkspaceDescriptor, type WorkspaceDescriptor } from "./workspace";
 
@@ -56,7 +57,7 @@ export type PortableWorkspaceExport = {
   manifest: {
     schema_version: 1;
     scope: {
-      modules: Array<"workspace" | "captures" | "dashboard_layout" | "tasks" | "time_entries" | "projects" | "project_phases" | "milestones" | "project_notes" | "project_file_references" | "activity_events" | "calendar_events" | "report_drafts" | "journal_entries" | "journal_segments" | "journal_revisions" | "journal_import_checkpoints" | "obsidian_documents" | "sync_conflicts" | "learning_areas" | "learning_goals" | "learning_activities" | "learning_resources" | "habits" | "habit_rules" | "habit_check_ins" | "health_staging_records" | "health_metrics" | "sleep_sessions">;
+      modules: Array<"workspace" | "captures" | "dashboard_layout" | "tasks" | "time_entries" | "projects" | "project_phases" | "milestones" | "project_notes" | "project_file_references" | "activity_events" | "calendar_events" | "report_drafts" | "journal_entries" | "journal_segments" | "journal_revisions" | "journal_import_checkpoints" | "obsidian_documents" | "sync_conflicts" | "learning_areas" | "learning_goals" | "learning_activities" | "learning_resources" | "habits" | "habit_rules" | "habit_check_ins" | "health_staging_records" | "health_metrics" | "sleep_sessions" | "workouts">;
       complete: true;
     };
     counts: {
@@ -89,6 +90,7 @@ export type PortableWorkspaceExport = {
       health_staging_records: number;
       health_metrics: number;
       sleep_sessions: number;
+      workouts?: number;
     };
     files: PortableExportManifestFile[];
   };
@@ -136,6 +138,7 @@ export type ExportInspection = {
     healthStagingRecords: number;
     healthMetrics: number;
     sleepSessions: number;
+    workouts: number;
   };
   errors: ExportInspectionIssue[];
   warnings: ExportInspectionIssue[];
@@ -186,6 +189,7 @@ export async function buildPortableWorkspaceExport(input: {
   healthStagingFiles?: GitHubStoredFile[];
   healthMetricFiles?: GitHubStoredFile[];
   sleepSessionFiles?: GitHubStoredFile[];
+  workoutFiles?: GitHubStoredFile[];
   generatedAt?: string;
 }): Promise<PortableWorkspaceExport> {
   const dashboardLayoutFiles = input.dashboardLayoutFile ? [input.dashboardLayoutFile] : [];
@@ -215,7 +219,8 @@ export async function buildPortableWorkspaceExport(input: {
   const healthStagingFiles = input.healthStagingFiles ?? [];
   const healthMetricFiles = input.healthMetricFiles ?? [];
   const sleepSessionFiles = input.sleepSessionFiles ?? [];
-  const files = [input.workspaceFile, ...input.captureFiles, ...dashboardLayoutFiles, ...taskFiles, ...timeEntryFiles, ...projectFiles, ...projectPhaseFiles, ...milestoneFiles, ...projectNoteFiles, ...projectFileReferenceFiles, ...activityEventFiles, ...calendarEventFiles, ...reportDraftFiles, ...journalEntryFiles, ...journalSegmentFiles, ...journalRevisionFiles, ...journalImportCheckpointFiles, ...obsidianDocumentFiles, ...syncConflictFiles, ...learningAreaFiles, ...learningGoalFiles, ...learningActivityFiles, ...learningResourceFiles, ...habitFiles, ...habitRuleFiles, ...habitCheckInFiles, ...healthStagingFiles, ...healthMetricFiles, ...sleepSessionFiles]
+  const workoutFiles = input.workoutFiles ?? [];
+  const files = [input.workspaceFile, ...input.captureFiles, ...dashboardLayoutFiles, ...taskFiles, ...timeEntryFiles, ...projectFiles, ...projectPhaseFiles, ...milestoneFiles, ...projectNoteFiles, ...projectFileReferenceFiles, ...activityEventFiles, ...calendarEventFiles, ...reportDraftFiles, ...journalEntryFiles, ...journalSegmentFiles, ...journalRevisionFiles, ...journalImportCheckpointFiles, ...obsidianDocumentFiles, ...syncConflictFiles, ...learningAreaFiles, ...learningGoalFiles, ...learningActivityFiles, ...learningResourceFiles, ...habitFiles, ...habitRuleFiles, ...habitCheckInFiles, ...healthStagingFiles, ...healthMetricFiles, ...sleepSessionFiles, ...workoutFiles]
     .map((file) => ({ ...file }))
     .sort((left, right) => left.path.localeCompare(right.path));
   const manifestFiles = await Promise.all(files.map(async (file) => ({
@@ -232,7 +237,7 @@ export async function buildPortableWorkspaceExport(input: {
     source: { repository: input.repository, branch: input.branch },
     manifest: {
       schema_version: 1,
-      scope: { modules: ["workspace", "captures", "dashboard_layout", "tasks", "time_entries", "projects", "project_phases", "milestones", "project_notes", "project_file_references", "activity_events", "calendar_events", "report_drafts", "journal_entries", "journal_segments", "journal_revisions", "journal_import_checkpoints", "obsidian_documents", "sync_conflicts", "learning_areas", "learning_goals", "learning_activities", "learning_resources", "habits", "habit_rules", "habit_check_ins", "health_staging_records", "health_metrics", "sleep_sessions"], complete: true },
+      scope: { modules: ["workspace", "captures", "dashboard_layout", "tasks", "time_entries", "projects", "project_phases", "milestones", "project_notes", "project_file_references", "activity_events", "calendar_events", "report_drafts", "journal_entries", "journal_segments", "journal_revisions", "journal_import_checkpoints", "obsidian_documents", "sync_conflicts", "learning_areas", "learning_goals", "learning_activities", "learning_resources", "habits", "habit_rules", "habit_check_ins", "health_staging_records", "health_metrics", "sleep_sessions", "workouts"], complete: true },
       counts: {
         files: files.length,
         captures: input.captureFiles.length,
@@ -263,6 +268,7 @@ export async function buildPortableWorkspaceExport(input: {
         health_staging_records: healthStagingFiles.length,
         health_metrics: healthMetricFiles.length,
         sleep_sessions: sleepSessionFiles.length,
+        workouts: workoutFiles.length,
       },
       files: manifestFiles,
     },
@@ -296,7 +302,7 @@ export async function inspectPortableWorkspaceExport(value: unknown): Promise<Ex
     generatedAt: null,
     repository: null,
     workspace: null,
-    counts: { files: 0, captures: 0, dashboardLayouts: 0, tasks: 0, timeEntries: 0, projects: 0, projectPhases: 0, milestones: 0, projectNotes: 0, projectFileReferences: 0, activityEvents: 0, calendarEvents: 0, reportDrafts: 0, journalEntries: 0, journalSegments: 0, journalRevisions: 0, journalImportCheckpoints: 0, obsidianDocuments: 0, syncConflicts: 0, learningAreas: 0, learningGoals: 0, learningActivities: 0, learningResources: 0, habits: 0, habitRules: 0, habitCheckIns: 0, healthStagingRecords: 0, healthMetrics: 0, sleepSessions: 0 },
+    counts: { files: 0, captures: 0, dashboardLayouts: 0, tasks: 0, timeEntries: 0, projects: 0, projectPhases: 0, milestones: 0, projectNotes: 0, projectFileReferences: 0, activityEvents: 0, calendarEvents: 0, reportDrafts: 0, journalEntries: 0, journalSegments: 0, journalRevisions: 0, journalImportCheckpoints: 0, obsidianDocuments: 0, syncConflicts: 0, learningAreas: 0, learningGoals: 0, learningActivities: 0, learningResources: 0, habits: 0, habitRules: 0, habitCheckIns: 0, healthStagingRecords: 0, healthMetrics: 0, sleepSessions: 0, workouts: 0 },
     errors,
     warnings,
   };
@@ -1079,6 +1085,7 @@ export async function inspectPortableWorkspaceExport(value: unknown): Promise<Ex
 
   const healthStagingIds = new Set<string>();
   const confirmedHealthLinks = new Map<string, string>();
+  const confirmedWorkoutStaging = new Map<string, ReturnType<typeof parseHealthStagingRecord>>();
   const healthStagingFiles = validPayloadFiles.filter((file) => file.path.startsWith("data/health-staging-records/"));
   result.counts.healthStagingRecords = healthStagingFiles.length;
   for (const file of healthStagingFiles) {
@@ -1088,7 +1095,10 @@ export async function inspectPortableWorkspaceExport(value: unknown): Promise<Ex
       if (recordPath("health_staging_record", record.id) !== file.path) errors.push({ code: "HEALTH_STAGING_PATH_MISMATCH", message: "HealthStagingRecord 的 ID 与文件路径不一致。", path: file.path });
       if (healthStagingIds.has(record.id)) errors.push({ code: "DUPLICATE_HEALTH_STAGING_ID", message: "导出包中存在重复 HealthStagingRecord ID。", path: file.path });
       healthStagingIds.add(record.id);
-      if (record.data.status === "confirmed" && record.data.canonical_record_id) confirmedHealthLinks.set(record.data.canonical_record_id, record.id);
+      if (record.data.status === "confirmed" && record.data.canonical_record_id) {
+        confirmedHealthLinks.set(record.data.canonical_record_id, record.id);
+        if (record.data.health_type === "workout") confirmedWorkoutStaging.set(record.data.canonical_record_id, record);
+      }
     } catch { errors.push({ code: "INVALID_HEALTH_STAGING_RECORD", message: "HealthStagingRecord 文件无法通过结构校验。", path: file.path }); }
   }
   const rawHealthStagingCount = manifestCounts?.health_staging_records;
@@ -1125,6 +1135,27 @@ export async function inspectPortableWorkspaceExport(value: unknown): Promise<Ex
   }
   const rawSleepSessionCount = manifestCounts?.sleep_sessions;
   if ((rawSleepSessionCount !== undefined || sleepSessionFiles.length > 0) && rawSleepSessionCount !== sleepSessionFiles.length) errors.push({ code: "SLEEP_SESSION_COUNT_MISMATCH", message: "SleepSession 数量与 manifest 不一致。" });
+  const workoutIds = new Set<string>();
+  const workoutFiles = validPayloadFiles.filter((file) => file.path.startsWith("data/workouts/"));
+  result.counts.workouts = workoutFiles.length;
+  for (const file of workoutFiles) {
+    try {
+      const record = parseWorkoutRecord(file.content);
+      if (result.workspace && record.owner_id !== result.workspace.owner_id) errors.push({ code: "OWNER_MISMATCH", message: "Workout 的 owner_id 与 workspace 不一致。", path: file.path });
+      if (`data/workouts/${record.id}.json` !== file.path) errors.push({ code: "WORKOUT_PATH_MISMATCH", message: "Workout 的 ID 与文件路径不一致。", path: file.path });
+      if (workoutIds.has(record.id)) errors.push({ code: "DUPLICATE_WORKOUT_ID", message: "导出包中存在重复 Workout ID。", path: file.path });
+      workoutIds.add(record.id);
+      const staging = confirmedWorkoutStaging.get(record.id);
+      if (!staging || !isWorkoutLinkedToStaging(record, staging)) {
+        errors.push({ code: "WORKOUT_STAGING_MISMATCH", message: "Workout 缺少匹配的已确认暂存来源，或活动摘要不一致。", path: file.path });
+      }
+    } catch { errors.push({ code: "INVALID_WORKOUT_RECORD", message: "Workout 文件无法通过结构校验。", path: file.path }); }
+  }
+  for (const [canonicalId, staging] of confirmedWorkoutStaging) {
+    if (!workoutIds.has(canonicalId)) errors.push({ code: "WORKOUT_CANONICAL_MISSING", message: "已确认的 Workout 暂存记录缺少正式 Workout 文件。", path: `data/health-staging-records/${staging.id}.json` });
+  }
+  const rawWorkoutCount = manifestCounts?.workouts;
+  if ((rawWorkoutCount !== undefined || workoutFiles.length > 0) && rawWorkoutCount !== workoutFiles.length) errors.push({ code: "WORKOUT_COUNT_MISMATCH", message: "Workout 数量与 manifest 不一致。" });
   for (const link of sleepEvidenceLinks) {
     if (!sleepSessionIds.has(link.evidenceId)) errors.push({ code: "HABIT_CHECK_IN_SLEEP_EVIDENCE_MISSING", message: "HabitCheckIn 引用的正式睡眠证据不在导出包中。", path: link.path });
   }
@@ -1159,6 +1190,7 @@ export async function inspectPortableWorkspaceExport(value: unknown): Promise<Ex
     && !file.path.startsWith("data/health-staging-records/")
     && !file.path.startsWith("data/health-metrics/")
     && !file.path.startsWith("data/sleep-sessions/")
+    && !file.path.startsWith("data/workouts/")
   ));
   for (const file of unexpectedFiles) {
     errors.push({ code: "UNEXPECTED_FILE", message: "当前版本不支持此导出路径。", path: file.path });
@@ -1167,6 +1199,7 @@ export async function inspectPortableWorkspaceExport(value: unknown): Promise<Ex
   result.valid = errors.length === 0;
   return result;
 }
+
 
 export function serializePortableWorkspaceExport(value: PortableWorkspaceExport) {
   return `${JSON.stringify(value, null, 2)}\n`;

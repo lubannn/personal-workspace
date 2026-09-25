@@ -109,6 +109,7 @@ import { createSleepHabitRuleData, evaluateSleepHabitRule, type SleepHabitRuleFi
 import { confirmHealthStaging, correctPendingHealthStaging, correctPendingSleepHealthStaging, createHealthStagingData, createSleepHealthStagingData, rejectHealthStaging, type HealthStagingFields, type SleepStagingFields } from "../../../src/lib/github-data/health-staging-records";
 import { createConfirmedHealthMetricData } from "../../../src/lib/github-data/health-metrics";
 import { createConfirmedSleepSessionData } from "../../../src/lib/github-data/sleep-sessions";
+import { commitWorkoutConfirmationTransaction, prepareWorkoutConfirmationTransaction } from "../../../src/lib/github-data/workout-confirmation-transaction";
 import { createJournalEntryData, hasActiveDailyJournalDate, updateJournalEntryData } from "../../../src/lib/github-data/journal-entries";
 import {
   createJournalEntryAtomically,
@@ -295,6 +296,8 @@ export default function GitHubWorkspacePage() {
     setHealthMetricFiles,
     sleepSessionFiles,
     setSleepSessionFiles,
+    workoutFiles,
+    setWorkoutFiles,
     dashboardLayout,
     setDashboardLayout,
     dashboardBlobSha,
@@ -2094,8 +2097,16 @@ export default function GitHubWorkspacePage() {
     const adapter = adapterRef.current;
     if (!adapter || !connection || savingHealthId || online === false) return;
     if (item.record.data.health_type === "workout") {
-      setStatusMessage("");
-      setErrorMessage("Workout 暂存审核协议已注册，但 canonical Workout 与确认事务尚未开放；本次没有写入任何数据。");
+      setSavingHealthId(item.record.id); setErrorMessage(""); setStatusMessage("");
+      try {
+        const prepared = await prepareWorkoutConfirmationTransaction({ adapter, staging: item, ownerId: connection.ownerId });
+        if (!window.confirm(prepared.confirmationText)) { setStatusMessage("已取消 Workout 确认；没有写入数据。"); return; }
+        const result = await commitWorkoutConfirmationTransaction(adapter, prepared);
+        setHealthStagingFiles((current) => current.map((candidate) => candidate.record.id === item.record.id ? result.staging : candidate));
+        setWorkoutFiles((current) => [result.workout, ...current.filter((candidate) => candidate.record.id !== result.workout.record.id)]);
+        setStatusMessage("Workout 已由你确认，暂存审核与正式记录通过同一个 Git 提交写入。");
+      } catch (error) { setErrorMessage(friendlyError(error)); }
+      finally { setSavingHealthId(null); }
       return;
     }
     setSavingHealthId(item.record.id); setErrorMessage(""); setStatusMessage("");
@@ -2235,6 +2246,11 @@ export default function GitHubWorkspacePage() {
 
   async function listSleepSessionFiles(adapter: GitHubContentsAdapter) {
     try { return (await adapter.listDirectory("data/sleep-sessions")).filter((item) => item.type === "file" && item.name.endsWith(".json")).sort((left, right) => left.path.localeCompare(right.path)); }
+    catch (error) { if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") return []; throw error; }
+  }
+
+  async function listWorkoutFiles(adapter: GitHubContentsAdapter) {
+    try { return (await adapter.listDirectory("data/workouts")).filter((item) => item.type === "file" && item.name.endsWith(".json")).sort((left, right) => left.path.localeCompare(right.path)); }
     catch (error) { if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") return []; throw error; }
   }
 
@@ -2507,6 +2523,9 @@ export default function GitHubWorkspacePage() {
       const sleepSessionCandidates = await listSleepSessionFiles(adapter);
       const sleepSessionExportFiles = [];
       for (let index = 0; index < sleepSessionCandidates.length; index += batchSize) sleepSessionExportFiles.push(...await Promise.all(sleepSessionCandidates.slice(index, index + batchSize).map((item) => adapter.readText(item.path))));
+      const workoutCandidates = await listWorkoutFiles(adapter);
+      const workoutExportFiles = [];
+      for (let index = 0; index < workoutCandidates.length; index += batchSize) workoutExportFiles.push(...await Promise.all(workoutCandidates.slice(index, index + batchSize).map((item) => adapter.readText(item.path))));
 
       setExportProgress("正在生成 SHA-256 manifest…");
       const generatedAt = new Date().toISOString();
@@ -2542,6 +2561,7 @@ export default function GitHubWorkspacePage() {
         healthStagingFiles: healthStagingExportFiles,
         healthMetricFiles: healthMetricExportFiles,
         sleepSessionFiles: sleepSessionExportFiles,
+        workoutFiles: workoutExportFiles,
         generatedAt,
       });
       const inspection = await inspectPortableWorkspaceExport(portableExport);
@@ -3157,11 +3177,13 @@ export default function GitHubWorkspacePage() {
 
       <HealthStagingSection
         connection={connection}
+        adapter={adapterRef.current}
         online={online}
         todayDate={currentTaskDate}
         staging={healthStagingFiles}
         metrics={healthMetricFiles}
         sleepSessions={sleepSessionFiles}
+        workouts={workoutFiles}
         loading={loadingHealth}
         saving={savingHealth}
         savingId={savingHealthId}
@@ -3172,6 +3194,10 @@ export default function GitHubWorkspacePage() {
         onConfirm={confirmHealthStagingItem}
         onReject={rejectHealthStagingItem}
         onRefresh={() => loadHealthDomain()}
+        onStaged={(created) => setHealthStagingFiles((current) => {
+          const createdIds = new Set(created.map((item) => item.record.id));
+          return [...created, ...current.filter((item) => !createdIds.has(item.record.id))];
+        })}
       />
 
 

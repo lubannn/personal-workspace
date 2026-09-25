@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createWorkspaceRecord, serializeRecord } from "./protocol";
 import { createConfirmedHealthMetricData, parseHealthMetricRecord } from "./health-metrics";
 import { createConfirmedSleepSessionData, parseSleepSessionRecord } from "./sleep-sessions";
-import { confirmHealthStaging, correctPendingHealthStaging, correctPendingSleepHealthStaging, createCorosWorkoutStagingData, createHealthStagingData, createSleepHealthStagingData, parseHealthStagingRecord, rejectHealthStaging } from "./health-staging-records";
+import { confirmHealthStaging, confirmWorkoutHealthStaging, correctPendingHealthStaging, correctPendingSleepHealthStaging, createCorosWorkoutStagingData, createHealthStagingData, createSleepHealthStagingData, parseHealthStagingRecord, rejectHealthStaging } from "./health-staging-records";
 
 const candidate = { metric_type: "resting_heart_rate", measured_at: "2026-09-13T00:00:00.000Z", local_date: "2026-09-13", timezone: "Asia/Shanghai", value: 58, unit: "bpm", aggregation_period: "instant" as const };
 const timestamp = "2026-09-13T01:00:00.000Z";
@@ -69,6 +69,14 @@ describe("Health staging confirmation boundary", () => {
     const rejected = rejectHealthStaging(record, "用户拒绝候选", "2026-09-19T02:00:00.000Z");
     expect(rejected).toMatchObject({ version: 2, data: { health_type: "workout", status: "rejected", canonical_record_id: null } });
     expect(parseHealthStagingRecord(serializeRecord(rejected))).toEqual(rejected);
+  });
+
+  it("validates a canonical-linked Workout review without opening the live confirmation path", () => {
+    const pending = createWorkspaceRecord({ entityType: "health_staging_record", id: `coros_workout_${"c".repeat(64)}`, ownerId: "github_lubannn", timestamp, data: workoutData() });
+    const reviewed = confirmWorkoutHealthStaging(pending, "2026-09-19T02:00:00.000Z");
+    expect(reviewed.data).toMatchObject({ status: "confirmed", canonical_record_id: `workout_${"c".repeat(64)}` });
+    expect(parseHealthStagingRecord(serializeRecord(reviewed))).toEqual(reviewed);
+    expect(() => confirmWorkoutHealthStaging(reviewed)).toThrow("HEALTH_STAGING_NOT_PENDING");
   });
 
   it("rejects malformed or location-rich Workout staging payloads", () => {

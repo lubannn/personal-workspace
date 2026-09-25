@@ -165,6 +165,14 @@ export function confirmHealthStaging(current: HealthStagingRecord, canonicalReco
   return updateWorkspaceRecord(current, validateData({ ...current.data, status: "confirmed", reviewed_at: timestamp, review_reason: null, canonical_record_id: canonicalRecordId }), timestamp);
 }
 
+// Workout review uses a deterministic canonical ID and its own atomic transaction.
+export function confirmWorkoutHealthStaging(current: HealthStagingRecord, timestamp = new Date().toISOString()) {
+  assertPending(current); assertInstant(timestamp);
+  if (current.data.health_type !== "workout" || current.id !== `coros_workout_${current.data.import_key}`) throw new Error("HEALTH_STAGING_TYPE_MISMATCH");
+  const canonicalRecordId = `workout_${current.data.import_key}`;
+  return updateWorkspaceRecord(current, validateData({ ...current.data, status: "confirmed", reviewed_at: timestamp, review_reason: null, canonical_record_id: canonicalRecordId }), timestamp) as HealthStagingRecord;
+}
+
 export function rejectHealthStaging(current: HealthStagingRecord, reason: string, timestamp = new Date().toISOString()) {
   assertPending(current); assertInstant(timestamp);
   if (!reason.trim() || reason.length > 500) throw new Error("INVALID_HEALTH_REVIEW_REASON");
@@ -212,7 +220,7 @@ function validateData(data: HealthStagingData) {
   if (data.status === "pending" && (data.reviewed_at !== null || data.canonical_record_id !== null)) throw new Error("INVALID_HEALTH_STAGING_DETAILS");
   if (data.status === "confirmed" && (!data.reviewed_at || !data.canonical_record_id)) throw new Error("INVALID_HEALTH_STAGING_DETAILS");
   if (data.status === "rejected" && (!data.reviewed_at || !data.review_reason || data.canonical_record_id !== null)) throw new Error("INVALID_HEALTH_STAGING_DETAILS");
-  if (data.health_type === "workout" && (data.status === "confirmed" || data.canonical_record_id !== null)) throw new Error("INVALID_HEALTH_STAGING_DETAILS");
+  if (data.health_type === "workout" && data.status === "confirmed" && data.canonical_record_id !== `workout_${data.import_key}`) throw new Error("INVALID_HEALTH_STAGING_DETAILS");
   return data;
 }
 
@@ -230,7 +238,7 @@ function validCorosSource(value: CorosWorkoutSource) {
     && value.mapping_version === COROS_ACTIVITY_MAPPING_VERSION);
 }
 
-function validWorkoutCandidate(value: CorosWorkoutCandidate) {
+export function validWorkoutCandidate(value: CorosWorkoutCandidate) {
   if (!value || Object.keys(value).sort().join(",") !== "activity_type,distance,distance_unit,duration_seconds,end_at,metrics_json,start_at,timezone,training_load") return false;
   if (!["run", "ride", "swim", "walk", "hike", "strength", "other"].includes(value.activity_type)
     || Number.isNaN(Date.parse(value.start_at)) || Number.isNaN(Date.parse(value.end_at)) || Date.parse(value.end_at) <= Date.parse(value.start_at)
