@@ -419,7 +419,7 @@ canonical 文件位于 `data/learning-resources/<id>.json`。v1 仅保存用户�
 
 当前 GitHub canonical v1 已实现手工指标与手工睡眠 adapter：文件位于 `data/health-staging-records/`，创建时固定为 `pending`。来源标签、规范化内容、人工睡眠分类和每次更正都进入 Git 版本；`confirmed` 必须同时记录 `canonical_record_id`，`rejected` 必须记录原因。确认操作通过单个 Git commit 同时更新暂存记录并创建匹配类型的 `HealthMetric` 或 `SleepSession`，避免只完成一半。
 
-COROS FIT/TCX 当前只生成 Workout staging envelope 计划，不生成正式协议记录。拟议 envelope 继续使用 `health_staging_record` 路径，ID 固定为 `coros_workout_<import_key>`，写入语义固定为 create-only，并保存来源 SHA-256、格式、parser/mapping version、batch identity、Workout 摘要和必要诊断。原始文件、文件名、GPS 坐标、轨迹点序列、FIT developer fields 与 TCX extensions 默认丢弃。当前 parser 仍会拒绝该拟议 `health_type = workout`，直到 staging 审核、portable export/inspection/restore/migration 与 canonical 原子确认全部同时实现后才允许激活。
+COROS FIT/TCX 的 `health_type = workout` 已注册为正式 Health staging 变体：parser、collection loading、portable export/inspection/restore/migration 与暂存审核 UI 均接受该 envelope。ID 固定为 `coros_workout_<import_key>`，未来写入语义固定为 create-only，并只保存来源 SHA-256、格式、parser/mapping version、batch identity、Workout 摘要和必要诊断；原始文件、文件名、GPS 坐标、轨迹点序列、FIT developer fields 与 TCX extensions 默认丢弃。当前预检仍为本地只读，不会把 envelope 写入 Private 仓库；已存在的 Workout staging 可查看或拒绝，但不能更正或确认，因为 canonical Workout 与原子确认事务尚未注册。
 
 ### SleepSession
 
@@ -447,7 +447,7 @@ COROS FIT/TCX 当前只生成 Workout staging envelope 计划，不生成正式�
 - `distance`, `distance_unit`, `training_load`
 - `metrics_json`, `confirmation_status`, `staging_record_id`
 
-Workout 应作为独立 canonical entity，而不是伪装成 `HealthMetric`：它有明确起止、运动类型、时长、距离和复合指标，并需要反向指向已确认的 staging record。当前共享协议尚未注册 `workout`，`data/workouts/` 也尚未开放；只有在解析、collection loading、portable export、inspection、restore、migration、确认事务与 UI 审核全部覆盖后才可一次性注册。
+Workout 应作为独立 canonical entity，而不是伪装成 `HealthMetric`：它有明确起止、运动类型、时长、距离和复合指标，并需要反向指向已确认的 staging record。当前只注册了 Workout staging，canonical `workout` 与 `data/workouts/` 仍未开放；只有确认事务、canonical parser/collection、portable 链路与 UI 确认全部覆盖后才可一次性注册。
 
 ### TrainingRecommendation
 

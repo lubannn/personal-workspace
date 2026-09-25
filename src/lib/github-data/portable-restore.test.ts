@@ -4,6 +4,7 @@ import { buildPortableWorkspaceExport } from "./portable-export";
 import { createPortableRestorePlan, type PortableRestoreTarget } from "./portable-restore";
 import { createWorkspaceRecord, serializeRecord } from "./protocol";
 import { createDefaultDashboardLayout, serializeDashboardLayout } from "./dashboard-layout";
+import { createCorosWorkoutStagingData } from "./health-staging-records";
 
 const workspaceText = `${JSON.stringify({
   schema_version: 1,
@@ -147,5 +148,26 @@ describe("portable restore planning", () => {
       "RESTORE_TARGET_OWNER_MISMATCH",
       "RESTORE_BRANCH_MISMATCH",
     ]));
+  });
+
+  it("keeps a formal Workout staging record in the create-only restore plan", async () => {
+    const timestamp = "2026-09-19T02:00:00.000Z";
+    const id = `coros_workout_${"c".repeat(64)}`;
+    const staging = createWorkspaceRecord({
+      entityType: "health_staging_record", id, ownerId: "github_lubannn", timestamp,
+      data: createCorosWorkoutStagingData({
+        source: { kind: "coros_file", label: "COROS TCX file", format: "tcx", source_sha256: "a".repeat(64), parser_version: "1", mapping_version: "1", batch_identity: "b".repeat(64) },
+        import_key: "c".repeat(64),
+        normalized_json: { activity_type: "ride", start_at: "2026-09-19T01:00:00.000Z", end_at: "2026-09-19T01:30:00.000Z", timezone: "Asia/Shanghai", duration_seconds: 1800, distance: 12000, distance_unit: "m", training_load: null, metrics_json: { elapsed_seconds: 1800, moving_seconds: 1750, calories: 320, average_heart_rate_bpm: 138, maximum_heart_rate_bpm: 166, average_cadence_rpm: 84, average_power_watts: 190, trackpoints: 2 } },
+        diagnostics_json: [],
+      }),
+    });
+    const exported = await buildPortableWorkspaceExport({
+      repository: "lubannn/personal-workspace-data", branch: "main", workspaceFile: storedFile("workspace.json", workspaceText, "workspace-blob"), captureFiles: [],
+      healthStagingFiles: [storedFile(`data/health-staging-records/${id}.json`, serializeRecord(staging), "workout-staging-blob")],
+    });
+    const plan = await createPortableRestorePlan(exported, target());
+    expect(plan).toMatchObject({ ready: true, counts: { files: 2, healthStagingRecords: 1 } });
+    expect(plan.files.map((file) => file.path)).toContain(`data/health-staging-records/${id}.json`);
   });
 });
