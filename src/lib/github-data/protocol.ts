@@ -27,6 +27,7 @@ export type EntityType =
   | "health_staging_record"
   | "health_metric"
   | "sleep_session"
+  | "workout"
   | "journal"
   | "learning"
   | "habit"
@@ -71,6 +72,7 @@ const ENTITY_DIRECTORIES: Record<Exclude<EntityType, "journal">, string> = {
   health_staging_record: "health-staging-records",
   health_metric: "health-metrics",
   sleep_session: "sleep-sessions",
+  workout: "workouts",
   learning: "learning",
   habit: "habits",
   health: "health",

@@ -24,6 +24,7 @@ describe("GitHub data protocol", () => {
     expect(recordPath("project_note", "note_01")).toBe("data/project-notes/note_01.json");
     expect(recordPath("activity_event", "activity_01")).toBe("data/activity-events/activity_01.json");
     expect(recordPath("time_entry", "time_entry_01")).toBe("data/time-entries/time_entry_01.json");
+    expect(recordPath("workout", "workout_01")).toBe("data/workouts/workout_01.json");
     expect(recordPath("report_draft", "report_draft_01")).toBe("data/report-drafts/report_draft_01.json");
     expect(recordPath("journal_entry", "journal_entry_01")).toBe("data/journal-entries/journal_entry_01.json");
     expect(recordPath("journal_segment", "journal_segment_01")).toBe("data/journal-segments/journal_segment_01.json");

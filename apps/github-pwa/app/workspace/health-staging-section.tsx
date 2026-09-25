@@ -3,16 +3,19 @@
 import { useMemo, useState, type FormEvent } from "react";
 import { localDateTimeToIso } from "../../../../src/lib/github-data/calendar-events";
 import type { HealthStagingFields, SleepSessionType, SleepStagingFields } from "../../../../src/lib/github-data/health-staging-records";
-import type { Connection, SyncedHealthMetric, SyncedHealthStagingRecord, SyncedSleepSession } from "./page-model";
+import type { GitHubContentsAdapter } from "../../../../src/lib/github-data/github-contents";
+import type { Connection, SyncedHealthMetric, SyncedHealthStagingRecord, SyncedSleepSession, SyncedWorkout } from "./page-model";
 import { CorosFilePreflightSection } from "./coros-file-preflight-section";
 
 type Props = {
   connection: Connection | null;
+  adapter: GitHubContentsAdapter | null;
   online: boolean | null;
   todayDate: string;
   staging: SyncedHealthStagingRecord[];
   metrics: SyncedHealthMetric[];
   sleepSessions: SyncedSleepSession[];
+  workouts: SyncedWorkout[];
   loading: boolean;
   saving: boolean;
   savingId: string | null;
@@ -23,9 +26,10 @@ type Props = {
   onConfirm: (item: SyncedHealthStagingRecord) => void;
   onReject: (item: SyncedHealthStagingRecord, reason: string) => void;
   onRefresh: () => void;
+  onStaged: (created: SyncedHealthStagingRecord[]) => void;
 };
 
-export function HealthStagingSection({ connection, online, todayDate, staging, metrics, sleepSessions, loading, saving, savingId, onCreate, onCorrect, onCreateSleep, onCorrectSleep, onConfirm, onReject, onRefresh }: Props) {
+export function HealthStagingSection({ connection, adapter, online, todayDate, staging, metrics, sleepSessions, workouts, loading, saving, savingId, onCreate, onCorrect, onCreateSleep, onCorrectSleep, onConfirm, onReject, onRefresh, onStaged }: Props) {
   const [entryType, setEntryType] = useState<"metric" | "sleep_session">("metric");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [source, setSource] = useState("手工录入");
@@ -93,9 +97,10 @@ export function HealthStagingSection({ connection, online, todayDate, staging, m
       <footer><span>{entryType === "sleep_session" ? "归属日期固定为睡眠开始日；最长 36 小时。" : "暂存记录保留来源和每次更正版本。"}</span><div>{editingId ? <button className="secondary-button" type="button" onClick={() => setEditingId(null)} disabled={busy}>取消更正</button> : null}<button className="primary-button" type="submit" disabled={!connection || !source.trim() || (entryType === "metric" ? !metricType.trim() || !unit.trim() || !(localDate || todayDate) || !Number.isFinite(Number(value)) || value === "" : !(sleepStartDate || todayDate) || !sleepStartTime || !(sleepEndDate || nextDate(sleepStartDate || todayDate)) || !sleepEndTime) || busy || online === false}>{busy ? "保存中…" : editingId ? "保存更正" : "加入待确认区"}</button></div></footer>
       {formError ? <p className="error-message" role="alert">{formError}</p> : null}
     </form>
-    {!connection ? <p className="empty-note">连接后显示 Private 仓库中的健康暂存记录。</p> : pending.length === 0 ? <p className="empty-note">没有待确认记录。</p> : <ol className="learning-list">{pending.map((item) => <li key={item.record.id}><div>{item.record.data.health_type === "metric" ? <><strong>{item.record.data.normalized_json.metric_type}</strong><code>{item.record.data.normalized_json.value} {item.record.data.normalized_json.unit}</code><small>{item.record.data.normalized_json.local_date} · {item.record.data.source.label} · 暂存 v{item.record.version}</small></> : item.record.data.health_type === "sleep_session" ? <><strong>{item.record.data.normalized_json.session_type === "main_sleep" ? "夜间睡眠" : item.record.data.normalized_json.session_type === "nap" ? "小睡" : "未确定睡眠"}</strong><code>{item.record.data.normalized_json.duration_minutes} 分钟</code><small>{item.record.data.normalized_json.local_date} · {item.record.data.source.label} · 暂存 v{item.record.version}</small></> : <><strong>{activityLabel(item.record.data.normalized_json.activity_type)}</strong><code>{Math.round(item.record.data.normalized_json.duration_seconds / 60)} 分钟 · {item.record.data.normalized_json.distance === null ? "距离缺失" : `${item.record.data.normalized_json.distance} m`}</code><small>{item.record.data.normalized_json.start_at} · {item.record.data.source.label} · 暂存 v{item.record.version}</small>{item.record.data.diagnostics_json.map((diagnostic) => <small key={`${diagnostic.code}-${diagnostic.message}`}>{diagnostic.code} · {diagnostic.message}</small>)}</>}</div><div className="learning-item-actions">{item.record.data.health_type === "workout" ? <span className="memory-pill">canonical Workout 未开放</span> : <button className="text-button" type="button" onClick={() => beginEdit(item)} disabled={busy}>更正</button>}<button className="text-button" type="button" onClick={() => onReject(item, "用户在暂存审核中拒绝")} disabled={busy || online === false}>拒绝</button>{item.record.data.health_type === "workout" ? null : <button className="primary-button" type="button" onClick={() => onConfirm(item)} disabled={busy || online === false}>{savingId === item.record.id ? "处理中…" : "确认并入库"}</button>}</div></li>)}</ol>}
+    {!connection ? <p className="empty-note">连接后显示 Private 仓库中的健康暂存记录。</p> : pending.length === 0 ? <p className="empty-note">没有待确认记录。</p> : <ol className="learning-list">{pending.map((item) => <li key={item.record.id}><div>{item.record.data.health_type === "metric" ? <><strong>{item.record.data.normalized_json.metric_type}</strong><code>{item.record.data.normalized_json.value} {item.record.data.normalized_json.unit}</code><small>{item.record.data.normalized_json.local_date} · {item.record.data.source.label} · 暂存 v{item.record.version}</small></> : item.record.data.health_type === "sleep_session" ? <><strong>{item.record.data.normalized_json.session_type === "main_sleep" ? "夜间睡眠" : item.record.data.normalized_json.session_type === "nap" ? "小睡" : "未确定睡眠"}</strong><code>{item.record.data.normalized_json.duration_minutes} 分钟</code><small>{item.record.data.normalized_json.local_date} · {item.record.data.source.label} · 暂存 v{item.record.version}</small></> : <><strong>{activityLabel(item.record.data.normalized_json.activity_type)}</strong><code>{Math.round(item.record.data.normalized_json.duration_seconds / 60)} 分钟 · {item.record.data.normalized_json.distance === null ? "距离缺失" : `${item.record.data.normalized_json.distance} m`}</code><small>{item.record.data.normalized_json.start_at} · {item.record.data.source.label} · 暂存 v{item.record.version}</small>{item.record.data.diagnostics_json.map((diagnostic) => <small key={`${diagnostic.code}-${diagnostic.message}`}>{diagnostic.code} · {diagnostic.message}</small>)}</>}</div><div className="learning-item-actions">{item.record.data.health_type === "workout" ? <span className="memory-pill">来源内容不可更正</span> : <button className="text-button" type="button" onClick={() => beginEdit(item)} disabled={busy}>更正</button>}<button className="text-button" type="button" onClick={() => onReject(item, "用户在暂存审核中拒绝")} disabled={busy || online === false}>拒绝</button><button className="primary-button" type="button" onClick={() => onConfirm(item)} disabled={busy || online === false}>{savingId === item.record.id ? "处理中…" : item.record.data.health_type === "workout" ? "核对并确认 Workout" : "确认并入库"}</button></div></li>)}</ol>}
     <div className="habit-heatmap"><div><strong>正式健康记录 {metrics.length + sleepSessions.length} 条</strong><span>{metrics.length} 条指标 · {sleepSessions.length} 段睡眠 · 最近审核 {reviewed.length} 条。</span></div>{metrics.length + sleepSessions.length > 0 ? <ol className="learning-list">{sleepSessions.slice(0, 3).map((item) => <li key={item.record.id}><div><strong>{item.record.data.session_type === "main_sleep" ? "夜间睡眠" : item.record.data.session_type === "nap" ? "小睡" : "未确定睡眠"}</strong><code>{item.record.data.duration_minutes} 分钟</code><small>{item.record.data.local_date} · 已由你确认</small></div></li>)}{metrics.slice(0, 3).map((item) => <li key={item.record.id}><div><strong>{item.record.data.metric_type}</strong><code>{item.record.data.value} {item.record.data.unit}</code><small>{item.record.data.local_date} · 已由你确认</small></div></li>)}</ol> : null}</div>
-    <CorosFilePreflightSection timezone={connection?.timezone ?? "Asia/Shanghai"} />
+    <div className="habit-heatmap"><div><strong>正式 Workout {workouts.length} 条</strong><span>仅展示与已确认暂存记录匹配的活动；新 Workout 必须逐条核对并确认。</span></div>{workouts.length > 0 ? <ol className="learning-list">{workouts.slice(0, 3).map((item) => <li key={item.record.id}><div><strong>{activityLabel(item.record.data.activity_type)}</strong><code>{Math.round(item.record.data.duration_seconds / 60)} 分钟 · {item.record.data.distance === null ? "距离缺失" : `${item.record.data.distance} m`}</code><small>{item.record.data.start_at} · 已由你确认</small></div></li>)}</ol> : null}</div>
+    <CorosFilePreflightSection timezone={connection?.timezone ?? "Asia/Shanghai"} adapter={adapter} ownerId={connection?.ownerId ?? null} online={online} onStaged={onStaged} />
   </section>;
 }
 

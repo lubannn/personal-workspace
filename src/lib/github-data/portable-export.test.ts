@@ -20,9 +20,10 @@ import { createHabitData } from "./habits";
 import { createHabitRuleData } from "./habit-rules";
 import { createAutomaticHabitCheckInData } from "./habit-check-ins";
 import { createSleepHabitRuleData } from "./sleep-habit-rules";
-import { confirmHealthStaging, createCorosWorkoutStagingData, createHealthStagingData, createSleepHealthStagingData } from "./health-staging-records";
+import { confirmHealthStaging, confirmWorkoutHealthStaging, createCorosWorkoutStagingData, createHealthStagingData, createSleepHealthStagingData } from "./health-staging-records";
 import { createConfirmedHealthMetricData } from "./health-metrics";
 import { createConfirmedSleepSessionData } from "./sleep-sessions";
+import { createConfirmedWorkoutData } from "./workouts";
 import { renderJournalSegmentsMarkdown } from "./journal-segment-codec";
 import {
   buildPortableWorkspaceExport,
@@ -377,7 +378,7 @@ async function sampleExport() {
 describe("portable GitHub workspace export", () => {
   it("builds a deterministic manifest and passes restore preflight", async () => {
     const exported = await sampleExport();
-    expect(exported.manifest.counts).toEqual({ files: 26, captures: 1, dashboard_layouts: 1, tasks: 1, time_entries: 1, projects: 1, project_phases: 1, milestones: 1, project_notes: 1, project_file_references: 1, activity_events: 1, calendar_events: 1, report_drafts: 1, journal_entries: 1, journal_segments: 1, journal_revisions: 1, journal_import_checkpoints: 1, obsidian_documents: 1, sync_conflicts: 1, learning_areas: 1, learning_goals: 1, learning_activities: 1, learning_resources: 1, habits: 1, habit_rules: 1, habit_check_ins: 1, health_staging_records: 0, health_metrics: 0, sleep_sessions: 0 });
+    expect(exported.manifest.counts).toEqual({ files: 26, captures: 1, dashboard_layouts: 1, tasks: 1, time_entries: 1, projects: 1, project_phases: 1, milestones: 1, project_notes: 1, project_file_references: 1, activity_events: 1, calendar_events: 1, report_drafts: 1, journal_entries: 1, journal_segments: 1, journal_revisions: 1, journal_import_checkpoints: 1, obsidian_documents: 1, sync_conflicts: 1, learning_areas: 1, learning_goals: 1, learning_activities: 1, learning_resources: 1, habits: 1, habit_rules: 1, habit_check_ins: 1, health_staging_records: 0, health_metrics: 0, sleep_sessions: 0, workouts: 0 });
     expect(exported.manifest.files.map((file) => file.path)).toEqual([
       "config/dashboard-layout.json",
       "data/activity-events/activity_20260827015800000_abcd1234.json",
@@ -411,7 +412,7 @@ describe("portable GitHub workspace export", () => {
     await expect(inspectPortableWorkspaceExport(exported)).resolves.toMatchObject({
       valid: true,
       repository: "lubannn/personal-workspace-data",
-      counts: { files: 26, captures: 1, dashboardLayouts: 1, tasks: 1, timeEntries: 1, projects: 1, projectPhases: 1, milestones: 1, projectNotes: 1, projectFileReferences: 1, activityEvents: 1, calendarEvents: 1, reportDrafts: 1, journalEntries: 1, journalSegments: 1, journalRevisions: 1, journalImportCheckpoints: 1, obsidianDocuments: 1, syncConflicts: 1, learningAreas: 1, learningGoals: 1, learningActivities: 1, learningResources: 1, habits: 1, habitRules: 1, habitCheckIns: 1, healthStagingRecords: 0, healthMetrics: 0, sleepSessions: 0 },
+      counts: { files: 26, captures: 1, dashboardLayouts: 1, tasks: 1, timeEntries: 1, projects: 1, projectPhases: 1, milestones: 1, projectNotes: 1, projectFileReferences: 1, activityEvents: 1, calendarEvents: 1, reportDrafts: 1, journalEntries: 1, journalSegments: 1, journalRevisions: 1, journalImportCheckpoints: 1, obsidianDocuments: 1, syncConflicts: 1, learningAreas: 1, learningGoals: 1, learningActivities: 1, learningResources: 1, habits: 1, habitRules: 1, habitCheckIns: 1, healthStagingRecords: 0, healthMetrics: 0, sleepSessions: 0, workouts: 0 },
       errors: [],
       workspace: { owner_id: "github_lubannn" },
     });
@@ -551,6 +552,33 @@ describe("portable GitHub workspace export", () => {
       healthStagingFiles: [storedFile(`data/health-staging-records/${staging.id}.json`, serializeRecord(staging), "workout-staging-blob")],
     });
     await expect(inspectPortableWorkspaceExport(exported)).resolves.toMatchObject({ valid: true, counts: { healthStagingRecords: 1, healthMetrics: 0, sleepSessions: 0 } });
+  });
+
+  it("requires confirmed Workout and staging to be present together with matching provenance", async () => {
+    const timestamp = "2026-09-19T02:00:00.000Z";
+    const importKey = "c".repeat(64);
+    const pending = createWorkspaceRecord({
+      entityType: "health_staging_record", id: `coros_workout_${importKey}`, ownerId: "github_lubannn", timestamp,
+      data: createCorosWorkoutStagingData({
+        source: { kind: "coros_file", label: "COROS TCX file", format: "tcx", source_sha256: "a".repeat(64), parser_version: "1", mapping_version: "1", batch_identity: "b".repeat(64) },
+        import_key: importKey,
+        normalized_json: { activity_type: "ride", start_at: "2026-09-19T01:00:00.000Z", end_at: "2026-09-19T01:30:00.000Z", timezone: "Asia/Shanghai", duration_seconds: 1800, distance: 12000, distance_unit: "m", training_load: null, metrics_json: { elapsed_seconds: 1800, moving_seconds: 1750, calories: 320, average_heart_rate_bpm: 138, maximum_heart_rate_bpm: 166, average_cadence_rpm: 84, average_power_watts: 190, trackpoints: 2 } },
+        diagnostics_json: [],
+      }),
+    });
+    const reviewed = confirmWorkoutHealthStaging(pending, timestamp);
+    const workout = createWorkspaceRecord({ entityType: "workout", id: `workout_${importKey}`, ownerId: pending.owner_id, timestamp, data: createConfirmedWorkoutData(pending, timestamp) });
+    const stagingFile = storedFile(`data/health-staging-records/${reviewed.id}.json`, serializeRecord(reviewed), "staging-blob");
+    const workoutFile = storedFile(`data/workouts/${workout.id}.json`, serializeRecord(workout), "workout-blob");
+    const build = (stagingFiles = [stagingFile], workoutFiles = [workoutFile]) => buildPortableWorkspaceExport({
+      repository: "lubannn/personal-workspace-data", branch: "main", workspaceFile: storedFile("workspace.json", workspaceText, "workspace-blob"), captureFiles: [],
+      healthStagingFiles: stagingFiles, workoutFiles,
+    });
+    await expect(inspectPortableWorkspaceExport(await build())).resolves.toMatchObject({ valid: true, counts: { workouts: 1, healthStagingRecords: 1 } });
+    await expect(inspectPortableWorkspaceExport(await build([stagingFile], []))).resolves.toMatchObject({ valid: false, errors: expect.arrayContaining([expect.objectContaining({ code: "WORKOUT_CANONICAL_MISSING" })]) });
+    await expect(inspectPortableWorkspaceExport(await build([], [workoutFile]))).resolves.toMatchObject({ valid: false, errors: expect.arrayContaining([expect.objectContaining({ code: "WORKOUT_STAGING_MISMATCH" })]) });
+    const mismatched = { ...workout, data: { ...workout.data, source_sha256: "f".repeat(64) } };
+    await expect(inspectPortableWorkspaceExport(await build([stagingFile], [storedFile(workoutFile.path, JSON.stringify(mismatched), "mismatched-blob")]))).resolves.toMatchObject({ valid: false, errors: expect.arrayContaining([expect.objectContaining({ code: "WORKOUT_STAGING_MISMATCH" })]) });
   });
 
   it("rejects a sleep-assisted HabitCheckIn whose SleepSession evidence is missing", async () => {

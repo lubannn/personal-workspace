@@ -8,7 +8,8 @@ import { createLearningAreaData } from "./learning-areas";
 import { createLearningGoalData } from "./learning-goals";
 import { createLearningActivityData } from "./learning-activities";
 import { createLearningResourceData } from "./learning-resources";
-import { createCorosWorkoutStagingData } from "./health-staging-records";
+import { confirmWorkoutHealthStaging, createCorosWorkoutStagingData } from "./health-staging-records";
+import { createConfirmedWorkoutData } from "./workouts";
 import {
   dryRunPortableWorkspaceMigrations,
   planSchemaMigration,
@@ -50,6 +51,16 @@ describe("schema migration registry", () => {
     const dryRun = await dryRunPortableWorkspaceMigrations(exported);
     expect(dryRun).toMatchObject({ valid: true, counts: { files: 2, current: 2, migratable: 0, blocked: 0, steps: 0 } });
     expect(dryRun.files.find((file) => file.path.includes(id))).toMatchObject({ kind: "record", status: "current" });
+
+    const reviewed = confirmWorkoutHealthStaging(staging, timestamp);
+    const workout = createWorkspaceRecord({ entityType: "workout", id: `workout_${"c".repeat(64)}`, ownerId: staging.owner_id, timestamp, data: createConfirmedWorkoutData(staging, timestamp) });
+    const paired = await buildPortableWorkspaceExport({
+      repository: "lubannn/personal-workspace-data", branch: "main", workspaceFile: storedFile("workspace.json", workspaceText, "workspace-blob"), captureFiles: [],
+      healthStagingFiles: [storedFile(`data/health-staging-records/${id}.json`, serializeRecord(reviewed), "reviewed-blob")],
+      workoutFiles: [storedFile(`data/workouts/${workout.id}.json`, serializeRecord(workout), "workout-blob")],
+    });
+    const pairedDryRun = await dryRunPortableWorkspaceMigrations(paired);
+    expect(pairedDryRun).toMatchObject({ valid: true, counts: { files: 3, current: 3, migratable: 0, blocked: 0, steps: 0 } });
   });
 
   it("reports current canonical files without modifying them", async () => {

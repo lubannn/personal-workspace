@@ -1,15 +1,25 @@
 "use client";
 
-import { useRef, useState, type ChangeEvent } from "react";
+import { useState, type ChangeEvent } from "react";
 
 import { previewCorosActivityFile, type CorosFilePreflight } from "../../../../src/lib/github-data/coros-file-preflight";
+import { commitCorosWorkoutStagingWrite, prepareCorosWorkoutStagingWrite } from "../../../../src/lib/github-data/coros-workout-staging-write";
+import { GitHubConflictError, type GitHubContentsAdapter } from "../../../../src/lib/github-data/github-contents";
+import type { SyncedHealthStagingRecord } from "./page-model";
 
-export function CorosFilePreflightSection({ timezone = "Asia/Shanghai" }: { timezone?: string }) {
+export function CorosFilePreflightSection({ timezone = "Asia/Shanghai", adapter, ownerId, online, onStaged }: {
+  timezone?: string;
+  adapter: GitHubContentsAdapter | null;
+  ownerId: string | null;
+  online: boolean | null;
+  onStaged: (created: SyncedHealthStagingRecord[]) => void;
+}) {
   const [preview, setPreview] = useState<CorosFilePreflight | null>(null);
   const [error, setError] = useState("");
   const [checking, setChecking] = useState(false);
+  const [staging, setStaging] = useState(false);
+  const [stageStatus, setStageStatus] = useState("");
   const [pickerKey, setPickerKey] = useState(0);
-  const knownImportKeys = useRef(new Set<string>());
 
   async function inspect(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -17,10 +27,10 @@ export function CorosFilePreflightSection({ timezone = "Asia/Shanghai" }: { time
     setChecking(true);
     setPreview(null);
     setError("");
+    setStageStatus("");
     try {
-      const next = await previewCorosActivityFile(file, { timezone, knownImportKeys: knownImportKeys.current });
+      const next = await previewCorosActivityFile(file, { timezone });
       setPreview(next);
-      next.mapping.candidates.forEach((candidate) => knownImportKeys.current.add(candidate.importKey));
     } catch (caught) {
       setError(friendlyError(caught));
     } finally {
@@ -31,18 +41,34 @@ export function CorosFilePreflightSection({ timezone = "Asia/Shanghai" }: { time
   function reset() {
     setPreview(null);
     setError("");
+    setStageStatus("");
     setPickerKey((value) => value + 1);
+  }
+
+  async function stageWorkoutCandidates() {
+    if (!adapter || !ownerId || !preview || staging || online === false) return;
+    setStaging(true); setError(""); setStageStatus("");
+    try {
+      const prepared = await prepareCorosWorkoutStagingWrite({ adapter, ownerId, plan: preview.stagingPlan });
+      if (prepared.files.length === 0) { setStageStatus(prepared.confirmationText); return; }
+      if (!window.confirm(prepared.confirmationText)) { setStageStatus("已取消，没有写入暂存记录。"); return; }
+      const result = await commitCorosWorkoutStagingWrite(adapter, prepared);
+      onStaged(result.created);
+      setStageStatus(`已写入 ${result.created.length} 条 Workout 暂存记录；跳过 ${result.alreadyPresent} 条已存在记录。正式 Workout 仍需另行审核确认。`);
+    } catch (caught) {
+      setError(caught instanceof GitHubConflictError ? "数据在另一台设备发生变化，或目标路径已有不同内容。请重新核对后重试；没有覆盖已有记录。" : caught instanceof Error ? `写入暂存失败：${caught.message}` : "写入暂存失败；请检查连接后重试。");
+    } finally { setStaging(false); }
   }
 
   return <div className="legacy-import" aria-labelledby="coros-file-preflight-title">
     <div className="legacy-import-heading">
-      <div><p className="eyebrow">Phase 4 · Local-only preflight</p><h3 id="coros-file-preflight-title">COROS 活动文件兼容性预检</h3><p>选择单个 FIT 或 TCX 文件后，只在当前浏览器计算 SHA-256、校验容器结构并生成活动摘要；不会上传文件、连接 COROS、写入 GitHub 或创建正式健康记录。</p></div>
-      <span className="memory-pill">只读 · 本地</span>
+      <div><p className="eyebrow">Phase 4 · COROS file staging</p><h3 id="coros-file-preflight-title">COROS 活动文件兼容性预检</h3><p>选择单个 FIT 或 TCX 文件后，在当前浏览器计算 SHA-256、校验结构并生成活动摘要。点击写入暂存并再次确认后，才会保存摘要到 Private 仓库；原文件不会上传。</p></div>
+      <span className="memory-pill">预检 · 本地</span>
     </div>
     <div className="legacy-import-picker">
-      <label className="file-picker">选择 FIT / TCX 文件<input key={pickerKey} type="file" accept=".fit,.tcx,application/vnd.ant.fit,application/xml,text/xml" onChange={inspect} disabled={checking} /></label>
-      <span>最大 64 MiB · 单文件 · 当前切片不提供提交能力</span>
-      {preview ? <button className="secondary-button" type="button" onClick={reset}>清除预览</button> : null}
+      <label className="file-picker">选择 FIT / TCX 文件<input key={pickerKey} type="file" accept=".fit,.tcx,application/vnd.ant.fit,application/xml,text/xml" onChange={inspect} disabled={checking || staging} /></label>
+      <span>最大 64 MiB · 单文件 · 暂存写入需要当次确认</span>
+      {preview ? <button className="secondary-button" type="button" onClick={reset} disabled={staging}>清除预览</button> : null}
     </div>
     {checking ? <p className="empty-note">正在本地校验文件…</p> : null}
     {error ? <div className="legacy-import-error" role="alert"><strong>无法生成预检</strong><p>{error}</p></div> : null}
@@ -65,14 +91,15 @@ export function CorosFilePreflightSection({ timezone = "Asia/Shanghai" }: { time
           <Summary label="首个时间" value={preview.summary.firstTimestamp ?? "缺失"} />
         </>}
       </div>
-      <div className={`legacy-import-gate ${preview.readyForMapping ? "ready" : "blocked"}`} role="status"><strong>{preview.readyForMapping ? "结构与映射预检通过" : "结构预检被阻断"}</strong><p>{preview.readyForMapping ? "已生成确定性 Workout 候选与正式 staging envelope；写入能力与 canonical Workout 仍未开放。" : "文件缺少建立稳定活动身份所需的结构或时间信息。"}</p></div>
+      <div className={`legacy-import-gate ${preview.readyForMapping ? "ready" : "blocked"}`} role="status"><strong>{preview.readyForMapping ? "结构与映射预检通过" : "结构预检被阻断"}</strong><p>{preview.readyForMapping ? "已生成确定性 Workout 候选。写入暂存前会检查远端记录并展示精确确认清单。" : "文件缺少建立稳定活动身份所需的结构或时间信息。"}</p></div>
       <div className="legacy-import-source"><div><strong>映射批次</strong><span>mapping v{preview.mapping.mappingVersion}</span></div><code>{preview.mapping.batchIdentity}</code><small>{preview.mapping.candidates.length} 个 Workout 候选 · 时区 {timezone} · 仍未创建 staging</small></div>
       {preview.mapping.candidates.length ? <ol className="learning-list">{preview.mapping.candidates.map((candidate) => <li key={candidate.importKey}><div><strong>{activityLabel(candidate.activity_type)}{candidate.duplicate ? " · 重复" : ""}</strong><code>{candidate.start_at} → {candidate.end_at}</code><small>{Math.round(candidate.duration_seconds / 60)} 分钟 · {candidate.distance === null ? "距离缺失" : `${candidate.distance} m`} · {candidate.metrics_json.trackpoints} 个轨迹点</small><small>import key {candidate.importKey}</small></div><span className="memory-pill">{candidate.confirmation_status}</span></li>)}</ol> : null}
-      <div className="legacy-import-source"><div><strong>Workout staging envelope</strong><span>plan v{preview.stagingPlan.planVersion} · staging 协议已注册</span></div><small>{preview.stagingPlan.protocolDecision.reason}</small><small>非重复计划 {preview.stagingPlan.items.length} 条 · 跳过重复 {preview.stagingPlan.skippedDuplicateCount} 条 · 当前不写入</small></div>
+      <div className="legacy-import-source"><div><strong>Workout staging envelope</strong><span>plan v{preview.stagingPlan.planVersion} · staging 协议已注册</span></div><small>{preview.stagingPlan.protocolDecision.reason}</small><small>候选 {preview.stagingPlan.items.length} 条 · 同批重复 {preview.stagingPlan.skippedDuplicateCount} 条</small></div>
       {preview.stagingPlan.items.length ? <ol className="learning-list">{preview.stagingPlan.items.map((item) => <li key={item.stagingRecordId}><div><strong>{item.writeMode === "create_only" ? "仅创建，不覆盖" : item.writeMode}</strong><code>{item.path}</code><small>payload SHA-256 {item.payloadSha256}</small></div><span className="memory-pill">pending</span></li>)}</ol> : null}
-      <div className="legacy-import-boundary"><strong>最小数据策略</strong><p>保留：来源哈希、格式、解析/映射版本、批次身份、Workout 摘要和诊断。丢弃：原始文件、文件名、GPS 坐标、轨迹点序列、FIT developer fields 与 TCX extensions。</p><small>未来动作时确认文案（当前不可执行）：{preview.stagingPlan.exactConfirmationPreview}</small></div>
+      <div className="legacy-import-boundary"><strong>最小数据策略</strong><p>保留：来源哈希、格式、解析/映射版本、批次身份、Workout 摘要和诊断。丢弃：原始文件、文件名、GPS 坐标、轨迹点序列、FIT developer fields 与 TCX extensions。</p><button className="primary-button" type="button" onClick={stageWorkoutCandidates} disabled={!adapter || !ownerId || online === false || checking || staging || !preview.stagingPlan.readyForProtocolActivation}>{staging ? "正在核对并写入…" : "检查并写入暂存区"}</button><small>点击后将读取 Private 仓库最新状态，并在写入前显示目标路径和活动摘要供你确认。</small></div>
+      {stageStatus ? <p className="empty-note" role="status">{stageStatus}</p> : null}
       <div className="legacy-import-diagnostics"><h4>诊断</h4>{preview.diagnostics.length + preview.mapping.diagnostics.length ? <ul>{[...preview.diagnostics, ...preview.mapping.diagnostics].map((item, index) => <li key={`${item.code}-${index}`} data-severity={item.severity}><code>{item.code}</code><span>{item.message}</span></li>)}</ul> : <p>没有发现结构或映射诊断。</p>}</div>
-      <div className="legacy-import-boundary"><strong>当前没有写入能力</strong><p>预检结果只证明文件容器可读，不证明全部字段已映射。正式导入仍需重复检测、字段预览、批次确认和 staging 审核；原始 FIT、TCX 与 GPS 轨迹默认不会进入 Git。</p></div>
+      <div className="legacy-import-boundary"><strong>审核边界</strong><p>预检结果只证明文件容器可读。写入暂存后仍不能自动生成正式 Workout；原始 FIT、TCX 与 GPS 轨迹不会进入 Git。</p></div>
     </> : null}
   </div>;
 }

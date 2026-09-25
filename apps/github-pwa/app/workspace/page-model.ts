@@ -27,6 +27,7 @@ import type { HabitCheckInRecord } from "../../../../src/lib/github-data/habit-c
 import type { HealthStagingRecord } from "../../../../src/lib/github-data/health-staging-records";
 import type { HealthMetricRecord } from "../../../../src/lib/github-data/health-metrics";
 import type { SleepSessionRecord } from "../../../../src/lib/github-data/sleep-sessions";
+import type { WorkoutRecord } from "../../../../src/lib/github-data/workouts";
 
 export type Connection = {
   repository: string;
@@ -119,6 +120,7 @@ export type SyncedHabitCheckIn = { record: HabitCheckInRecord; path: string; blo
 export type SyncedHealthStagingRecord = { record: HealthStagingRecord; path: string; blobSha: string };
 export type SyncedHealthMetric = { record: HealthMetricRecord; path: string; blobSha: string };
 export type SyncedSleepSession = { record: SleepSessionRecord; path: string; blobSha: string };
+export type SyncedWorkout = { record: WorkoutRecord; path: string; blobSha: string };
 
 export type AuthAvailability = "checking" | "unavailable" | "configured";
 export type ConnectionMethod = "github-app" | "personal-token";
