@@ -47,6 +47,8 @@
 
 工作台独立 OAuth 已完成；首轮一天只读检查收到 MCP `content` 文本块，而非 `structuredContent`。预览器现进一步区分单一、完整 JSON 文本与自然语言/Markdown/混合内容；只返回字段名，不返回健康数值。即使文本可解析为 JSON，仍须核对字段语义、单位、来源 ID 与稳定性，不能据此直接启用自动入库。
 
+用户重新运行一天只读检查后，结果仍为不可按 JSON 解析的展示文本；所以问题不是预览器遗漏了 JSON，当前健康数据映射闸门未通过。用现有 Codex COROS 插件再次核对相同的一天，`queryDailyHealthData` 也只返回一个文本块，无 `structuredContent`；未将响应正文或健康数值写入仓库。不能因为 OAuth 成功就启动历史回填。
+
 用户随后将目标调整为“首次取得可用历史，之后仅增量”。上述历史回填与游标/重叠窗口规则是目标契约；当前连接仍暂停，没有进行全量读取、历史写入或定时轮询。
 
 ## 依据
@@ -55,4 +57,5 @@
 - [COROS MCP 官方工具表](https://github.com/coroslab/COROS-MCP)
 - [COROS Partner API](https://support.coros.com/hc/en-us/articles/53181766856724-Partner-API-Access)
 - [COROS MCP 数据类型与 FIT 日限额](https://support.coros.com/hc/en-us/articles/50841795180948-Connect-Your-COROS-to-AI)
+- [COROS 全部历史活动的一次性批量导出](https://support.coros.com/hc/en-us/articles/33125636125204-Bulk-Export-Historical-Activity-Data)
 - [Cloudflare Cron Triggers](https://developers.cloudflare.com/workers/configuration/cron-triggers/)
