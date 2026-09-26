@@ -167,6 +167,7 @@ import { JournalSection } from "./workspace/journal-section";
 import { LearningSection } from "./workspace/learning-section";
 import { HabitsSection } from "./workspace/habits-section";
 import { HealthStagingSection } from "./workspace/health-staging-section";
+import { WorkspaceTabNavigation, WorkspaceTabPanel, workspaceTabFromHash, type WorkspaceTabId } from "./workspace/workspace-tab-navigation";
 
 export default function GitHubWorkspacePage() {
   const adapterRef = useRef<GitHubContentsAdapter | null>(null);
@@ -175,6 +176,7 @@ export default function GitHubWorkspacePage() {
   const [repository, setRepository] = useState(DEFAULT_REPOSITORY);
   const [token, setToken] = useState("");
   const [connection, setConnection] = useState<Connection | null>(null);
+  const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<WorkspaceTabId>("overview");
   const [connectionMethod, setConnectionMethod] = useState<ConnectionMethod | null>(null);
   const [authAvailability, setAuthAvailability] = useState<AuthAvailability>("checking");
   const [connecting, setConnecting] = useState(false);
@@ -248,6 +250,27 @@ export default function GitHubWorkspacePage() {
     restoreAdapterRef.current = null;
   }, []);
   const online = useOnlineStatus(clearAdapters);
+  useEffect(() => {
+    function openLinkedTab() {
+      const tab = workspaceTabFromHash(window.location.hash);
+      if (!tab) return;
+      setActiveWorkspaceTab(tab);
+      const anchor = decodeURIComponent(window.location.hash.slice(1));
+      window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+        document.getElementById(anchor)?.scrollIntoView({ block: "start", behavior: "instant" });
+      }));
+    }
+    window.addEventListener("hashchange", openLinkedTab);
+    openLinkedTab();
+    return () => window.removeEventListener("hashchange", openLinkedTab);
+  }, []);
+
+  function selectWorkspaceTab(tab: WorkspaceTabId) {
+    setActiveWorkspaceTab(tab);
+    window.history.replaceState(window.history.state, "", `${window.location.pathname}${window.location.search}#workspace-panel-${tab}`);
+    const anchor = document.getElementById("workspace-navigation-anchor");
+    if (anchor) window.scrollTo({ top: anchor.offsetTop, behavior: "instant" });
+  }
   const {
     captureFiles,
     setCaptureFiles,
@@ -2921,6 +2944,10 @@ export default function GitHubWorkspacePage() {
         onRevokeAll={revokeAllSessions}
       />
 
+      <div id="workspace-navigation-anchor" />
+      <WorkspaceTabNavigation activeTab={activeWorkspaceTab} onSelect={selectWorkspaceTab} />
+
+      <WorkspaceTabPanel tab="journal" activeTab={activeWorkspaceTab}>
       <JournalSection
         connection={connection}
         adapter={adapterRef.current}
@@ -2942,11 +2969,10 @@ export default function GitHubWorkspacePage() {
         onLegacyImportCommitted={async () => { await Promise.all([loadJournalEntries(), loadJournalSegments(), loadJournalRevisions(), loadJournalImportCheckpoints()]); }}
         onObsidianCanonicalChanged={async () => { await Promise.all([loadObsidianDocuments(), loadSyncConflicts()]); }}
       />
+      </WorkspaceTabPanel>
 
 
-      <CorosConnectionSection connectionMethod={connectionMethod} />
-
-
+      <WorkspaceTabPanel tab="overview" activeTab={activeWorkspaceTab}>
       <DashboardSection
         connection={connection}
         online={online}
@@ -2985,7 +3011,23 @@ export default function GitHubWorkspacePage() {
         onCompleteTask={(item) => updateTaskLifecycle(item, "complete")}
       />
 
+      <CaptureInboxSection
+        connection={connection}
+        online={online}
+        captureView={captureView}
+        inboxCaptures={inboxCaptures}
+        trashedCaptures={trashedCaptures}
+        visibleCaptures={visibleCaptures}
+        loadingCaptures={loadingCaptures}
+        savingCaptureId={savingCaptureId}
+        onViewChange={setCaptureView}
+        onRefresh={() => loadRecentCaptures()}
+        onLifecycleChange={updateCaptureLifecycle}
+      />
+      </WorkspaceTabPanel>
 
+
+      <WorkspaceTabPanel tab="calendar" activeTab={activeWorkspaceTab}>
       <CalendarSection
         key={connection?.timezone ?? "disconnected"}
         connection={connection}
@@ -3002,8 +3044,10 @@ export default function GitHubWorkspacePage() {
         onDeletionChange={updateCalendarEventDeletion}
         onRefresh={() => loadCalendarEvents()}
       />
+      </WorkspaceTabPanel>
 
 
+      <WorkspaceTabPanel tab="projects" activeTab={activeWorkspaceTab}>
       <ProjectsSection
         connection={connection}
         online={online}
@@ -3054,8 +3098,10 @@ export default function GitHubWorkspacePage() {
         onCreateProjectFileReference={saveProjectFileReference}
         onRefresh={() => Promise.all([loadProjects(), loadProjectPhases(), loadMilestones(), loadProjectNotes(), loadProjectFileReferences(), loadActivityEvents()])}
       />
+      </WorkspaceTabPanel>
 
 
+      <WorkspaceTabPanel tab="tasks" activeTab={activeWorkspaceTab}>
       <TasksSection
         connection={connection}
         online={online}
@@ -3107,8 +3153,10 @@ export default function GitHubWorkspacePage() {
         onDeletionChange={updateTimeEntryDeletion}
         onRefresh={() => loadTimeEntries()}
       />
+      </WorkspaceTabPanel>
 
 
+      <WorkspaceTabPanel tab="learning" activeTab={activeWorkspaceTab}>
       <LearningSection
         connection={connection}
         online={online}
@@ -3142,8 +3190,10 @@ export default function GitHubWorkspacePage() {
         onResourceDeletionChange={updateLearningResourceDeletion}
         onRefresh={() => loadLearningAreas()}
       />
+      </WorkspaceTabPanel>
 
 
+      <WorkspaceTabPanel tab="habits" activeTab={activeWorkspaceTab}>
       <HabitsSection
         connection={connection}
         online={online}
@@ -3162,8 +3212,10 @@ export default function GitHubWorkspacePage() {
         onConfirmSleepSuggestion={confirmSleepHabitSuggestion}
         onRefresh={() => loadHabitDomain()}
       />
+      </WorkspaceTabPanel>
 
 
+      <WorkspaceTabPanel tab="health" activeTab={activeWorkspaceTab}>
       <HealthStagingSection
         connection={connection}
         adapter={adapterRef.current}
@@ -3198,8 +3250,11 @@ export default function GitHubWorkspacePage() {
           });
         }}
       />
+      <CorosConnectionSection connectionMethod={connectionMethod} />
+      </WorkspaceTabPanel>
 
 
+      <WorkspaceTabPanel tab="reports" activeTab={activeWorkspaceTab}>
       <ReportsSection
         connection={connection}
         todayDate={currentTaskDate}
@@ -3215,26 +3270,11 @@ export default function GitHubWorkspacePage() {
         onRefresh={() => void Promise.all([loadTasks(), loadTimeEntries(), loadProjects(), loadMilestones(), loadCalendarEvents(), loadActivityEvents(), loadReportDrafts()])}
         onSaveDraft={saveReportDraft}
       />
+      </WorkspaceTabPanel>
 
 
+      <WorkspaceTabPanel tab="data" activeTab={activeWorkspaceTab}>
       <ReadinessSection readiness={readiness} connectionMethod={connectionMethod} />
-
-
-      <CaptureInboxSection
-        connection={connection}
-        online={online}
-        captureView={captureView}
-        inboxCaptures={inboxCaptures}
-        trashedCaptures={trashedCaptures}
-        visibleCaptures={visibleCaptures}
-        loadingCaptures={loadingCaptures}
-        savingCaptureId={savingCaptureId}
-        onViewChange={setCaptureView}
-        onRefresh={() => loadRecentCaptures()}
-        onLifecycleChange={updateCaptureLifecycle}
-      />
-
-
       <PortabilitySection
         connection={connection}
         online={online}
@@ -3260,6 +3300,7 @@ export default function GitHubWorkspacePage() {
         onConfirmationChange={setRestoreConfirmation}
         onRestore={executePortableRestore}
       />
+      </WorkspaceTabPanel>
 
 
       <footer className="page-footer">

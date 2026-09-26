@@ -33,7 +33,7 @@ export function AuthSection(props: Props) {
       <a className="brand" href="#top" aria-label="Personal Workspace"><span>PW</span><strong>Personal<br />Workspace</strong></a>
       <div className={`network ${online === false ? "offline" : ""}`}><i /> {online === null ? "检测网络" : online ? connection ? "Private repo 已连接" : "GitHub 可连接" : "当前离线"}</div>
     </header>
-    <section className="hero" id="top">
+    <section className={`hero ${connection ? "hero-connected" : ""}`} id="top">
       <p className="eyebrow">GitHub-backed workspace</p><h1>工作台不再<br />依赖某一台电脑。</h1>
       <p className="lede">登录后，当前浏览器直接读写你的 Private 数据仓库。访问令牌不会进入 Git，也不会写入浏览器持久存储。</p>
       <div className="hero-actions">

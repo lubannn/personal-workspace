@@ -34,6 +34,12 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .hero-actions > span { color: var(--muted); font-size: 10px; line-height: 1.6; }
 .hero-meta { margin: 36px 0 0 auto; max-width: 610px; display: flex; flex-wrap: wrap; gap: 8px; }
 .hero-meta span { padding: 7px 10px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: 9px; letter-spacing: .05em; text-transform: uppercase; }
+.hero.hero-connected { padding: 32px 0 24px; }
+.hero.hero-connected h1 { font-size: clamp(36px, 5vw, 60px); line-height: 1.08; }
+.hero.hero-connected h1 br { display: none; }
+.hero.hero-connected .lede { max-width: 760px; margin: 14px 0 0; font-size: 12px; line-height: 1.65; }
+.hero.hero-connected .hero-actions { max-width: none; margin: 14px 0 0; }
+.hero.hero-connected .hero-meta { display: none; }
 
 .connection-card { display: grid; grid-template-columns: minmax(260px, .7fr) minmax(0, 1.3fr); align-items: center; gap: 34px; margin-bottom: 18px; padding: clamp(24px, 4vw, 40px); border: 1px solid var(--line); border-radius: 24px; background: #262720; color: white; }
 .connection-card.connected { background: #e4e9df; color: var(--ink); }
@@ -65,6 +71,15 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .message-bar { margin: 0 0 18px; padding: 13px 16px; border: 1px solid; border-radius: 12px; font-size: 10px; line-height: 1.6; }
 .message-bar.success { border-color: #b9c9b4; background: #e6ede3; color: #40513d; }
 .message-bar.error { border-color: #d5aaa2; background: #f3e2df; color: #773e35; }
+
+.workspace-tab-navigation { position: sticky; top: 0; z-index: 20; margin: 0 0 12px; padding: 10px 0; border-bottom: 1px solid var(--line); background: rgba(242,240,234,.96); backdrop-filter: blur(12px); scroll-margin-top: 0; }
+.workspace-tab-list { display: flex; gap: 7px; overflow-x: auto; padding: 2px 1px 5px; scrollbar-width: thin; overscroll-behavior-x: contain; }
+.workspace-tab { flex: 0 0 auto; min-height: 42px; padding: 9px 16px; border: 1px solid var(--line); border-radius: 11px; background: rgba(250,249,245,.72); color: var(--soft); cursor: pointer; font-size: 12px; font-weight: 680; white-space: nowrap; }
+.workspace-tab:hover { border-color: var(--accent); color: var(--ink); }
+.workspace-tab[aria-selected="true"] { border-color: var(--ink); background: var(--ink); color: white; }
+.workspace-tab-panel { padding-top: 6px; scroll-margin-top: 78px; }
+.workspace-tab-panel[hidden] { display: none !important; }
+.workspace-tab-panel [id] { scroll-margin-top: 78px; }
 
 .dashboard-card { margin-bottom: 18px; padding: clamp(24px, 4vw, 40px); }
 .dashboard-card, .capture-card, .status-card, .recent-card, .projects-card, .tasks-card, .reports-card, .portability-card { border: 1px solid var(--line); border-radius: 24px; background: rgba(250,249,245,.72); }
@@ -741,6 +756,7 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 }
 
 @media (max-width: 480px) {
+  .workspace-tab { min-height: 40px; padding: 8px 13px; }
   .hero-journal-link { width: 100%; }
   .habit-heatmap-grid { grid-template-columns: repeat(8, minmax(24px, 1fr)); }
   .connection-form { grid-template-columns: 1fr; }
