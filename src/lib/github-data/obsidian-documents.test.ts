@@ -36,6 +36,7 @@ describe("ObsidianDocument canonical baseline", () => {
 
   it("derives a cross-platform day path and rejects unsafe or impossible paths", () => {
     expect(expectedObsidianJournalRelativePath("Personal Workspace", "2026-09-12")).toBe("Personal Workspace/Journal/2026/2026-09-12.md");
+    expect(expectedObsidianJournalRelativePath("Personal Workspace", "2026-09-12", "journal_1")).toBe("Personal Workspace/Journal/2026/2026-09-12-journal_1.md");
     expect(() => expectedObsidianJournalRelativePath("../Private", "2026-09-12")).toThrow("INVALID_OBSIDIAN_SUBDIRECTORY");
     expect(() => expectedObsidianJournalRelativePath("Personal Workspace", "2026-02-31")).toThrow("INVALID_OBSIDIAN_JOURNAL_DATE");
     expect(() => createObsidianDocumentData({ ...baseData, relative_path: "Personal Workspace/Journal/2025/2026-09-12.md" })).toThrow("INVALID_OBSIDIAN_DOCUMENT_DETAILS");

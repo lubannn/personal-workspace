@@ -1,4 +1,5 @@
-import { handleAuthRequest, type AuthEnv } from "./auth";
+import { handleAuthRequest } from "./auth";
+import { handleCorosConnectionRequest, type CorosConnectionEnv } from "./coros-connection";
 
 const PUBLIC_APP_ORIGIN = "https://personal-workspace-app.pages.dev";
 const LEGACY_PUBLIC_APP_BASE_PATH = "/personal-workspace";
@@ -73,7 +74,7 @@ async function proxyPublicApp(request: Request): Promise<Response> {
   });
 }
 
-async function routeRequest(request: Request, env: AuthEnv): Promise<Response> {
+async function routeRequest(request: Request, env: CorosConnectionEnv): Promise<Response> {
   const url = new URL(request.url);
 
   if (url.pathname === "/health") {
@@ -109,10 +110,14 @@ async function routeRequest(request: Request, env: AuthEnv): Promise<Response> {
     return handleAuthRequest(request, env);
   }
 
+  if (url.pathname.startsWith("/coros/")) {
+    return handleCorosConnectionRequest(request, env);
+  }
+
   return proxyPublicApp(request);
 }
 
-export async function handleRequest(request: Request, env: AuthEnv = {}): Promise<Response> {
+export async function handleRequest(request: Request, env: CorosConnectionEnv = {}): Promise<Response> {
   try {
     return await routeRequest(request, env);
   } catch (error) {
@@ -136,7 +141,7 @@ export async function handleRequest(request: Request, env: AuthEnv = {}): Promis
 }
 
 const worker = {
-  fetch(request: Request, env: AuthEnv): Promise<Response> {
+  fetch(request: Request, env: CorosConnectionEnv): Promise<Response> {
     return handleRequest(request, env);
   },
 };

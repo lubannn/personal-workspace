@@ -59,9 +59,10 @@ export function parseObsidianDocumentRecord(value: string): ObsidianDocumentReco
   return record as ObsidianDocumentRecord;
 }
 
-export function expectedObsidianJournalRelativePath(subdirectory: string, journalDate: string) {
+export function expectedObsidianJournalRelativePath(subdirectory: string, journalDate: string, journalEntryId?: string) {
   if (!isDate(journalDate)) throw new Error("INVALID_OBSIDIAN_JOURNAL_DATE");
-  return `${normalizeObsidianSubdirectory(subdirectory)}/Journal/${journalDate.slice(0, 4)}/${journalDate}.md`;
+  if (journalEntryId !== undefined && !isStableId(journalEntryId)) throw new Error("INVALID_OBSIDIAN_JOURNAL_ENTRY_ID");
+  return `${normalizeObsidianSubdirectory(subdirectory)}/Journal/${journalDate.slice(0, 4)}/${journalDate}${journalEntryId ? `-${journalEntryId}` : ""}.md`;
 }
 
 function isValidData(value: Record<string, unknown>): value is ObsidianDocumentData {
@@ -86,7 +87,7 @@ function isValidData(value: Record<string, unknown>): value is ObsidianDocumentD
 
 export function isObsidianJournalRelativePath(value: unknown): value is string {
   if (typeof value !== "string" || value.length > 300 || value.includes("\\") || value.startsWith("/") || value.endsWith("/")) return false;
-  const match = /^(.*)\/Journal\/(\d{4})\/(\d{4}-\d{2}-\d{2})\.md$/u.exec(value);
+  const match = /^(.*)\/Journal\/(\d{4})\/(\d{4}-\d{2}-\d{2})(?:-([a-zA-Z0-9][a-zA-Z0-9_-]{0,127}))?\.md$/u.exec(value);
   if (!match || match[2] !== match[3]!.slice(0, 4) || !isDate(match[3]!)) return false;
   try { return normalizeObsidianSubdirectory(match[1]!) === match[1]; } catch { return false; }
 }

@@ -110,7 +110,7 @@ import { confirmHealthStaging, correctPendingHealthStaging, correctPendingSleepH
 import { createConfirmedHealthMetricData } from "../../../src/lib/github-data/health-metrics";
 import { createConfirmedSleepSessionData } from "../../../src/lib/github-data/sleep-sessions";
 import { commitWorkoutConfirmationTransaction, prepareWorkoutConfirmationTransaction } from "../../../src/lib/github-data/workout-confirmation-transaction";
-import { createJournalEntryData, hasActiveDailyJournalDate, updateJournalEntryData } from "../../../src/lib/github-data/journal-entries";
+import { createJournalEntryData, updateJournalEntryData } from "../../../src/lib/github-data/journal-entries";
 import {
   createJournalEntryAtomically,
   JOURNAL_REVISION_WRITES_ENABLED,
@@ -155,6 +155,7 @@ import { useGitHubAppBootstrap } from "./workspace/use-github-app-bootstrap";
 import { CaptureInboxSection } from "./workspace/capture-inbox-section";
 import { DashboardSection } from "./workspace/dashboard-section";
 import { AuthSection } from "./workspace/auth-section";
+import { CorosConnectionSection } from "./workspace/coros-connection-section";
 import { PortabilitySection } from "./workspace/portability-section";
 import { ProjectsSection } from "./workspace/projects-section";
 import { CalendarSection, type CalendarEventFields } from "./workspace/calendar-section";
@@ -166,6 +167,7 @@ import { JournalSection } from "./workspace/journal-section";
 import { LearningSection } from "./workspace/learning-section";
 import { HabitsSection } from "./workspace/habits-section";
 import { HealthStagingSection } from "./workspace/health-staging-section";
+import { WorkspaceTabNavigation, WorkspaceTabPanel, workspaceTabFromHash, type WorkspaceTabId } from "./workspace/workspace-tab-navigation";
 
 export default function GitHubWorkspacePage() {
   const adapterRef = useRef<GitHubContentsAdapter | null>(null);
@@ -174,6 +176,7 @@ export default function GitHubWorkspacePage() {
   const [repository, setRepository] = useState(DEFAULT_REPOSITORY);
   const [token, setToken] = useState("");
   const [connection, setConnection] = useState<Connection | null>(null);
+  const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<WorkspaceTabId>("overview");
   const [connectionMethod, setConnectionMethod] = useState<ConnectionMethod | null>(null);
   const [authAvailability, setAuthAvailability] = useState<AuthAvailability>("checking");
   const [connecting, setConnecting] = useState(false);
@@ -247,6 +250,27 @@ export default function GitHubWorkspacePage() {
     restoreAdapterRef.current = null;
   }, []);
   const online = useOnlineStatus(clearAdapters);
+  useEffect(() => {
+    function openLinkedTab() {
+      const tab = workspaceTabFromHash(window.location.hash);
+      if (!tab) return;
+      setActiveWorkspaceTab(tab);
+      const anchor = decodeURIComponent(window.location.hash.slice(1));
+      window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+        document.getElementById(anchor)?.scrollIntoView({ block: "start", behavior: "instant" });
+      }));
+    }
+    window.addEventListener("hashchange", openLinkedTab);
+    openLinkedTab();
+    return () => window.removeEventListener("hashchange", openLinkedTab);
+  }, []);
+
+  function selectWorkspaceTab(tab: WorkspaceTabId) {
+    setActiveWorkspaceTab(tab);
+    window.history.replaceState(window.history.state, "", `${window.location.pathname}${window.location.search}#workspace-panel-${tab}`);
+    const anchor = document.getElementById("workspace-navigation-anchor");
+    if (anchor) window.scrollTo({ top: anchor.offsetTop, behavior: "instant" });
+  }
   const {
     captureFiles,
     setCaptureFiles,
@@ -1541,13 +1565,9 @@ export default function GitHubWorkspacePage() {
     finally { setSavingTimeEntryId(null); }
   }
 
-  async function saveJournalEntry(fields: { journalDate: string; title: string; bodyMarkdown: string; mood: string; weather: string }) {
+  async function saveJournalEntry(fields: { journalDate: string; bodyMarkdown: string }) {
     const adapter = adapterRef.current;
     if (!adapter || !connection || savingJournalEntry || online === false) return false;
-    if (hasActiveDailyJournalDate(journalEntryFiles.map((item) => item.record), fields.journalDate)) {
-      setErrorMessage("这一天已经有一篇未删除的 daily 日记；请编辑现有记录，未创建重复日记。");
-      return false;
-    }
     setSavingJournalEntry(true); setErrorMessage(""); setStatusMessage("");
     const timestamp = new Date().toISOString();
     const id = `journal_entry_${timestamp.replaceAll(/\D/g, "").slice(0, 17)}_${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`;
@@ -1560,10 +1580,7 @@ export default function GitHubWorkspacePage() {
           revisionId,
           journalDate: fields.journalDate,
           timezone: connection.timezone,
-          title: fields.title,
           bodyMarkdown: fields.bodyMarkdown,
-          mood: fields.mood,
-          weather: fields.weather,
           timestamp,
         });
         setJournalEntryFiles((current) => [{ record: atomic.entry, path: atomic.entryFile.path, blobSha: atomic.entryFile.blobSha }, ...current]);
@@ -1574,7 +1591,7 @@ export default function GitHubWorkspacePage() {
         setStatusMessage("日记与初始 Revision 已通过一个 Git commit 原子保存；没有连接、扫描或写入 Obsidian Vault。");
         return true;
       }
-      const record = createWorkspaceRecord({ entityType: "journal_entry", id, ownerId: connection.ownerId, timestamp, data: createJournalEntryData({ journalDate: fields.journalDate, timezone: connection.timezone, title: fields.title, bodyMarkdown: fields.bodyMarkdown, mood: fields.mood, weather: fields.weather, timestamp }) });
+      const record = createWorkspaceRecord({ entityType: "journal_entry", id, ownerId: connection.ownerId, timestamp, data: createJournalEntryData({ journalDate: fields.journalDate, timezone: connection.timezone, bodyMarkdown: fields.bodyMarkdown, timestamp }) });
       const result = await adapter.writeText({ path: recordPath("journal_entry", id), text: serializeRecord(record), message: `journal: create ${id}` });
       setJournalEntryFiles((current) => [{ record, path: result.path, blobSha: result.blobSha }, ...current]);
       setStatusMessage("日记已保存到 Private canonical JSON；没有连接、扫描或写入 Obsidian Vault。");
@@ -1585,7 +1602,7 @@ export default function GitHubWorkspacePage() {
     } finally { setSavingJournalEntry(false); }
   }
 
-  async function saveJournalEntryEdit(item: SyncedJournalEntry, fields: { title: string; bodyMarkdown: string; mood: string; weather: string }) {
+  async function saveJournalEntryEdit(item: SyncedJournalEntry, fields: { bodyMarkdown: string }) {
     const adapter = adapterRef.current;
     if (!adapter || !connection || savingJournalEntryId || online === false) return false;
     setSavingJournalEntryId(item.record.id); setErrorMessage(""); setStatusMessage("");
@@ -1599,10 +1616,7 @@ export default function GitHubWorkspacePage() {
           expectedCurrentRevisionId: item.record.data.current_revision_id,
           baselineRevisionId: `journal_revision_${timestamp.replaceAll(/\D/g, "").slice(0, 17)}_${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`,
           revisionId: `journal_revision_${timestamp.replaceAll(/\D/g, "").slice(0, 17)}_${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`,
-          title: fields.title,
           bodyMarkdown: fields.bodyMarkdown,
-          mood: fields.mood,
-          weather: fields.weather,
           timestamp,
         });
         setJournalEntryFiles((current) => current.map((candidate) => candidate.record.id === item.record.id ? { record: atomic.entry, path: atomic.entryFile.path, blobSha: atomic.entryFile.blobSha } : candidate));
@@ -1615,7 +1629,7 @@ export default function GitHubWorkspacePage() {
           : `日记元数据已保存为 v${atomic.entry.version}；正文 Revision 未发生变化。`);
         return true;
       }
-      const updated = updateWorkspaceRecord(item.record, updateJournalEntryData(item.record, { title: fields.title, bodyMarkdown: fields.bodyMarkdown, mood: fields.mood, weather: fields.weather, timestamp }), timestamp);
+      const updated = updateWorkspaceRecord(item.record, updateJournalEntryData(item.record, { bodyMarkdown: fields.bodyMarkdown, timestamp }), timestamp);
       const result = await adapter.writeText({ path: item.path, text: serializeRecord(updated), message: `journal: update ${item.record.id}`, expectedBlobSha: item.blobSha });
       setJournalEntryFiles((current) => current.map((candidate) => candidate.record.id === item.record.id ? { record: updated, path: result.path, blobSha: result.blobSha } : candidate));
       setStatusMessage(`日记修订已保存为 v${updated.version}；日期与首次记录时间保持不变。`);
@@ -1629,10 +1643,6 @@ export default function GitHubWorkspacePage() {
   async function updateJournalEntryDeletion(item: SyncedJournalEntry, operation: "trash" | "restore") {
     const adapter = adapterRef.current;
     if (!adapter || !connection || savingJournalEntryId || online === false) return;
-    if (operation === "restore" && hasActiveDailyJournalDate(journalEntryFiles.map((candidate) => candidate.record), item.record.data.journal_date, item.record.id)) {
-      setErrorMessage("同一天已有另一篇未删除的 daily 日记；为避免日期冲突，本次恢复已停止。");
-      return;
-    }
     setSavingJournalEntryId(item.record.id); setErrorMessage(""); setStatusMessage("");
     const timestamp = new Date().toISOString();
     const updated = setWorkspaceRecordDeleted(item.record, operation === "trash" ? timestamp : null, timestamp);
@@ -2915,6 +2925,7 @@ export default function GitHubWorkspacePage() {
       <AuthSection
         online={online}
         connection={connection}
+        todayDate={currentTaskDate}
         connectionMethod={connectionMethod}
         authAvailability={authAvailability}
         owner={owner}
@@ -2934,7 +2945,35 @@ export default function GitHubWorkspacePage() {
         onRevokeAll={revokeAllSessions}
       />
 
+      <div id="workspace-navigation-anchor" />
+      <WorkspaceTabNavigation activeTab={activeWorkspaceTab} onSelect={selectWorkspaceTab} />
 
+      <WorkspaceTabPanel tab="journal" activeTab={activeWorkspaceTab}>
+      <JournalSection
+        connection={connection}
+        adapter={adapterRef.current}
+        online={online}
+        todayDate={currentTaskDate}
+        journalEntryFiles={journalEntryFiles}
+        journalRevisionFiles={journalRevisionFiles}
+        journalImportCheckpointFiles={journalImportCheckpointFiles}
+        obsidianDocumentFiles={obsidianDocumentFiles}
+        loading={loadingJournalEntries}
+        loadingLegacyHistory={loadingJournalEntries || loadingJournalSegments || loadingJournalRevisions || loadingJournalImportCheckpoints}
+        saving={savingJournalEntry}
+        savingId={savingJournalEntryId}
+        onCreate={saveJournalEntry}
+        onEdit={saveJournalEntryEdit}
+        onDeletionChange={updateJournalEntryDeletion}
+        onRefresh={() => loadJournalEntries()}
+        onRefreshLegacyHistory={async () => { await Promise.all([loadJournalEntries(), loadJournalSegments(), loadJournalRevisions(), loadJournalImportCheckpoints()]); }}
+        onLegacyImportCommitted={async () => { await Promise.all([loadJournalEntries(), loadJournalSegments(), loadJournalRevisions(), loadJournalImportCheckpoints()]); }}
+        onObsidianCanonicalChanged={async () => { await Promise.all([loadObsidianDocuments(), loadSyncConflicts()]); }}
+      />
+      </WorkspaceTabPanel>
+
+
+      <WorkspaceTabPanel tab="overview" activeTab={activeWorkspaceTab}>
       <DashboardSection
         connection={connection}
         online={online}
@@ -2973,7 +3012,23 @@ export default function GitHubWorkspacePage() {
         onCompleteTask={(item) => updateTaskLifecycle(item, "complete")}
       />
 
+      <CaptureInboxSection
+        connection={connection}
+        online={online}
+        captureView={captureView}
+        inboxCaptures={inboxCaptures}
+        trashedCaptures={trashedCaptures}
+        visibleCaptures={visibleCaptures}
+        loadingCaptures={loadingCaptures}
+        savingCaptureId={savingCaptureId}
+        onViewChange={setCaptureView}
+        onRefresh={() => loadRecentCaptures()}
+        onLifecycleChange={updateCaptureLifecycle}
+      />
+      </WorkspaceTabPanel>
 
+
+      <WorkspaceTabPanel tab="calendar" activeTab={activeWorkspaceTab}>
       <CalendarSection
         key={connection?.timezone ?? "disconnected"}
         connection={connection}
@@ -2990,8 +3045,10 @@ export default function GitHubWorkspacePage() {
         onDeletionChange={updateCalendarEventDeletion}
         onRefresh={() => loadCalendarEvents()}
       />
+      </WorkspaceTabPanel>
 
 
+      <WorkspaceTabPanel tab="projects" activeTab={activeWorkspaceTab}>
       <ProjectsSection
         connection={connection}
         online={online}
@@ -3042,8 +3099,10 @@ export default function GitHubWorkspacePage() {
         onCreateProjectFileReference={saveProjectFileReference}
         onRefresh={() => Promise.all([loadProjects(), loadProjectPhases(), loadMilestones(), loadProjectNotes(), loadProjectFileReferences(), loadActivityEvents()])}
       />
+      </WorkspaceTabPanel>
 
 
+      <WorkspaceTabPanel tab="tasks" activeTab={activeWorkspaceTab}>
       <TasksSection
         connection={connection}
         online={online}
@@ -3095,31 +3154,10 @@ export default function GitHubWorkspacePage() {
         onDeletionChange={updateTimeEntryDeletion}
         onRefresh={() => loadTimeEntries()}
       />
+      </WorkspaceTabPanel>
 
 
-      <JournalSection
-        connection={connection}
-        adapter={adapterRef.current}
-        online={online}
-        todayDate={currentTaskDate}
-        journalEntryFiles={journalEntryFiles}
-        journalRevisionFiles={journalRevisionFiles}
-        journalImportCheckpointFiles={journalImportCheckpointFiles}
-        obsidianDocumentFiles={obsidianDocumentFiles}
-        loading={loadingJournalEntries}
-        loadingLegacyHistory={loadingJournalEntries || loadingJournalSegments || loadingJournalRevisions || loadingJournalImportCheckpoints}
-        saving={savingJournalEntry}
-        savingId={savingJournalEntryId}
-        onCreate={saveJournalEntry}
-        onEdit={saveJournalEntryEdit}
-        onDeletionChange={updateJournalEntryDeletion}
-        onRefresh={() => loadJournalEntries()}
-        onRefreshLegacyHistory={async () => { await Promise.all([loadJournalEntries(), loadJournalSegments(), loadJournalRevisions(), loadJournalImportCheckpoints()]); }}
-        onLegacyImportCommitted={async () => { await Promise.all([loadJournalEntries(), loadJournalSegments(), loadJournalRevisions(), loadJournalImportCheckpoints()]); }}
-        onObsidianCanonicalChanged={async () => { await Promise.all([loadObsidianDocuments(), loadSyncConflicts()]); }}
-      />
-
-
+      <WorkspaceTabPanel tab="learning" activeTab={activeWorkspaceTab}>
       <LearningSection
         connection={connection}
         online={online}
@@ -3153,8 +3191,10 @@ export default function GitHubWorkspacePage() {
         onResourceDeletionChange={updateLearningResourceDeletion}
         onRefresh={() => loadLearningAreas()}
       />
+      </WorkspaceTabPanel>
 
 
+      <WorkspaceTabPanel tab="habits" activeTab={activeWorkspaceTab}>
       <HabitsSection
         connection={connection}
         online={online}
@@ -3173,8 +3213,10 @@ export default function GitHubWorkspacePage() {
         onConfirmSleepSuggestion={confirmSleepHabitSuggestion}
         onRefresh={() => loadHabitDomain()}
       />
+      </WorkspaceTabPanel>
 
 
+      <WorkspaceTabPanel tab="health" activeTab={activeWorkspaceTab}>
       <HealthStagingSection
         connection={connection}
         adapter={adapterRef.current}
@@ -3198,9 +3240,22 @@ export default function GitHubWorkspacePage() {
           const createdIds = new Set(created.map((item) => item.record.id));
           return [...created, ...current.filter((item) => !createdIds.has(item.record.id))];
         })}
+        onBatchConfirmed={(updated, created) => {
+          setHealthStagingFiles((current) => {
+            const updatedIds = new Set(updated.map((item) => item.record.id));
+            return [...updated, ...current.filter((item) => !updatedIds.has(item.record.id))];
+          });
+          setWorkoutFiles((current) => {
+            const createdIds = new Set(created.map((item) => item.record.id));
+            return [...created, ...current.filter((item) => !createdIds.has(item.record.id))];
+          });
+        }}
       />
+      <CorosConnectionSection connectionMethod={connectionMethod} />
+      </WorkspaceTabPanel>
 
 
+      <WorkspaceTabPanel tab="reports" activeTab={activeWorkspaceTab}>
       <ReportsSection
         connection={connection}
         todayDate={currentTaskDate}
@@ -3216,26 +3271,11 @@ export default function GitHubWorkspacePage() {
         onRefresh={() => void Promise.all([loadTasks(), loadTimeEntries(), loadProjects(), loadMilestones(), loadCalendarEvents(), loadActivityEvents(), loadReportDrafts()])}
         onSaveDraft={saveReportDraft}
       />
+      </WorkspaceTabPanel>
 
 
+      <WorkspaceTabPanel tab="data" activeTab={activeWorkspaceTab}>
       <ReadinessSection readiness={readiness} connectionMethod={connectionMethod} />
-
-
-      <CaptureInboxSection
-        connection={connection}
-        online={online}
-        captureView={captureView}
-        inboxCaptures={inboxCaptures}
-        trashedCaptures={trashedCaptures}
-        visibleCaptures={visibleCaptures}
-        loadingCaptures={loadingCaptures}
-        savingCaptureId={savingCaptureId}
-        onViewChange={setCaptureView}
-        onRefresh={() => loadRecentCaptures()}
-        onLifecycleChange={updateCaptureLifecycle}
-      />
-
-
       <PortabilitySection
         connection={connection}
         online={online}
@@ -3261,10 +3301,11 @@ export default function GitHubWorkspacePage() {
         onConfirmationChange={setRestoreConfirmation}
         onRestore={executePortableRestore}
       />
+      </WorkspaceTabPanel>
 
 
       <footer className="page-footer">
-        <span>Personal Workspace</span>
+        <span>Nexus</span>
         <span>GitHub live sync · Phase 1C</span>
       </footer>
     </main>

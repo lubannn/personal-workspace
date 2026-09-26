@@ -5,11 +5,14 @@
   "compatibility_date": "2026-08-26",
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": true,
+  "preview_urls": false,
   "vars": {
     "GITHUB_CLIENT_ID": "Iv23liMKCWS5z7czUAyl",
     "ALLOWED_GITHUB_LOGIN": "lubannn",
     "ALLOWED_REPO_OWNER": "lubannn",
-    "ALLOWED_REPO_NAME": "personal-workspace-data"
+    "ALLOWED_REPO_NAME": "personal-workspace-data",
+    "COROS_MCP_RESOURCE_URL": "https://mcpcn.coros.com/mcp",
+    "COROS_CALLBACK_ORIGIN": "https://nexus.lubannn.workers.dev"
   },
   "d1_databases": [
     {
@@ -20,15 +23,15 @@
     }
   ],
   "observability": {
-    "enabled": true,
+    "enabled": false,
     "logs": {
-      "enabled": true,
-      "head_sampling_rate": 0.1,
+      "enabled": false,
+      "head_sampling_rate": 1,
       "invocation_logs": true
     },
     "traces": {
       "enabled": false,
-      "head_sampling_rate": 0
+      "head_sampling_rate": 1
     }
   }
 }

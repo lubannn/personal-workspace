@@ -4,8 +4,8 @@ export const dynamic = "force-static";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Personal Workspace",
-    short_name: "Workspace",
+    name: "Nexus",
+    short_name: "Nexus",
     description: "GitHub-backed personal workspace",
     start_url: ".",
     display: "standalone",
