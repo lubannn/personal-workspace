@@ -10,6 +10,12 @@ type CorosStatus = {
   lastSyncAt: string | null;
   lastErrorCode: string | null;
 };
+type CorosPreview = {
+  machineReadable: boolean;
+  format: "structured" | "content";
+  fields: string[];
+  blockTypes: string[];
+};
 
 type ViewState = "loading" | "unavailable" | "login-required" | "ready" | "error";
 
@@ -34,6 +40,7 @@ export function CorosConnectionSection({ connectionMethod }: { connectionMethod:
   const [busy, setBusy] = useState(false);
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
   const [message, setMessage] = useState("");
+  const [preview, setPreview] = useState<CorosPreview | null>(null);
 
   const refresh = useCallback(async () => {
     if (connectionMethod !== "github-app") {
@@ -78,12 +85,35 @@ export function CorosConnectionSection({ connectionMethod }: { connectionMethod:
       if (path === "/coros/start") {
         window.location.assign(corosAuthorizationUrl(result.authorizationUrl));
       } else {
+        setPreview(null);
         setConfirmDisconnect(false);
         setMessage("已删除工作台保存的 COROS 凭据；如需撤销 COROS 侧授权，请在 COROS 中单独操作。");
         await refresh();
       }
     } catch {
       setMessage("操作没有完成，连接状态未确认。请刷新状态后重试。");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function previewOneDay() {
+    const csrf = readCookie("__Host-pw_csrf");
+    if (!csrf) { setMessage("GitHub 登录会话已失效，请重新登录。"); return; }
+    setBusy(true);
+    setPreview(null);
+    setMessage("");
+    try {
+      const response = await fetch("/coros/preview", {
+        method: "POST", credentials: "same-origin", cache: "no-store",
+        headers: { accept: "application/json", "x-pw-csrf": csrf },
+      });
+      if (!response.ok) throw new Error("COROS_PREVIEW_FAILED");
+      const result = await response.json() as CorosPreview;
+      if (typeof result.machineReadable !== "boolean" || !Array.isArray(result.fields)) throw new Error("COROS_PREVIEW_INVALID");
+      setPreview(result);
+    } catch {
+      setMessage("只读预览没有完成；没有写入健康记录。请稍后重试。");
     } finally {
       setBusy(false);
     }
@@ -104,7 +134,12 @@ export function CorosConnectionSection({ connectionMethod }: { connectionMethod:
       {status.lastErrorCode ? <p role="alert">最近同步错误：{status.lastErrorCode}</p> : null}
       {!status.connected ? <button className="secondary-button" type="button" disabled={busy} onClick={() => void mutate("/coros/start")}>{busy ? "正在准备…" : "连接 COROS"}</button> :
         confirmDisconnect ? <div className="learning-view-actions"><button className="danger-button" type="button" disabled={busy} onClick={() => void mutate("/coros/disconnect")}>确认断开</button><button className="secondary-button" type="button" disabled={busy} onClick={() => setConfirmDisconnect(false)}>取消</button></div> :
-          <button className="danger-outline-button" type="button" disabled={busy} onClick={() => setConfirmDisconnect(true)}>断开 COROS</button>}
+          <div className="learning-view-actions">
+            {status.state === "paused" ? <button className="secondary-button" type="button" disabled={busy} onClick={() => void previewOneDay()}>{busy ? "正在检查…" : "只读检查最近一天"}</button> : null}
+            <button className="danger-outline-button" type="button" disabled={busy} onClick={() => setConfirmDisconnect(true)}>断开 COROS</button>
+          </div>}
+      {preview ? <div role="status"><p>{preview.machineReadable ? "已取得可供核对的结构化字段；仍未启用自动入库。" : "COROS 返回展示文本，尚不能安全地自动映射入库。"}</p>
+        {preview.fields.length > 0 ? <details><summary>查看字段名称（不含健康数值）</summary><p>{preview.fields.join("、")}</p></details> : null}</div> : null}
     </div> : null}
     {message ? <p role="status">{message}</p> : null}
   </section>;

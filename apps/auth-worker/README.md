@@ -58,6 +58,8 @@ connection table. The connector starts paused after authorization. No scheduled
 polling, health-data mapping, or automatic Git writes are deployed yet.
 The PWA has a separate COROS connection/status/disconnect card that remains
 unavailable until this Worker version and its migration are explicitly released.
+An authenticated, CSRF-protected one-day preview can be requested while paused;
+it returns field names and response format only, never health measurements.
 
 The Worker validates the configured COROS resource and callback origin against
 public OAuth metadata. Its only MCP tool surface is a hard-coded read allowlist;

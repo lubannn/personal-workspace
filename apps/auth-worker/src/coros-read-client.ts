@@ -16,6 +16,7 @@ export const COROS_READ_TOOL_ALLOWLIST = [
 ] as const;
 
 export type CorosReadTool = typeof COROS_READ_TOOL_ALLOWLIST[number];
+export type CorosReadResult = { format: "structured" | "content"; payload: unknown };
 
 const MAX_TOOL_RESULT_BYTES = 512 * 1024;
 
@@ -28,7 +29,7 @@ export async function callCorosReadTool(
   accessToken: string,
   name: string,
   args: Record<string, unknown>,
-): Promise<unknown> {
+): Promise<CorosReadResult> {
   if (!isAllowedCorosReadTool(name)) throw new Error("COROS_TOOL_NOT_ALLOWED");
   if (!accessToken || !isAllowedCorosResourceUrl(resourceUrl)) throw new Error("COROS_MCP_CONNECTION_INVALID");
   const transport = new StreamableHTTPClientTransport(new URL(resourceUrl), {
@@ -48,7 +49,9 @@ export async function callCorosReadTool(
     if (new TextEncoder().encode(serialized).byteLength > MAX_TOOL_RESULT_BYTES) {
       throw new Error("COROS_READ_RESULT_TOO_LARGE");
     }
-    return result.structuredContent ?? result.content;
+    return result.structuredContent === undefined
+      ? { format: "content", payload: result.content }
+      : { format: "structured", payload: result.structuredContent };
   } finally {
     await transport.terminateSession().catch(() => undefined);
     await client.close();

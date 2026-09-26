@@ -5,6 +5,9 @@ import {
   exchangeCorosCode,
   registerCorosOAuthClient,
 } from "./coros-oauth";
+import { refreshPausedCorosConnectionForPreview } from "./coros-credentials";
+import { summarizeCorosPreview } from "./coros-preview";
+import { callCorosReadTool } from "./coros-read-client";
 import { decryptRefreshToken, encryptRefreshToken, sha256Base64Url } from "./security";
 
 const OAUTH_ATTEMPT_SECONDS = 10 * 60;
@@ -138,6 +141,20 @@ async function disconnect(request: Request, env: CorosConnectionEnv, userId: str
   return json({ disconnected: true, remoteAuthorizationRevoked: false });
 }
 
+async function preview(request: Request, env: CorosConnectionEnv, userId: string): Promise<Response> {
+  if (request.method !== "POST") return json({ error: "METHOD_NOT_ALLOWED" }, 405);
+  if (!validAuthenticatedMutation(request)) return json({ error: "CSRF_VALIDATION_FAILED" }, 403);
+  const connection = await refreshPausedCorosConnectionForPreview(env.DB!, userId, env.TOKEN_ENCRYPTION_KEY!);
+  if (!connection) return json({ error: "COROS_PAUSED_CONNECTION_REQUIRED" }, 409);
+  try {
+    const result = await callCorosReadTool(connection.resourceUrl, connection.accessToken,
+      "queryDailyHealthData", { days: 1 });
+    return json({ tool: "queryDailyHealthData", interval: "latest_day", ...summarizeCorosPreview(result) });
+  } catch {
+    return json({ error: "COROS_PREVIEW_UNAVAILABLE" }, 502);
+  }
+}
+
 export async function handleCorosConnectionRequest(request: Request, env: CorosConnectionEnv): Promise<Response> {
   const path = new URL(request.url).pathname;
   if (!configured(env, request)) return json({ error: "COROS_CONNECTOR_NOT_CONFIGURED" }, 503);
@@ -147,6 +164,7 @@ export async function handleCorosConnectionRequest(request: Request, env: CorosC
     case "/coros/start": return start(request, env, user.id);
     case "/coros/callback": return callback(request, env, user.id);
     case "/coros/status": return status(request, env, user.id);
+    case "/coros/preview": return preview(request, env, user.id);
     case "/coros/disconnect": return disconnect(request, env, user.id);
     default: return json({ error: "COROS_ROUTE_NOT_FOUND" }, 404);
   }

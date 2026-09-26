@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { D1DatabaseLike, D1PreparedStatementLike } from "./auth";
-import { refreshEnabledCorosConnection } from "./coros-credentials";
+import { refreshEnabledCorosConnection, refreshPausedCorosConnectionForPreview } from "./coros-credentials";
 import { decryptRefreshToken, encryptRefreshToken } from "./security";
 
 const resource = "https://mcpcn.coros.com/mcp";
@@ -53,6 +53,26 @@ describe("COROS background credential rotation", () => {
     });
     expect(await decryptRefreshToken(String(queries[1].bindings[0]), key)).toBe("new-refresh");
     expect(queries[1].bindings[4]).toBe(encrypted);
+    expect(queries[1].bindings[5]).toBe("enabled");
+  });
+
+  it("permits explicit preview while paused without enabling background sync", async () => {
+    const encrypted = await encryptRefreshToken("old-refresh", key);
+    const { db, queries } = fakeDatabase({ github_user_id: "1", client_id: "client-1",
+      redirect_uri: "https://nexus.lubannn.workers.dev/coros/callback", resource_url: resource,
+      encrypted_refresh_token: encrypted, scope: "mcp.tools offline_access", state: "paused" });
+    const fetcher = vi.fn<typeof fetch>(async (input) => {
+      const url = String(input);
+      if (url.includes("protected-resource")) return Response.json({ resource, authorization_servers: [origin], scopes_supported: ["mcp.tools", "offline_access"] });
+      if (url.includes("authorization-server")) return Response.json({ issuer: origin,
+        authorization_endpoint: `${origin}/oauth2/authorize`, token_endpoint: `${origin}/oauth2/token`,
+        registration_endpoint: `${origin}/connect/register`, code_challenge_methods_supported: ["S256"],
+        grant_types_supported: ["authorization_code", "refresh_token"], token_endpoint_auth_methods_supported: ["none"] });
+      return Response.json({ access_token: "short-lived-access", refresh_token: "new-refresh",
+        expires_in: 3600, token_type: "Bearer", scope: "mcp.tools offline_access" });
+    });
+    expect(await refreshPausedCorosConnectionForPreview(db, "1", key, fetcher)).toMatchObject({ accessToken: "short-lived-access" });
+    expect(queries[1].bindings[5]).toBe("paused");
   });
 
   it("fails closed after losing a refresh-token race", async () => {
