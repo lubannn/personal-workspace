@@ -3,10 +3,12 @@
 import type { FormEvent } from "react";
 
 import type { AuthAvailability, Connection, ConnectionMethod } from "./page-model";
+import { formatWorkspaceDate } from "./workspace-date";
 
 type Props = {
   online: boolean | null;
   connection: Connection | null;
+  todayDate: string;
   connectionMethod: ConnectionMethod | null;
   authAvailability: AuthAvailability;
   owner: string;
@@ -27,21 +29,16 @@ type Props = {
 };
 
 export function AuthSection(props: Props) {
-  const { online, connection, connectionMethod, authAvailability, owner, repository, token, connecting, confirmingRevokeAll, revokingAll, errorMessage, statusMessage, onOwnerChange, onRepositoryChange, onTokenChange, onConnect, onDisconnect, onConfirmingRevokeAllChange, onRevokeAll } = props;
+  const { online, connection, todayDate, connectionMethod, authAvailability, owner, repository, token, connecting, confirmingRevokeAll, revokingAll, errorMessage, statusMessage, onOwnerChange, onRepositoryChange, onTokenChange, onConnect, onDisconnect, onConfirmingRevokeAllChange, onRevokeAll } = props;
   return <>
-    <header className="topbar">
-      <a className="brand" href="#top" aria-label="Personal Workspace"><span>PW</span><strong>Personal<br />Workspace</strong></a>
-      <div className={`network ${online === false ? "offline" : ""}`}><i /> {online === null ? "检测网络" : online ? connection ? "Private repo 已连接" : "GitHub 可连接" : "当前离线"}</div>
-    </header>
-    <section className={`hero ${connection ? "hero-connected" : ""}`} id="top">
-      <p className="eyebrow">GitHub-backed workspace</p><h1>工作台不再<br />依赖某一台电脑。</h1>
-      <p className="lede">登录后，当前浏览器直接读写你的 Private 数据仓库。访问令牌不会进入 Git，也不会写入浏览器持久存储。</p>
-      <div className="hero-actions">
-        <a className="hero-journal-link" href="#journal-title">写今天的日记</a>
-        <span>{connection ? "已连接，可直接保存到 Private GitHub" : "登录后即可安全保存和继续编辑"}</span>
+    <header className="topbar" id="top">
+      <a className="brand" href="#top" aria-label="Nexus 工作台首页"><span aria-hidden="true">N</span><h1>Nexus</h1></a>
+      <div className="topbar-date"><span>今天</span><time dateTime={todayDate || undefined}>{formatWorkspaceDate(todayDate)}</time></div>
+      <div className="topbar-actions">
+        <a className="topbar-journal-link" href="#journal-title">写日记 <span aria-hidden="true">↗</span></a>
+        <div className={`network ${online === false ? "offline" : ""}`}><i /> {online === null ? "检测网络" : online ? connection ? "Private repo 已连接" : "GitHub 可连接" : "当前离线"}</div>
       </div>
-      <div className="hero-meta"><span>Public app</span><span>Private data</span><span>Memory-only token</span></div>
-    </section>
+    </header>
     <section className={`connection-card ${connection ? "connected" : ""}`} aria-labelledby="connection-title">
       <div className="connection-copy">
         <p className="eyebrow">Private connection</p><h2 id="connection-title">{connection ? "私人数据已连接" : "连接你的数据仓库"}</h2>

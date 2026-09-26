@@ -2925,6 +2925,7 @@ export default function GitHubWorkspacePage() {
       <AuthSection
         online={online}
         connection={connection}
+        todayDate={currentTaskDate}
         connectionMethod={connectionMethod}
         authAvailability={authAvailability}
         owner={owner}
@@ -3304,7 +3305,7 @@ export default function GitHubWorkspacePage() {
 
 
       <footer className="page-footer">
-        <span>Personal Workspace</span>
+        <span>Nexus</span>
         <span>GitHub live sync · Phase 1C</span>
       </footer>
     </main>

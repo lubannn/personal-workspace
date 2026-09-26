@@ -5,9 +5,9 @@ import { ServiceWorkerRegistration } from "./service-worker-registration";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Personal Workspace",
-  description: "A static Personal Workspace backed by a private GitHub data repository.",
-  applicationName: "Personal Workspace",
+  title: "Nexus",
+  description: "Nexus is a personal workspace backed by a private GitHub data repository.",
+  applicationName: "Nexus",
   robots: { index: false, follow: false },
   manifest: "manifest.webmanifest",
 };
