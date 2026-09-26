@@ -58,4 +58,5 @@
 - [COROS Partner API](https://support.coros.com/hc/en-us/articles/53181766856724-Partner-API-Access)
 - [COROS MCP 数据类型与 FIT 日限额](https://support.coros.com/hc/en-us/articles/50841795180948-Connect-Your-COROS-to-AI)
 - [COROS 全部历史活动的一次性批量导出](https://support.coros.com/hc/en-us/articles/33125636125204-Bulk-Export-Historical-Activity-Data)
+- [COROS 历史睡眠、心率与日数据需向支持团队申请批量导出](https://support.coros.com/hc/en-us/articles/25002333092500-Requesting-a-Bulk-Export-of-COROS-Data)
 - [Cloudflare Cron Triggers](https://developers.cloudflare.com/workers/configuration/cron-triggers/)
