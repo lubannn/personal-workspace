@@ -36,6 +36,10 @@ export function AuthSection(props: Props) {
     <section className="hero" id="top">
       <p className="eyebrow">GitHub-backed workspace</p><h1>工作台不再<br />依赖某一台电脑。</h1>
       <p className="lede">公开 Pages 只提供应用外壳；连接后，当前浏览器直接读写你的 Private 数据仓库。令牌不会进入 Git，也不会写入浏览器持久存储。</p>
+      <div className="hero-actions">
+        <a className="hero-journal-link" href="#journal-title">写今天的日记</a>
+        <span>{connection ? "已连接，可直接保存到 Private GitHub" : "登录后即可安全保存和继续编辑"}</span>
+      </div>
       <div className="hero-meta"><span>Public app</span><span>Private data</span><span>Memory-only token</span></div>
     </section>
     <section className={`connection-card ${connection ? "connected" : ""}`} aria-labelledby="connection-title">

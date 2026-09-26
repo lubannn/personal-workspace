@@ -28,6 +28,10 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .eyebrow { margin: 0 0 10px; color: var(--muted); font-size: 10px; font-weight: 720; letter-spacing: .15em; text-transform: uppercase; }
 .hero h1 { max-width: 880px; margin: 0; font-family: ui-serif, Georgia, "Songti SC", serif; font-size: clamp(54px, 8.5vw, 108px); font-weight: 500; letter-spacing: -.065em; line-height: .98; }
 .lede { max-width: 610px; margin: 34px 0 0 auto; color: var(--soft); font-size: 15px; line-height: 1.9; }
+.hero-actions { max-width: 610px; margin: 24px 0 0 auto; display: flex; align-items: center; flex-wrap: wrap; gap: 12px 16px; }
+.hero-journal-link { min-height: 46px; display: inline-grid; place-items: center; border-radius: 12px; padding: 12px 18px; background: var(--ink); color: white; font-size: 11px; font-weight: 720; text-decoration: none; }
+.hero-journal-link:hover { background: var(--accent); }
+.hero-actions > span { color: var(--muted); font-size: 10px; line-height: 1.6; }
 .hero-meta { margin: 36px 0 0 auto; max-width: 610px; display: flex; flex-wrap: wrap; gap: 8px; }
 .hero-meta span { padding: 7px 10px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: 9px; letter-spacing: .05em; text-transform: uppercase; }
 
@@ -356,7 +360,8 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .time-entry-list li { display: grid; grid-template-columns: minmax(0,1fr) auto auto; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); }
 .time-entry-list li > span { min-width: 0; display: grid; gap: 3px; }
 .time-entry-list small, .time-entry-list code { color: var(--muted); font-size: 9px; overflow-wrap: anywhere; }
-.journal-card { margin-top: 18px; padding: 22px; border: 1px solid var(--line); border-radius: 18px; background: var(--paper); box-shadow: var(--shadow); }
+.journal-card { margin: 0 0 18px; padding: 22px; scroll-margin-top: 18px; border: 1px solid var(--line); border-radius: 18px; background: var(--paper); box-shadow: var(--shadow); }
+#journal-title { scroll-margin-top: 24px; }
 .journal-subtitle { max-width: 760px; margin: 5px 0 0; color: var(--muted); font-size: 10px; line-height: 1.6; }
 .journal-view-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 .journal-form { margin-top: 18px; padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: rgba(255,255,255,.3); }
@@ -683,7 +688,7 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
   .topbar { height: 86px; }
   .hero { padding: 72px 0 58px; }
   .hero h1 { font-size: clamp(49px, 16vw, 76px); }
-  .lede, .hero-meta { margin-left: 0; }
+  .lede, .hero-actions, .hero-meta { margin-left: 0; }
   .connection-card { grid-template-columns: 1fr; }
   .connection-form { grid-template-columns: 1fr 1fr; }
   .connection-form .token-field, .connection-form button { grid-column: 1 / -1; }
@@ -736,6 +741,7 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 }
 
 @media (max-width: 480px) {
+  .hero-journal-link { width: 100%; }
   .habit-heatmap-grid { grid-template-columns: repeat(8, minmax(24px, 1fr)); }
   .connection-form { grid-template-columns: 1fr; }
   .connection-form label, .connection-form .token-field, .connection-form button { grid-column: 1; }

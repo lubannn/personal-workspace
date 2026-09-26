@@ -2935,6 +2935,29 @@ export default function GitHubWorkspacePage() {
         onRevokeAll={revokeAllSessions}
       />
 
+      <JournalSection
+        connection={connection}
+        adapter={adapterRef.current}
+        online={online}
+        todayDate={currentTaskDate}
+        journalEntryFiles={journalEntryFiles}
+        journalRevisionFiles={journalRevisionFiles}
+        journalImportCheckpointFiles={journalImportCheckpointFiles}
+        obsidianDocumentFiles={obsidianDocumentFiles}
+        loading={loadingJournalEntries}
+        loadingLegacyHistory={loadingJournalEntries || loadingJournalSegments || loadingJournalRevisions || loadingJournalImportCheckpoints}
+        saving={savingJournalEntry}
+        savingId={savingJournalEntryId}
+        onCreate={saveJournalEntry}
+        onEdit={saveJournalEntryEdit}
+        onDeletionChange={updateJournalEntryDeletion}
+        onRefresh={() => loadJournalEntries()}
+        onRefreshLegacyHistory={async () => { await Promise.all([loadJournalEntries(), loadJournalSegments(), loadJournalRevisions(), loadJournalImportCheckpoints()]); }}
+        onLegacyImportCommitted={async () => { await Promise.all([loadJournalEntries(), loadJournalSegments(), loadJournalRevisions(), loadJournalImportCheckpoints()]); }}
+        onObsidianCanonicalChanged={async () => { await Promise.all([loadObsidianDocuments(), loadSyncConflicts()]); }}
+      />
+
+
       <CorosConnectionSection connectionMethod={connectionMethod} />
 
 
@@ -3097,29 +3120,6 @@ export default function GitHubWorkspacePage() {
         onCreate={saveTimeEntry}
         onDeletionChange={updateTimeEntryDeletion}
         onRefresh={() => loadTimeEntries()}
-      />
-
-
-      <JournalSection
-        connection={connection}
-        adapter={adapterRef.current}
-        online={online}
-        todayDate={currentTaskDate}
-        journalEntryFiles={journalEntryFiles}
-        journalRevisionFiles={journalRevisionFiles}
-        journalImportCheckpointFiles={journalImportCheckpointFiles}
-        obsidianDocumentFiles={obsidianDocumentFiles}
-        loading={loadingJournalEntries}
-        loadingLegacyHistory={loadingJournalEntries || loadingJournalSegments || loadingJournalRevisions || loadingJournalImportCheckpoints}
-        saving={savingJournalEntry}
-        savingId={savingJournalEntryId}
-        onCreate={saveJournalEntry}
-        onEdit={saveJournalEntryEdit}
-        onDeletionChange={updateJournalEntryDeletion}
-        onRefresh={() => loadJournalEntries()}
-        onRefreshLegacyHistory={async () => { await Promise.all([loadJournalEntries(), loadJournalSegments(), loadJournalRevisions(), loadJournalImportCheckpoints()]); }}
-        onLegacyImportCommitted={async () => { await Promise.all([loadJournalEntries(), loadJournalSegments(), loadJournalRevisions(), loadJournalImportCheckpoints()]); }}
-        onObsidianCanonicalChanged={async () => { await Promise.all([loadObsidianDocuments(), loadSyncConflicts()]); }}
       />
 
 
