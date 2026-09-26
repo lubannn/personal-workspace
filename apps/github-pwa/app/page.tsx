@@ -3187,6 +3187,16 @@ export default function GitHubWorkspacePage() {
           const createdIds = new Set(created.map((item) => item.record.id));
           return [...created, ...current.filter((item) => !createdIds.has(item.record.id))];
         })}
+        onBatchConfirmed={(updated, created) => {
+          setHealthStagingFiles((current) => {
+            const updatedIds = new Set(updated.map((item) => item.record.id));
+            return [...updated, ...current.filter((item) => !updatedIds.has(item.record.id))];
+          });
+          setWorkoutFiles((current) => {
+            const createdIds = new Set(created.map((item) => item.record.id));
+            return [...created, ...current.filter((item) => !createdIds.has(item.record.id))];
+          });
+        }}
       />
 
 

@@ -19,6 +19,7 @@ export async function prepareWorkoutConfirmationTransaction(input: {
   staging: SyncedStaging;
   ownerId: string;
   timestamp?: string;
+  snapshot?: Awaited<ReturnType<ConfirmationAdapter["readBranchSnapshot"]>>;
 }): Promise<PreparedWorkoutConfirmation> {
   const checked = await inspectWorkoutConfirmationPreconditions(input);
   const timestamp = input.timestamp ?? new Date().toISOString();

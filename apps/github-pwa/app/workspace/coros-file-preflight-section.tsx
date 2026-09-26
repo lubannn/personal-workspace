@@ -5,14 +5,18 @@ import { useState, type ChangeEvent } from "react";
 import { previewCorosActivityFile, type CorosFilePreflight } from "../../../../src/lib/github-data/coros-file-preflight";
 import { commitCorosWorkoutStagingWrite, prepareCorosWorkoutStagingWrite } from "../../../../src/lib/github-data/coros-workout-staging-write";
 import { GitHubConflictError, type GitHubContentsAdapter } from "../../../../src/lib/github-data/github-contents";
-import type { SyncedHealthStagingRecord } from "./page-model";
+import type { SyncedHealthStagingRecord, SyncedWorkout } from "./page-model";
+import { CorosBatchImportSection } from "./coros-batch-import-section";
 
-export function CorosFilePreflightSection({ timezone = "Asia/Shanghai", adapter, ownerId, online, onStaged }: {
+export function CorosFilePreflightSection({ timezone = "Asia/Shanghai", adapter, ownerId, online, stagingRecords, onStaged, onBatchConfirmed, onRefresh }: {
   timezone?: string;
   adapter: GitHubContentsAdapter | null;
   ownerId: string | null;
   online: boolean | null;
+  stagingRecords: SyncedHealthStagingRecord[];
   onStaged: (created: SyncedHealthStagingRecord[]) => void;
+  onBatchConfirmed: (staging: SyncedHealthStagingRecord[], workouts: SyncedWorkout[]) => void;
+  onRefresh: () => void;
 }) {
   const [preview, setPreview] = useState<CorosFilePreflight | null>(null);
   const [error, setError] = useState("");
@@ -61,6 +65,7 @@ export function CorosFilePreflightSection({ timezone = "Asia/Shanghai", adapter,
   }
 
   return <div className="legacy-import" aria-labelledby="coros-file-preflight-title">
+    <CorosBatchImportSection timezone={timezone} adapter={adapter} ownerId={ownerId} online={online} stagingRecords={stagingRecords} onStaged={onStaged} onConfirmed={onBatchConfirmed} onRefresh={onRefresh} />
     <div className="legacy-import-heading">
       <div><p className="eyebrow">Phase 4 · COROS file staging</p><h3 id="coros-file-preflight-title">COROS 活动文件兼容性预检</h3><p>选择单个 FIT 或 TCX 文件后，在当前浏览器计算 SHA-256、校验结构并生成活动摘要。点击写入暂存并再次确认后，才会保存摘要到 Private 仓库；原文件不会上传。</p></div>
       <span className="memory-pill">预检 · 本地</span>
