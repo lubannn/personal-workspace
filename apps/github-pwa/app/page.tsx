@@ -155,6 +155,7 @@ import { useGitHubAppBootstrap } from "./workspace/use-github-app-bootstrap";
 import { CaptureInboxSection } from "./workspace/capture-inbox-section";
 import { DashboardSection } from "./workspace/dashboard-section";
 import { AuthSection } from "./workspace/auth-section";
+import { CorosConnectionSection } from "./workspace/coros-connection-section";
 import { PortabilitySection } from "./workspace/portability-section";
 import { ProjectsSection } from "./workspace/projects-section";
 import { CalendarSection, type CalendarEventFields } from "./workspace/calendar-section";
@@ -2933,6 +2934,8 @@ export default function GitHubWorkspacePage() {
         onConfirmingRevokeAllChange={setConfirmingRevokeAll}
         onRevokeAll={revokeAllSessions}
       />
+
+      <CorosConnectionSection connectionMethod={connectionMethod} />
 
 
       <DashboardSection

@@ -56,6 +56,8 @@ The currently deployed D1 schema is limited to authentication sessions. Workspac
 The next migration adds a short-lived OAuth attempt table and encrypted COROS
 connection table. The connector starts paused after authorization. No scheduled
 polling, health-data mapping, or automatic Git writes are deployed yet.
+The PWA has a separate COROS connection/status/disconnect card that remains
+unavailable until this Worker version and its migration are explicitly released.
 
 The Worker validates the configured COROS resource and callback origin against
 public OAuth metadata. Its only MCP tool surface is a hard-coded read allowlist;
