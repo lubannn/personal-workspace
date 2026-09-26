@@ -49,4 +49,23 @@ The implemented flow uses OAuth state plus PKCE, a `__Host-` HttpOnly session
 cookie, a same-origin CSRF token, HMAC-hashed session identifiers, encrypted and
 rotating refresh tokens, and an explicit GitHub user/repository allowlist.
 
-The D1 schema is intentionally limited to authentication sessions. Workspace business data continues to flow directly between the browser and the private GitHub repository.
+The currently deployed D1 schema is limited to authentication sessions. Workspace business data continues to flow directly between the browser and the private GitHub repository.
+
+## COROS automatic sync development (not deployed)
+
+The next migration adds a short-lived OAuth attempt table and encrypted COROS
+connection table. The connector starts paused after authorization. No scheduled
+polling, health-data mapping, or automatic Git writes are deployed yet.
+
+The Worker validates the configured COROS resource and callback origin against
+public OAuth metadata. Its only MCP tool surface is a hard-coded read allowlist;
+the COROS grant itself also includes write tools, which the Worker never calls.
+Disconnect removes the local encrypted credential but does not claim that COROS
+has revoked the remote grant; the user can revoke it in COROS separately.
+
+Background Private repository writes will use a GitHub App installation token
+scoped to this one repository and Contents write. The App private key and
+installation ID must be provisioned as server-side secrets, never placed in
+`wrangler.jsonc`, the PWA bundle, or Git. Until the complete mapper, conflict
+review, scheduled worker, and acceptance tests are in place, do not apply the
+new migration or deploy this branch as an active sync service.

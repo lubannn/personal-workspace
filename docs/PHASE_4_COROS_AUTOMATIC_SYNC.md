@@ -5,6 +5,7 @@
 ## 产品行为
 
 - 用户在 Personal Workspace 单独完成一次 COROS OAuth。Codex 插件的现有授权不能转交给工作台。
+- 首批自动域：运动活动、主睡眠与小睡、日均/静息心率、步数、压力、睡眠 HRV 和恢复状态的日汇总。经期数据、GPS 原始轨迹与逐秒曲线不纳入。
 - 连接后由服务端定时拉取；浏览器关闭时仍能运行。MCP 无 webhook，不能承诺实时到达。
 - 新增、可稳定识别且字段校验通过的记录自动成为正式 Workout / SleepSession / HealthMetric，不要求每条确认。
 - 同一来源 ID 和相同内容的重试是 no-op。相同来源 ID 但内容变化、与手工记录疑似重复、时区或分类不明、字段越界等情况进入待处理区；绝不静默覆盖正式记录。
@@ -14,6 +15,7 @@
 ## 凭据和授权
 
 - COROS 当前 MCP OAuth 元数据只有通用 `mcp.tools` 等 scope，不能声称远端授权是只读。工作台连接器自身使用硬编码读取工具 allowlist，拒绝所有训练写入工具。
+- COROS 的公开文档同时列出 MCP 活动查询/FIT 读取，又注明“COROS 到平台的活动同步需 Partner API”。因此，MCP 活动读取能力不等于自动活动入库的发布许可；在 COROS 确认适用边界或取得 Partner API 接入前，正式运动活动自动同步保持关闭。睡眠与日汇总的实施和验证可独立推进。
 - COROS 刷新凭据仅在服务端加密存储；不进入 Private Git、Public Git、浏览器存储或日志。对现有 GitHub 登录的退出语义，需明确区分“退出当前设备”和“断开后台同步”。
 - 定时任务还需要**独立的服务端 GitHub 写入身份**；现有浏览器 GitHub token 不能在后台使用。优先评估安装范围仅为 `personal-workspace-data` 的 GitHub App installation token，并最小化 Contents 权限。不得复用用户浏览器 token 或把 PAT 存入代码。
 - OAuth 连接、断开和同步控制操作要求已登录用户、同源 CSRF 防护与 GitHub allowlist。调度器不可由公开 HTTP URL 无鉴权触发。
@@ -29,14 +31,14 @@
 ## 发布闸门
 
 1. 仅用合成数据测试授权状态、自动判定、映射、幂等、并发、撤销、失败重试与导出/恢复。未知字段必须 fail closed。
-2. 核实 COROS 官方关于 MCP 读取活动/FIT 与 Partner API “活动同步”限制的适用边界；超出 MCP 许可或限额时转 Partner API，不使用抓取。
+2. 向 COROS 核实 MCP 活动读取/FIT 与 Partner API “活动同步”限制的适用边界；未澄清前不可开启运动活动自动入库。超出 MCP 许可或限额时转 Partner API，不使用抓取。
 3. 先部署关闭的连接器，再由用户在工作台完成 COROS OAuth；不从 Codex 导出/复制凭据。
 4. 对真实数据先运行只读预览，核对至少一条运动、睡眠和心率的字段/单位/时区，然后显式启用定时自动入库。
 5. 验证断开授权后不再拉取；重新授权不会重复创建；现有已确认 Workout 不会被覆盖。
 
 ## 当前状态
 
-目前只有纯函数自动入库判定规则及合成测试。OAuth、定时轮询、Private 仓库服务端写入、COROS 实际数据映射和 UI 尚未实施；自动同步**未启用**。
+目前已增加纯函数自动入库判定规则、COROS OAuth 发现/PKCE/客户端注册与加密连接记录的服务端代码、限定单仓库 Contents 权限的 GitHub App installation token 辅助模块，以及仅允许读取运动/睡眠/日指标的 MCP 工具白名单，并用合成数据测试。连接后默认暂停。它们尚未部署；COROS MCP 实际数据映射、定时轮询、Git 事务、UI 和真实数据验收均未实施，自动同步**未启用**。
 
 ## 依据
 
