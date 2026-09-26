@@ -49,15 +49,17 @@ The implemented flow uses OAuth state plus PKCE, a `__Host-` HttpOnly session
 cookie, a same-origin CSRF token, HMAC-hashed session identifiers, encrypted and
 rotating refresh tokens, and an explicit GitHub user/repository allowlist.
 
-The currently deployed D1 schema is limited to authentication sessions. Workspace business data continues to flow directly between the browser and the private GitHub repository.
+The deployed D1 schema contains authentication sessions plus encrypted COROS connection and short-lived OAuth attempt tables. Workspace business data continues to flow directly between the browser and the private GitHub repository.
 
-## COROS automatic sync development (not deployed)
+## COROS connector staged release (paused)
 
-The next migration adds a short-lived OAuth attempt table and encrypted COROS
-connection table. The connector starts paused after authorization. No scheduled
-polling, health-data mapping, or automatic Git writes are deployed yet.
-The PWA has a separate COROS connection/status/disconnect card that remains
-unavailable until this Worker version and its migration are explicitly released.
+The `0002_coros_connections.sql` migration was applied to the existing D1
+database on 2026-09-26. The paused connector and separate PWA
+connection/status/disconnect card were deployed to the existing `nexus` Worker
+and `personal-workspace-app` Pages project. The Worker version is
+`47bc3613-16f1-4360-ac8f-215e1d6c10b9`; the Pages production deployment is
+`4a4a61cc-0ee2-4d84-8158-15aa0133acf8`. No scheduled polling, health-data
+mapping, or automatic Git writes are deployed.
 An authenticated, CSRF-protected one-day preview can be requested while paused;
 it returns field names and response format only, never health measurements.
 
@@ -67,9 +69,14 @@ the COROS grant itself also includes write tools, which the Worker never calls.
 Disconnect removes the local encrypted credential but does not claim that COROS
 has revoked the remote grant; the user can revoke it in COROS separately.
 
+The user approved this staged release on 2026-09-26. It has no cron trigger,
+no enable-sync route, and no automatic write path.
+After a separate workspace OAuth, the one-day preview is the only COROS read
+available while paused. Releasing this stage does not authorize automatic sync.
+
 Background Private repository writes will use a GitHub App installation token
 scoped to this one repository and Contents write. The App private key and
 installation ID must be provisioned as server-side secrets, never placed in
 `wrangler.jsonc`, the PWA bundle, or Git. Until the complete mapper, conflict
-review, scheduled worker, and acceptance tests are in place, do not apply the
-new migration or deploy this branch as an active sync service.
+review, scheduled worker, and acceptance tests are in place, do not deploy an
+active sync service or enable automatic writes.
