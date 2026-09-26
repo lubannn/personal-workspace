@@ -670,11 +670,12 @@ describe("portable GitHub workspace export", () => {
     expect(inspection.errors.map((error) => error.code)).toContain("TIME_ENTRY_TASK_MISSING");
   });
 
-  it("rejects two active daily Journal entries for the same local date", async () => {
+  it("accepts two active daily Journal entries for the same local date", async () => {
     const exported = await sampleExport();
     const original = exported.files.find((file) => file.path.startsWith("data/journal-entries/"))!;
     const duplicate = JSON.parse(original.content);
     duplicate.id = "journal_entry_duplicate";
+    duplicate.data.current_revision_id = null;
     const content = `${JSON.stringify(duplicate, null, 2)}\n`;
     const path = "data/journal-entries/journal_entry_duplicate.json";
     exported.files.push({ path, content });
@@ -682,7 +683,7 @@ describe("portable GitHub workspace export", () => {
     exported.manifest.counts.files += 1;
     exported.manifest.counts.journal_entries += 1;
     const inspection = await inspectPortableWorkspaceExport(exported);
-    expect(inspection.errors.map((error) => error.code)).toContain("DUPLICATE_ACTIVE_DAILY_JOURNAL");
+    expect(inspection.errors).toEqual([]);
   });
 
   it("validates Journal revision hashes, current pointers and Segment references", async () => {

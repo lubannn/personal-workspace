@@ -365,7 +365,7 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .journal-subtitle { max-width: 760px; margin: 5px 0 0; color: var(--muted); font-size: 10px; line-height: 1.6; }
 .journal-view-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 .journal-form { margin-top: 18px; padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: rgba(255,255,255,.3); }
-.journal-form-meta { display: grid; grid-template-columns: 150px minmax(180px, 1.5fr) minmax(120px, .7fr) minmax(120px, .7fr); gap: 10px; }
+.journal-form-meta { display: grid; grid-template-columns: minmax(150px, 220px); gap: 10px; }
 .journal-form label { display: grid; gap: 6px; color: var(--muted); font-size: 9px; }
 .journal-body { margin-top: 12px; }
 .journal-body textarea { min-height: 190px; resize: vertical; font: 11px/1.7 ui-monospace, SFMono-Regular, Menlo, monospace; }
@@ -384,7 +384,7 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .journal-list > li > div:first-child { min-width: 0; display: grid; gap: 5px; }
 .journal-list span, .journal-list small { color: var(--muted); font-size: 9px; }
 .journal-list strong { font: 500 15px/1.35 ui-serif, Georgia, "Songti SC", serif; }
-.journal-list p { margin: 0; color: var(--soft); font-size: 10px; line-height: 1.65; overflow-wrap: anywhere; }
+.journal-list p { margin: 0; color: var(--ink); font-size: 14px; line-height: 1.65; overflow-wrap: anywhere; }
 .learning-card { margin-top: 18px; padding: 22px; border: 1px solid var(--line); border-radius: 18px; background: var(--paper); box-shadow: var(--shadow); }
 .learning-subtitle { max-width: 720px; margin: 5px 0 0; color: var(--muted); font-size: 10px; line-height: 1.6; }
 .learning-subsection-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 18px; margin-top: 22px; }

@@ -725,7 +725,6 @@ export async function inspectPortableWorkspaceExport(value: unknown): Promise<Ex
 
   const journalEntryIds = new Set<string>();
   const journalEntryRecords = new Map<string, ReturnType<typeof parseJournalEntryRecord>>();
-  const activeDailyDates = new Set<string>();
   const journalEntryFiles = validPayloadFiles.filter((file) => file.path.startsWith("data/journal-entries/"));
   result.counts.journalEntries = journalEntryFiles.length;
   for (const file of journalEntryFiles) {
@@ -736,11 +735,6 @@ export async function inspectPortableWorkspaceExport(value: unknown): Promise<Ex
       if (journalEntryIds.has(record.id)) errors.push({ code: "DUPLICATE_JOURNAL_ENTRY_ID", message: "导出包中存在重复 JournalEntry ID。", path: file.path });
       journalEntryIds.add(record.id);
       journalEntryRecords.set(record.id, record);
-      if (record.deleted_at === null) {
-        const dateKey = `${record.data.entry_kind}:${record.data.journal_date}`;
-        if (activeDailyDates.has(dateKey)) errors.push({ code: "DUPLICATE_ACTIVE_DAILY_JOURNAL", message: "同一日期存在多条未删除的 daily JournalEntry。", path: file.path });
-        activeDailyDates.add(dateKey);
-      }
     } catch { errors.push({ code: "INVALID_JOURNAL_ENTRY_RECORD", message: "JournalEntry 文件无法通过结构校验。", path: file.path }); }
   }
   const rawJournalEntryCount = manifestCounts?.journal_entries;
@@ -886,7 +880,7 @@ export async function inspectPortableWorkspaceExport(value: unknown): Promise<Ex
       const revision = journalRevisionRecords.get(record.data.source_revision_id);
       if (!entry) errors.push({ code: "OBSIDIAN_DOCUMENT_ENTRY_MISSING", message: "ObsidianDocument 引用的 JournalEntry 不在导出包中。", path: file.path });
       if (!revision) errors.push({ code: "OBSIDIAN_DOCUMENT_REVISION_MISSING", message: "ObsidianDocument 引用的 JournalRevision 不在导出包中。", path: file.path });
-      if (entry && !record.data.relative_path.endsWith(`/Journal/${entry.data.journal_date.slice(0, 4)}/${entry.data.journal_date}.md`)) errors.push({ code: "OBSIDIAN_DOCUMENT_DATE_PATH_MISMATCH", message: "ObsidianDocument 路径与 JournalEntry 日期不一致。", path: file.path });
+      if (entry && !matchesJournalExportPath(record.data.relative_path, entry.data.journal_date, entry.id)) errors.push({ code: "OBSIDIAN_DOCUMENT_DATE_PATH_MISMATCH", message: "ObsidianDocument 路径与 JournalEntry 日期不一致。", path: file.path });
       if (revision && (revision.data.journal_entry_id !== record.data.journal_entry_id || revision.data.content_sha256 !== record.data.source_content_sha256)) errors.push({ code: "OBSIDIAN_DOCUMENT_REVISION_MISMATCH", message: "ObsidianDocument 的 Revision 身份或正文哈希不一致。", path: file.path });
       if (entry && entry.version < record.data.source_record_version) errors.push({ code: "OBSIDIAN_DOCUMENT_SOURCE_VERSION_FROM_FUTURE", message: "ObsidianDocument 的来源 record version 高于 JournalEntry。", path: file.path });
     } catch {
@@ -910,7 +904,7 @@ export async function inspectPortableWorkspaceExport(value: unknown): Promise<Ex
       const revision = journalRevisionRecords.get(record.data.source_revision_id);
       if (!entry) errors.push({ code: "SYNC_CONFLICT_ENTRY_MISSING", message: "SyncConflict 引用的 JournalEntry 不在导出包中。", path: file.path });
       if (!revision) errors.push({ code: "SYNC_CONFLICT_REVISION_MISSING", message: "SyncConflict 引用的 JournalRevision 不在导出包中。", path: file.path });
-      if (entry && !record.data.relative_path.endsWith(`/Journal/${entry.data.journal_date.slice(0, 4)}/${entry.data.journal_date}.md`)) errors.push({ code: "SYNC_CONFLICT_DATE_PATH_MISMATCH", message: "SyncConflict 路径与 JournalEntry 日期不一致。", path: file.path });
+      if (entry && !matchesJournalExportPath(record.data.relative_path, entry.data.journal_date, entry.id)) errors.push({ code: "SYNC_CONFLICT_DATE_PATH_MISMATCH", message: "SyncConflict 路径与 JournalEntry 日期不一致。", path: file.path });
       if (revision && revision.data.journal_entry_id !== record.data.journal_entry_id) errors.push({ code: "SYNC_CONFLICT_REVISION_MISMATCH", message: "SyncConflict 的 JournalRevision 不属于目标 JournalEntry。", path: file.path });
       if (record.data.obsidian_document_id) {
         const document = obsidianDocumentRecords.get(record.data.obsidian_document_id);
@@ -1203,4 +1197,9 @@ export async function inspectPortableWorkspaceExport(value: unknown): Promise<Ex
 
 export function serializePortableWorkspaceExport(value: PortableWorkspaceExport) {
   return `${JSON.stringify(value, null, 2)}\n`;
+}
+
+function matchesJournalExportPath(relativePath: string, journalDate: string, journalEntryId: string) {
+  const prefix = `/Journal/${journalDate.slice(0, 4)}/${journalDate}`;
+  return relativePath.endsWith(`${prefix}.md`) || relativePath.endsWith(`${prefix}-${journalEntryId}.md`);
 }

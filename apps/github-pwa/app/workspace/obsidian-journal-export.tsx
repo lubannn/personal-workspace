@@ -61,9 +61,9 @@ export function ObsidianJournalExport({ connection, adapter, online, entries, re
     if (!revision) throw new Error("OBSIDIAN_EXPORT_REVISION_NOT_FOUND");
     const mappingId = await obsidianVaultMappingId(directory.name, subdirectory);
     const document = documents.find((item) => item.record.deleted_at === null && item.record.data.vault_mapping_id === mappingId && item.record.data.journal_entry_id === entry.id) ?? null;
-    const relativePath = expectedObsidianJournalRelativePath(subdirectory, entry.data.journal_date);
-    const currentMarkdown = await createObsidianVaultTextAccess(directory).readText(relativePath);
     const baseline = document ? baselineFromDocument(document) : null;
+    const relativePath = baseline?.relativePath ?? expectedObsidianJournalRelativePath(subdirectory, entry.data.journal_date, entry.id);
+    const currentMarkdown = await createObsidianVaultTextAccess(directory).readText(relativePath);
     const nextPlan = await buildObsidianJournalExportPlan({ vaultName: directory.name, subdirectory, entry, revision, currentMarkdown, baseline });
     return { plan: nextPlan, mappingId, document };
   }

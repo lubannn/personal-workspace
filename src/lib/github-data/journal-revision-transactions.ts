@@ -6,7 +6,6 @@ import {
 } from "./github-contents";
 import {
   createJournalEntryData,
-  hasActiveDailyJournalDate,
   parseJournalEntryRecord,
   updateJournalEntryData,
   type JournalEntryRecord,
@@ -56,7 +55,6 @@ export async function createJournalEntryAtomically(
   const entries = await loadJournalEntries(adapter, entryFiles, snapshot.headCommitSha);
   if (entries.some((entry) => entry.owner_id !== input.ownerId)) throw new Error("JOURNAL_OWNER_MISMATCH");
   if (entries.some((entry) => entry.id === input.journalEntryId)) throw new Error("JOURNAL_ENTRY_ID_CONFLICT");
-  if (hasActiveDailyJournalDate(entries, input.journalDate)) throw new Error("DUPLICATE_ACTIVE_DAILY_JOURNAL");
 
   const revisionItems = await listJsonFiles(adapter, "data/journal-revisions", snapshot.headCommitSha);
   const revisions = await loadJournalRevisions(adapter, revisionItems, snapshot.headCommitSha);

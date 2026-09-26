@@ -215,7 +215,7 @@ describe("atomic Journal revision transactions", () => {
     expect(branchAdvance.writeAtomicFiles).toHaveBeenCalledTimes(1);
   });
 
-  it("rejects tampered hashes, non-latest pointers and duplicate daily creation", async () => {
+  it("rejects tampered hashes and non-latest pointers but permits same-day creation", async () => {
     const validRevision = await journalRevision({ id: "journal_revision_1", body: "第一版", revisionNumber: 1 });
     const current = journalEntry({ body: "第一版", currentRevisionId: validRevision.id });
     const tampered = { ...validRevision, data: { ...validRevision.data, content_sha256: "f".repeat(64) } };
@@ -243,7 +243,7 @@ describe("atomic Journal revision transactions", () => {
     ]);
     await expect(createJournalEntryAtomically(duplicate.adapter, {
       ownerId, journalEntryId: "journal_entry_2", revisionId: "journal_revision_new", journalDate: "2026-08-31", timezone: "Asia/Shanghai", bodyMarkdown: "重复", timestamp,
-    })).rejects.toThrow("DUPLICATE_ACTIVE_DAILY_JOURNAL");
-    expect(duplicate.writeAtomicFiles).not.toHaveBeenCalled();
+    })).resolves.toMatchObject({ entry: { id: "journal_entry_2" } });
+    expect(duplicate.writeAtomicFiles).toHaveBeenCalledTimes(1);
   });
 });

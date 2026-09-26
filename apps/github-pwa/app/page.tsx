@@ -110,7 +110,7 @@ import { confirmHealthStaging, correctPendingHealthStaging, correctPendingSleepH
 import { createConfirmedHealthMetricData } from "../../../src/lib/github-data/health-metrics";
 import { createConfirmedSleepSessionData } from "../../../src/lib/github-data/sleep-sessions";
 import { commitWorkoutConfirmationTransaction, prepareWorkoutConfirmationTransaction } from "../../../src/lib/github-data/workout-confirmation-transaction";
-import { createJournalEntryData, hasActiveDailyJournalDate, updateJournalEntryData } from "../../../src/lib/github-data/journal-entries";
+import { createJournalEntryData, updateJournalEntryData } from "../../../src/lib/github-data/journal-entries";
 import {
   createJournalEntryAtomically,
   JOURNAL_REVISION_WRITES_ENABLED,
@@ -1542,13 +1542,9 @@ export default function GitHubWorkspacePage() {
     finally { setSavingTimeEntryId(null); }
   }
 
-  async function saveJournalEntry(fields: { journalDate: string; title: string; bodyMarkdown: string; mood: string; weather: string }) {
+  async function saveJournalEntry(fields: { journalDate: string; bodyMarkdown: string }) {
     const adapter = adapterRef.current;
     if (!adapter || !connection || savingJournalEntry || online === false) return false;
-    if (hasActiveDailyJournalDate(journalEntryFiles.map((item) => item.record), fields.journalDate)) {
-      setErrorMessage("这一天已经有一篇未删除的 daily 日记；请编辑现有记录，未创建重复日记。");
-      return false;
-    }
     setSavingJournalEntry(true); setErrorMessage(""); setStatusMessage("");
     const timestamp = new Date().toISOString();
     const id = `journal_entry_${timestamp.replaceAll(/\D/g, "").slice(0, 17)}_${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`;
@@ -1561,10 +1557,7 @@ export default function GitHubWorkspacePage() {
           revisionId,
           journalDate: fields.journalDate,
           timezone: connection.timezone,
-          title: fields.title,
           bodyMarkdown: fields.bodyMarkdown,
-          mood: fields.mood,
-          weather: fields.weather,
           timestamp,
         });
         setJournalEntryFiles((current) => [{ record: atomic.entry, path: atomic.entryFile.path, blobSha: atomic.entryFile.blobSha }, ...current]);
@@ -1575,7 +1568,7 @@ export default function GitHubWorkspacePage() {
         setStatusMessage("日记与初始 Revision 已通过一个 Git commit 原子保存；没有连接、扫描或写入 Obsidian Vault。");
         return true;
       }
-      const record = createWorkspaceRecord({ entityType: "journal_entry", id, ownerId: connection.ownerId, timestamp, data: createJournalEntryData({ journalDate: fields.journalDate, timezone: connection.timezone, title: fields.title, bodyMarkdown: fields.bodyMarkdown, mood: fields.mood, weather: fields.weather, timestamp }) });
+      const record = createWorkspaceRecord({ entityType: "journal_entry", id, ownerId: connection.ownerId, timestamp, data: createJournalEntryData({ journalDate: fields.journalDate, timezone: connection.timezone, bodyMarkdown: fields.bodyMarkdown, timestamp }) });
       const result = await adapter.writeText({ path: recordPath("journal_entry", id), text: serializeRecord(record), message: `journal: create ${id}` });
       setJournalEntryFiles((current) => [{ record, path: result.path, blobSha: result.blobSha }, ...current]);
       setStatusMessage("日记已保存到 Private canonical JSON；没有连接、扫描或写入 Obsidian Vault。");
@@ -1586,7 +1579,7 @@ export default function GitHubWorkspacePage() {
     } finally { setSavingJournalEntry(false); }
   }
 
-  async function saveJournalEntryEdit(item: SyncedJournalEntry, fields: { title: string; bodyMarkdown: string; mood: string; weather: string }) {
+  async function saveJournalEntryEdit(item: SyncedJournalEntry, fields: { bodyMarkdown: string }) {
     const adapter = adapterRef.current;
     if (!adapter || !connection || savingJournalEntryId || online === false) return false;
     setSavingJournalEntryId(item.record.id); setErrorMessage(""); setStatusMessage("");
@@ -1600,10 +1593,7 @@ export default function GitHubWorkspacePage() {
           expectedCurrentRevisionId: item.record.data.current_revision_id,
           baselineRevisionId: `journal_revision_${timestamp.replaceAll(/\D/g, "").slice(0, 17)}_${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`,
           revisionId: `journal_revision_${timestamp.replaceAll(/\D/g, "").slice(0, 17)}_${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`,
-          title: fields.title,
           bodyMarkdown: fields.bodyMarkdown,
-          mood: fields.mood,
-          weather: fields.weather,
           timestamp,
         });
         setJournalEntryFiles((current) => current.map((candidate) => candidate.record.id === item.record.id ? { record: atomic.entry, path: atomic.entryFile.path, blobSha: atomic.entryFile.blobSha } : candidate));
@@ -1616,7 +1606,7 @@ export default function GitHubWorkspacePage() {
           : `日记元数据已保存为 v${atomic.entry.version}；正文 Revision 未发生变化。`);
         return true;
       }
-      const updated = updateWorkspaceRecord(item.record, updateJournalEntryData(item.record, { title: fields.title, bodyMarkdown: fields.bodyMarkdown, mood: fields.mood, weather: fields.weather, timestamp }), timestamp);
+      const updated = updateWorkspaceRecord(item.record, updateJournalEntryData(item.record, { bodyMarkdown: fields.bodyMarkdown, timestamp }), timestamp);
       const result = await adapter.writeText({ path: item.path, text: serializeRecord(updated), message: `journal: update ${item.record.id}`, expectedBlobSha: item.blobSha });
       setJournalEntryFiles((current) => current.map((candidate) => candidate.record.id === item.record.id ? { record: updated, path: result.path, blobSha: result.blobSha } : candidate));
       setStatusMessage(`日记修订已保存为 v${updated.version}；日期与首次记录时间保持不变。`);
@@ -1630,10 +1620,6 @@ export default function GitHubWorkspacePage() {
   async function updateJournalEntryDeletion(item: SyncedJournalEntry, operation: "trash" | "restore") {
     const adapter = adapterRef.current;
     if (!adapter || !connection || savingJournalEntryId || online === false) return;
-    if (operation === "restore" && hasActiveDailyJournalDate(journalEntryFiles.map((candidate) => candidate.record), item.record.data.journal_date, item.record.id)) {
-      setErrorMessage("同一天已有另一篇未删除的 daily 日记；为避免日期冲突，本次恢复已停止。");
-      return;
-    }
     setSavingJournalEntryId(item.record.id); setErrorMessage(""); setStatusMessage("");
     const timestamp = new Date().toISOString();
     const updated = setWorkspaceRecordDeleted(item.record, operation === "trash" ? timestamp : null, timestamp);
