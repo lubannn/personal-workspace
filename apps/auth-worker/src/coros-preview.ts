@@ -12,12 +12,30 @@ export function summarizeCorosPreview(result: CorosReadResult): {
 } {
   if (result.format === "content") {
     const blocks = Array.isArray(result.payload) ? result.payload : [];
-    return { machineReadable: false, format: "content", fields: [],
-      blockTypes: blocks.slice(0, 8).map((item) => {
-        const type = item && typeof item === "object" && "type" in item ? item.type : null;
-        return type === "text" || type === "image" || type === "resource" ? type : "other";
-      }) };
+    const blockTypes = blocks.slice(0, 8).map((item) => {
+      const type = item && typeof item === "object" && "type" in item ? item.type : null;
+      return type === "text" || type === "image" || type === "resource" ? type : "other";
+    });
+    // Some MCP servers wrap JSON in a single text block instead of structuredContent.
+    // Accept only a complete JSON object, never prose, Markdown, or mixed blocks.
+    if (blocks.length === 1 && blockTypes[0] === "text" && typeof blocks[0].text === "string") {
+      try {
+        const parsed: unknown = JSON.parse(blocks[0].text);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          const fields = collectFields(parsed);
+          return { machineReadable: fields.length > 0, format: "content", fields, blockTypes };
+        }
+      } catch {
+        // Display text is not a machine-readable contract.
+      }
+    }
+    return { machineReadable: false, format: "content", fields: [], blockTypes };
   }
+  const fields = collectFields(result.payload);
+  return { machineReadable: fields.length > 0, format: "structured", fields, blockTypes: [] };
+}
+
+function collectFields(payload: unknown): string[] {
   const fields: string[] = [];
   const visit = (value: unknown, prefix: string, depth: number) => {
     if (fields.length >= MAX_FIELDS || depth > 4 || !value || typeof value !== "object") return;
@@ -33,6 +51,6 @@ export function summarizeCorosPreview(result: CorosReadResult): {
       visit(child, path, depth + 1);
     }
   };
-  visit(result.payload, "", 0);
-  return { machineReadable: fields.length > 0, format: "structured", fields, blockTypes: [] };
+  visit(payload, "", 0);
+  return fields;
 }

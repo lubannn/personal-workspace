@@ -19,4 +19,23 @@ describe("COROS privacy-safe preview", () => {
     ] });
     expect(summary).toEqual({ machineReadable: false, format: "content", fields: [], blockTypes: ["text", "image"] });
   });
+
+  it("reports keys from a single JSON text block without exposing values", () => {
+    const summary = summarizeCorosPreview({ format: "content", payload: [
+      { type: "text", text: JSON.stringify({ days: [{ date: "2026-09-25", averageHeartRate: 61 }] }) },
+    ] });
+    expect(summary).toEqual({ machineReadable: true, format: "content",
+      fields: ["days", "days[].date", "days[].averageHeartRate"], blockTypes: ["text"] });
+    expect(JSON.stringify(summary)).not.toMatch(/2026-09-25|61/u);
+  });
+
+  it("rejects Markdown, arrays and mixed blocks even when they contain JSON", () => {
+    for (const payload of [
+      [{ type: "text", text: "```json\n{\"heartRate\":61}\n```" }],
+      [{ type: "text", text: "[{\"heartRate\":61}]" }],
+      [{ type: "text", text: "{\"heartRate\":61}" }, { type: "text", text: "more" }],
+    ]) {
+      expect(summarizeCorosPreview({ format: "content", payload }).machineReadable).toBe(false);
+    }
+  });
 });
