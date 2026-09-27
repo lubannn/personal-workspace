@@ -9,7 +9,7 @@ const MONTH_NAMES = ["", "一", "二", "三", "四", "五", "六", "七", "八",
 const MONTH_HEADER = /^(\d{4})年(\d{2})月的日记$/u;
 const MONTH_FOOTER = /^<\s*(\d{2})月\s*><<\s*(\d{4})\s*>>$/u;
 const TIME_HEADING = /^(?:[01]?\d|2[0-3]):[0-5]\d$/u;
-const EMPTY_MONTH_MESSAGE = "这个月没有日记呀～";
+const EMPTY_MONTH_MESSAGES = new Set(["这个月没有日记呀～", "这个月没有日记哦～"]);
 
 type TextSection = { year: number; month: number; headerLine: number; endLine: number };
 
@@ -69,7 +69,7 @@ export async function previewLegacyJournalText(
       }
       if (insideDay && TIME_HEADING.test(value)) paragraphs.push(paragraph(lineIndex, lines[lineIndex]!));
       else if (insideDay) paragraphs.push(bodyParagraph(lineIndex, lines[lineIndex]!));
-      else if (value && value !== EMPTY_MONTH_MESSAGE) structuralDiagnostics.push({ code: "TEXT_CONTENT_OUTSIDE_DAY", severity: "error", message: `${formatMonth(section)} 在首个日期前包含无法归属的内容。`, sourceLocator: locator(lineIndex) });
+      else if (value && !EMPTY_MONTH_MESSAGES.has(value)) structuralDiagnostics.push({ code: "TEXT_CONTENT_OUTSIDE_DAY", severity: "error", message: `${formatMonth(section)} 在首个日期前包含无法归属的内容。`, sourceLocator: locator(lineIndex) });
     }
     if (footerLine < 0) structuralDiagnostics.push({ code: "TEXT_MONTH_FOOTER_MISSING", severity: "error", message: `${formatMonth(section)} 缺少月历页脚，无法安全确定正文边界。`, sourceLocator: locator(section.headerLine) });
   }

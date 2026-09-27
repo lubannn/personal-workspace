@@ -39,6 +39,18 @@ describe("read-only Legacy TXT preview", () => {
     expect(preview.parse.dryRunReady).toBe(false);
   });
 
+  it("accepts known empty-month banners without treating them as diary content", async () => {
+    const preview = await previewLegacyJournalText(textFile([
+      "2026年07月的日记", "这个月没有日记哦～", "< 07月 ><< 2026 >>",
+      "2026年08月的日记", "八", "31", "22:03", "八月正文。", "< 08月 ><< 2026 >>",
+    ].join("\n")), { timezone: "Asia/Shanghai" });
+
+    expect(preview.parse.entries.map((entry) => entry.date)).toEqual(["2026-08-31"]);
+    expect(preview.parse.diagnostics).not.toContainEqual(expect.objectContaining({ code: "TEXT_CONTENT_OUTSIDE_DAY" }));
+    expect(preview.parse.summary.errors).toBe(0);
+    expect(preview.parse.dryRunReady).toBe(true);
+  });
+
   it("preserves exact duplicate entries but reports them", async () => {
     const preview = await previewLegacyJournalText(textFile([
       "2026年07月的日记", "七", "01", "08:39", "相同正文", "08:39", "相同正文", "< 07月 ><< 2026 >>",
