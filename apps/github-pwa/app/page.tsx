@@ -110,7 +110,7 @@ import { confirmHealthStaging, correctPendingHealthStaging, correctPendingSleepH
 import { createConfirmedHealthMetricData } from "../../../src/lib/github-data/health-metrics";
 import { createConfirmedSleepSessionData } from "../../../src/lib/github-data/sleep-sessions";
 import { commitWorkoutConfirmationTransaction, prepareWorkoutConfirmationTransaction } from "../../../src/lib/github-data/workout-confirmation-transaction";
-import { createJournalEntryData, updateJournalEntryData } from "../../../src/lib/github-data/journal-entries";
+import { canWriteJournalDate, createJournalEntryData, updateJournalEntryData } from "../../../src/lib/github-data/journal-entries";
 import {
   createJournalEntryAtomically,
   JOURNAL_REVISION_WRITES_ENABLED,
@@ -1568,6 +1568,9 @@ export default function GitHubWorkspacePage() {
   async function saveJournalEntry(fields: { journalDate: string; bodyMarkdown: string }) {
     const adapter = adapterRef.current;
     if (!adapter || !connection || savingJournalEntry || online === false) return false;
+    if (!canWriteJournalDate(fields.journalDate, localDateInTimezone(connection.timezone))) {
+      setErrorMessage("只能写今天或昨天的日记；未保存。"); return false;
+    }
     setSavingJournalEntry(true); setErrorMessage(""); setStatusMessage("");
     const timestamp = new Date().toISOString();
     const id = `journal_entry_${timestamp.replaceAll(/\D/g, "").slice(0, 17)}_${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`;
@@ -1605,6 +1608,9 @@ export default function GitHubWorkspacePage() {
   async function saveJournalEntryEdit(item: SyncedJournalEntry, fields: { bodyMarkdown: string }) {
     const adapter = adapterRef.current;
     if (!adapter || !connection || savingJournalEntryId || online === false) return false;
+    if (!canWriteJournalDate(item.record.data.journal_date, localDateInTimezone(connection.timezone))) {
+      setErrorMessage("只能修改今天或昨天的日记；未保存。"); return false;
+    }
     setSavingJournalEntryId(item.record.id); setErrorMessage(""); setStatusMessage("");
     const timestamp = new Date().toISOString();
     try {
@@ -1643,6 +1649,9 @@ export default function GitHubWorkspacePage() {
   async function updateJournalEntryDeletion(item: SyncedJournalEntry, operation: "trash" | "restore") {
     const adapter = adapterRef.current;
     if (!adapter || !connection || savingJournalEntryId || online === false) return;
+    if (!canWriteJournalDate(item.record.data.journal_date, localDateInTimezone(connection.timezone))) {
+      setErrorMessage("只能变更今天或昨天的日记；未操作。"); return;
+    }
     setSavingJournalEntryId(item.record.id); setErrorMessage(""); setStatusMessage("");
     const timestamp = new Date().toISOString();
     const updated = setWorkspaceRecordDeleted(item.record, operation === "trash" ? timestamp : null, timestamp);
