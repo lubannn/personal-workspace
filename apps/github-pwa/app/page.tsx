@@ -296,10 +296,8 @@ export default function GitHubWorkspacePage() {
     setReportDraftFiles,
     journalEntryFiles,
     setJournalEntryFiles,
-    journalRevisionFiles,
     setJournalRevisionFiles,
     journalImportCheckpointFiles,
-    obsidianDocumentFiles,
     learningAreaFiles,
     setLearningAreaFiles,
     learningGoalFiles,
@@ -2964,9 +2962,7 @@ export default function GitHubWorkspacePage() {
         online={online}
         todayDate={currentTaskDate}
         journalEntryFiles={journalEntryFiles}
-        journalRevisionFiles={journalRevisionFiles}
         journalImportCheckpointFiles={journalImportCheckpointFiles}
-        obsidianDocumentFiles={obsidianDocumentFiles}
         loading={loadingJournalEntries}
         loadingLegacyHistory={loadingJournalEntries || loadingJournalSegments || loadingJournalRevisions || loadingJournalImportCheckpoints}
         saving={savingJournalEntry}
@@ -2977,7 +2973,6 @@ export default function GitHubWorkspacePage() {
         onRefresh={() => loadJournalEntries()}
         onRefreshLegacyHistory={async () => { await Promise.all([loadJournalEntries(), loadJournalSegments(), loadJournalRevisions(), loadJournalImportCheckpoints()]); }}
         onLegacyImportCommitted={async () => { await Promise.all([loadJournalEntries(), loadJournalSegments(), loadJournalRevisions(), loadJournalImportCheckpoints()]); }}
-        onObsidianCanonicalChanged={async () => { await Promise.all([loadObsidianDocuments(), loadSyncConflicts()]); }}
       />
       </WorkspaceTabPanel>
 

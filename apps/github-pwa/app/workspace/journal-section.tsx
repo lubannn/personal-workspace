@@ -5,9 +5,7 @@ import type { GitHubContentsAdapter } from "../../../../src/lib/github-data/gith
 import { activeJournalEntries, canWriteJournalDate, filterJournalEntries, journalEntryMarkdownFileName, journalEntrySubmittedTime, journalMonthDays, previousJournalDate, renderJournalEntryMarkdown, shiftJournalMonth, trashedJournalEntries } from "../../../../src/lib/github-data/journal-entries";
 import { LegacyJournalImportSection } from "./legacy-journal-import-section";
 import { LegacyJournalCheckpointHistory } from "./legacy-journal-checkpoint-history";
-import { ObsidianVaultPreflight } from "./obsidian-vault-preflight";
-import { ObsidianJournalExport } from "./obsidian-journal-export";
-import type { Connection, SyncedJournalEntry, SyncedJournalImportCheckpoint, SyncedJournalRevision, SyncedObsidianDocument } from "./page-model";
+import type { Connection, SyncedJournalEntry, SyncedJournalImportCheckpoint } from "./page-model";
 
 type JournalFields = { journalDate: string; bodyMarkdown: string };
 
@@ -17,9 +15,7 @@ type Props = {
   online: boolean | null;
   todayDate: string;
   journalEntryFiles: SyncedJournalEntry[];
-  journalRevisionFiles: SyncedJournalRevision[];
   journalImportCheckpointFiles: SyncedJournalImportCheckpoint[];
-  obsidianDocumentFiles: SyncedObsidianDocument[];
   loading: boolean;
   loadingLegacyHistory: boolean;
   saving: boolean;
@@ -30,10 +26,9 @@ type Props = {
   onRefresh: () => void;
   onRefreshLegacyHistory: () => Promise<void>;
   onLegacyImportCommitted: () => Promise<void>;
-  onObsidianCanonicalChanged: () => Promise<void>;
 };
 
-export function JournalSection({ connection, adapter, online, todayDate, journalEntryFiles, journalRevisionFiles, journalImportCheckpointFiles, obsidianDocumentFiles, loading, loadingLegacyHistory, saving, savingId, onCreate, onEdit, onDeletionChange, onRefresh, onRefreshLegacyHistory, onLegacyImportCommitted, onObsidianCanonicalChanged }: Props) {
+export function JournalSection({ connection, adapter, online, todayDate, journalEntryFiles, journalImportCheckpointFiles, loading, loadingLegacyHistory, saving, savingId, onCreate, onEdit, onDeletionChange, onRefresh, onRefreshLegacyHistory, onLegacyImportCommitted }: Props) {
   const [view, setView] = useState<"active" | "trash">("active");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [journalDate, setJournalDate] = useState("");
@@ -101,7 +96,7 @@ export function JournalSection({ connection, adapter, online, todayDate, journal
         <div className="journal-results-header"><div><p className="eyebrow">Journal archive</p><h3>{selectedDay ? `${selectedDay} 的日记` : displayedMonth ? `${displayedMonth.replace("-", "年")}月的日记` : "日记"}</h3></div><span aria-live="polite">{visible.length} 篇</span></div>
         <label className="journal-browser-search"><span>搜索本月日记</span><input type="search" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} maxLength={200} placeholder="搜索正文" disabled={!connection} /></label>
         {!connection ? <p className="empty-note">连接后显示 Private 仓库中的日记。</p> : loading && journalEntryFiles.length === 0 ? <p className="empty-note">正在读取日记…</p> : source.length === 0 ? <p className="empty-note">{view === "active" ? "还没有日记。" : "日记回收站是空的。"}</p> : visible.length === 0 ? <p className="empty-note">这段时间没有符合条件的日记。</p> : <ol className="journal-list">{visible.map((item) => <li key={item.record.id}>
-      <div><span>{item.record.data.journal_date} · 提交于 {journalEntrySubmittedTime(item.record)}（{item.record.data.timezone}）</span><p>{item.record.data.body_markdown}</p><small>{[`v${item.record.version}`, obsidianDocumentFiles.some((document) => document.record.deleted_at === null && document.record.data.journal_entry_id === item.record.id) ? "已有 Obsidian 导出基线" : "尚未导出到 Obsidian"].join(" · ")}</small></div>
+      <div><span>{item.record.data.journal_date} · 提交于 {journalEntrySubmittedTime(item.record)}（{item.record.data.timezone}）</span><p>{item.record.data.body_markdown}</p><small>v{item.record.version}</small></div>
       <div className="journal-item-actions">{view === "active" ? <><button className="text-button" type="button" onClick={() => beginEdit(item)} disabled={busy || !canWriteJournalDate(item.record.data.journal_date, todayDate)} title={canWriteJournalDate(item.record.data.journal_date, todayDate) ? undefined : "只能修改今天或昨天的日记"}>编辑</button><button className="text-button" type="button" onClick={() => downloadMarkdown(item)}>下载 Markdown</button></> : null}<button className="text-button" type="button" onClick={() => onDeletionChange(item, view === "active" ? "trash" : "restore")} disabled={busy || online === false || !canWriteJournalDate(item.record.data.journal_date, todayDate)}>{savingId === item.record.id ? "…" : view === "active" ? "移到回收站" : "恢复"}</button></div>
     </li>)}</ol>}
       </div>
@@ -113,8 +108,6 @@ export function JournalSection({ connection, adapter, online, todayDate, journal
       </aside>
     </div>
     <LegacyJournalCheckpointHistory connection={connection} adapter={adapter} checkpoints={journalImportCheckpointFiles} loading={loadingLegacyHistory} online={online} onRefresh={onRefreshLegacyHistory} />
-    <ObsidianJournalExport connection={connection} adapter={adapter} online={online} entries={journalEntryFiles} revisions={journalRevisionFiles} documents={obsidianDocumentFiles} onCanonicalChanged={onObsidianCanonicalChanged} />
-    <ObsidianVaultPreflight />
     <LegacyJournalImportSection key={connection ? `${connection.ownerLogin}/${connection.repository}/${connection.timezone}` : "disconnected"} connection={connection} adapter={adapter} online={online} onCommitted={onLegacyImportCommitted} />
   </section>;
 }
