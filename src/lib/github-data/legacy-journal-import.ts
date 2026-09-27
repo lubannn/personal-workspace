@@ -13,6 +13,7 @@ export type LegacyWordParagraph = {
   bold?: boolean;
   fontSizePt?: number | null;
   unsupportedObjects?: string[];
+  classificationHint?: "body";
 };
 
 export type LegacyImportDiagnostic = {
@@ -132,6 +133,8 @@ export type LegacyJournalParsePreview = {
 export type LegacyJournalParseOptions = {
   timezone: string;
   sourceSha256?: string;
+  parserVersion?: string;
+  mappingVersion?: string;
   minimumYear?: number;
   maximumYear?: number;
   corrections?: LegacyImportCorrection[];
@@ -348,7 +351,9 @@ export function parseLegacyJournalParagraphs(paragraphs: LegacyWordParagraph[], 
   }
 
   const sourceSha256 = options.sourceSha256 ?? "fixture";
-  const batchIdentity = `${sourceSha256}:${LEGACY_JOURNAL_PARSER_VERSION}:${LEGACY_JOURNAL_MAPPING_VERSION}`;
+  const parserVersion = options.parserVersion ?? LEGACY_JOURNAL_PARSER_VERSION;
+  const mappingVersion = options.mappingVersion ?? LEGACY_JOURNAL_MAPPING_VERSION;
+  const batchIdentity = `${sourceSha256}:${parserVersion}:${mappingVersion}`;
   const entries = entryOrder.map((draft): LegacyJournalEntryPreview => {
     const segments = draft.segments.map((segment) => ({
       time: segment.time,
@@ -374,8 +379,8 @@ export function parseLegacyJournalParagraphs(paragraphs: LegacyWordParagraph[], 
   const counts = countDiagnostics(diagnostics);
   const years = entries.map((entry) => Number(entry.date.slice(0, 4)));
   return {
-    parserVersion: LEGACY_JOURNAL_PARSER_VERSION,
-    mappingVersion: LEGACY_JOURNAL_MAPPING_VERSION,
+    parserVersion,
+    mappingVersion,
     timezone: options.timezone,
     entries,
     tokens,
@@ -452,6 +457,7 @@ function classifyParagraph(paragraph: LegacyWordParagraph, context: { currentYea
   const base = { sourceLocator: paragraph.sourceLocator, originalText: paragraph.text, normalizedText };
   if ((paragraph.unsupportedObjects?.length ?? 0) > 0) return { token: { ...base, kind: "UNSUPPORTED_OBJECT", confidence: "high", evidence: [`Word 容器：${paragraph.unsupportedObjects!.join("、")}`] } };
   if (!normalizedText) return { token: { ...base, kind: "EMPTY", confidence: "high", evidence: ["空段落"] } };
+  if (paragraph.classificationHint === "body") return { token: { ...base, kind: "BODY", confidence: "high", evidence: ["来源格式已明确标记为正文"] } };
 
   const yearMatch = normalizedText.match(/^(\d{4}|[〇零一二三四五六七八九]{4})年?$/u);
   if (yearMatch) {
@@ -510,7 +516,7 @@ function parseDateHeading(value: string): { kind: "valid"; year?: number; month?
 
 function parseTime(value: string): { kind: "valid"; value: string } | { kind: "invalid"; message: string } | { kind: "none" } {
   const match = value.match(/^(?:(上午|下午|晚上|凌晨)\s*)?(\d{1,2})[:：](\d{2})$/u);
-  if (!match) return /\d{1,2}[:：]\d{1,2}/u.test(value) ? { kind: "invalid", message: "段落疑似时间标题，但格式无法安全解析。" } : { kind: "none" };
+  if (!match) return /^(?:(?:上午|下午|晚上|凌晨)\s*)?\d{1,2}[:：]\d{1,2}$/u.test(value) ? { kind: "invalid", message: "段落疑似时间标题，但格式无法安全解析。" } : { kind: "none" };
   const period = match[1];
   let hour = Number(match[2]);
   const minute = Number(match[3]);

@@ -62,6 +62,10 @@ describe("Legacy Journal structural preview", () => {
     expect(classifyLegacyWordParagraph(paragraph(3, "4"), { currentYear: 2012, currentMonth: null }).kind).toBe("BODY");
   });
 
+  it("does not mistake a time mentioned inside body text for an invalid heading", () => {
+    expect(classifyLegacyWordParagraph(paragraph(1, "正文提到 3:00 起床。"), { currentYear: 2012, currentMonth: 3 }).kind).toBe("BODY");
+  });
+
   it("does not attach body after an invalid structural heading to the previous day", () => {
     const preview = parseLegacyJournalParagraphs([
       paragraph(1, "2012年"),

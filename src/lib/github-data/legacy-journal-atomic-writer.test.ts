@@ -34,7 +34,7 @@ function preview(): LegacyDocxPreview {
   const sourceSha256 = "c".repeat(64);
   const parse = parseLegacyJournalParagraphs(paragraphs, { timezone: "Asia/Shanghai", sourceSha256 });
   return {
-    source: { fileName: "fixture.docx", byteSize: 1_024, lastModified: null, sha256: sourceSha256 },
+    source: { fileName: "fixture.docx", byteSize: 1_024, lastModified: null, sha256: sourceSha256, format: "docx" },
     batchIdentity: `${sourceSha256}:${LEGACY_JOURNAL_PARSER_VERSION}:${LEGACY_JOURNAL_MAPPING_VERSION}`,
     parserVersion: LEGACY_JOURNAL_PARSER_VERSION,
     mappingVersion: LEGACY_JOURNAL_MAPPING_VERSION,

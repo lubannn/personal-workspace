@@ -22,7 +22,7 @@ export const JOURNAL_CHANGE_REASONS = [
 export type JournalChangeReason = (typeof JOURNAL_CHANGE_REASONS)[number];
 
 export type JournalSegmentSourceRef = {
-  source_type: "legacy_word";
+  source_type: "legacy_word" | "legacy_text";
   import_batch_id: string;
   source_locator: string;
 };
@@ -156,7 +156,7 @@ function assertSegment(value: JournalSegmentSnapshot) {
   if (!value.body_markdown || value.body_markdown.length > 2_000_000) throw new Error("INVALID_JOURNAL_SEGMENT_BODY");
   if (!Number.isInteger(value.sort_order) || value.sort_order < 0 || value.sort_order > 1_000_000) throw new Error("INVALID_JOURNAL_SEGMENT_ORDER");
   if (value.source_ref !== null) {
-    if (value.source_ref.source_type !== "legacy_word" || !STABLE_ID.test(value.source_ref.import_batch_id) || !value.source_ref.source_locator || value.source_ref.source_locator.length > 500) throw new Error("INVALID_JOURNAL_SEGMENT_SOURCE");
+    if ((value.source_ref.source_type !== "legacy_word" && value.source_ref.source_type !== "legacy_text") || !STABLE_ID.test(value.source_ref.import_batch_id) || !value.source_ref.source_locator || value.source_ref.source_locator.length > 500) throw new Error("INVALID_JOURNAL_SEGMENT_SOURCE");
   }
 }
 
@@ -166,7 +166,7 @@ function parseSourceRef(value: unknown): JournalSegmentSourceRef | null {
   const candidate = value as Record<string, unknown>;
   assertExactKeys(candidate, ["source_type", "import_batch_id", "source_locator"]);
   return {
-    source_type: String(candidate.source_type ?? "") as "legacy_word",
+    source_type: String(candidate.source_type ?? "") as "legacy_word" | "legacy_text",
     import_batch_id: String(candidate.import_batch_id ?? ""),
     source_locator: String(candidate.source_locator ?? ""),
   };

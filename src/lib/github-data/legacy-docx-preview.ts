@@ -13,12 +13,13 @@ export type LegacyDocxFile = {
   arrayBuffer: () => Promise<ArrayBuffer>;
 };
 
-export type LegacyDocxPreview = {
+export type LegacyJournalPreview = {
   source: {
     fileName: string;
     byteSize: number;
     lastModified: string | null;
     sha256: string;
+    format: "docx" | "txt";
   };
   batchIdentity: string;
   parserVersion: string;
@@ -30,6 +31,8 @@ export type LegacyDocxPreview = {
   sourceModified: false;
   commitEnabled: false;
 };
+
+export type LegacyDocxPreview = LegacyJournalPreview;
 
 export async function previewLegacyJournalDocx(file: LegacyDocxFile, options: { timezone: string; minimumYear?: number; maximumYear?: number; corrections?: LegacyImportCorrection[] }): Promise<LegacyDocxPreview> {
   if (!/\.docx$/iu.test(file.name)) throw new Error("LEGACY_IMPORT_DOCX_REQUIRED");
@@ -58,6 +61,7 @@ export async function previewLegacyJournalDocx(file: LegacyDocxFile, options: { 
       byteSize: file.size,
       lastModified: safeModifiedTime(file.lastModified),
       sha256,
+      format: "docx",
     },
     batchIdentity,
     parserVersion: LEGACY_JOURNAL_PARSER_VERSION,

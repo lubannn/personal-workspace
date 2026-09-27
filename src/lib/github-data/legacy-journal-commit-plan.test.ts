@@ -31,7 +31,7 @@ function paragraph(index: number, text: string, sourceLocator = `word/document.x
 function preview(paragraphs: LegacyWordParagraph[], corrections: LegacyImportCorrection[] = []): LegacyDocxPreview {
   const parse = parseLegacyJournalParagraphs(paragraphs, { timezone: "Asia/Shanghai", sourceSha256, corrections });
   return {
-    source: { fileName: "sanitized.docx", byteSize: 1_024, lastModified: null, sha256: sourceSha256 },
+    source: { fileName: "sanitized.docx", byteSize: 1_024, lastModified: null, sha256: sourceSha256, format: "docx" },
     batchIdentity: `${sourceSha256}:${LEGACY_JOURNAL_PARSER_VERSION}:${LEGACY_JOURNAL_MAPPING_VERSION}`,
     parserVersion: LEGACY_JOURNAL_PARSER_VERSION,
     mappingVersion: LEGACY_JOURNAL_MAPPING_VERSION,
@@ -119,6 +119,20 @@ describe("Legacy Journal formal commit preflight contract", () => {
     expect(retry.summary).toEqual({ pending: 0, alreadyImported: 1, conflicts: 0, files: 0 });
     expect(retry.items[0]!.status).toBe("already_imported");
     expect(retry.commitReady).toBe(false);
+  });
+
+  it("uses distinct checkpoint batch identities for different date chunks from one source", async () => {
+    const source = twoDayPreview();
+    const first = await buildLegacyJournalCommitPlan({ preview: source, ownerId, expectedHeadCommitSha: headSha, selectedDates: ["2012-03-05"], existing: emptyExisting(), plannedAt });
+    const second = await buildLegacyJournalCommitPlan({ preview: source, ownerId, expectedHeadCommitSha: headSha, selectedDates: ["2012-03-06"], existing: emptyExisting(), plannedAt });
+    expect(first.importBatchId).not.toBe(second.importBatchId);
+  });
+
+  it("records TXT provenance on imported segments", async () => {
+    const source = twoDayPreview();
+    source.source.format = "txt";
+    const plan = await buildLegacyJournalCommitPlan({ preview: source, ownerId, expectedHeadCommitSha: headSha, selectedDates: ["2012-03-05"], existing: emptyExisting(), plannedAt });
+    expect(plan.items[0]!.artifacts!.segments[0]!.data.source_ref?.source_type).toBe("legacy_text");
   });
 
   it("blocks an existing date, partial deterministic IDs, oversized batches and untraceable locator sets", async () => {

@@ -5,7 +5,7 @@
 > 最后更新：2026-08-31
 > 范围：巨大 Word 文档中的多年纯文字日记，解析为可预览、可审计的 Journal/Markdown 数据。
 
-当前实现边界：PWA 可在浏览器内选择 `.docx` 工作副本，计算源 SHA-256，只解压 `word/document.xml`，提取段落、样式/大纲/加粗/字号提示，按源顺序识别中文或阿拉伯数字年/月/日/时间，并展示按日 Markdown、继承上下文、置信度、orphan、不支持对象和 diagnostics。用户可以为异常或低置信度段落追加带原因、时间和 `supersedesId` 的本地修正，立即重解析并查看差异；结构通过后可下载包含 staging Markdown、machine-readable manifest 和不复制正文的 Import Log 的确定性 ZIP。纯代码预检还能把显式选择的最多 25 个日期确定性映射为 Entry/Revision/Segment，分类 pending、already imported 和 conflict，并生成 checkpoint/回滚预览契约。文件不上传、不修改，不写 GitHub、Journal 或 Vault；Commit 能力固定关闭。当前没有 checkpoint 持久化、正式批量提交或 Obsidian 写入。
+当前实现边界：PWA 可在浏览器内选择 `.docx` 工作副本或 UTF-8 `.txt` 月度日记导出，计算源 SHA-256，并在本地按源顺序识别年、月、日、时间与正文。TXT 解析器会排除每月末尾的日历索引，检查月份连续性、页脚、日期顺序和重复记录；DOCX 继续保留段落样式诊断与人工修正链。结构通过后可下载确定性 Dry Run，并把整份来源确定性切成满足日期数与 250 文件原子上限的安全批次。每批独立使用 import batch identity、精确 HEAD、typed confirmation、checkpoint 和 reconciliation；文件原件不会上传或修改。
 
 ## 1. 目标
 
@@ -302,7 +302,7 @@ schema_version: 1
 
 批量提交使用小批次检查点，避免巨大事务。每个小批次要么完整成功，要么回滚；整批可部分完成，但 UI 必须准确显示已提交与未提交范围。
 
-当前已实现正式写入前的纯函数 plan：每次显式选择 1–25 天，以精确 branch HEAD 和同一 snapshot 下的现有 Journal 集合作为输入，生成确定性 segment-mode Entry/Revision/Segment 文件、SHA-256、幂等状态和冲突原因。生产 Commit 常量仍为 false，尚未调用 GitHub write API。完整边界见 `PHASE_3_LEGACY_COMMIT_PLAN.md`。
+当前已实现正式写入 plan 与受控 Commit：用户选择整份来源文件，工作台确定性生成满足单批日期数和 250 文件上限的批次；每批以精确 branch HEAD 和同一 snapshot 下的现有 Journal 集合作为输入，生成 segment-mode Entry/Revision/Segment、SHA-256、幂等状态、独立 batch identity 和冲突原因。完整边界见 `PHASE_3_LEGACY_COMMIT_PLAN.md`。
 
 ## 11. Import Log 与 Manifest
 

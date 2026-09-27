@@ -20,7 +20,7 @@ function preview(): LegacyDocxPreview {
     { sourceLocator: "word/document.xml#p3", text: "脱敏正文" },
   ], { timezone: "Asia/Shanghai", sourceSha256 });
   return {
-    source: { fileName: "sanitized.docx", byteSize: 1_024, lastModified: null, sha256: sourceSha256 },
+    source: { fileName: "sanitized.docx", byteSize: 1_024, lastModified: null, sha256: sourceSha256, format: "docx" },
     batchIdentity: `${sourceSha256}:${LEGACY_JOURNAL_PARSER_VERSION}:${LEGACY_JOURNAL_MAPPING_VERSION}`,
     parserVersion: LEGACY_JOURNAL_PARSER_VERSION,
     mappingVersion: LEGACY_JOURNAL_MAPPING_VERSION,
