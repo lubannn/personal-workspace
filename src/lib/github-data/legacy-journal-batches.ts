@@ -36,4 +36,3 @@ export function buildLegacyJournalDateBatches(entries: LegacyJournalPreview["par
   flush();
   return batches;
 }
-

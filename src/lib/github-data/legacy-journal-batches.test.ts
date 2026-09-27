@@ -22,4 +22,3 @@ describe("Legacy Journal safe date batches", () => {
     expect(() => buildLegacyJournalDateBatches([entry(1, 248)])).toThrow("LEGACY_IMPORT_SINGLE_DATE_FILE_LIMIT_EXCEEDED");
   });
 });
-

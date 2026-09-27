@@ -49,4 +49,3 @@ describe("read-only Legacy TXT preview", () => {
     expect(preview.parse.dryRunReady).toBe(true);
   });
 });
-
