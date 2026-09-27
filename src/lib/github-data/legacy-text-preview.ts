@@ -117,13 +117,23 @@ function findSections(lines: string[]) {
 function exactDuplicateDiagnostics(entries: LegacyJournalPreview["parse"]["entries"]) {
   const diagnostics: LegacyImportDiagnostic[] = [];
   for (const entry of entries) {
-    const seen = new Map<string, number>();
+    const seen = new Map<string, typeof entry.segments>();
     for (const segment of entry.segments) {
       const key = `${segment.time ?? ""}\n${segment.bodyMarkdown}`;
-      seen.set(key, (seen.get(key) ?? 0) + 1);
+      seen.set(key, [...(seen.get(key) ?? []), segment]);
     }
-    const groups = [...seen.values()].filter((count) => count > 1);
-    if (groups.length) diagnostics.push({ code: "TEXT_EXACT_DUPLICATE_ENTRIES_PRESERVED", severity: "warning", message: `${entry.date} 有 ${groups.length} 组日期、时间和正文完全相同的记录；为避免误删，预览会原样保留。` });
+    const groups = [...seen.values()].filter((segments) => segments.length > 1);
+    if (groups.length) diagnostics.push({
+      code: "TEXT_EXACT_DUPLICATE_ENTRIES_PRESERVED",
+      severity: "warning",
+      message: `${entry.date} 有 ${groups.length} 组日期、时间和正文完全相同的记录；为避免误删，预览会原样保留。`,
+      duplicateGroups: groups.map((segments) => ({
+        date: entry.date,
+        time: segments[0]!.time,
+        bodyMarkdown: segments[0]!.bodyMarkdown,
+        occurrences: segments.map((segment) => ({ sourceLocators: segment.sourceLocators })),
+      })),
+    });
   }
   return diagnostics;
 }

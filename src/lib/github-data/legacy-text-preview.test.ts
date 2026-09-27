@@ -57,7 +57,16 @@ describe("read-only Legacy TXT preview", () => {
     ].join("\n")), { timezone: "Asia/Shanghai" });
 
     expect(preview.parse.entries[0]!.segments).toHaveLength(2);
-    expect(preview.parse.diagnostics).toContainEqual(expect.objectContaining({ code: "TEXT_EXACT_DUPLICATE_ENTRIES_PRESERVED", severity: "warning" }));
+    expect(preview.parse.diagnostics).toContainEqual(expect.objectContaining({
+      code: "TEXT_EXACT_DUPLICATE_ENTRIES_PRESERVED",
+      severity: "warning",
+      duplicateGroups: [{
+        date: "2026-07-01",
+        time: "08:39",
+        bodyMarkdown: "相同正文",
+        occurrences: [{ sourceLocators: ["text#line4", "text#line5"] }, { sourceLocators: ["text#line6", "text#line7"] }],
+      }],
+    }));
     expect(preview.parse.dryRunReady).toBe(true);
   });
 });

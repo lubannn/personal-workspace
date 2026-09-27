@@ -21,6 +21,12 @@ export type LegacyImportDiagnostic = {
   severity: LegacyImportSeverity;
   message: string;
   sourceLocator?: string;
+  duplicateGroups?: Array<{
+    date: string;
+    time: string | null;
+    bodyMarkdown: string;
+    occurrences: Array<{ sourceLocators: string[] }>;
+  }>;
 };
 
 export type LegacyParagraphToken = {
