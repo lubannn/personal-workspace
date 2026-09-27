@@ -540,11 +540,12 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .legacy-import-preview-heading > div:last-child { display: flex; flex-wrap: wrap; gap: 7px; }
 .legacy-import-entries { margin: 10px 0 0; padding: 0; list-style: none; }
 .legacy-import-entries > li { padding: 14px 0; border-top: 1px solid var(--line); }
-.legacy-import-entries > li > div { display: flex; align-items: baseline; flex-wrap: wrap; gap: 10px; }
-.legacy-import-entries strong { font-size: 11px; }
-.legacy-import-entries span, .legacy-import-entries code { color: var(--muted); font-size: 8px; overflow-wrap: anywhere; }
-.legacy-import-entries p { margin: 7px 0 0; color: var(--soft); font-size: 9px; }
-.legacy-import-entries pre { max-height: 260px; margin: 9px 0 0; padding: 12px; overflow: auto; border-radius: 10px; background: #292923; color: #efeee8; white-space: pre-wrap; overflow-wrap: anywhere; font: 9px/1.65 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.legacy-import-entries h5 { margin: 0 0 9px; font-size: 12px; }
+.legacy-journal-reading { overflow: hidden; border: 1px solid var(--line); border-radius: 11px; background: var(--paper); }
+.legacy-journal-reading-row { display: grid; grid-template-columns: 66px minmax(0,1fr); align-items: start; }
+.legacy-journal-reading-row + .legacy-journal-reading-row { border-top: 1px solid var(--line); }
+.legacy-journal-reading-row time { padding: 11px 10px; color: var(--muted); font: 9px/1.7 ui-monospace, SFMono-Regular, Menlo, monospace; text-align: right; }
+.legacy-journal-reading-row p { min-width: 0; margin: 0; padding: 11px 14px; border-left: 1px solid var(--line); color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; font-size: 10px; line-height: 1.75; }
 .legacy-dry-run { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 14px; margin-top: 18px; padding: 15px; border: 1px solid; border-radius: 13px; }
 .legacy-dry-run.ready { border-color: #b9c9b4; background: #e7ede4; color: #40513d; }
 .legacy-dry-run.blocked { border-color: var(--line); background: rgba(255,255,255,.22); color: var(--muted); }
@@ -705,6 +706,9 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
   .legacy-import-picker { align-items: stretch; flex-direction: column; }
   .legacy-import-summary { grid-template-columns: repeat(2, minmax(0,1fr)); }
   .legacy-import-diagnostics li { grid-template-columns: 1fr; gap: 3px; }
+  .legacy-journal-reading-row { grid-template-columns: 54px minmax(0,1fr); }
+  .legacy-journal-reading-row time { padding-inline: 7px; }
+  .legacy-journal-reading-row p { padding-inline: 11px; }
   .legacy-correction-form { grid-template-columns: 1fr; }
   .legacy-correction-reason { grid-column: auto; }
   .legacy-dry-run { grid-template-columns: 1fr; align-items: stretch; }

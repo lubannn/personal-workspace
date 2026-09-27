@@ -333,13 +333,17 @@ export function LegacyJournalImportSection({ connection, adapter, online, onComm
         {preview.parse.corrections.length ? <ol className="legacy-correction-history">{preview.parse.corrections.map((correction) => <li key={correction.id}><div><code>{correction.sourceLocator}</code><strong>{correction.action}</strong><span>{correction.recordedAt}</span></div><p>{correction.reason}</p>{correction.supersedesId ? <small>取代 {correction.supersedesId}</small> : null}</li>)}</ol> : null}
       </div>
       <div className="legacy-import-preview-heading">
-        <div><h4>按日 Markdown 预览</h4><span>显示 {Math.min(visibleEntries.length, 100)} / {visibleEntries.length}；源顺序保持不变</span></div>
+        <div><h4>日记预览</h4><span>显示 {Math.min(visibleEntries.length, 100)} / {visibleEntries.length}；源顺序保持不变</span></div>
         <div aria-label="预览筛选"><button className="view-button" type="button" aria-pressed={filter === "all"} onClick={() => setFilter("all")}>全部</button><button className="view-button" type="button" aria-pressed={filter === "issues"} onClick={() => setFilter("issues")}>仅异常</button><button className="view-button" type="button" aria-pressed={filter === "low-confidence"} onClick={() => setFilter("low-confidence")}>低置信度</button></div>
       </div>
       {visibleEntries.length === 0 ? <p className="empty-note">当前筛选没有条目。</p> : <ol className="legacy-import-entries">{visibleEntries.slice(0, 100).map((entry) => <li key={entry.date}>
-        <div><strong>{entry.date}</strong><span>{entry.segments.length} segments · {entry.confidence} confidence</span><code>{entry.outputPath}</code></div>
-        {entry.inheritedContext.length ? <p>{entry.inheritedContext.join("；")}</p> : null}
-        <pre>{entry.markdown}</pre>
+        <h5>{entry.date}</h5>
+        <div className="legacy-journal-reading" aria-label={`${entry.date} 的日记`}>
+          {entry.segments.map((segment, index) => <div className="legacy-journal-reading-row" key={`${entry.date}-${segment.time ?? "untimed"}-${index}`}>
+            <time>{segment.time ?? "—"}</time>
+            <p>{segment.bodyMarkdown}</p>
+          </div>)}
+        </div>
       </li>)}</ol>}
       {visibleEntries.length > 100 ? <p className="empty-note">为避免巨大文档阻塞界面，本页只渲染前 100 条；统计与诊断仍覆盖整份文档。</p> : null}
       <div className={`legacy-dry-run ${preview.parse.dryRunReady && !blocking ? "ready" : "blocked"}`}>
