@@ -469,14 +469,34 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     setLoadingJournalEntries(true);
     setErrorMessage("");
     try {
+      const indexed = new Map<string, SyncedJournalEntry>();
+      try {
+        const file = await adapter.readText("data/journal-history-index.json");
+        const index: unknown = JSON.parse(file.text);
+        if (!index || typeof index !== "object" || !("kind" in index) || index.kind !== "legacy_journal_entry_index" || !("entries" in index) || !Array.isArray(index.entries)) {
+          throw new Error("INVALID_JOURNAL_HISTORY_INDEX");
+        }
+        for (const entry of index.entries) {
+          if (!entry || typeof entry.path !== "string" || !/^data\/journal-entries\/[^/]+\.json$/.test(entry.path) || typeof entry.blobSha !== "string" || !/^[a-f0-9]{40}$/.test(entry.blobSha)) {
+            throw new Error("INVALID_JOURNAL_HISTORY_INDEX");
+          }
+          indexed.set(entry.path, { record: parseJournalEntryRecord(JSON.stringify(entry.record)), path: entry.path, blobSha: entry.blobSha });
+        }
+      } catch (error) {
+        if (!(error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND")) throw error;
+      }
       let items;
       try { items = await adapter.listDirectory("data/journal-entries"); }
       catch (error) {
         if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") { setJournalEntryFiles([]); return; }
         throw error;
       }
-      const candidates = items.filter((item) => item.type === "file" && item.name.endsWith(".json")).sort((left, right) => right.name.localeCompare(left.name));
-      const records: SyncedJournalEntry[] = [];
+      const files = items.filter((item) => item.type === "file" && item.name.endsWith(".json"));
+      const candidates = files.filter((item) => indexed.get(item.path)?.blobSha !== item.blobSha).sort((left, right) => right.name.localeCompare(left.name));
+      const records: SyncedJournalEntry[] = files.flatMap((item) => {
+        const match = indexed.get(item.path);
+        return match?.blobSha === item.blobSha ? [match] : [];
+      });
       for (let index = 0; index < candidates.length; index += 6) {
         records.push(...(await Promise.all(candidates.slice(index, index + 6).map(async (item) => {
           try { const file = await adapter.readText(item.path); return { record: parseJournalEntryRecord(file.text), path: file.path, blobSha: file.blobSha }; }

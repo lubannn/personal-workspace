@@ -583,8 +583,6 @@ export default function GitHubWorkspacePage() {
         loadCalendarEvents(opened.adapter),
         loadReportDrafts(opened.adapter),
         loadJournalEntries(opened.adapter),
-        loadJournalSegments(opened.adapter),
-        loadJournalRevisions(opened.adapter),
         loadJournalImportCheckpoints(opened.adapter),
         loadObsidianDocuments(opened.adapter),
         loadSyncConflicts(opened.adapter),
@@ -2971,8 +2969,8 @@ export default function GitHubWorkspacePage() {
         onEdit={saveJournalEntryEdit}
         onDeletionChange={updateJournalEntryDeletion}
         onRefresh={() => loadJournalEntries()}
-        onRefreshLegacyHistory={async () => { await Promise.all([loadJournalEntries(), loadJournalSegments(), loadJournalRevisions(), loadJournalImportCheckpoints()]); }}
-        onLegacyImportCommitted={async () => { await Promise.all([loadJournalEntries(), loadJournalSegments(), loadJournalRevisions(), loadJournalImportCheckpoints()]); }}
+        onRefreshLegacyHistory={async () => { await Promise.all([loadJournalEntries(), loadJournalImportCheckpoints()]); }}
+        onLegacyImportCommitted={async () => { await Promise.all([loadJournalEntries(), loadJournalImportCheckpoints()]); }}
       />
       </WorkspaceTabPanel>
 
