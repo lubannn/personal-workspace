@@ -104,4 +104,26 @@ describe("Legacy Journal checkpoint history and read-only rollback preview", () 
     } as unknown as GitHubContentsAdapter;
     await expect(readLegacyJournalCheckpointRollbackPreview(adapter, checkpointPath)).rejects.toThrow("LEGACY_ROLLBACK_PREVIEW_HEAD_CHANGED");
   });
+
+  it("reads only the selected checkpoint files when the repository contains other journal records", async () => {
+    const { artifacts, checkpoint } = await fixture();
+    const checkpointPath = recordPath("journal_import_checkpoint", checkpoint.id);
+    const files = new Map([
+      [recordPath("journal_entry", artifacts.entry.id), serializeRecord(artifacts.entry)],
+      [recordPath("journal_revision", artifacts.revision.id), serializeRecord(artifacts.revision)],
+      ...artifacts.segments.map((record) => [recordPath("journal_segment", record.id), serializeRecord(record)] as const),
+      [checkpointPath, serializeRecord(checkpoint)],
+      ["data/journal-revisions/journal_legacy_other_r1.json", "not requested"],
+      ["data/journal-segments/journal_legacy_other_s0001.json", "not requested"],
+    ]);
+    const reads: string[] = [];
+    const adapter = {
+      readBranchSnapshot: async () => ({ branch: "main", headCommitSha: headSha, rootTreeSha: "b".repeat(40) }),
+      listDirectory: async (directory: string) => [...files.keys()].filter((path) => path.startsWith(`${directory}/`)).map((path) => ({ type: "file" as const, name: path.slice(directory.length + 1), path, blobSha: "d".repeat(40), sizeBytes: files.get(path)!.length })),
+      readText: async (path: string) => { reads.push(path); return { path, text: files.get(path)!, blobSha: "d".repeat(40), sizeBytes: files.get(path)!.length }; },
+    } as unknown as GitHubContentsAdapter;
+    await expect(readLegacyJournalCheckpointRollbackPreview(adapter, checkpointPath)).resolves.toMatchObject({ summary: { ready: 1, blocked: 0 } });
+    expect(reads).not.toContain("data/journal-revisions/journal_legacy_other_r1.json");
+    expect(reads).not.toContain("data/journal-segments/journal_legacy_other_s0001.json");
+  });
 });

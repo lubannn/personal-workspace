@@ -1,9 +1,9 @@
-import type { GitHubContentsAdapter } from "./github-contents";
+import { GitHubDataError, type GitHubContentsAdapter } from "./github-contents";
 import type { JournalEntryRecord } from "./journal-entries";
+import { parseJournalEntryRecord } from "./journal-entries";
 import { parseJournalImportCheckpointRecord, type JournalImportCheckpointRecord } from "./journal-import-checkpoints";
-import type { JournalRevisionRecord } from "./journal-revisions";
-import type { JournalSegmentRecord } from "./journal-segments";
-import { readLegacyJournalPlanningSnapshot } from "./legacy-journal-atomic-writer";
+import { parseJournalRevisionRecord, type JournalRevisionRecord } from "./journal-revisions";
+import { parseJournalSegmentRecord, type JournalSegmentRecord } from "./journal-segments";
 import { recordPath, serializeRecord } from "./protocol";
 
 type SyncedRecord<T> = { record: T; blobSha: string };
@@ -114,18 +114,52 @@ export async function buildLegacyJournalCheckpointRollbackPreview(input: {
 
 export async function readLegacyJournalCheckpointRollbackPreview(adapter: GitHubContentsAdapter, checkpointPath: string) {
   if (!/^data\/journal-import-checkpoints\/[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}\.json$/u.test(checkpointPath)) throw new Error("INVALID_LEGACY_ROLLBACK_CHECKPOINT_PATH");
-  const planning = await readLegacyJournalPlanningSnapshot(adapter);
-  const checkpoint = parseJournalImportCheckpointRecord((await adapter.readText(checkpointPath, planning.headCommitSha)).text);
+  const snapshot = await adapter.readBranchSnapshot();
+  const checkpoint = parseJournalImportCheckpointRecord((await adapter.readText(checkpointPath, snapshot.headCommitSha)).text);
   if (recordPath("journal_import_checkpoint", checkpoint.id) !== checkpointPath) throw new Error("LEGACY_ROLLBACK_CHECKPOINT_PATH_MISMATCH");
-  const entryFiles = await Promise.all(checkpoint.data.items.map((item) => adapter.readText(recordPath("journal_entry", item.entry_id), planning.headCommitSha)));
+  const entryIds = new Set(checkpoint.data.items.map((item) => item.entry_id));
+  const [revisionItems, segmentItems] = await Promise.all([
+    adapter.listDirectory("data/journal-revisions", snapshot.headCommitSha),
+    adapter.listDirectory("data/journal-segments", snapshot.headCommitSha),
+  ]);
+  const relevant = (name: string) => entryIds.has(name.replace(/_(?:r\d+|s\d+)\.json$/u, "")) || !name.startsWith("journal_legacy_");
+  const revisionPaths = revisionItems.filter((item) => item.type === "file" && item.name.endsWith(".json") && relevant(item.name)).map((item) => item.path);
+  const segmentPaths = segmentItems.filter((item) => item.type === "file" && item.name.endsWith(".json") && relevant(item.name)).map((item) => item.path);
+  if (revisionPaths.length + segmentPaths.length > 500) throw new Error("LEGACY_ROLLBACK_PREVIEW_SCOPE_TOO_LARGE");
+  const entryFiles = await readOptionalRecords(checkpoint.data.items.map((item) => recordPath("journal_entry", item.entry_id)), snapshot.headCommitSha, adapter, parseJournalEntryRecord, "journal_entry");
+  const revisionFiles = await readOptionalRecords(revisionPaths, snapshot.headCommitSha, adapter, parseJournalRevisionRecord, "journal_revision");
+  const segmentFiles = await readOptionalRecords(segmentPaths, snapshot.headCommitSha, adapter, parseJournalSegmentRecord, "journal_segment");
   const endingSnapshot = await adapter.readBranchSnapshot();
-  if (endingSnapshot.headCommitSha !== planning.headCommitSha) throw new Error("LEGACY_ROLLBACK_PREVIEW_HEAD_CHANGED");
+  if (endingSnapshot.headCommitSha !== snapshot.headCommitSha) throw new Error("LEGACY_ROLLBACK_PREVIEW_HEAD_CHANGED");
   return buildLegacyJournalCheckpointRollbackPreview({
     checkpoint,
-    entries: checkpoint.data.items.map((item, index) => ({ record: planning.entries.find((entry) => entry.id === item.entry_id)!, blobSha: entryFiles[index]!.blobSha })).filter((item) => Boolean(item.record)),
-    revisions: planning.revisions.map((record) => ({ record })),
-    segments: planning.segments.map((record) => ({ record })),
+    entries: entryFiles.filter((item): item is { record: JournalEntryRecord; blobSha: string } => item !== null),
+    revisions: revisionFiles.filter((item): item is { record: JournalRevisionRecord; blobSha: string } => item !== null)
+      .filter((item) => entryIds.has(item.record.data.journal_entry_id)),
+    segments: segmentFiles.filter((item): item is { record: JournalSegmentRecord; blobSha: string } => item !== null)
+      .filter((item) => entryIds.has(item.record.data.journal_entry_id)),
   });
+}
+
+async function readOptionalRecords<T extends { id: string }>(
+  paths: string[], ref: string, adapter: GitHubContentsAdapter, parse: (text: string) => T,
+  entityType: "journal_entry" | "journal_revision" | "journal_segment",
+): Promise<Array<{ record: T; blobSha: string } | null>> {
+  const results: Array<{ record: T; blobSha: string } | null> = [];
+  for (let offset = 0; offset < paths.length; offset += 12) {
+    results.push(...await Promise.all(paths.slice(offset, offset + 12).map(async (path) => {
+      try {
+        const file = await adapter.readText(path, ref);
+        const record = parse(file.text);
+        if (recordPath(entityType, record.id) !== path) throw new Error("LEGACY_ROLLBACK_REMOTE_PATH_MISMATCH");
+        return { record, blobSha: file.blobSha };
+      } catch (error) {
+        if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") return null;
+        throw error;
+      }
+    })));
+  }
+  return results;
 }
 
 function isGitSha(value: string) { return /^[a-f0-9]{40}$/u.test(value); }

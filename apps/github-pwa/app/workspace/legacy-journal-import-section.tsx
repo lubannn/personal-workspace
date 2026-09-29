@@ -8,8 +8,9 @@ import { buildLegacyJournalDryRun } from "../../../../src/lib/github-data/legacy
 import { buildLegacyJournalCommitPlan, LEGACY_JOURNAL_IMPORT_COMMIT_ENABLED, type LegacyJournalCommitPlan } from "../../../../src/lib/github-data/legacy-journal-commit-plan";
 import { buildLegacyJournalDateBatches } from "../../../../src/lib/github-data/legacy-journal-batches";
 import { buildLegacyJournalCommitActionConfirmation, legacyJournalCommitStatusFromReconciliation, runLegacyJournalCommitAttempt, type LegacyJournalCommitActionStatus } from "../../../../src/lib/github-data/legacy-journal-commit-action";
-import { prepareLegacyJournalAtomicPayload, readLegacyJournalPlanningSnapshot, reconcileLegacyJournalBatch, writeLegacyJournalBatchAtomically, type LegacyJournalAtomicPayloadPreview, type LegacyJournalAtomicWriteResult, type LegacyJournalReconciliation } from "../../../../src/lib/github-data/legacy-journal-atomic-writer";
-import type { GitHubContentsAdapter } from "../../../../src/lib/github-data/github-contents";
+import { prepareLegacyJournalAtomicPayload, readLegacyJournalScopedPlanningSnapshot, reconcileLegacyJournalBatch, writeLegacyJournalBatchAtomically, type LegacyJournalAtomicPayloadPreview, type LegacyJournalAtomicWriteResult, type LegacyJournalReconciliation } from "../../../../src/lib/github-data/legacy-journal-atomic-writer";
+import { isLegacyJournalSourceFullyImported } from "../../../../src/lib/github-data/legacy-journal-import-status";
+import { GitHubDataError, type GitHubContentsAdapter } from "../../../../src/lib/github-data/github-contents";
 import {
   compareLegacyJournalPreviews,
   type LegacyImportCorrection,
@@ -169,8 +170,12 @@ export function LegacyJournalImportSection({ connection, adapter, online, onComm
     setError(null);
     resetCommitPlan();
     try {
-      const snapshot = await readLegacyJournalPlanningSnapshot(adapter);
       const batches = buildLegacyJournalDateBatches(preview.parse.entries);
+      const snapshot = await readLegacyJournalScopedPlanningSnapshot(adapter, preview.parse.entries.map((entry) => entry.date));
+      if (await isLegacyJournalSourceFullyImported(adapter, preview, snapshot)) {
+        setCommitNotice("这份文件中的全部日期都已经导入，无需再次提交。");
+        return;
+      }
       let nextPlan: LegacyJournalCommitPlan | null = null;
       for (const batch of batches) {
         const candidate = await buildLegacyJournalCommitPlan({
@@ -181,6 +186,7 @@ export function LegacyJournalImportSection({ connection, adapter, online, onComm
           existing: snapshot,
           plannedAt: new Date().toISOString(),
         });
+        if (candidate.files.some((file) => snapshot.existingPaths.has(file.path))) throw new Error("LEGACY_IMPORT_REMOTE_PATH_CONFLICT");
         if (candidate.summary.pending > 0 || candidate.summary.conflicts > 0) { nextPlan = candidate; break; }
       }
       if (!nextPlan) {
@@ -191,7 +197,7 @@ export function LegacyJournalImportSection({ connection, adapter, online, onComm
       setPlan(nextPlan);
       setPayload(nextPayload);
     } catch (caught) {
-      setError(friendlyLegacyImportError(caught));
+      setError(friendlyLegacyImportError(caught, "remote"));
     } finally {
       setPlanning(false);
     }
@@ -210,7 +216,7 @@ export function LegacyJournalImportSection({ connection, adapter, online, onComm
         if (result.status === "committed") await onCommitted();
       }
     } catch (caught) {
-      if (commitStatus === "idle") setError(friendlyLegacyImportError(caught));
+      if (commitStatus === "idle") setError(friendlyLegacyImportError(caught, "remote"));
       else {
         setCommitStatus("unknown");
         setCommitNotice("仍无法确认本批结果。禁止再次提交；请恢复网络后只读核对当前计划，或重新加载数据并人工处理。");
@@ -294,7 +300,7 @@ export function LegacyJournalImportSection({ connection, adapter, online, onComm
       <label className={`file-picker ${checking ? "disabled" : ""}`}>{checking ? "正在只读解析…" : "选择完整日记 .txt / .docx"}<input key={pickerKey} type="file" accept="text/plain,.txt,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx" onChange={inspectFile} disabled={checking} /></label>
       <span>TXT 最大 32 MiB · DOCX 最大 256 MiB · 默认时区 {timezone}</span>
     </div>
-    {error ? <div className="legacy-import-error" role="alert"><strong>本地处理未完成</strong><p>{error}</p></div> : null}
+    {error ? <div className="legacy-import-error" role="alert"><strong>操作未完成</strong><p>{error}</p></div> : null}
     {preview ? <>
       <div className="legacy-import-source">
         <div><strong>{preview.source.fileName}</strong><span>{formatBytes(preview.source.byteSize)} · {preview.source.format === "docx" ? `${preview.archiveEntryCount} 个 ZIP 条目` : "UTF-8 TXT"} · 原文件未修改</span></div>
@@ -355,6 +361,7 @@ export function LegacyJournalImportSection({ connection, adapter, online, onComm
         <div className="legacy-commit-heading"><div><p className="eyebrow">Fail-closed commit review</p><h4 id="legacy-commit-title">Legacy Journal 精确提交计划</h4><p>计划读取同一 branch snapshot 并固定 HEAD、目标日期、canonical 文件与 hash。生成计划和 reconciliation 都是只读操作。</p></div><span className="legacy-production-gate" data-open={LEGACY_JOURNAL_IMPORT_COMMIT_ENABLED}>Production gate · {LEGACY_JOURNAL_IMPORT_COMMIT_ENABLED ? "OPEN" : "CLOSED"}</span></div>
         <div className="legacy-import-gate ready"><strong>自动安全分批</strong><p>整份文件只需选择一次。工作台会按原子文件上限确定批次；每批提交后点击“生成下一安全批次”即可继续，中断后重新选择同一文件也会跳过已确认批次。</p></div>
         <button className="secondary-button" type="button" onClick={buildCommitPlan} disabled={!connection || !adapter || online === false || planning || blocking || !preview.parse.dryRunReady}>{planning ? "正在读取精确 HEAD…" : "生成下一安全批次"}</button>
+        {!plan && commitNotice ? <div className="legacy-import-gate ready" role="status"><strong>核对完成</strong><p>{commitNotice}</p></div> : null}
         {!connection ? <p className="empty-note">连接目标 Private 数据仓库后才能生成计划；源文件正文仍只在当前浏览器内处理。</p> : null}
         {plan ? <>
           <div className="legacy-commit-target"><div><span>目标 Private 仓库</span><strong>{targetRepository}</strong></div><div><span>精确日期范围</span><strong>{exactDateRange}</strong></div><div><span>Expected HEAD</span><code>{plan.expectedHeadCommitSha}</code></div><div><span>Dry Run ID</span><code>{plan.dryRunId}</code></div><div><span>Plan SHA-256</span><code>{payload?.planSha256 ?? "因冲突未生成"}</code></div><div><span>Correction SHA-256</span><code>{plan.correctionSetSha256}</code></div></div>
@@ -384,8 +391,8 @@ function ReparseComparison({ comparison }: { comparison: LegacyPreviewComparison
   return <div className="legacy-reparse-diff" role="status"><strong>重解析差异</strong><div><span>新增日期 {comparison.addedDates.length}</span><span>删除日期 {comparison.removedDates.length}</span><span>变化日期 {comparison.changedDates.length}</span><span>诊断 −{comparison.diagnosticsRemoved} / +{comparison.diagnosticsAdded}</span><span>孤立块 {comparison.orphanBlocksBefore} → {comparison.orphanBlocksAfter}</span></div>{comparison.addedDates.length || comparison.removedDates.length || comparison.changedDates.length ? <code>{[...comparison.addedDates.map((date) => `+${date}`), ...comparison.removedDates.map((date) => `−${date}`), ...comparison.changedDates.map((date) => `~${date}`)].join(" · ")}</code> : null}</div>;
 }
 
-function friendlyLegacyImportError(error: unknown) {
-  const code = error instanceof Error ? error.message : "";
+function friendlyLegacyImportError(error: unknown, stage: "local" | "remote" = "local") {
+  const code = error instanceof GitHubDataError ? error.code : error instanceof Error ? error.message : "";
   const messages: Record<string, string> = {
     LEGACY_IMPORT_DOCX_REQUIRED: "请选择 `.docx` 工作副本；旧 `.doc` 必须先在不覆盖原件的前提下转换为 `.docx`。",
     LEGACY_IMPORT_EMPTY_FILE: "文件为空，未执行解析。",
@@ -417,8 +424,11 @@ function friendlyLegacyImportError(error: unknown) {
     LEGACY_IMPORT_PLAN_NOT_READY: "Preview 仍有阻断项，未生成 Commit Plan。",
     LEGACY_IMPORT_ATOMIC_FILE_LIMIT_EXCEEDED: "计划超过 250 个原子文件（含 checkpoint），已阻断。",
     LEGACY_IMPORT_ATOMIC_BYTE_LIMIT_EXCEEDED: "计划超过 10 MiB UTF-8 payload 上限，已阻断。",
+    LEGACY_IMPORT_REMOTE_PATH_CONFLICT: "目标日记文件已存在，已阻止覆盖；请核对源文件和现有记录。",
+    GITHUB_RATE_LIMITED: "GitHub 暂时限制读取，请稍后重试；没有写入数据。",
+    GITHUB_UNAVAILABLE: "GitHub 暂时不可用，请稍后重试；没有写入数据。",
   };
-  return messages[code] ?? "只读解析失败，源文件未被修改，也没有写入任何数据。";
+  return messages[code] ?? (stage === "remote" ? "远端只读核对未完成，请稍后重试；没有写入数据。" : "只读解析失败，源文件未被修改，也没有写入任何数据。");
 }
 
 function reconciliationLabel(status: LegacyJournalReconciliation["status"]) {
