@@ -114,13 +114,13 @@ export async function buildLegacyJournalCheckpointRollbackPreview(input: {
 
 export async function readLegacyJournalCheckpointRollbackPreview(adapter: GitHubContentsAdapter, checkpointPath: string) {
   if (!/^data\/journal-import-checkpoints\/[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}\.json$/u.test(checkpointPath)) throw new Error("INVALID_LEGACY_ROLLBACK_CHECKPOINT_PATH");
-  const snapshot = await adapter.readBranchSnapshot();
-  const checkpoint = parseJournalImportCheckpointRecord((await adapter.readText(checkpointPath, snapshot.headCommitSha)).text);
+  const snapshot = await retryRead(() => adapter.readBranchSnapshot());
+  const checkpoint = parseJournalImportCheckpointRecord((await retryRead(() => adapter.readText(checkpointPath, snapshot.headCommitSha))).text);
   if (recordPath("journal_import_checkpoint", checkpoint.id) !== checkpointPath) throw new Error("LEGACY_ROLLBACK_CHECKPOINT_PATH_MISMATCH");
   const entryIds = new Set(checkpoint.data.items.map((item) => item.entry_id));
   const [revisionItems, segmentItems] = await Promise.all([
-    adapter.listDirectory("data/journal-revisions", snapshot.headCommitSha),
-    adapter.listDirectory("data/journal-segments", snapshot.headCommitSha),
+    retryRead(() => adapter.listDirectory("data/journal-revisions", snapshot.headCommitSha)),
+    retryRead(() => adapter.listDirectory("data/journal-segments", snapshot.headCommitSha)),
   ]);
   const relevant = (name: string) => entryIds.has(name.replace(/_(?:r\d+|s\d+)\.json$/u, "")) || !name.startsWith("journal_legacy_");
   const revisionPaths = revisionItems.filter((item) => item.type === "file" && item.name.endsWith(".json") && relevant(item.name)).map((item) => item.path);
@@ -129,7 +129,7 @@ export async function readLegacyJournalCheckpointRollbackPreview(adapter: GitHub
   const entryFiles = await readOptionalRecords(checkpoint.data.items.map((item) => recordPath("journal_entry", item.entry_id)), snapshot.headCommitSha, adapter, parseJournalEntryRecord, "journal_entry");
   const revisionFiles = await readOptionalRecords(revisionPaths, snapshot.headCommitSha, adapter, parseJournalRevisionRecord, "journal_revision");
   const segmentFiles = await readOptionalRecords(segmentPaths, snapshot.headCommitSha, adapter, parseJournalSegmentRecord, "journal_segment");
-  const endingSnapshot = await adapter.readBranchSnapshot();
+  const endingSnapshot = await retryRead(() => adapter.readBranchSnapshot());
   if (endingSnapshot.headCommitSha !== snapshot.headCommitSha) throw new Error("LEGACY_ROLLBACK_PREVIEW_HEAD_CHANGED");
   return buildLegacyJournalCheckpointRollbackPreview({
     checkpoint,
@@ -146,10 +146,10 @@ async function readOptionalRecords<T extends { id: string }>(
   entityType: "journal_entry" | "journal_revision" | "journal_segment",
 ): Promise<Array<{ record: T; blobSha: string } | null>> {
   const results: Array<{ record: T; blobSha: string } | null> = [];
-  for (let offset = 0; offset < paths.length; offset += 12) {
-    results.push(...await Promise.all(paths.slice(offset, offset + 12).map(async (path) => {
+  for (let offset = 0; offset < paths.length; offset += 8) {
+    results.push(...await Promise.all(paths.slice(offset, offset + 8).map(async (path) => {
       try {
-        const file = await adapter.readText(path, ref);
+        const file = await retryRead(() => adapter.readText(path, ref));
         const record = parse(file.text);
         if (recordPath(entityType, record.id) !== path) throw new Error("LEGACY_ROLLBACK_REMOTE_PATH_MISMATCH");
         return { record, blobSha: file.blobSha };
@@ -160,6 +160,19 @@ async function readOptionalRecords<T extends { id: string }>(
     })));
   }
   return results;
+}
+
+async function retryRead<T>(read: () => Promise<T>): Promise<T> {
+  for (let attempt = 0; ; attempt += 1) {
+    try { return await read(); }
+    catch (error) {
+      const transient = error instanceof GitHubDataError && (
+        error.status === 0 || error.status === 429 || error.status >= 500 || error.code === "GITHUB_RATE_LIMITED"
+      );
+      if (!transient || attempt >= 2) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
+    }
+  }
 }
 
 function isGitSha(value: string) { return /^[a-f0-9]{40}$/u.test(value); }

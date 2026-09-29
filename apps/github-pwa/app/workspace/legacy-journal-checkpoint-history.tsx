@@ -32,9 +32,9 @@ export function LegacyJournalCheckpointHistory({ connection, adapter, checkpoint
       if (!adapter || !checkpoint) throw new Error("CHECKPOINT_UNAVAILABLE");
       const result = await readLegacyJournalCheckpointRollbackPreview(adapter, checkpoint.path);
       setPreview(result);
-      await onRefresh();
-    } catch {
-      setPreviewError("无法从同一个最新 GitHub HEAD 完成只读核对；未使用旧数据生成预览，回滚保持阻断。");
+    } catch (error) {
+      const reason = error instanceof Error && "code" in error && typeof error.code === "string" ? `（${error.code}）` : "";
+      setPreviewError(`无法从同一个最新 GitHub HEAD 完成只读核对${reason}；未使用旧数据生成预览，回滚保持阻断。`);
     } finally {
       setInspecting(false);
       setInspectingId(null);
