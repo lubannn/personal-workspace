@@ -587,7 +587,6 @@ export default function GitHubWorkspacePage() {
         loadCalendarEvents(opened.adapter),
         loadReportDrafts(opened.adapter),
         loadJournalEntries(opened.adapter),
-        loadJournalImportCheckpoints(opened.adapter),
         loadObsidianDocuments(opened.adapter),
         loadSyncConflicts(opened.adapter),
         loadLearningAreas(opened.adapter),
@@ -1573,7 +1572,7 @@ export default function GitHubWorkspacePage() {
     }
     setSavingJournalEntry(true); setErrorMessage(""); setStatusMessage("");
     const timestamp = new Date().toISOString();
-    const id = `journal_entry_${timestamp.replaceAll(/\D/g, "").slice(0, 17)}_${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`;
+    const id = `journal_entry_${fields.journalDate.replaceAll("-", "")}_${timestamp.replaceAll(/\D/g, "").slice(0, 17)}_${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`;
     try {
       if (JOURNAL_REVISION_WRITES_ENABLED) {
         const revisionId = `journal_revision_${timestamp.replaceAll(/\D/g, "").slice(0, 17)}_${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`;

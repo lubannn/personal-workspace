@@ -20,7 +20,7 @@ import { parseActivityEventRecord } from "../../../../src/lib/github-data/activi
 import { parseCalendarEventRecord } from "../../../../src/lib/github-data/calendar-events";
 import { parseReportDraftRecord } from "../../../../src/lib/github-data/report-drafts";
 import { parseJournalEntryRecord } from "../../../../src/lib/github-data/journal-entries";
-import { journalMonthFileCandidates, legacyJournalDateFromPath } from "../../../../src/lib/github-data/journal-archive-catalog";
+import { journalMonthFileCandidates, recentJournalFileCandidates } from "../../../../src/lib/github-data/journal-archive-catalog";
 import { parseJournalSegmentRecord } from "../../../../src/lib/github-data/journal-segments";
 import { parseJournalRevisionRecord } from "../../../../src/lib/github-data/journal-revisions";
 import { parseJournalImportCheckpointRecord } from "../../../../src/lib/github-data/journal-import-checkpoints";
@@ -38,7 +38,7 @@ import { parseHealthMetricRecord } from "../../../../src/lib/github-data/health-
 import { parseSleepSessionRecord } from "../../../../src/lib/github-data/sleep-sessions";
 import { isWorkoutLinkedToStaging, parseWorkoutRecord } from "../../../../src/lib/github-data/workouts";
 import { parseCaptureRecord } from "../../../../src/lib/github-data/workspace";
-import { friendlyError, localDateInTimezone, type SyncedActivityEvent, type SyncedCalendarEvent, type SyncedCapture, type SyncedHabit, type SyncedHabitCheckIn, type SyncedHabitRule, type SyncedHealthMetric, type SyncedHealthStagingRecord, type SyncedJournalEntry, type SyncedJournalImportCheckpoint, type SyncedJournalRevision, type SyncedJournalSegment, type SyncedLearningActivity, type SyncedLearningArea, type SyncedLearningGoal, type SyncedLearningResource, type SyncedMilestone, type SyncedObsidianDocument, type SyncedProject, type SyncedProjectFileReference, type SyncedProjectNote, type SyncedProjectPhase, type SyncedReportDraft, type SyncedSleepSession, type SyncedSyncConflict, type SyncedTask, type SyncedTimeEntry, type SyncedWorkout } from "./page-model";
+import { friendlyError, type SyncedActivityEvent, type SyncedCalendarEvent, type SyncedCapture, type SyncedHabit, type SyncedHabitCheckIn, type SyncedHabitRule, type SyncedHealthMetric, type SyncedHealthStagingRecord, type SyncedJournalEntry, type SyncedJournalImportCheckpoint, type SyncedJournalRevision, type SyncedJournalSegment, type SyncedLearningActivity, type SyncedLearningArea, type SyncedLearningGoal, type SyncedLearningResource, type SyncedMilestone, type SyncedObsidianDocument, type SyncedProject, type SyncedProjectFileReference, type SyncedProjectNote, type SyncedProjectPhase, type SyncedReportDraft, type SyncedSleepSession, type SyncedSyncConflict, type SyncedTask, type SyncedTimeEntry, type SyncedWorkout } from "./page-model";
 
 type Options = {
   adapterRef: MutableRefObject<GitHubContentsAdapter | null>;
@@ -471,7 +471,7 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     }
   }, [adapterRef, setErrorMessage]);
 
-  const loadJournalEntries = useCallback(async (adapter = adapterRef.current, month = localDateInTimezone("Asia/Shanghai").slice(0, 7)) => {
+  const loadJournalEntries = useCallback(async (adapter = adapterRef.current, month?: string) => {
     if (!adapter) return;
     setLoadingJournalEntries(true);
     setJournalLoadError("");
@@ -484,18 +484,16 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
         else throw error;
       }
       const files = items.filter((item) => item.type === "file" && item.name.endsWith(".json"));
-      const cache = new Map<string, SyncedJournalEntry>();
-      const recentLegacy = files.filter((item) => legacyJournalDateFromPath(item.path))
-        .sort((left, right) => String(legacyJournalDateFromPath(right.path)).localeCompare(String(legacyJournalDateFromPath(left.path)))).slice(0, 3);
-      const candidates = new Map([...journalMonthFileCandidates(files, month), ...recentLegacy].map((item) => [item.path, item]));
-      const records = await readJournalArchiveCandidates(adapter, [...candidates.values()], cache);
+      const cache = new Map(journalCacheRef.current);
+      const candidates = month ? journalMonthFileCandidates(files, month) : recentJournalFileCandidates(files);
+      const records = await readJournalArchiveCandidates(adapter, candidates, cache);
       if (adapterRef.current !== adapter) return;
       journalCatalogRef.current = files;
       journalCacheRef.current = cache;
-      journalLoadedMonthsRef.current = new Set([month]);
+      journalLoadedMonthsRef.current = new Set(month ? [month] : []);
       setJournalEntryCatalog(files);
       setJournalEntryFiles(records);
-      setJournalLoadedMonths([month]);
+      setJournalLoadedMonths(month ? [month] : []);
     } catch (error) { const message = friendlyError(error); setJournalLoadError(message); setErrorMessage(message); }
     finally { setLoadingJournalEntries(false); }
   }, [adapterRef, setErrorMessage]);

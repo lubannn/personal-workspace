@@ -80,7 +80,7 @@ export function useGitHubAppBootstrap(options: Options) {
         setConnection(opened.connection);
         setConnectionMethod("github-app");
         setStatusMessage(`已通过 GitHub App 登录${status.login ? `（${status.login}）` : ""}，访问令牌仅保留在当前页面内存中。`);
-        await Promise.all([loadRecentCaptures(opened.adapter), loadDashboardLayout(opened.adapter, opened.connection.ownerId), loadTasks(opened.adapter), loadTimeEntries(opened.adapter), loadProjects(opened.adapter), loadProjectPhases(opened.adapter), loadMilestones(opened.adapter), loadProjectNotes(opened.adapter), loadProjectFileReferences(opened.adapter), loadActivityEvents(opened.adapter), loadCalendarEvents(opened.adapter), loadReportDrafts(opened.adapter), loadJournalEntries(opened.adapter), loadJournalImportCheckpoints(opened.adapter), loadObsidianDocuments(opened.adapter), loadSyncConflicts(opened.adapter), loadLearningAreas(opened.adapter), loadHabitDomain(opened.adapter), loadHealthDomain(opened.adapter)]);
+        await Promise.all([loadRecentCaptures(opened.adapter), loadDashboardLayout(opened.adapter, opened.connection.ownerId), loadTasks(opened.adapter), loadTimeEntries(opened.adapter), loadProjects(opened.adapter), loadProjectPhases(opened.adapter), loadMilestones(opened.adapter), loadProjectNotes(opened.adapter), loadProjectFileReferences(opened.adapter), loadActivityEvents(opened.adapter), loadCalendarEvents(opened.adapter), loadReportDrafts(opened.adapter), loadJournalEntries(opened.adapter), loadObsidianDocuments(opened.adapter), loadSyncConflicts(opened.adapter), loadLearningAreas(opened.adapter), loadHabitDomain(opened.adapter), loadHealthDomain(opened.adapter)]);
       } catch (error) {
         adapterRef.current = null;
         setConnection(null);
