@@ -8,7 +8,7 @@ import { buildLegacyJournalDryRun } from "../../../../src/lib/github-data/legacy
 import { buildLegacyJournalCommitPlan, LEGACY_JOURNAL_IMPORT_COMMIT_ENABLED, type LegacyJournalCommitPlan } from "../../../../src/lib/github-data/legacy-journal-commit-plan";
 import { buildLegacyJournalDateBatches } from "../../../../src/lib/github-data/legacy-journal-batches";
 import { buildLegacyJournalCommitActionConfirmation, legacyJournalCommitStatusFromReconciliation, runLegacyJournalCommitAttempt, type LegacyJournalCommitActionStatus } from "../../../../src/lib/github-data/legacy-journal-commit-action";
-import { prepareLegacyJournalAtomicPayload, readLegacyJournalScopedPlanningSnapshot, reconcileLegacyJournalBatch, writeLegacyJournalBatchAtomically, type LegacyJournalAtomicPayloadPreview, type LegacyJournalAtomicWriteResult, type LegacyJournalReconciliation } from "../../../../src/lib/github-data/legacy-journal-atomic-writer";
+import { prepareLegacyJournalAtomicPayload, readLegacyJournalBatchHistory, readLegacyJournalScopedPlanningSnapshot, reconcileLegacyJournalBatch, writeLegacyJournalBatchAtomically, type LegacyJournalAtomicPayloadPreview, type LegacyJournalAtomicWriteResult, type LegacyJournalReconciliation } from "../../../../src/lib/github-data/legacy-journal-atomic-writer";
 import { isLegacyJournalSourceFullyImported } from "../../../../src/lib/github-data/legacy-journal-import-status";
 import { GitHubDataError, type GitHubContentsAdapter } from "../../../../src/lib/github-data/github-contents";
 import {
@@ -178,12 +178,13 @@ export function LegacyJournalImportSection({ connection, adapter, online, onComm
       }
       let nextPlan: LegacyJournalCommitPlan | null = null;
       for (const batch of batches) {
+        const batchSnapshot = await readLegacyJournalBatchHistory(adapter, snapshot, batch.dates);
         const candidate = await buildLegacyJournalCommitPlan({
           preview,
           ownerId: connection.ownerId,
           expectedHeadCommitSha: snapshot.headCommitSha,
           selectedDates: batch.dates,
-          existing: snapshot,
+          existing: batchSnapshot,
           plannedAt: new Date().toISOString(),
         });
         if (candidate.files.some((file) => snapshot.existingPaths.has(file.path))) throw new Error("LEGACY_IMPORT_REMOTE_PATH_CONFLICT");

@@ -137,6 +137,39 @@ export async function readLegacyJournalScopedPlanningSnapshot(
   return { headCommitSha: snapshot.headCommitSha, entries, revisions: [], segments: [], existingPaths };
 }
 
+/** Hydrate only this batch's legacy history so the planner can recognize a completed batch. */
+export async function readLegacyJournalBatchHistory(
+  adapter: LegacyJournalAtomicWriterAdapter,
+  snapshot: LegacyJournalScopedPlanningSnapshot,
+  dates: readonly string[],
+): Promise<LegacyJournalScopedPlanningSnapshot> {
+  const selected = new Set(dates);
+  const entries = snapshot.entries.filter((entry) => selected.has(entry.data.journal_date));
+  const revisionPaths = new Set(entries.flatMap((entry) => entry.data.current_revision_id
+    ? [recordPath("journal_revision", entry.data.current_revision_id)] : []));
+  const legacyPrefixes = entries.filter((entry) => entry.id.startsWith("journal_legacy_"))
+    .map((entry) => entry.id);
+  const paths = [...snapshot.existingPaths].filter((path) => revisionPaths.has(path)
+    || legacyPrefixes.some((id) => path.startsWith(`data/journal-revisions/${id}_`)
+      || path.startsWith(`data/journal-segments/${id}_`)));
+  const revisions: JournalRevisionRecord[] = [];
+  const segments: JournalSegmentRecord[] = [];
+  for (let offset = 0; offset < paths.length; offset += 8) {
+    const records = await Promise.all(paths.slice(offset, offset + 8).map(async (path) => {
+      const file = await adapter.readText(path, snapshot.headCommitSha);
+      const record = path.startsWith("data/journal-revisions/")
+        ? parseJournalRevisionRecord(file.text) : parseJournalSegmentRecord(file.text);
+      if (recordPath(record.entity_type, record.id) !== path) throw new Error("LEGACY_IMPORT_REMOTE_PATH_MISMATCH");
+      return record;
+    }));
+    for (const record of records) {
+      if (record.entity_type === "journal_revision") revisions.push(record as JournalRevisionRecord);
+      else segments.push(record as JournalSegmentRecord);
+    }
+  }
+  return { ...snapshot, revisions, segments };
+}
+
 export async function prepareLegacyJournalAtomicPayload(
   plan: LegacyJournalCommitPlan,
   committedAt = plan.plannedAt,
