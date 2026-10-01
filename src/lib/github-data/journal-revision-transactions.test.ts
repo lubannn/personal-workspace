@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { GitHubConflictError, type GitHubContentsAdapter, type GitHubStoredFile } from "./github-contents";
+import { GitHubConflictError, GitHubDataError, type GitHubContentsAdapter, type GitHubStoredFile } from "./github-contents";
 import { createJournalEntryData, parseJournalEntryRecord } from "./journal-entries";
 import {
   createJournalEntryAtomically,
@@ -28,7 +28,7 @@ function fakeAdapter(initialFiles: GitHubStoredFile[] = [], writeError?: Error) 
     void ref;
     if (path === "workspace.json") return storedRecord(path, JSON.stringify({ schema_version: 1, workspace_id: "workspace_1", owner_id: ownerId, owner_login: "lubannn", locale: "zh-CN", timezone: "Asia/Shanghai" }), "workspace-blob");
     const file = files.get(path);
-    if (!file) throw new Error(`MISSING_FIXTURE:${path}`);
+    if (!file) throw new GitHubDataError("missing", 404, "GITHUB_NOT_FOUND");
     return file;
   });
   const writeAtomicFiles = vi.fn(async (input: Parameters<GitHubContentsAdapter["writeAtomicFiles"]>[0]) => {
@@ -100,7 +100,12 @@ describe("atomic Journal revision transactions", () => {
       timezone: "Asia/Shanghai", bodyMarkdown: "今天的日记", timestamp,
     });
     expect(result.entry.data.body_markdown).toBe("今天的日记");
-    expect(fake.readText.mock.calls).toEqual([["workspace.json", "head-one"]]);
+    expect(fake.readText.mock.calls).toEqual([
+      ["workspace.json", "head-one"],
+      ["data/journal-entries/new_entry.json", "head-one"],
+      ["data/journal-revisions/new_revision.json", "head-one"],
+    ]);
+    expect(fake.listDirectory).not.toHaveBeenCalled();
     expect(fake.writeAtomicFiles).toHaveBeenCalledTimes(1);
     expect(fake.writeAtomicFiles.mock.calls[0]![0]).toMatchObject({ inlineContent: true, expectedHeadCommitSha: "head-one" });
   });
@@ -118,6 +123,20 @@ describe("atomic Journal revision transactions", () => {
       await expect(createJournalEntryAtomically(fake.adapter, input)).rejects.toThrow(error!);
       expect(fake.writeAtomicFiles).not.toHaveBeenCalled();
     }
+  });
+
+  it("does not treat a failed path lookup as an absent file", async () => {
+    const fake = fakeAdapter();
+    const read = fake.readText.getMockImplementation()!;
+    fake.readText.mockImplementation(async (path, ref) => {
+      if (path === "data/journal-entries/new_entry.json") throw new GitHubDataError("unavailable", 503, "GITHUB_UNAVAILABLE");
+      return read(path, ref);
+    });
+    await expect(createJournalEntryAtomically(fake.adapter, {
+      ownerId, journalEntryId: "new_entry", revisionId: "new_revision", journalDate: "2026-10-01",
+      timezone: "Asia/Shanghai", bodyMarkdown: "正文", timestamp,
+    })).rejects.toMatchObject({ code: "GITHUB_UNAVAILABLE" });
+    expect(fake.writeAtomicFiles).not.toHaveBeenCalled();
   });
 
   it("keeps the production atomic write path explicitly enabled", () => {

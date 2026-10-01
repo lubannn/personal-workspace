@@ -52,15 +52,15 @@ export async function createJournalEntryAtomically(
 ): Promise<AtomicJournalWriteResult> {
   const timestamp = input.timestamp ?? new Date().toISOString();
   const snapshot = await adapter.readBranchSnapshot();
-  const workspace = parseWorkspaceDescriptor((await adapter.readText("workspace.json", snapshot.headCommitSha)).text);
-  if (workspace.owner_id !== input.ownerId) throw new Error("JOURNAL_OWNER_MISMATCH");
-  const entryFiles = await listJsonFiles(adapter, "data/journal-entries", snapshot.headCommitSha);
   const entryPath = recordPath("journal_entry", input.journalEntryId);
-  if (entryFiles.some((item) => item.path === entryPath)) throw new Error("JOURNAL_ENTRY_ID_CONFLICT");
-
-  const revisionItems = await listJsonFiles(adapter, "data/journal-revisions", snapshot.headCommitSha);
   const revisionPath = recordPath("journal_revision", input.revisionId);
-  if (revisionItems.some((item) => item.path === revisionPath)) throw new Error("JOURNAL_REVISION_ID_CONFLICT");
+  const [workspaceFile] = await Promise.all([
+    adapter.readText("workspace.json", snapshot.headCommitSha),
+    assertNewJournalPath(adapter, entryPath, snapshot.headCommitSha, "JOURNAL_ENTRY_ID_CONFLICT"),
+    assertNewJournalPath(adapter, revisionPath, snapshot.headCommitSha, "JOURNAL_REVISION_ID_CONFLICT"),
+  ]);
+  const workspace = parseWorkspaceDescriptor(workspaceFile.text);
+  if (workspace.owner_id !== input.ownerId) throw new Error("JOURNAL_OWNER_MISMATCH");
 
   const entry = createWorkspaceRecord({
     entityType: "journal_entry",
@@ -254,6 +254,15 @@ async function commitJournalRecords(
     commitSha: result.commitSha,
     treeSha: result.treeSha,
   };
+}
+
+async function assertNewJournalPath(adapter: JournalRevisionTransactionAdapter, path: string, ref: string, conflictCode: string) {
+  try { await adapter.readText(path, ref); }
+  catch (error) {
+    if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") return;
+    throw error;
+  }
+  throw new Error(conflictCode);
 }
 
 async function listJsonFiles(adapter: JournalRevisionTransactionAdapter, path: string, ref: string): Promise<GitHubDirectoryItem[]> {
