@@ -256,6 +256,22 @@ export class GitHubContentsAdapter {
   async listDirectory(pathname: string, refOverride?: string): Promise<GitHubDirectoryItem[]> {
     if (pathname) assertFilePath(pathname);
     const ref = refOverride ?? this.config.branch;
+    if (pathname === "data/journal-entries") {
+      let tree = await this.request<GitHubRecursiveTreeResponse>(
+        `/repos/${encodeURIComponent(this.config.owner)}/${encodeURIComponent(this.config.repository)}/git/trees/${encodeURIComponent(ref ?? "main")}`,
+      );
+      for (const segment of pathname.split("/")) {
+        if (tree.truncated) throw new GitHubDataError("The GitHub repository tree is incomplete.", 500, "GITHUB_TREE_TRUNCATED");
+        const directory = tree.tree.find((item) => item.path === segment && item.type === "tree");
+        if (!directory) throw new GitHubDataError("GitHub directory not found.", 404, "GITHUB_NOT_FOUND");
+        tree = await this.request<GitHubRecursiveTreeResponse>(
+          `/repos/${encodeURIComponent(this.config.owner)}/${encodeURIComponent(this.config.repository)}/git/trees/${directory.sha}`,
+        );
+      }
+      if (tree.truncated) throw new GitHubDataError("The GitHub repository tree is incomplete.", 500, "GITHUB_TREE_TRUNCATED");
+      return tree.tree.filter((item) => !item.path.includes("/") && (item.type === "blob" || item.type === "tree"))
+        .map((item) => ({ type: item.type === "tree" ? "directory" as const : "file" as const, name: item.path, path: `${pathname}/${item.path}`, blobSha: item.sha, sizeBytes: item.size ?? 0 }));
+    }
     if (/^data\/journal-(entries|segments|revisions)$/.test(pathname)) {
       const tree = await this.request<GitHubRecursiveTreeResponse>(
         `/repos/${encodeURIComponent(this.config.owner)}/${encodeURIComponent(this.config.repository)}/git/trees/${encodeURIComponent(ref ?? "main")}?recursive=1`,

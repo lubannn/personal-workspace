@@ -296,6 +296,9 @@ export default function GitHubWorkspacePage() {
     setReportDraftFiles,
     journalEntryFiles,
     setJournalEntryFiles,
+    journalEntryCatalog,
+    journalLoadedMonths,
+    journalLoadError,
     setJournalRevisionFiles,
     journalImportCheckpointFiles,
     learningAreaFiles,
@@ -355,6 +358,7 @@ export default function GitHubWorkspacePage() {
     loadCalendarEvents,
     loadReportDrafts,
     loadJournalEntries,
+    loadJournalMonth,
     loadJournalSegments,
     loadJournalRevisions,
     loadJournalImportCheckpoints,
@@ -2960,6 +2964,9 @@ export default function GitHubWorkspacePage() {
         online={online}
         todayDate={currentTaskDate}
         journalEntryFiles={journalEntryFiles}
+        journalEntryCatalog={journalEntryCatalog}
+        loadedMonths={journalLoadedMonths}
+        loadError={journalLoadError}
         journalImportCheckpointFiles={journalImportCheckpointFiles}
         loading={loadingJournalEntries}
         loadingLegacyHistory={loadingJournalEntries || loadingJournalSegments || loadingJournalRevisions || loadingJournalImportCheckpoints}
@@ -2968,9 +2975,10 @@ export default function GitHubWorkspacePage() {
         onCreate={saveJournalEntry}
         onEdit={saveJournalEntryEdit}
         onDeletionChange={updateJournalEntryDeletion}
-        onRefresh={() => loadJournalEntries()}
-        onRefreshLegacyHistory={async () => { await Promise.all([loadJournalEntries(), loadJournalImportCheckpoints()]); }}
-        onLegacyImportCommitted={async () => { await Promise.all([loadJournalEntries(), loadJournalImportCheckpoints()]); }}
+        onRefresh={(month) => { void loadJournalEntries(adapterRef.current, month); }}
+        onBrowseMonth={(month) => { void loadJournalMonth(month); }}
+        onRefreshLegacyHistory={async () => { await loadJournalImportCheckpoints(); }}
+        onLegacyImportCommitted={async (month) => { await Promise.all([loadJournalEntries(adapterRef.current, month), loadJournalImportCheckpoints()]); }}
       />
       </WorkspaceTabPanel>
 

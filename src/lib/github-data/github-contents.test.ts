@@ -108,19 +108,26 @@ describe("GitHub contents adapter", () => {
     expect(fetcher.mock.calls[1]?.[0]).toContain(`/git/blobs/${sha}`);
   });
 
-  it("lists large journal directories through a complete recursive Git tree", async () => {
-    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({ truncated: false, tree: [
-      { path: "data/journal-entries/one.json", type: "blob", sha: "entry-one", size: 123 },
-      { path: "data/journal-entries/nested/two.json", type: "blob", sha: "entry-two", size: 123 },
-      { path: "data/journal-segments/three.json", type: "blob", sha: "segment-three", size: 123 },
-    ] }));
+  it("lists journal entries through the small directory tree rather than the whole repository", async () => {
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({ truncated: false, tree: [{ path: "data", type: "tree", sha: "data-tree" }] }))
+      .mockResolvedValueOnce(jsonResponse({ truncated: false, tree: [{ path: "journal-entries", type: "tree", sha: "entries-tree" }] }))
+      .mockResolvedValueOnce(jsonResponse({ truncated: false, tree: [
+        { path: "one.json", type: "blob", sha: "entry-one", size: 123 },
+        { path: "nested", type: "tree", sha: "nested-tree" },
+      ] }));
     const adapter = new GitHubContentsAdapter(
       { owner: "owner", repository: "personal-workspace-data", branch: "main", token: "test-token" }, fetcher,
     );
     await expect(adapter.listDirectory("data/journal-entries")).resolves.toEqual([
       { type: "file", name: "one.json", path: "data/journal-entries/one.json", blobSha: "entry-one", sizeBytes: 123 },
+      { type: "directory", name: "nested", path: "data/journal-entries/nested", blobSha: "nested-tree", sizeBytes: 0 },
     ]);
-    expect(fetcher.mock.calls[0]?.[0]).toContain("/git/trees/main?recursive=1");
+    expect(fetcher.mock.calls.map((call) => call[0])).toEqual([
+      "https://api.github.com/repos/owner/personal-workspace-data/git/trees/main",
+      "https://api.github.com/repos/owner/personal-workspace-data/git/trees/data-tree",
+      "https://api.github.com/repos/owner/personal-workspace-data/git/trees/entries-tree",
+    ]);
   });
 
   it("lists an initialized repository root and reuses the in-memory credential for an isolated target", async () => {
