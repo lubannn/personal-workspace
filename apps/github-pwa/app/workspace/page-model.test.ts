@@ -7,6 +7,7 @@ import {
   friendlyError,
   friendlyJournalWriteError,
   localDateInTimezone,
+  targetRepositoryName,
   type Connection,
 } from "./page-model";
 
@@ -18,6 +19,11 @@ const connection: Connection = {
 };
 
 describe("formal PWA page behavior", () => {
+  it("uses the verified full repository name without adding the owner twice", () => {
+    expect(targetRepositoryName(connection)).toBe("lubannn/personal-workspace-data");
+    expect(targetRepositoryName(null)).toBe("");
+  });
+
   it("keeps GitHub App authorization and live sync readiness labels", () => {
     expect(buildReadiness(connection, "github-app", "configured")).toMatchObject([
       { label: "Static PWA", done: true },

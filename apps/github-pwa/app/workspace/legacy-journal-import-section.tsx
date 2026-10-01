@@ -18,7 +18,7 @@ import {
   type LegacyImportDiagnostic,
   type LegacyPreviewComparison,
 } from "../../../../src/lib/github-data/legacy-journal-import";
-import type { Connection } from "./page-model";
+import { targetRepositoryName, type Connection } from "./page-model";
 
 type PreviewFilter = "all" | "issues" | "low-confidence";
 
@@ -69,7 +69,7 @@ export function LegacyJournalImportSection({ connection, adapter, online, onComm
     return preview.parse.entries;
   }, [filter, preview]);
   const blocking = diagnostics.some((issue) => issue.severity === "blocking" || issue.severity === "error");
-  const targetRepository = connection ? `${connection.ownerLogin}/${connection.repository}` : "";
+  const targetRepository = targetRepositoryName(connection);
   const exactDateRange = plan?.selectedDates.length ? `${plan.selectedDates[0]}..${plan.selectedDates.at(-1)}` : "";
   const confirmationMatches = Boolean(plan && repositoryConfirmation === targetRepository && dateRangeConfirmation === exactDateRange);
   const payloadWithinLimits = Boolean(payload && payload.limitBlockers.length === 0);

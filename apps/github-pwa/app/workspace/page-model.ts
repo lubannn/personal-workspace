@@ -30,11 +30,16 @@ import type { SleepSessionRecord } from "../../../../src/lib/github-data/sleep-s
 import type { WorkoutRecord } from "../../../../src/lib/github-data/workouts";
 
 export type Connection = {
+  /** GitHub-verified owner/repository full name. */
   repository: string;
   ownerId: string;
   ownerLogin: string;
   timezone: string;
 };
+
+export function targetRepositoryName(connection: Pick<Connection, "repository"> | null): string {
+  return connection?.repository ?? "";
+}
 
 export type SavedCapture = {
   path: string;
