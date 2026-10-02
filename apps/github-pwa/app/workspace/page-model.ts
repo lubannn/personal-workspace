@@ -229,7 +229,6 @@ export function friendlyError(error: unknown) {
 export function friendlyJournalWriteError(error: unknown, operation: "create" | "edit") {
   if (error instanceof GitHubDataError) return friendlyError(error);
   if (!(error instanceof Error)) return friendlyError(error);
-  if (error.message === "DUPLICATE_ACTIVE_DAILY_JOURNAL") return "保存前 GitHub 中已出现同日 daily 日记；请刷新后编辑现有记录，本次没有写入。";
   if (error.message === "JOURNAL_ENTRY_NOT_ACTIVE") return "这篇日记已在另一处进入回收站；请刷新后重试，本次没有写入。";
   if (error.message === "JOURNAL_ENTRY_ID_CONFLICT" || error.message === "JOURNAL_REVISION_ID_CONFLICT") return "生成的 Journal 记录 ID 已存在；本次没有写入，请重试。";
   if (error.message.startsWith("INVALID_JOURNAL_ENTRY") || error.message.startsWith("INVALID_JOURNAL_REVISION")) {

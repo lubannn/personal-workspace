@@ -65,8 +65,8 @@ describe("Obsidian Journal one-way export plan", () => {
     const second = await plan();
     expect(first).toEqual(second);
     expect(first).toMatchObject({
-      relativePath: "Personal Workspace/Journal/2026/2026-09-12.md",
-      confirmation: "Personal-Vault/Personal Workspace/Journal/2026/2026-09-12.md",
+      relativePath: "Personal Workspace/Journal/2026/2026-09-12-journal_20260912.md",
+      confirmation: "Personal-Vault/Personal Workspace/Journal/2026/2026-09-12-journal_20260912.md",
       disposition: "create",
       currentDocumentSha256: null,
     });
@@ -97,6 +97,13 @@ describe("Obsidian Journal one-way export plan", () => {
     expect(updated.disposition).toBe("update");
     expect(updated.documentSha256).not.toBe(initial.documentSha256);
     expect(updated.source).toMatchObject({ recordVersion: 2, revisionId: "revision_2", revisionNumber: 2 });
+  });
+
+  it("preserves the legacy date-only path for an already exported entry", async () => {
+    const initial = await plan();
+    const legacyBaseline = { ...baselineFromObsidianJournalExportPlan(initial), relativePath: "Personal Workspace/Journal/2026/2026-09-12.md" };
+    const next = await plan({ baseline: legacyBaseline, currentMarkdown: initial.markdown });
+    expect(next.relativePath).toBe(legacyBaseline.relativePath);
   });
 
   it("fails closed for external edits, untracked files and externally removed managed files", async () => {

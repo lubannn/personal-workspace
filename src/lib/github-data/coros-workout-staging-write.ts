@@ -63,8 +63,10 @@ export async function prepareCorosWorkoutStagingWrite(input: {
     const workout = record.data.normalized_json;
     return `${path}\n  ${workout.activity_type} · ${workout.start_at} · ${workout.duration_seconds} 秒 · ${workout.distance === null ? "无距离" : `${workout.distance} m`}`;
   }).join("\n");
+  const sourceHashes = new Set(plan.items.map((item) => item.proposedData.source.source_sha256));
+  const sourceSummary = sourceHashes.size === 1 ? `来源 SHA-256：${plan.items[0]!.proposedData.source.source_sha256}` : `来自 ${sourceHashes.size} 个不同来源文件；各记录分别保存其来源 SHA-256。`;
   const confirmationText = files.length
-    ? `将向 Private 数据仓库创建 ${files.length} 条 pending Workout 暂存记录（已存在 ${alreadyPresent} 条会跳过）：\n${details}\n来源 SHA-256：${plan.items[0]!.proposedData.source.source_sha256}\n仅保存活动摘要，不保存原始文件、文件名或 GPS 轨迹。确认写入暂存区吗？`
+    ? `将向 Private 数据仓库创建 ${files.length} 条 pending Workout 暂存记录（已存在 ${alreadyPresent} 条会跳过）：\n${details}\n${sourceSummary}\n仅保存活动摘要，不保存原始文件、文件名或 GPS 轨迹。确认写入暂存区吗？`
     : `这批 Workout 暂存记录已全部存在（${alreadyPresent} 条），没有新文件需要写入。`;
   return { snapshot, files, alreadyPresent, confirmationText };
 }

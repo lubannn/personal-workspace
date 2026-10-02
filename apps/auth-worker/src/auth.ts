@@ -488,3 +488,18 @@ export async function handleAuthRequest(request: Request, env: AuthEnv): Promise
       return json({ error: "AUTH_ROUTE_NOT_FOUND" }, 404);
   }
 }
+
+/** Reuses the existing GitHub allowlist and session boundary for auxiliary connectors. */
+export async function authenticatedGitHubUser(
+  request: Request,
+  env: AuthEnv,
+): Promise<{ id: string; login: string } | null> {
+  const configured = completeEnv(env);
+  if (!configured) return null;
+  const session = await findSession(request, configured);
+  return session ? { id: session.github_user_id, login: session.github_login } : null;
+}
+
+export function validAuthenticatedMutation(request: Request): boolean {
+  return csrfValid(request);
+}

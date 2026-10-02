@@ -61,10 +61,10 @@ export function updateJournalEntryData(current: JournalEntryRecord, input: {
 }): JournalEntryData {
   const data: JournalEntryData = {
     ...current.data,
-    title: input.title?.trim() ?? "",
+    title: input.title === undefined ? current.data.title : input.title.trim(),
     body_markdown: input.bodyMarkdown.trim(),
-    mood: nullableText(input.mood),
-    weather: nullableText(input.weather),
+    mood: input.mood === undefined ? current.data.mood : nullableText(input.mood),
+    weather: input.weather === undefined ? current.data.weather : nullableText(input.weather),
     last_entry_at: input.timestamp ?? new Date().toISOString(),
     current_revision_id: input.currentRevisionId === undefined ? current.data.current_revision_id : input.currentRevisionId,
   };
@@ -125,10 +125,6 @@ export function shiftJournalMonth(month: string, offset: number) {
   return `${String(shiftedYear).padStart(4, "0")}-${String(shiftedMonth).padStart(2, "0")}`;
 }
 
-export function hasActiveDailyJournalDate(records: JournalEntryRecord[], journalDate: string, excludingId?: string) {
-  return records.some((record) => record.deleted_at === null && record.id !== excludingId && record.data.entry_kind === "daily" && record.data.journal_date === journalDate);
-}
-
 export function renderJournalEntryMarkdown(record: JournalEntryRecord) {
   const title = record.data.title || record.data.journal_date;
   return [
@@ -137,6 +133,7 @@ export function renderJournalEntryMarkdown(record: JournalEntryRecord) {
     `journal_id: ${JSON.stringify(record.id)}`,
     `journal_date: ${JSON.stringify(record.data.journal_date)}`,
     `timezone: ${JSON.stringify(record.data.timezone)}`,
+    `submitted_at: ${JSON.stringify(record.data.first_entry_at)}`,
     `entry_kind: ${JSON.stringify(record.data.entry_kind)}`,
     `sensitivity: ${JSON.stringify(record.data.sensitivity)}`,
     `record_version: ${record.version}`,
@@ -153,7 +150,11 @@ export function renderJournalEntryMarkdown(record: JournalEntryRecord) {
 }
 
 export function journalEntryMarkdownFileName(record: JournalEntryRecord) {
-  return `personal-workspace-journal-${record.data.journal_date}.md`;
+  return `personal-workspace-journal-${record.data.journal_date}-${record.id}.md`;
+}
+
+export function journalEntrySubmittedTime(record: JournalEntryRecord) {
+  return new Intl.DateTimeFormat("zh-CN", { timeZone: record.data.timezone, hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" }).format(new Date(record.data.first_entry_at));
 }
 
 function isValidData(value: Record<string, unknown>): value is JournalEntryData {
@@ -174,7 +175,7 @@ function isValidData(value: Record<string, unknown>): value is JournalEntryData 
 }
 
 function compareNewest(left: JournalEntryRecord, right: JournalEntryRecord) {
-  return right.data.journal_date.localeCompare(left.data.journal_date) || right.updated_at.localeCompare(left.updated_at) || left.id.localeCompare(right.id);
+  return right.data.journal_date.localeCompare(left.data.journal_date) || right.data.first_entry_at.localeCompare(left.data.first_entry_at) || left.id.localeCompare(right.id);
 }
 
 function nullableText(value: string | undefined) {

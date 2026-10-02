@@ -18,13 +18,14 @@ export async function inspectWorkoutConfirmationPreconditions(input: {
   adapter: ReadOnlyAdapter;
   staging: SyncedStaging;
   ownerId: string;
+  snapshot?: Awaited<ReturnType<ReadOnlyAdapter["readBranchSnapshot"]>>;
 }): Promise<WorkoutConfirmationPreflight> {
   const { adapter, staging, ownerId } = input;
   if (staging.record.data.health_type !== "workout" || staging.record.owner_id !== ownerId ||
     staging.path !== recordPath("health_staging_record", staging.record.id)) {
     throw new GitHubConflictError("Workout staging identity does not match the connected workspace.");
   }
-  const snapshot = await adapter.readBranchSnapshot();
+  const snapshot = input.snapshot ?? await adapter.readBranchSnapshot();
   const latestFile = await adapter.readText(staging.path, snapshot.headCommitSha);
   if (latestFile.blobSha !== staging.blobSha) throw new GitHubConflictError("Workout staging changed after it was loaded.");
   let latest: HealthStagingRecord;

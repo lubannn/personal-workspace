@@ -3,6 +3,8 @@
 > 调研日期：2026-09-19
 > 状态：只读调研；未连接 COROS 账号，未获取或写入任何 COROS 数据。
 
+> 2026-09-25 补充：一次连接的安全边界与官方 OAuth 元数据实测见 [Phase 4 COROS MCP 连接预检](PHASE_4_COROS_MCP_CONNECTION_PREFLIGHT.md)。官方当前仅声明通用 `mcp.tools`，不能把计划中的只调用读取工具误称为账号级只读授权。
+
 ## 1. 结论
 
 COROS 目前已有两条官方程序化接入路径：

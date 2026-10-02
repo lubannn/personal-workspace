@@ -1,0 +1,20 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "personal-workspace-app",
+  "pages_build_output_dir": "apps/github-pwa/out",
+  "compatibility_date": "2026-09-01",
+  "vars": {
+    "NODE_VERSION": "24"
+  },
+  "env": {
+    "production": {
+      "compatibility_date": "2026-08-25",
+      "vars": {
+        "NODE_VERSION": "24"
+      },
+      "services": [
+        { "binding": "AUTH", "service": "nexus" }
+      ]
+    }
+  }
+}

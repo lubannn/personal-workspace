@@ -4,13 +4,13 @@
 
 首切片把日记作为 `data/journal-entries/<id>.json` 中的 Private canonical 记录接入正式 PWA：
 
-- `entry_kind` 固定为 `daily`，同一 workspace 本地日期只允许一条未删除记录；
-- 保存日期、IANA timezone、可选标题/心情/天气和 Markdown 正文；
+- `entry_kind` 固定为 `daily`；同一 workspace 本地日期允许多篇独立记录；
+- 日常表单只填写日期和 Markdown 正文，系统自动记录精确提交 instant 与 IANA timezone；旧记录的标题、心情、天气元数据仍可读取且编辑正文时保留；
 - `sensitivity = restricted`，正文不进入 Public 仓库、Worker 日志或 AI；
 - 创建使用新 ID 和 create-only 路径；编辑递增 record version，并携带最后读取的 blob SHA；
-- 删除是可恢复软删除；若同日已有另一条 active daily，恢复会明确拒绝；
+- 删除是可恢复软删除；同日其他记录不妨碍恢复；
 - Dashboard “最近日记”只显示有界纯文本摘要；完整正文只在 Journal 区域读取；
-- 单篇 Markdown 下载只在当前浏览器生成，保留 canonical ID、日期、时区和 record version；
+- 单篇 Markdown 下载只在当前浏览器生成，文件名包含 canonical ID，内容保留 ID、日期、提交 instant、时区和 record version；
 - JournalEntry 进入开放 JSON export、manifest、inspection、隔离 restore 和 migration dry run。
 
 ## 2. 真源与 Obsidian 边界
@@ -27,16 +27,11 @@
 
 正式连接 Vault 前仍需用户选择 Vault 和子目录，并用无私人内容的文件验证路径、权限、编码、原子替换与冲突语义。
 
-## 3. 时间与唯一性语义
+## 3. 时间与同日多篇语义
 
 `journal_date` 是用户明确选择的 workspace 本地日期；`created_at` / `first_entry_at` 是首次保存发生的真实 instant，`updated_at` / `last_entry_at` 是最近修订保存的真实 instant。编辑不允许悄悄移动日期，也不伪造旧日记的发生时刻。
 
-唯一性由应用和 export inspection 双重检查：
-
-- 新建前检查当前已加载的 active daily；
-- 恢复前检查同日 active daily；
-- portable inspection 拒绝同包中的重复 active daily；
-- GitHub create-only 路径与旧 blob SHA 仍负责跨设备并发保护。
+同日多篇通过独立 ID 和 create-only 路径保存，列表按本地日期、首次提交 instant 倒序排列；portable inspection 允许同日多篇，但仍拒绝重复 ID。编辑与恢复沿用旧 blob SHA 跨设备并发保护。
 
 ## 4. 隐私与失败语义
 

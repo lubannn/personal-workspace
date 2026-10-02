@@ -281,11 +281,11 @@ CalendarEvent 可以通过 `linked_entity_type = task` 和 `linked_entity_id` �
 - `obsidian_document_id`, `sync_status`
 - 通用字段
 
-Phase 3A 首个 Journal Core 切片把记录保存到 `data/journal-entries/<id>.json`。当前 `entry_kind = daily`、`sensitivity = restricted`，同一 workspace 本地日期只允许一条未删除记录；创建、版本化编辑、软删除与恢复均直接写入 Private GitHub，编辑和生命周期更新携带旧 blob SHA。恢复若与同日 active daily 冲突会停止，portable inspection 也拒绝同包重复 active daily。
+Phase 3A Journal Core 把记录保存到 `data/journal-entries/<id>.json`。当前 `entry_kind = daily`、`sensitivity = restricted`，同一 workspace 本地日期允许多篇独立记录；创建、版本化编辑、软删除与恢复均直接写入 Private GitHub，编辑和生命周期更新携带旧 blob SHA。portable inspection 允许同日多篇，但仍校验每篇 ID 唯一。
 
 首版以 Private canonical JSON 为唯一真源。`obsidian_document_id = null`、`current_revision_id = null`、`sync_status = not_configured` 明确表示尚未连接 Vault；浏览器 Markdown 下载只是带 canonical ID、日期、时区和版本的派生导出。Dashboard 仅展示最近日记的有界纯文本摘要。JournalEntry 已进入 export、manifest、inspection、隔离 restore 和 migration dry run。
 
-`first_entry_at` 保存首次创建发生的真实 instant，`last_entry_at` 随修订更新；`journal_date` 是用户选择的本地日期，编辑不允许悄悄移动日期。JournalSegment/JournalRevision 的 canonical 解析、collection loading、portability 与原子事务引擎已实现，Journal UI 已启用 body-mode Revision 原子创建/编辑；ObsidianDocument、SyncConflict、Legacy Word Import 和 AI 共创仍未开放。不可变、原子推进和可逆 Markdown 契约见 `PHASE_3_JOURNAL_REVISIONS.md`，既有记录不会在只读加载时迁移。
+`first_entry_at` 保存首次提交发生的真实 instant，列表按记录时区显示到秒；`last_entry_at` 随修订更新；`journal_date` 是用户选择的本地日期，编辑不移动日期或首次提交时间。日常表单只填写日期与正文，旧记录的标题、心情、天气元数据仍保留。JournalSegment/JournalRevision 的 canonical 解析、collection loading、portability 与原子事务引擎已实现，Journal UI 已启用 body-mode Revision 原子创建/编辑。不可变、原子推进和可逆 Markdown 契约见 `PHASE_3_JOURNAL_REVISIONS.md`，既有记录不会在只读加载时迁移。
 
 ### JournalSegment
 
@@ -557,7 +557,7 @@ User
 
 - 所有主要列表索引 `owner_id + deleted_at + updated_at`。
 - Task 索引 `owner_id + status + due_at`、`project_id + status`。
-- Journal 唯一/查询策略基于 `owner_id + journal_date + entry_kind`，是否允许同日多篇由产品决定。
+- Journal 查询按 `owner_id + journal_date + first_entry_at`；同日多篇以独立 ID 区分。
 - Calendar 按 `owner_id + start_at + end_at` 查询。
 - Staging 按 `owner_id + status + health_type` 查询。
 - 外部 ID、幂等键、文件哈希在其业务范围内唯一。
@@ -574,9 +574,8 @@ User
 
 ## 17. 待确认的数据决策
 
-1. Journal 默认一天一篇还是允许同日多篇独立文档？
-2. Journal 正文的最终真源是数据库还是 Vault，双向同步何时启用？
-3. 早睡打卡归属入睡日还是醒来日？
-4. 实际耗时以 TimeEntry 汇总为准，还是允许无明细直接填写？
-5. 原始健康 payload 和 AI 运行记录各自保留多久？
-6. 未来分享采用发布快照还是动态镜像；本方案建议快照优先。
+1. Journal 正文的最终真源是 Private canonical JSON 还是 Vault，双向同步何时启用？
+2. 早睡打卡归属入睡日还是醒来日？
+3. 实际耗时以 TimeEntry 汇总为准，还是允许无明细直接填写？
+4. 原始健康 payload 和 AI 运行记录各自保留多久？
+5. 未来分享采用发布快照还是动态镜像；本方案建议快照优先。

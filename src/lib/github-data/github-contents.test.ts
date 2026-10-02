@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 
 import { GitHubConflictError, GitHubContentsAdapter, GitHubDataError } from "./github-contents";
@@ -170,6 +171,24 @@ describe("GitHub contents adapter", () => {
     });
     const refBody = JSON.parse(String(fetcher.mock.calls[6]?.[1]?.body)) as { sha: string; force: boolean };
     expect(refBody).toEqual({ sha: "commit-two", force: false });
+  });
+
+  it("writes batch text inline in one tree request with Git-compatible blob SHAs", async () => {
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({ sha: "tree-two" }, 201))
+      .mockResolvedValueOnce(jsonResponse({ sha: "commit-two", tree: { sha: "tree-two" } }, 201))
+      .mockResolvedValueOnce(jsonResponse({ ref: "refs/heads/main", object: { sha: "commit-two", type: "commit" } }));
+    const adapter = new GitHubContentsAdapter({ owner: "owner", repository: "personal-workspace-data", branch: "main", token: "test-token" }, fetcher);
+    const files = [{ path: "data/health-staging-records/one.json", text: "你好，Workout\n" }, { path: "data/workouts/one.json", text: "{\"ok\":true}\n" }];
+    const result = await adapter.writeAtomicFiles({ files, message: "workout: batch import", expectedHeadCommitSha: "head-one", baseTreeSha: "tree-one", inlineContent: true });
+    const treeBody = JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body));
+    expect(treeBody.tree).toEqual(files.map((file) => ({ path: file.path, mode: "100644", type: "blob", content: file.text })));
+    expect(fetcher).toHaveBeenCalledTimes(3);
+    expect(result.files).toEqual(files.map((file) => {
+      const bytes = Buffer.from(file.text, "utf8");
+      const blobSha = createHash("sha1").update(`blob ${bytes.byteLength}\0`).update(bytes).digest("hex");
+      return { path: file.path, blobSha };
+    }));
   });
 
   it("does not move the branch when an atomic write loses the head race", async () => {

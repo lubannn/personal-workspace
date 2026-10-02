@@ -112,6 +112,16 @@ function encodeBase64(value: string) {
   return btoa(binary);
 }
 
+async function gitBlobSha(text: string): Promise<string> {
+  const content = new TextEncoder().encode(text);
+  const header = new TextEncoder().encode(`blob ${content.byteLength}\0`);
+  const bytes = new Uint8Array(header.byteLength + content.byteLength);
+  bytes.set(header);
+  bytes.set(content, header.byteLength);
+  const digest = await globalThis.crypto.subtle.digest("SHA-1", bytes);
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
 export class GitHubContentsAdapter {
   private readonly fetcher: typeof fetch;
 
@@ -290,6 +300,7 @@ export class GitHubContentsAdapter {
     message: string;
     expectedHeadCommitSha: string;
     baseTreeSha: string;
+    inlineContent?: boolean;
   }) {
     if (input.files.length === 0) throw new Error("ATOMIC_WRITE_FILES_REQUIRED");
     if (!input.message || input.message.length > 120) throw new Error("INVALID_COMMIT_MESSAGE");
@@ -302,14 +313,16 @@ export class GitHubContentsAdapter {
 
     const encodedOwner = encodeURIComponent(this.config.owner);
     const encodedRepository = encodeURIComponent(this.config.repository);
-    const blobs = await Promise.all(input.files.map((file) => this.request<GitHubBlobResponse>(
-      `/repos/${encodedOwner}/${encodedRepository}/git/blobs`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: encodeBase64(file.text), encoding: "base64" }),
-      },
-    )));
+    const blobs = input.inlineContent
+      ? await Promise.all(input.files.map(async (file) => ({ sha: await gitBlobSha(file.text) })))
+      : await Promise.all(input.files.map((file) => this.request<GitHubBlobResponse>(
+        `/repos/${encodedOwner}/${encodedRepository}/git/blobs`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content: encodeBase64(file.text), encoding: "base64" }),
+        },
+      )));
     const tree = await this.request<GitHubTreeResponse>(
       `/repos/${encodedOwner}/${encodedRepository}/git/trees`,
       {
@@ -317,12 +330,9 @@ export class GitHubContentsAdapter {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           base_tree: input.baseTreeSha,
-          tree: input.files.map((file, index) => ({
-            path: file.path,
-            mode: "100644",
-            type: "blob",
-            sha: blobs[index]!.sha,
-          })),
+          tree: input.files.map((file, index) => input.inlineContent
+            ? { path: file.path, mode: "100644", type: "blob", content: file.text }
+            : { path: file.path, mode: "100644", type: "blob", sha: blobs[index]!.sha }),
         }),
       },
     );

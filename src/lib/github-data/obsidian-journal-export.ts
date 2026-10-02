@@ -1,5 +1,6 @@
 import { type JournalEntryRecord } from "./journal-entries";
 import { type JournalRevisionRecord, sha256JournalRevisionBody } from "./journal-revisions";
+import { expectedObsidianJournalRelativePath } from "./obsidian-documents";
 import { normalizeObsidianSubdirectory, normalizeObsidianVaultName } from "./obsidian-vault-preflight";
 
 export const OBSIDIAN_JOURNAL_EXPORT_FORMAT_VERSION = 1 as const;
@@ -49,12 +50,14 @@ export async function buildObsidianJournalExportPlan(input: {
   const subdirectory = normalizeObsidianSubdirectory(input.subdirectory);
   await assertCanonicalSource(input.entry, input.revision);
 
-  const relativePath = `${subdirectory}/Journal/${input.entry.data.journal_date.slice(0, 4)}/${input.entry.data.journal_date}.md`;
+  const newRelativePath = expectedObsidianJournalRelativePath(subdirectory, input.entry.data.journal_date, input.entry.id);
+  const legacyRelativePath = expectedObsidianJournalRelativePath(subdirectory, input.entry.data.journal_date);
+  const relativePath = input.baseline?.relativePath ?? newRelativePath;
   const markdown = renderObsidianJournalMarkdown(input.entry, input.revision);
   const documentSha256 = await sha256Text(markdown);
   const currentDocumentSha256 = input.currentMarkdown === null ? null : await sha256Text(input.currentMarkdown);
   const baseline = input.baseline ?? null;
-  if (baseline) assertBaseline(baseline, input.entry.id, relativePath);
+  if (baseline) assertBaseline(baseline, input.entry.id, newRelativePath, legacyRelativePath);
 
   let disposition: ObsidianJournalExportDisposition;
   if (currentDocumentSha256 === documentSha256) disposition = "unchanged";
@@ -131,11 +134,11 @@ async function assertCanonicalSource(entry: JournalEntryRecord, revision: Journa
   if (await sha256JournalRevisionBody(revision.data.body_markdown) !== revision.data.content_sha256) throw new Error("OBSIDIAN_EXPORT_CONTENT_HASH_MISMATCH");
 }
 
-function assertBaseline(baseline: ObsidianJournalExportBaseline, journalEntryId: string, relativePath: string) {
+function assertBaseline(baseline: ObsidianJournalExportBaseline, journalEntryId: string, newRelativePath: string, legacyRelativePath: string) {
   if (
     baseline.formatVersion !== OBSIDIAN_JOURNAL_EXPORT_FORMAT_VERSION
     || baseline.journalEntryId !== journalEntryId
-    || baseline.relativePath !== relativePath
+    || (baseline.relativePath !== newRelativePath && baseline.relativePath !== legacyRelativePath)
     || !isStableId(baseline.revisionId)
     || !Number.isSafeInteger(baseline.recordVersion)
     || baseline.recordVersion < 1
