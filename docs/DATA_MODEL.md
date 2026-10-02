@@ -379,7 +379,7 @@ canonical 文件位于 `data/learning-resources/<id>.json`。v1 仅保存用户�
 - `id`, `habit_id`, `rule_type`, `rule_version`
 - `config_json`, `active_from`, `active_to`, `enabled`
 
-睡眠辅助规则 v1 使用 `sleep_start_before` 或 `wake_before`，配置中保存 `threshold_local_time` 与 IANA `timezone`。规则与 Habit 在同一个 Git commit 中创建；规则只读取已确认且分类为 `main_sleep` 的 `SleepSession`。入睡规则归属睡眠开始日，起床规则归属睡眠结束日。
+睡眠辅助规则 v1 使用 `sleep_start_before` 或 `wake_before`，配置中保存 `threshold_local_time` 与 IANA `timezone`。规则与 Habit 在同一个 Git commit 中创建；规则读取已人工确认的 v1 或来源已验证的自动 v2 `SleepSession`，且分类必须为 `main_sleep`。入睡规则归属睡眠开始日，起床规则归属睡眠结束日。自动同步不直接写入 Habit CheckIn，仍通过既有待确认建议流程。
 
 ### HabitCheckIn
 
@@ -429,7 +429,7 @@ COROS FIT/TCX 的 `health_type = workout` 已注册为正式 Health staging 变�
 - `confirmation_status`, `staging_record_id`
 - `user_adjusted`, `adjustment_reason`
 
-当前 v1 文件位于 `data/sleep-sessions/`，只接受最长 36 小时且结束晚于开始的记录。`local_date` 固定使用睡眠开始日；夜间睡眠、小睡和未确定都必须由用户在暂存区显式选择后确认。正式记录必须反向指向匹配的已确认 `HealthStagingRecord`。本切片不接入 COROS，也不自动触发 Habit。
+v1 文件位于 `data/sleep-sessions/`，只接受最长 36 小时且结束晚于开始的记录。`local_date` 固定使用睡眠开始日；夜间睡眠、小睡和未确定都必须由用户在暂存区显式选择后确认。v1 正式记录必须反向指向匹配的已确认 `HealthStagingRecord`。自动 COROS 来源使用下述 v2，旧记录不重写。
 
 ### HealthMetric
 
@@ -448,9 +448,40 @@ COROS FIT/TCX 的 `health_type = workout` 已注册为正式 Health staging 变�
 - `metrics_json`, `confirmation_status`, `staging_record_id`
 - `import_key`, `source_sha256`, `confirmed_at`, `workout_version`
 
-Canonical ID 固定为 `workout_<import_key>`；解析器会校验 ID、import key 与 staging 反向链接一致。
+v1 Canonical ID 固定为 `workout_<import_key>`；解析器会校验 ID、import key 与 staging 反向链接一致。
 
-Workout 是独立 canonical entity，而不是伪装成 `HealthMetric`：它有明确起止、运动类型、时长、距离和复合指标，并反向指向已确认的 staging record。`workout` 已注册到公共 EntityType，文件位于 `data/workouts/`。确认前在同一 Git HEAD 核对 staging 与目标路径；用户逐条查看精确清单并当次确认后，以单个非强制 Git commit 同时更新 staging 和创建 Workout。portable 导出/检查/恢复要求双向链接及来源、摘要一致；工作台只展示匹配记录。未审核候选不能自动生成 Workout，也不触发 Habit 或 Recommendation。
+Workout 是独立 canonical entity：它有明确起止、运动类型、时长、距离和复合指标。`workout` 已注册到公共 EntityType，文件位于 `data/workouts/`。v1 文件导入反向指向已确认的 staging record；确认前在同一 Git HEAD 核对 staging 与目标路径，以单个非强制 Git commit 同时更新 staging 和创建 Workout。v1 portable 导出/检查/恢复继续要求双向链接及来源、摘要一致；工作台只展示匹配的 v1 记录。自动 COROS 来源使用下述 v2，不生成虚假的人工审核记录。
+
+### COROS 自动来源 v2
+
+`SleepSession`、`Workout`、`HealthMetric` 保持各自目录和外层 `schema_version = 1` envelope，数据内分别使用 `sleep_session_version = 2`、`workout_version = 2`、`health_metric_version = 2`。解析器同时接受严格的旧 v1 与新 v2；不迁移或改写人工记录。
+
+所有 v2 固定 `import_mode = automatic`、`review_status = validated`，并保存 `source`：
+
+- `kind = coros_mcp`；`source_id` 为分域稳定来源标识。
+- `source_sha256` 为规范化候选摘要的 SHA-256，不是包含完整私人数据的原始响应哈希。
+- `mapping_version = 1`；`retrieved_at` 为此次取得并校验该候选的时间。
+
+v2 禁止 `confirmation_status`、`staging_record_id`，也不记录虚构的 `user_adjusted`、`adjustment_reason` 或 `confirmed_at`。新记录由用户已授权的后台同步写入；相同来源标识及内容指纹重复读取为 no-op。睡眠和运动记录 ID 分别为 `coros_sleep_<sha256(source_id)>`、`coros_workout_<sha256(source_id)>`，ID 中不暴露原始来源标识。来源修订或与既有人工/文件记录重复时保留现有 canonical，并写入 `CorosSyncConflict`。
+
+睡眠 v2 的 `duration_minutes` 始终表示起止窗口长度。`sleep_metrics_json` 恰含 `asleep_minutes`、`awake_minutes`、`score`、`wake_date`；数值缺失时使用 `null`，不根据模糊总计推算。`local_date` 仍是开始日以兼容旧语义；`wake_date` 必须与结束时刻的当地日期一致，健康页的日期统计和筛选按此醒来日。只接受已明确分类的 `main_sleep` 或 `nap`，分别保存每段时间。实际睡着/清醒时长不能超出窗口，评分范围为 0–100。
+
+运动 v2 继续使用现有摘要字段：`duration_seconds` 和 `metrics_json.elapsed_seconds` 保存起止 epoch 的差；COROS 报告的运动时长另保存到 `metrics_json.moving_seconds`。距离缺失用 `null`，不视为 0；未提供的生理/运动指标用 `null`。不保留位置、GPS、原始响应或轨迹序列。自动 `HealthMetric` v2 数据格式已就绪；运行中同步哪些指标由已实现的映射器与配置决定，不能仅凭 schema 宣称该域历史已覆盖。
+
+读取、导出与恢复均独立校验 v2 来源和摘要，无需人工 staging。健康目录达到 Contents API 1,000 条上限时切换到指定 Git tree 的完整文件清单；树响应被截断时整个读取失败，不显示不完整历史为全量。数据内版本升级不改变外层 envelope，因此 portable migration dry run 仍识别为当前外层 schema。
+
+### CorosSyncConflict
+
+独立 entity `coros_sync_conflict`，目录 `data/coros-sync-conflicts/`；不会混用 Obsidian 的 `SyncConflict`。这是不可变的待核实事实，`conflict_version = 1`、`status = pending`，含：
+
+- 来源 `source_id`、`source_sha256`、`mapping_version`。
+- `record_kind = sleep | workout`、`reason = source_changed | existing_record`。
+- `existing_record_id`、可为空的 `existing_source_sha256`。
+- `candidate` 为严格校验的睡眠候选及睡眠 metrics，或运动摘要候选；`detected_at` 为发现时间。
+
+新 canonical 与本批冲突事实在同一 Git 事务中提交；已有 canonical 不被静默覆盖。重复的来源修订使用确定性冲突 ID，避免反复新增。portable 导出包含该目录，校验路径、owner、schema 与数量，并可原样恢复；后续处理冲突需要独立明确的处理操作。
+
+`data/coros-sync-index/index.json` 是用于减少同步读取的派生索引，保存经过校验的 canonical 元数据及对应 Git blob SHA。每批先与指定 Git tree 对照，只重新读取新增或变化的 canonical 文件；索引不能替代 canonical 数据，也不能让已变化的文件绕过验证。portable 导出不包含这个可重建索引，恢复后根据已恢复的 canonical 和新仓库的 Git tree 重建，避免沿用旧仓库的 blob 状态。
 
 ### TrainingRecommendation
 

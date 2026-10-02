@@ -68,6 +68,7 @@ describe("COROS connection routes", () => {
             if (query.includes("FROM auth_sessions")) return session as T;
             if (query.includes("FROM coros_oauth_attempts")) return dbState.attempt as T | null;
             if (query.includes("FROM coros_connections")) return dbState.connection as T | null;
+            if (query.includes("FROM coros_sync_jobs")) return null;
             throw new Error(`Unexpected SELECT: ${query}`);
           },
           async run() {
@@ -83,6 +84,7 @@ describe("COROS connection routes", () => {
               return { success: true, meta: { changes } };
             }
             if (query.startsWith("DELETE FROM coros_oauth_attempts")) return { success: true, meta: { changes: 0 } };
+            if (query.startsWith("DELETE FROM coros_sync_jobs") || query.startsWith("UPDATE coros_sync_jobs")) return { success: true, meta: { changes: 0 } };
             if (query.startsWith("INSERT INTO coros_connections")) {
               dbState.connection = { github_user_id: values[0], client_id: values[1], redirect_uri: values[2],
                 resource_url: values[3], encrypted_refresh_token: values[4], scope: values[5],

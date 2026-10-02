@@ -59,9 +59,14 @@ async function refreshCorosConnectionInState(
   const encryptedNext = await encryptRefreshToken(renewed.refreshToken, encryptionKey);
   const result = await db.prepare(
     `UPDATE coros_connections SET encrypted_refresh_token = ?1, scope = ?2, updated_at = ?3
-      WHERE github_user_id = ?4 AND encrypted_refresh_token = ?5 AND state = ?6`,
+      WHERE github_user_id = ?4 AND encrypted_refresh_token = ?5`,
   ).bind(encryptedNext, renewed.scope, new Date().toISOString(), githubUserId,
-    connection.encrypted_refresh_token, requiredState).run();
+    connection.encrypted_refresh_token).run();
   if (!result.success || result.meta?.changes !== 1) throw new Error("COROS_TOKEN_ROTATION_CONFLICT");
+  // Preserve a successful remote rotation even when paused during the request.
+  // The token may be retained encrypted, but cannot be used after permission changes.
+  const current = await db.prepare("SELECT state FROM coros_connections WHERE github_user_id = ?1")
+    .bind(githubUserId).first<{ state: string }>();
+  if (current?.state !== requiredState) return null;
   return { resourceUrl: endpoints.resource, accessToken: renewed.accessToken, githubUserId };
 }

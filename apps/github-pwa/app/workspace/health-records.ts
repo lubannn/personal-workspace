@@ -3,15 +3,16 @@ import type { SyncedHealthStagingRecord, SyncedSleepSession, SyncedWorkout } fro
 
 export const HEALTH_RECORDS_PAGE_SIZE = 10;
 
-export type HealthRecordSource = { kind: "manual" | "coros_file" | "unknown"; label: string };
+export type HealthRecordSource = { kind: "manual" | "coros_file" | "coros_mcp" | "unknown"; label: string };
 export type HealthRecordRow = {
   id: string;
   startAt: string;
   endAt: string;
   timezone: string;
   source: HealthRecordSource;
+  recordDate?: string;
 };
-export type SleepRecordRow = HealthRecordRow & { category: string; durationSeconds: number };
+export type SleepRecordRow = HealthRecordRow & { category: string; durationSeconds: number; asleepSeconds: number | null; awakeSeconds: number | null; score: number | null };
 export type WorkoutRecordRow = HealthRecordRow & { activity: string; durationSeconds: number; distanceMetres: number | null };
 export type HealthDateRange = { from: string; to: string };
 
@@ -33,10 +34,10 @@ export function buildHealthRecordRows(sleepSessions: SyncedSleepSession[], worko
   const stagingById = new Map(staging.map((item) => [item.record.id, item.record]));
   const unknownSource: HealthRecordSource = { kind: "unknown", label: "来源待核实" };
   const sleepRows: SleepRecordRow[] = sleepSessions
-    .filter(({ record }) => record.deleted_at === null && record.data.confirmation_status === "confirmed")
+    .filter(({ record }) => record.deleted_at === null && (record.data.sleep_session_version === 2 || record.data.confirmation_status === "confirmed"))
     .map(({ record }) => {
       const data = record.data;
-      const source = stagingById.get(data.staging_record_id);
+      const source = data.sleep_session_version === 1 ? stagingById.get(data.staging_record_id) : undefined;
       const linked = source && source.deleted_at === null && source.owner_id === record.owner_id
         && source.data.health_type === "sleep_session" && source.data.status === "confirmed"
         && source.data.canonical_record_id === record.id
@@ -45,20 +46,24 @@ export function buildHealthRecordRows(sleepSessions: SyncedSleepSession[], worko
         id: record.id, startAt: data.start_at, endAt: data.end_at, timezone: data.timezone,
         category: ({ main_sleep: "夜间睡眠", nap: "小睡", unknown: "未分类" })[data.session_type],
         durationSeconds: data.duration_minutes * 60,
-        source: linked ? { kind: "manual" as const, label: source.data.source.label === "手工录入" ? "手工录入" : `手工录入 · ${source.data.source.label}` } : unknownSource,
+        recordDate: data.sleep_session_version === 2 ? data.sleep_metrics_json.wake_date : undefined,
+        asleepSeconds: data.sleep_session_version === 2 && data.sleep_metrics_json.asleep_minutes !== null ? data.sleep_metrics_json.asleep_minutes * 60 : null,
+        awakeSeconds: data.sleep_session_version === 2 && data.sleep_metrics_json.awake_minutes !== null ? data.sleep_metrics_json.awake_minutes * 60 : null,
+        score: data.sleep_session_version === 2 ? data.sleep_metrics_json.score : null,
+        source: data.sleep_session_version === 2 ? { kind: "coros_mcp" as const, label: "COROS · 自动同步" } : linked ? { kind: "manual" as const, label: source.data.source.label === "手工录入" ? "手工录入" : `手工录入 · ${source.data.source.label}` } : unknownSource,
       };
     }).sort(latestFirst);
   const workoutRows: WorkoutRecordRow[] = workouts
-    .filter(({ record }) => record.deleted_at === null && record.data.confirmation_status === "confirmed")
+    .filter(({ record }) => record.deleted_at === null && (record.data.workout_version === 2 || record.data.confirmation_status === "confirmed"))
     .map(({ record }) => {
       const data = record.data;
-      const source = stagingById.get(data.staging_record_id);
+      const source = data.workout_version === 1 ? stagingById.get(data.staging_record_id) : undefined;
       const linked = source?.data.health_type === "workout" && isWorkoutLinkedToStaging(record, source);
       return {
         id: record.id, startAt: data.start_at, endAt: data.end_at, timezone: data.timezone,
         activity: ({ run: "跑步", ride: "骑行", swim: "游泳", walk: "步行", hike: "徒步", strength: "力量训练", other: "其他活动" } as Record<string, string>)[data.activity_type] ?? data.activity_type,
         durationSeconds: data.duration_seconds, distanceMetres: data.distance,
-        source: linked && source.data.source.kind === "coros_file" ? { kind: "coros_file" as const, label: `COROS · ${source.data.source.format.toUpperCase()}` } : unknownSource,
+        source: data.workout_version === 2 ? { kind: "coros_mcp" as const, label: "COROS · 自动同步" } : linked && source.data.source.kind === "coros_file" ? { kind: "coros_file" as const, label: `COROS · ${source.data.source.format.toUpperCase()}` } : unknownSource,
       };
     }).sort(latestFirst);
   return { sleepRows, workoutRows };
@@ -69,7 +74,7 @@ function latestFirst(left: HealthRecordRow, right: HealthRecordRow) {
 }
 
 export function summarizeHealthRecords(rows: HealthRecordRow[], timezone: string) {
-  const dates = rows.map((row) => healthLocalParts(row.startAt, timezone).date).sort();
+  const dates = rows.map((row) => row.recordDate ?? healthLocalParts(row.startAt, timezone).date).sort();
   return { count: rows.length, earliest: dates[0] ?? null, latest: dates.at(-1) ?? null };
 }
 
@@ -87,7 +92,7 @@ export function healthRangeError(range: HealthDateRange): string | null {
 export function filterHealthRecords<T extends HealthRecordRow>(rows: T[], range: HealthDateRange, timezone: string): T[] {
   if (healthRangeError(range)) return [];
   return rows.filter((row) => {
-    const date = healthLocalParts(row.startAt, timezone).date;
+    const date = row.recordDate ?? healthLocalParts(row.startAt, timezone).date;
     return (!range.from || date >= range.from) && (!range.to || date <= range.to);
   });
 }

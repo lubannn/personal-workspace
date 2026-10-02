@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { createWorkspaceRecord } from "../../../../src/lib/github-data/protocol";
 import { createSleepHealthStagingData, confirmHealthStaging, confirmWorkoutHealthStaging } from "../../../../src/lib/github-data/health-staging-records";
-import { createConfirmedSleepSessionData } from "../../../../src/lib/github-data/sleep-sessions";
+import { createAutomaticSleepSessionData, createConfirmedSleepSessionData } from "../../../../src/lib/github-data/sleep-sessions";
 import { mapCorosActivities } from "../../../../src/lib/github-data/coros-activity-mapping";
 import { planCorosWorkoutStaging } from "../../../../src/lib/github-data/coros-workout-staging-plan";
-import { createConfirmedWorkoutData } from "../../../../src/lib/github-data/workouts";
+import { createAutomaticWorkoutData, createConfirmedWorkoutData } from "../../../../src/lib/github-data/workouts";
 import { buildHealthRecordRows, filterHealthRecords, formatHealthDistance, formatHealthDuration, healthLocalParts, healthRangeError, paginateHealthRecords, summarizeHealthRecords, type HealthRecordRow } from "./health-records";
 
 const timestamp = "2024-02-03T00:00:00.000Z";
@@ -25,6 +25,16 @@ function sleep(id: string, startAt: string) {
 }
 
 describe("health record browsing", () => {
+  it("shows automatic COROS sleep without staging and uses its wake day for summary and filters", () => {
+    const data = createAutomaticSleepSessionData({ start_at: "2024-02-01T15:00:00.000Z", end_at: "2024-02-01T23:00:00.000Z", local_date: "2024-02-01", timezone: "Asia/Shanghai", session_type: "main_sleep", duration_minutes: 480 }, { kind: "coros_mcp", source_id: "synthetic-sleep", source_sha256: "c".repeat(64), mapping_version: 1, retrieved_at: timestamp }, { asleep_minutes: 460, awake_minutes: 20, score: 80, wake_date: "2024-02-02" });
+    const record = createWorkspaceRecord({ entityType: "sleep_session", id: "sleep_auto", ownerId: "test-owner", timestamp, data });
+    const rows = buildHealthRecordRows([{ record, path: "synthetic.json", blobSha: "test" }], [], []).sleepRows;
+    expect(rows[0]).toMatchObject({ source: { kind: "coros_mcp", label: "COROS · 自动同步" }, recordDate: "2024-02-02", durationSeconds: 28800, asleepSeconds: 27600, awakeSeconds: 1200, score: 80 });
+    expect(summarizeHealthRecords(rows, "Asia/Shanghai")).toEqual({ count: 1, earliest: "2024-02-02", latest: "2024-02-02" });
+    expect(filterHealthRecords(rows, { from: "2024-02-02", to: "2024-02-02" }, "Asia/Shanghai")).toHaveLength(1);
+    expect(filterHealthRecords(rows, { from: "2024-02-01", to: "2024-02-01" }, "Asia/Shanghai")).toHaveLength(0);
+  });
+
   it("labels COROS imports only when confirmed source and workout content agree", async () => {
     const mapping = await mapCorosActivities({ sourceSha256: "b".repeat(64), parserVersion: "1", timezone: "Asia/Shanghai", activities: [{
       sourceIdentity: "synthetic-activity", sport: "Running", startAt: "2024-01-02T01:00:00Z", endAt: "2024-01-02T01:30:00Z",
@@ -38,6 +48,8 @@ describe("health record browsing", () => {
     const source = { record: confirmWorkoutHealthStaging(pending, timestamp), path: "synthetic-stage.json", blobSha: "test" };
     expect(buildHealthRecordRows([], [workout], [source]).workoutRows[0]).toMatchObject({ activity: "跑步", distanceMetres: 4000, source: { kind: "coros_file", label: "COROS · FIT" } });
     expect(buildHealthRecordRows([], [workout], []).workoutRows[0].source.kind).toBe("unknown");
+    const automatic = createWorkspaceRecord({ entityType: "workout", id: "workout_auto", ownerId: "test-owner", timestamp, data: createAutomaticWorkoutData(plan.items[0].proposedData.normalized_json, { kind: "coros_mcp", source_id: "synthetic-workout", source_sha256: "c".repeat(64), mapping_version: 1, retrieved_at: timestamp }) });
+    expect(buildHealthRecordRows([], [{ ...workout, record: automatic }], []).workoutRows[0]).toMatchObject({ activity: "跑步", distanceMetres: 4000, source: { kind: "coros_mcp", label: "COROS · 自动同步" } });
   });
 
   it("sorts by actual start time and excludes deleted records without inventing provenance", () => {

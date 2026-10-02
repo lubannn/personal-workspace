@@ -8,12 +8,18 @@
   "preview_urls": false,
   "vars": {
     "GITHUB_CLIENT_ID": "Iv23liMKCWS5z7czUAyl",
+    "GITHUB_APP_ID": "Iv23liMKCWS5z7czUAyl",
+    "GITHUB_APP_INSTALLATION_ID": "156819288",
+    "COROS_GITHUB_USER_ID": "313880510",
+    "COROS_SYNC_TIMEZONE": "Asia/Shanghai",
+    "COROS_WORKSPACE_OWNER_ID": "github_lubannn",
     "ALLOWED_GITHUB_LOGIN": "lubannn",
     "ALLOWED_REPO_OWNER": "lubannn",
     "ALLOWED_REPO_NAME": "personal-workspace-data",
     "COROS_MCP_RESOURCE_URL": "https://mcpcn.coros.com/mcp",
     "COROS_CALLBACK_ORIGIN": "https://nexus.lubannn.workers.dev"
   },
+  "triggers": { "crons": ["*/10 * * * *"] },
   "d1_databases": [
     {
       "binding": "DB",

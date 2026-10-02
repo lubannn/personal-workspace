@@ -157,6 +157,7 @@ export class GitHubContentsAdapter {
       repository: string;
       branch?: string;
       token: string;
+      userAgent?: string;
     },
     fetcher?: typeof fetch,
   ) {
@@ -173,6 +174,7 @@ export class GitHubContentsAdapter {
       repository,
       branch,
       token: this.config.token,
+      userAgent: this.config.userAgent,
     }, this.fetcher);
   }
 
@@ -181,7 +183,7 @@ export class GitHubContentsAdapter {
     try {
       const probe = await this.fetcher(`${API_ROOT}/rate_limit`, {
         cache: "no-store",
-        headers: { Accept: "application/vnd.github+json" },
+        headers: { Accept: "application/vnd.github+json", ...(this.config.userAgent ? { "User-Agent": this.config.userAgent } : {}) },
       });
       publicApiReached = probe.status > 0;
     } catch {
@@ -213,6 +215,7 @@ export class GitHubContentsAdapter {
           Accept: "application/vnd.github+json",
           Authorization: `Bearer ${this.config.token.trim()}`,
           "X-GitHub-Api-Version": API_VERSION,
+          ...(this.config.userAgent ? { "User-Agent": this.config.userAgent } : {}),
           ...init?.headers,
         },
       });
@@ -420,6 +423,23 @@ export class GitHubContentsAdapter {
     });
   }
 
+  /** Snapshot-pinned inventory without the Contents API's 1,000-file limit. */
+  async listTreeFiles(treeSha: string): Promise<GitHubDirectoryItem[]> {
+    if (!/^[a-f0-9]{40}$/u.test(treeSha)) throw new Error("INVALID_GITHUB_TREE_SHA");
+    const tree = await this.request<GitHubRecursiveTreeResponse>(
+      `/repos/${encodeURIComponent(this.config.owner)}/${encodeURIComponent(this.config.repository)}/git/trees/${treeSha}?recursive=1`,
+    );
+    if (tree.truncated) throw new GitHubDataError("The GitHub repository tree is incomplete.", 500, "GITHUB_TREE_TRUNCATED");
+    if (!Array.isArray(tree.tree)) throw new GitHubDataError("Invalid GitHub tree.", 500, "GITHUB_INVALID_RESPONSE");
+    return tree.tree.filter((item) => item.type === "blob").map((item) => {
+      assertFilePath(item.path);
+      if (!/^[a-f0-9]{40}$/u.test(item.sha) || !Number.isSafeInteger(item.size) || item.size! < 0) {
+        throw new GitHubDataError("Invalid GitHub tree blob.", 500, "GITHUB_INVALID_RESPONSE");
+      }
+      return { type: "file", name: item.path.split("/").at(-1)!, path: item.path, blobSha: item.sha, sizeBytes: item.size! };
+    });
+  }
+
   async listDirectory(pathname: string, refOverride?: string): Promise<GitHubDirectoryItem[]> {
     if (pathname) assertFilePath(pathname);
     const ref = refOverride ?? this.config.branch;
@@ -509,6 +529,7 @@ export class GitHubContentsAdapter {
     expectedHeadCommitSha: string;
     baseTreeSha: string;
     inlineContent?: boolean;
+    beforeRefUpdate?: () => Promise<void>;
   }) {
     if (input.files.length === 0) throw new Error("ATOMIC_WRITE_FILES_REQUIRED");
     if (!input.message || input.message.length > 120) throw new Error("INVALID_COMMIT_MESSAGE");
@@ -556,6 +577,7 @@ export class GitHubContentsAdapter {
         }),
       },
     );
+    await input.beforeRefUpdate?.();
     await this.request<GitHubRefResponse>(
       `/repos/${encodedOwner}/${encodedRepository}/git/refs/heads/${encodeURIComponent(this.config.branch ?? "main")}`,
       {

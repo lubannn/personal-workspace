@@ -31,9 +31,29 @@ describe("complete health collection reads", () => {
     await expect(loadHealthDirectory(adapter, "data/workouts", JSON.parse, () => true)).rejects.toThrow("HEALTH_DIRECTORY_LIMIT");
     expect(adapter.readBlobTexts).not.toHaveBeenCalled();
   });
+  it("reads every historical record when Contents reaches 1,000 and a complete tree is available", async () => {
+    const adapter = {
+      ...reader(1000),
+      readBranchSnapshot: vi.fn(async () => ({ branch: "main", headCommitSha: "a".repeat(40), rootTreeSha: "b".repeat(40) })),
+      listTreeFiles: vi.fn(async () => [...Array.from({ length: 1003 }, (_, index) => item(`${index}.json`)), { ...item("unrelated.json"), path: "data/sleep-sessions/unrelated.json" }, { ...item("nested.json"), path: "data/workouts/nested/nested.json" }]),
+    };
+    const result = await loadHealthDirectory(adapter, "data/workouts", JSON.parse, () => true);
+    expect(result).toHaveLength(1003);
+    expect(adapter.listTreeFiles).toHaveBeenCalledWith("b".repeat(40));
+    expect(result.at(-1)?.path).toBe("data/workouts/1002.json");
+  });
+  it("fails a full history refresh when the recursive tree is truncated", async () => {
+    const adapter = {
+      ...reader(1000),
+      readBranchSnapshot: vi.fn(async () => ({ branch: "main", headCommitSha: "a".repeat(40), rootTreeSha: "b".repeat(40) })),
+      listTreeFiles: vi.fn(async () => { throw new GitHubDataError("incomplete tree", 500, "GITHUB_TREE_TRUNCATED"); }),
+    };
+    await expect(loadHealthDirectory(adapter, "data/workouts", JSON.parse, () => true)).rejects.toThrow("incomplete tree");
+    expect(adapter.readBlobTexts).not.toHaveBeenCalled();
+  });
   it("discards the collection after disconnect or a newer refresh", async () => {
     const adapter = reader(12);
-    const isCurrent = vi.fn().mockReturnValueOnce(true).mockReturnValue(false);
+    const isCurrent = vi.fn().mockReturnValueOnce(true).mockReturnValueOnce(true).mockReturnValue(false);
     await expect(loadHealthDirectory(adapter, "data/workouts", JSON.parse, isCurrent)).rejects.toThrow("HEALTH_LOAD_CANCELLED");
     expect(adapter.readBlobTexts).toHaveBeenCalledTimes(1);
   });

@@ -109,6 +109,7 @@ import { createSleepHabitRuleData, evaluateSleepHabitRule, type SleepHabitRuleFi
 import { confirmHealthStaging, correctPendingHealthStaging, correctPendingSleepHealthStaging, createHealthStagingData, createSleepHealthStagingData, rejectHealthStaging, type HealthStagingFields, type SleepStagingFields } from "../../../src/lib/github-data/health-staging-records";
 import { createConfirmedHealthMetricData } from "../../../src/lib/github-data/health-metrics";
 import { createConfirmedSleepSessionData } from "../../../src/lib/github-data/sleep-sessions";
+import { listCompleteHealthDirectory } from "./workspace/health-collection-loading";
 import { commitWorkoutConfirmationTransaction, prepareWorkoutConfirmationTransaction } from "../../../src/lib/github-data/workout-confirmation-transaction";
 import { canWriteJournalDate } from "../../../src/lib/github-data/journal-entries";
 import { createJournalEntrySingleFile, updateJournalEntrySingleFile } from "../../../src/lib/github-data/journal-single-file-writes";
@@ -411,6 +412,14 @@ export default function GitHubWorkspacePage() {
       if (adapterRef.current === adapter) setErrorMessage(friendlyError(error));
     });
   }, [activeWorkspaceTab, connection, moduleLoaders, online, workspaceTabReady]);
+
+  useEffect(() => {
+    const refreshSyncedHealth = () => {
+      if (connection && online !== false) void loadHealthDomain();
+    };
+    window.addEventListener("coros-sync-updated", refreshSyncedHealth);
+    return () => window.removeEventListener("coros-sync-updated", refreshSyncedHealth);
+  }, [connection, loadHealthDomain, online]);
 
   const workspaceTimezone = connection?.timezone ?? "Asia/Shanghai";
   const [currentTaskDate, setCurrentTaskDate] = useState("");
@@ -2210,22 +2219,27 @@ export default function GitHubWorkspacePage() {
   }
 
   async function listHealthStagingFiles(adapter: GitHubContentsAdapter) {
-    try { return (await adapter.listDirectory("data/health-staging-records")).filter((item) => item.type === "file" && item.name.endsWith(".json")).sort((left, right) => left.path.localeCompare(right.path)); }
+    try { return (await listCompleteHealthDirectory(adapter, "data/health-staging-records")).filter((item) => item.type === "file" && item.name.endsWith(".json")).sort((left, right) => left.path.localeCompare(right.path)); }
     catch (error) { if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") return []; throw error; }
   }
 
   async function listHealthMetricFiles(adapter: GitHubContentsAdapter) {
-    try { return (await adapter.listDirectory("data/health-metrics")).filter((item) => item.type === "file" && item.name.endsWith(".json")).sort((left, right) => left.path.localeCompare(right.path)); }
+    try { return (await listCompleteHealthDirectory(adapter, "data/health-metrics")).filter((item) => item.type === "file" && item.name.endsWith(".json")).sort((left, right) => left.path.localeCompare(right.path)); }
     catch (error) { if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") return []; throw error; }
   }
 
   async function listSleepSessionFiles(adapter: GitHubContentsAdapter) {
-    try { return (await adapter.listDirectory("data/sleep-sessions")).filter((item) => item.type === "file" && item.name.endsWith(".json")).sort((left, right) => left.path.localeCompare(right.path)); }
+    try { return (await listCompleteHealthDirectory(adapter, "data/sleep-sessions")).filter((item) => item.type === "file" && item.name.endsWith(".json")).sort((left, right) => left.path.localeCompare(right.path)); }
+    catch (error) { if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") return []; throw error; }
+  }
+
+  async function listCorosSyncConflictFiles(adapter: GitHubContentsAdapter) {
+    try { return (await listCompleteHealthDirectory(adapter, "data/coros-sync-conflicts")).filter((item) => item.type === "file" && item.name.endsWith(".json")).sort((left, right) => left.path.localeCompare(right.path)); }
     catch (error) { if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") return []; throw error; }
   }
 
   async function listWorkoutFiles(adapter: GitHubContentsAdapter) {
-    try { return (await adapter.listDirectory("data/workouts")).filter((item) => item.type === "file" && item.name.endsWith(".json")).sort((left, right) => left.path.localeCompare(right.path)); }
+    try { return (await listCompleteHealthDirectory(adapter, "data/workouts")).filter((item) => item.type === "file" && item.name.endsWith(".json")).sort((left, right) => left.path.localeCompare(right.path)); }
     catch (error) { if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") return []; throw error; }
   }
 
@@ -2502,6 +2516,10 @@ export default function GitHubWorkspacePage() {
       const workoutExportFiles = [];
       for (let index = 0; index < workoutCandidates.length; index += batchSize) workoutExportFiles.push(...await Promise.all(workoutCandidates.slice(index, index + batchSize).map((item) => adapter.readText(item.path))));
 
+      const corosSyncConflictCandidates = await listCorosSyncConflictFiles(adapter);
+      const corosSyncConflictExportFiles = [];
+      for (let index = 0; index < corosSyncConflictCandidates.length; index += batchSize) corosSyncConflictExportFiles.push(...await Promise.all(corosSyncConflictCandidates.slice(index, index + batchSize).map((item) => adapter.readText(item.path))));
+
       setExportProgress("正在生成 SHA-256 manifest…");
       const generatedAt = new Date().toISOString();
       const portableExport = await buildPortableWorkspaceExport({
@@ -2537,6 +2555,7 @@ export default function GitHubWorkspacePage() {
         healthMetricFiles: healthMetricExportFiles,
         sleepSessionFiles: sleepSessionExportFiles,
         workoutFiles: workoutExportFiles,
+        corosSyncConflictFiles: corosSyncConflictExportFiles,
         generatedAt,
       });
       const inspection = await inspectPortableWorkspaceExport(portableExport);

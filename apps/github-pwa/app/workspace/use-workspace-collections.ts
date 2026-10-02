@@ -733,6 +733,8 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
       const stagingById = new Map(staging.map((item) => [item.record.id, item.record]));
       let unverifiedWorkoutCount = 0;
       const verifiedWorkouts = workouts.filter((item) => {
+        // Version 2 is validated by parseWorkoutRecord and carries COROS provenance directly.
+        if (item.record.data.workout_version === 2) return true;
         const source = stagingById.get(item.record.data.staging_record_id);
         const verified = source ? isWorkoutLinkedToStaging(item.record, source) : false;
         if (!verified && item.record.deleted_at === null) unverifiedWorkoutCount += 1;

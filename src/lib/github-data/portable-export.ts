@@ -17,6 +17,7 @@ import { parseJournalRevisionRecord, sha256JournalRevisionBody } from "./journal
 import { parseJournalImportCheckpointRecord } from "./journal-import-checkpoints";
 import { parseObsidianDocumentRecord } from "./obsidian-documents";
 import { parseSyncConflictRecord } from "./sync-conflicts";
+import { parseCorosSyncConflictRecord } from "./coros-sync-conflicts";
 import { parseLearningAreaRecord } from "./learning-areas";
 import { parseLearningGoalRecord } from "./learning-goals";
 import { parseLearningActivityRecord } from "./learning-activities";
@@ -57,7 +58,7 @@ export type PortableWorkspaceExport = {
   manifest: {
     schema_version: 1;
     scope: {
-      modules: Array<"workspace" | "captures" | "dashboard_layout" | "tasks" | "time_entries" | "projects" | "project_phases" | "milestones" | "project_notes" | "project_file_references" | "activity_events" | "calendar_events" | "report_drafts" | "journal_entries" | "journal_segments" | "journal_revisions" | "journal_import_checkpoints" | "obsidian_documents" | "sync_conflicts" | "learning_areas" | "learning_goals" | "learning_activities" | "learning_resources" | "habits" | "habit_rules" | "habit_check_ins" | "health_staging_records" | "health_metrics" | "sleep_sessions" | "workouts">;
+      modules: Array<"workspace" | "captures" | "dashboard_layout" | "tasks" | "time_entries" | "projects" | "project_phases" | "milestones" | "project_notes" | "project_file_references" | "activity_events" | "calendar_events" | "report_drafts" | "journal_entries" | "journal_segments" | "journal_revisions" | "journal_import_checkpoints" | "obsidian_documents" | "sync_conflicts" | "learning_areas" | "learning_goals" | "learning_activities" | "learning_resources" | "habits" | "habit_rules" | "habit_check_ins" | "health_staging_records" | "health_metrics" | "sleep_sessions" | "workouts" | "coros_sync_conflicts">;
       complete: true;
     };
     counts: {
@@ -91,6 +92,7 @@ export type PortableWorkspaceExport = {
       health_metrics: number;
       sleep_sessions: number;
       workouts?: number;
+      coros_sync_conflicts?: number;
     };
     files: PortableExportManifestFile[];
   };
@@ -139,6 +141,7 @@ export type ExportInspection = {
     healthMetrics: number;
     sleepSessions: number;
     workouts: number;
+    corosSyncConflicts: number;
   };
   errors: ExportInspectionIssue[];
   warnings: ExportInspectionIssue[];
@@ -190,6 +193,7 @@ export async function buildPortableWorkspaceExport(input: {
   healthMetricFiles?: GitHubStoredFile[];
   sleepSessionFiles?: GitHubStoredFile[];
   workoutFiles?: GitHubStoredFile[];
+  corosSyncConflictFiles?: GitHubStoredFile[];
   generatedAt?: string;
 }): Promise<PortableWorkspaceExport> {
   const dashboardLayoutFiles = input.dashboardLayoutFile ? [input.dashboardLayoutFile] : [];
@@ -220,7 +224,8 @@ export async function buildPortableWorkspaceExport(input: {
   const healthMetricFiles = input.healthMetricFiles ?? [];
   const sleepSessionFiles = input.sleepSessionFiles ?? [];
   const workoutFiles = input.workoutFiles ?? [];
-  const files = [input.workspaceFile, ...input.captureFiles, ...dashboardLayoutFiles, ...taskFiles, ...timeEntryFiles, ...projectFiles, ...projectPhaseFiles, ...milestoneFiles, ...projectNoteFiles, ...projectFileReferenceFiles, ...activityEventFiles, ...calendarEventFiles, ...reportDraftFiles, ...journalEntryFiles, ...journalSegmentFiles, ...journalRevisionFiles, ...journalImportCheckpointFiles, ...obsidianDocumentFiles, ...syncConflictFiles, ...learningAreaFiles, ...learningGoalFiles, ...learningActivityFiles, ...learningResourceFiles, ...habitFiles, ...habitRuleFiles, ...habitCheckInFiles, ...healthStagingFiles, ...healthMetricFiles, ...sleepSessionFiles, ...workoutFiles]
+  const corosSyncConflictFiles = input.corosSyncConflictFiles ?? [];
+  const files = [input.workspaceFile, ...input.captureFiles, ...dashboardLayoutFiles, ...taskFiles, ...timeEntryFiles, ...projectFiles, ...projectPhaseFiles, ...milestoneFiles, ...projectNoteFiles, ...projectFileReferenceFiles, ...activityEventFiles, ...calendarEventFiles, ...reportDraftFiles, ...journalEntryFiles, ...journalSegmentFiles, ...journalRevisionFiles, ...journalImportCheckpointFiles, ...obsidianDocumentFiles, ...syncConflictFiles, ...learningAreaFiles, ...learningGoalFiles, ...learningActivityFiles, ...learningResourceFiles, ...habitFiles, ...habitRuleFiles, ...habitCheckInFiles, ...healthStagingFiles, ...healthMetricFiles, ...sleepSessionFiles, ...workoutFiles, ...corosSyncConflictFiles]
     .map((file) => ({ ...file }))
     .sort((left, right) => left.path.localeCompare(right.path));
   const manifestFiles = await Promise.all(files.map(async (file) => ({
@@ -237,7 +242,7 @@ export async function buildPortableWorkspaceExport(input: {
     source: { repository: input.repository, branch: input.branch },
     manifest: {
       schema_version: 1,
-      scope: { modules: ["workspace", "captures", "dashboard_layout", "tasks", "time_entries", "projects", "project_phases", "milestones", "project_notes", "project_file_references", "activity_events", "calendar_events", "report_drafts", "journal_entries", "journal_segments", "journal_revisions", "journal_import_checkpoints", "obsidian_documents", "sync_conflicts", "learning_areas", "learning_goals", "learning_activities", "learning_resources", "habits", "habit_rules", "habit_check_ins", "health_staging_records", "health_metrics", "sleep_sessions", "workouts"], complete: true },
+      scope: { modules: ["workspace", "captures", "dashboard_layout", "tasks", "time_entries", "projects", "project_phases", "milestones", "project_notes", "project_file_references", "activity_events", "calendar_events", "report_drafts", "journal_entries", "journal_segments", "journal_revisions", "journal_import_checkpoints", "obsidian_documents", "sync_conflicts", "learning_areas", "learning_goals", "learning_activities", "learning_resources", "habits", "habit_rules", "habit_check_ins", "health_staging_records", "health_metrics", "sleep_sessions", "workouts", "coros_sync_conflicts"], complete: true },
       counts: {
         files: files.length,
         captures: input.captureFiles.length,
@@ -269,6 +274,7 @@ export async function buildPortableWorkspaceExport(input: {
         health_metrics: healthMetricFiles.length,
         sleep_sessions: sleepSessionFiles.length,
         workouts: workoutFiles.length,
+        coros_sync_conflicts: corosSyncConflictFiles.length,
       },
       files: manifestFiles,
     },
@@ -302,7 +308,7 @@ export async function inspectPortableWorkspaceExport(value: unknown): Promise<Ex
     generatedAt: null,
     repository: null,
     workspace: null,
-    counts: { files: 0, captures: 0, dashboardLayouts: 0, tasks: 0, timeEntries: 0, projects: 0, projectPhases: 0, milestones: 0, projectNotes: 0, projectFileReferences: 0, activityEvents: 0, calendarEvents: 0, reportDrafts: 0, journalEntries: 0, journalSegments: 0, journalRevisions: 0, journalImportCheckpoints: 0, obsidianDocuments: 0, syncConflicts: 0, learningAreas: 0, learningGoals: 0, learningActivities: 0, learningResources: 0, habits: 0, habitRules: 0, habitCheckIns: 0, healthStagingRecords: 0, healthMetrics: 0, sleepSessions: 0, workouts: 0 },
+    counts: { files: 0, captures: 0, dashboardLayouts: 0, tasks: 0, timeEntries: 0, projects: 0, projectPhases: 0, milestones: 0, projectNotes: 0, projectFileReferences: 0, activityEvents: 0, calendarEvents: 0, reportDrafts: 0, journalEntries: 0, journalSegments: 0, journalRevisions: 0, journalImportCheckpoints: 0, obsidianDocuments: 0, syncConflicts: 0, learningAreas: 0, learningGoals: 0, learningActivities: 0, learningResources: 0, habits: 0, habitRules: 0, habitCheckIns: 0, healthStagingRecords: 0, healthMetrics: 0, sleepSessions: 0, workouts: 0, corosSyncConflicts: 0 },
     errors,
     warnings,
   };
@@ -1108,7 +1114,7 @@ export async function inspectPortableWorkspaceExport(value: unknown): Promise<Ex
       if (recordPath("health_metric", record.id) !== file.path) errors.push({ code: "HEALTH_METRIC_PATH_MISMATCH", message: "HealthMetric 的 ID 与文件路径不一致。", path: file.path });
       if (healthMetricIds.has(record.id)) errors.push({ code: "DUPLICATE_HEALTH_METRIC_ID", message: "导出包中存在重复 HealthMetric ID。", path: file.path });
       healthMetricIds.add(record.id);
-      if (!healthStagingIds.has(record.data.staging_record_id) || confirmedHealthLinks.get(record.id) !== record.data.staging_record_id) errors.push({ code: "HEALTH_METRIC_STAGING_MISMATCH", message: "HealthMetric 缺少匹配的已确认暂存来源。", path: file.path });
+      if (record.data.health_metric_version === 1 && (!healthStagingIds.has(record.data.staging_record_id) || confirmedHealthLinks.get(record.id) !== record.data.staging_record_id)) errors.push({ code: "HEALTH_METRIC_STAGING_MISMATCH", message: "HealthMetric 缺少匹配的已确认暂存来源。", path: file.path });
     } catch { errors.push({ code: "INVALID_HEALTH_METRIC_RECORD", message: "HealthMetric 文件无法通过结构校验。", path: file.path }); }
   }
   const rawHealthMetricCount = manifestCounts?.health_metrics;
@@ -1124,7 +1130,7 @@ export async function inspectPortableWorkspaceExport(value: unknown): Promise<Ex
       if (recordPath("sleep_session", record.id) !== file.path) errors.push({ code: "SLEEP_SESSION_PATH_MISMATCH", message: "SleepSession 的 ID 与文件路径不一致。", path: file.path });
       if (sleepSessionIds.has(record.id)) errors.push({ code: "DUPLICATE_SLEEP_SESSION_ID", message: "导出包中存在重复 SleepSession ID。", path: file.path });
       sleepSessionIds.add(record.id);
-      if (!healthStagingIds.has(record.data.staging_record_id) || confirmedHealthLinks.get(record.id) !== record.data.staging_record_id) errors.push({ code: "SLEEP_SESSION_STAGING_MISMATCH", message: "SleepSession 缺少匹配的已确认暂存来源。", path: file.path });
+      if (record.data.sleep_session_version === 1 && (!healthStagingIds.has(record.data.staging_record_id) || confirmedHealthLinks.get(record.id) !== record.data.staging_record_id)) errors.push({ code: "SLEEP_SESSION_STAGING_MISMATCH", message: "SleepSession 缺少匹配的已确认暂存来源。", path: file.path });
     } catch { errors.push({ code: "INVALID_SLEEP_SESSION_RECORD", message: "SleepSession 文件无法通过结构校验。", path: file.path }); }
   }
   const rawSleepSessionCount = manifestCounts?.sleep_sessions;
@@ -1140,7 +1146,7 @@ export async function inspectPortableWorkspaceExport(value: unknown): Promise<Ex
       if (workoutIds.has(record.id)) errors.push({ code: "DUPLICATE_WORKOUT_ID", message: "导出包中存在重复 Workout ID。", path: file.path });
       workoutIds.add(record.id);
       const staging = confirmedWorkoutStaging.get(record.id);
-      if (!staging || !isWorkoutLinkedToStaging(record, staging)) {
+      if (record.data.workout_version === 1 && (!staging || !isWorkoutLinkedToStaging(record, staging))) {
         errors.push({ code: "WORKOUT_STAGING_MISMATCH", message: "Workout 缺少匹配的已确认暂存来源，或活动摘要不一致。", path: file.path });
       }
     } catch { errors.push({ code: "INVALID_WORKOUT_RECORD", message: "Workout 文件无法通过结构校验。", path: file.path }); }
@@ -1150,6 +1156,20 @@ export async function inspectPortableWorkspaceExport(value: unknown): Promise<Ex
   }
   const rawWorkoutCount = manifestCounts?.workouts;
   if ((rawWorkoutCount !== undefined || workoutFiles.length > 0) && rawWorkoutCount !== workoutFiles.length) errors.push({ code: "WORKOUT_COUNT_MISMATCH", message: "Workout 数量与 manifest 不一致。" });
+  const corosSyncConflictIds = new Set<string>();
+  const corosSyncConflictFiles = validPayloadFiles.filter((file) => file.path.startsWith("data/coros-sync-conflicts/"));
+  result.counts.corosSyncConflicts = corosSyncConflictFiles.length;
+  for (const file of corosSyncConflictFiles) {
+    try {
+      const record = parseCorosSyncConflictRecord(file.content);
+      if (result.workspace && record.owner_id !== result.workspace.owner_id) errors.push({ code: "OWNER_MISMATCH", message: "COROS 同步冲突的 owner_id 与 workspace 不一致。", path: file.path });
+      if (recordPath("coros_sync_conflict", record.id) !== file.path) errors.push({ code: "COROS_SYNC_CONFLICT_PATH_MISMATCH", message: "COROS 同步冲突的 ID 与文件路径不一致。", path: file.path });
+      if (corosSyncConflictIds.has(record.id)) errors.push({ code: "DUPLICATE_COROS_SYNC_CONFLICT_ID", message: "导出包中存在重复 COROS 同步冲突 ID。", path: file.path });
+      corosSyncConflictIds.add(record.id);
+    } catch { errors.push({ code: "INVALID_COROS_SYNC_CONFLICT_RECORD", message: "COROS 同步冲突无法通过结构校验。", path: file.path }); }
+  }
+  const rawCorosSyncConflictCount = manifestCounts?.coros_sync_conflicts;
+  if ((rawCorosSyncConflictCount !== undefined || corosSyncConflictFiles.length > 0) && rawCorosSyncConflictCount !== corosSyncConflictFiles.length) errors.push({ code: "COROS_SYNC_CONFLICT_COUNT_MISMATCH", message: "COROS 同步冲突数量与 manifest 不一致。" });
   for (const link of sleepEvidenceLinks) {
     if (!sleepSessionIds.has(link.evidenceId)) errors.push({ code: "HABIT_CHECK_IN_SLEEP_EVIDENCE_MISSING", message: "HabitCheckIn 引用的正式睡眠证据不在导出包中。", path: link.path });
   }
@@ -1185,6 +1205,7 @@ export async function inspectPortableWorkspaceExport(value: unknown): Promise<Ex
     && !file.path.startsWith("data/health-metrics/")
     && !file.path.startsWith("data/sleep-sessions/")
     && !file.path.startsWith("data/workouts/")
+    && !file.path.startsWith("data/coros-sync-conflicts/")
   ));
   for (const file of unexpectedFiles) {
     errors.push({ code: "UNEXPECTED_FILE", message: "当前版本不支持此导出路径。", path: file.path });
