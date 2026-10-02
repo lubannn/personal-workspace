@@ -8,6 +8,7 @@ import { journalDisplaySegments } from "../../../../src/lib/github-data/journal-
 import { activeJournalEntries, canWriteJournalDate, filterJournalEntries, journalEntryMarkdownFileName, journalEntrySubmittedTime, journalMonthDays, previousJournalDate, renderJournalEntryMarkdown, shiftJournalMonth, trashedJournalEntries } from "../../../../src/lib/github-data/journal-entries";
 import { LegacyJournalImportSection } from "./legacy-journal-import-section";
 import { LegacyJournalCheckpointHistory } from "./legacy-journal-checkpoint-history";
+import { JournalStatistics } from "./journal-statistics";
 import type { Connection, SyncedJournalEntry, SyncedJournalImportCheckpoint } from "./page-model";
 
 type JournalFields = { journalDate: string; bodyMarkdown: string };
@@ -36,7 +37,7 @@ type Props = {
 };
 
 export function JournalSection({ connection, adapter, online, todayDate, journalEntryFiles, journalEntryCatalog, loadedMonths, loadError, journalImportCheckpointFiles, loading, loadingLegacyHistory, saving, savingId, onCreate, onEdit, onDeletionChange, onRefresh, onBrowseMonth, onRefreshLegacyHistory, onLegacyImportCommitted }: Props) {
-  const [view, setView] = useState<"active" | "trash">("active");
+  const [view] = useState<"active" | "trash">("active");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [journalDate, setJournalDate] = useState("");
   const [bodyMarkdown, setBodyMarkdown] = useState("");
@@ -53,7 +54,6 @@ export function JournalSection({ connection, adapter, online, todayDate, journal
   const recentView = !month && !selectedDay;
   const monthLoaded = loadedMonths.includes(displayedMonth);
   const resultsLoaded = recentView ? source.length > 0 || (!loading && !loadError) : monthLoaded;
-  const totalPaths = useMemo(() => new Set([...journalEntryCatalog.map((item) => item.path), ...journalEntryFiles.map((item) => item.path)]), [journalEntryCatalog, journalEntryFiles]);
   const visible = useMemo(() => {
     const filtered = filterJournalEntries(records, { view, month: recentView ? undefined : displayedMonth, query: searchQuery }).filter((record) => !selectedDay || record.data.journal_date === selectedDay);
     return (recentView ? filtered.slice(0, 3) : filtered).map((record) => byId.get(record.id)!);
@@ -94,8 +94,7 @@ export function JournalSection({ connection, adapter, online, todayDate, journal
     <div className="card-heading">
       <div><p className="eyebrow">Nexus · Journal</p><h2 id="journal-title">日记</h2><p className="journal-subtitle">随时回看；仅今天和昨天可以写入或修改。日期按工作台时区计算。</p></div>
       <div className="journal-view-actions" aria-label="日记视图与同步">
-        <button className="view-button" type="button" aria-pressed={view === "active"} onClick={() => setView("active")}>日记 {Math.max(0, totalPaths.size - trash.length)}</button>
-        <button className="view-button" type="button" aria-pressed={view === "trash"} onClick={() => { setView("trash"); resetForm(); }}>回收站 {trash.length}</button>
+        <JournalStatistics key={connection ? `${connection.ownerId}:${connection.repository}` : "disconnected"} connection={connection} adapter={adapter} catalog={journalEntryCatalog} loaded={journalEntryFiles} busy={loading || busy} />
         <button className="secondary-button" type="button" onClick={() => onRefresh(recentView ? undefined : displayedMonth)} disabled={!connection || loading}>{loading ? "刷新中…" : "从 GitHub 刷新"}</button>
       </div>
     </div>
