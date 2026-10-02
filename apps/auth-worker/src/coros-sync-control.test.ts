@@ -181,6 +181,41 @@ describe("COROS synchronization controls", () => {
     expect(fixture.saved()).toMatchObject({ lease_token: "worker-yesterday", lease_until: "2024-02-01T16:10:00.000Z" });
   });
 
+  it("does not regress today's queue when yesterday's manual request arrives after midnight", async () => {
+    fixture.connection(); fixture.job();
+    let releaseOldRequest!: () => void;
+    let oldRequestReachedQueue!: () => void;
+    const delayedQueue = new Promise<void>(resolve => { releaseOldRequest = resolve; });
+    const reachedQueue = new Promise<void>(resolve => { oldRequestReachedQueue = resolve; });
+    const prepare = fixture.db.prepare.bind(fixture.db);
+    let delayFirstQueue = true;
+    fixture.db.prepare = query => {
+      const statement = prepare(query);
+      if (delayFirstQueue && query.startsWith("UPDATE coros_sync_jobs") && query.includes("request_seq")) {
+        delayFirstQueue = false;
+        const run = statement.run.bind(statement);
+        statement.run = async () => {
+          oldRequestReachedQueue();
+          await delayedQueue;
+          return run();
+        };
+      }
+      return statement;
+    };
+    vi.setSystemTime("2024-02-01T15:59:59.000Z");
+    const oldRequest = handleCorosConnectionRequest(request("sync"), fixture.env);
+    await reachedQueue;
+    try {
+      vi.setSystemTime("2024-02-01T16:00:01.000Z");
+      expect(await (await handleCorosConnectionRequest(request("daily"), fixture.env)).json()).toMatchObject({ queued: true });
+      expect(queueState()).toEqual({ request_seq: 2, requested_through: "2024-02-02", daily_requested_date: "2024-02-02" });
+    } finally { releaseOldRequest(); }
+    expect(await (await oldRequest).json()).toMatchObject({ queued: true });
+    expect(queueState()).toEqual({ request_seq: 3, requested_through: "2024-02-02", daily_requested_date: "2024-02-02" });
+    expect(await (await handleCorosConnectionRequest(request("daily"), fixture.env)).json()).toMatchObject({ queued: false });
+    expect(queueState()?.request_seq).toBe(3);
+  });
+
   it("does not consume the daily trigger when synchronization is unconfigured", async () => {
     fixture.connection(); fixture.job(); const before = fixture.saved();
     const response = await handleCorosConnectionRequest(request("daily"), { ...fixture.env, GITHUB_APP_PRIVATE_KEY: undefined });
