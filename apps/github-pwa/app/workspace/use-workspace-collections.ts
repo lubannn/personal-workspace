@@ -38,6 +38,7 @@ import { parseHealthMetricRecord } from "../../../../src/lib/github-data/health-
 import { parseSleepSessionRecord } from "../../../../src/lib/github-data/sleep-sessions";
 import { isWorkoutLinkedToStaging, parseWorkoutRecord } from "../../../../src/lib/github-data/workouts";
 import { parseCaptureRecord } from "../../../../src/lib/github-data/workspace";
+import { loadHealthDirectory } from "./health-collection-loading";
 import { friendlyError, type SyncedActivityEvent, type SyncedCalendarEvent, type SyncedCapture, type SyncedHabit, type SyncedHabitCheckIn, type SyncedHabitRule, type SyncedHealthMetric, type SyncedHealthStagingRecord, type SyncedJournalEntry, type SyncedJournalImportCheckpoint, type SyncedJournalRevision, type SyncedJournalSegment, type SyncedLearningActivity, type SyncedLearningArea, type SyncedLearningGoal, type SyncedLearningResource, type SyncedMilestone, type SyncedObsidianDocument, type SyncedProject, type SyncedProjectFileReference, type SyncedProjectNote, type SyncedProjectPhase, type SyncedReportDraft, type SyncedSleepSession, type SyncedSyncConflict, type SyncedTask, type SyncedTimeEntry, type SyncedWorkout } from "./page-model";
 
 type Options = {
@@ -81,6 +82,10 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
   const [healthMetricFiles, setHealthMetricFiles] = useState<SyncedHealthMetric[]>([]);
   const [sleepSessionFiles, setSleepSessionFiles] = useState<SyncedSleepSession[]>([]);
   const [workoutFiles, setWorkoutFiles] = useState<SyncedWorkout[]>([]);
+  const [healthLoaded, setHealthLoaded] = useState(false);
+  const [healthLoadError, setHealthLoadError] = useState("");
+  const [healthUnverifiedWorkoutCount, setHealthUnverifiedWorkoutCount] = useState(0);
+  const healthLoadRequestRef = useRef(0);
   const [dashboardLayout, setDashboardLayout] = useState<DashboardLayout | null>(null);
   const [dashboardBlobSha, setDashboardBlobSha] = useState<string | null>(null);
   const [loadingCaptures, setLoadingCaptures] = useState(false);
@@ -711,34 +716,39 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
   }, [adapterRef, setErrorMessage]);
 
   const loadHealthDomain = useCallback(async (adapter = adapterRef.current) => {
-    if (!adapter) return;
-    setLoadingHealth(true); setErrorMessage("");
-    async function loadDirectory<T>(directory: string, parse: (text: string) => T) {
-      let items;
-      try { items = await adapter!.listDirectory(directory); }
-      catch (error) { if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") return []; throw error; }
-      const candidates = items.filter((item) => item.type === "file" && item.name.endsWith(".json")).sort((left, right) => right.name.localeCompare(left.name));
-      const records: Array<{ record: T; path: string; blobSha: string }> = [];
-      for (let index = 0; index < candidates.length; index += 6) records.push(...(await Promise.all(candidates.slice(index, index + 6).map(async (item) => {
-        try { const file = await adapter!.readText(item.path); return { record: parse(file.text), path: file.path, blobSha: file.blobSha }; } catch { return null; }
-      }))).filter((item): item is { record: T; path: string; blobSha: string } => item !== null));
-      return records;
-    }
+    if (!adapter || adapter !== adapterRef.current) return;
+    const requestId = ++healthLoadRequestRef.current;
+    const isCurrent = () => healthLoadRequestRef.current === requestId && adapterRef.current === adapter;
+    setLoadingHealth(true); setHealthLoadError(""); setErrorMessage("");
     try {
       const [staging, metrics, sleepSessions, workouts] = await Promise.all([
-        loadDirectory("data/health-staging-records", parseHealthStagingRecord),
-        loadDirectory("data/health-metrics", parseHealthMetricRecord),
-        loadDirectory("data/sleep-sessions", parseSleepSessionRecord),
-        loadDirectory("data/workouts", parseWorkoutRecord),
+        loadHealthDirectory(adapter, "data/health-staging-records", parseHealthStagingRecord, isCurrent),
+        loadHealthDirectory(adapter, "data/health-metrics", parseHealthMetricRecord, isCurrent),
+        loadHealthDirectory(adapter, "data/sleep-sessions", parseSleepSessionRecord, isCurrent),
+        loadHealthDirectory(adapter, "data/workouts", parseWorkoutRecord, isCurrent),
       ]);
+      if (!isCurrent()) return;
       const stagingById = new Map(staging.map((item) => [item.record.id, item.record]));
-      setHealthStagingFiles(staging); setHealthMetricFiles(metrics); setSleepSessionFiles(sleepSessions);
-      setWorkoutFiles(workouts.filter((item) => {
+      let unverifiedWorkoutCount = 0;
+      const verifiedWorkouts = workouts.filter((item) => {
         const source = stagingById.get(item.record.data.staging_record_id);
-        return source ? isWorkoutLinkedToStaging(item.record, source) : false;
-      }));
-    } catch (error) { setErrorMessage(friendlyError(error)); }
-    finally { setLoadingHealth(false); }
+        const verified = source ? isWorkoutLinkedToStaging(item.record, source) : false;
+        if (!verified && item.record.deleted_at === null) unverifiedWorkoutCount += 1;
+        return verified;
+      });
+      setHealthStagingFiles(staging); setHealthMetricFiles(metrics); setSleepSessionFiles(sleepSessions);
+      setWorkoutFiles(verifiedWorkouts);
+      setHealthUnverifiedWorkoutCount(unverifiedWorkoutCount);
+      setHealthLoaded(true);
+    } catch (error) {
+      if (!isCurrent()) return;
+      const message = error instanceof Error && error.message === "HEALTH_DIRECTORY_LIMIT"
+        ? "健康记录目录已达到读取上限，暂时无法确认完整记录范围。请联系维护者扩展读取方式。"
+        : error instanceof Error && error.message === "HEALTH_RECORD_INVALID"
+          ? "部分健康记录格式无效，本次读取未完成；请检查数据后重试。"
+          : `健康记录读取未完成：${friendlyError(error)}`;
+      setHealthLoadError(message); setErrorMessage(message);
+    } finally { if (isCurrent()) setLoadingHealth(false); }
   }, [adapterRef, setErrorMessage]);
 
   const loadProjectFileReferences = useCallback(async (adapter = adapterRef.current) => {
@@ -807,6 +817,11 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
   }, [adapterRef, setDashboardClean, setErrorMessage]);
 
   function clearCollections() {
+    healthLoadRequestRef.current += 1;
+    setLoadingHealth(false);
+    setHealthLoaded(false);
+    setHealthLoadError("");
+    setHealthUnverifiedWorkoutCount(0);
     setCaptureFiles([]);
     setTaskFiles([]);
     setTimeEntryFiles([]);
@@ -925,6 +940,9 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     loadingLearningAreas,
     loadingHabits,
     loadingHealth,
+    healthLoaded,
+    healthLoadError,
+    healthUnverifiedWorkoutCount,
     loadingDashboard,
     loadRecentCaptures,
     loadTasks,

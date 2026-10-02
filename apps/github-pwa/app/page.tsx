@@ -163,6 +163,7 @@ import { JournalSection } from "./workspace/journal-section";
 import { LearningSection } from "./workspace/learning-section";
 import { HabitsSection } from "./workspace/habits-section";
 import { HealthStagingSection } from "./workspace/health-staging-section";
+import { HealthRecordsSection } from "./workspace/health-records-section";
 import { WorkspaceTabNavigation, WorkspaceTabPanel, workspaceTabFromHash, type WorkspaceTabId } from "./workspace/workspace-tab-navigation";
 
 export default function GitHubWorkspacePage() {
@@ -340,6 +341,9 @@ export default function GitHubWorkspacePage() {
     loadingLearningAreas,
     loadingHabits,
     loadingHealth,
+    healthLoaded,
+    healthLoadError,
+    healthUnverifiedWorkoutCount,
     loadingDashboard,
     loadRecentCaptures,
     loadTasks,
@@ -3186,6 +3190,18 @@ export default function GitHubWorkspacePage() {
 
 
       <WorkspaceTabPanel tab="health" activeTab={activeWorkspaceTab}>
+      <HealthRecordsSection
+        connected={connection !== null}
+        timezone={connection?.timezone ?? "Asia/Shanghai"}
+        loading={loadingHealth}
+        loaded={healthLoaded}
+        error={healthLoadError}
+        unverifiedWorkoutCount={healthUnverifiedWorkoutCount}
+        sleepSessions={sleepSessionFiles}
+        workouts={workoutFiles}
+        staging={healthStagingFiles}
+        onRefresh={() => void loadHealthDomain()}
+      />
       <HealthStagingSection
         connection={connection}
         adapter={adapterRef.current}
@@ -3193,8 +3209,6 @@ export default function GitHubWorkspacePage() {
         todayDate={currentTaskDate}
         staging={healthStagingFiles}
         metrics={healthMetricFiles}
-        sleepSessions={sleepSessionFiles}
-        workouts={workoutFiles}
         loading={loadingHealth}
         saving={savingHealth}
         savingId={savingHealthId}

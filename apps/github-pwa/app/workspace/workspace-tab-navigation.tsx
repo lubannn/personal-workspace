@@ -33,6 +33,7 @@ const SECTION_HASHES: Record<string, WorkspaceTabId> = {
   "learning-title": "learning",
   "habits-title": "habits",
   "health-title": "health",
+  "health-records-title": "health",
   "coros-connection-title": "health",
   "coros-batch-import-title": "health",
   "coros-file-preflight-title": "health",
