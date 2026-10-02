@@ -200,7 +200,8 @@ async function controlSync(request: Request, env: CorosConnectionEnv, userId: st
   // explicit refreshes append a request without resetting history or cancelling the active batch.
   const today = todayInTimezone(now, env.COROS_SYNC_TIMEZONE ?? "Asia/Shanghai");
   const queued = await env.DB!.prepare(`UPDATE coros_sync_jobs SET request_seq = request_seq + 1,
-    requested_through = ?1, daily_requested_date = ?1, next_run_at = ?2, updated_at = ?2
+    requested_through = MAX(COALESCE(requested_through, ?1), ?1),
+    daily_requested_date = MAX(COALESCE(daily_requested_date, ?1), ?1), next_run_at = ?2, updated_at = ?2
     WHERE github_user_id = ?3
     AND EXISTS (SELECT 1 FROM coros_connections WHERE github_user_id = ?3 AND state = 'enabled')
     ${action === "daily" ? "AND (daily_requested_date IS NULL OR daily_requested_date < ?1)" : ""}`)
