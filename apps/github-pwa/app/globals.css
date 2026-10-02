@@ -394,15 +394,21 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .journal-browser-search input { min-width: 0; }
 .journal-browser-meta { min-height: 42px; display: flex; align-items: center; justify-content: flex-end; gap: 9px; color: var(--muted); font-size: 9px; white-space: nowrap; }
 .journal-list { margin: 16px 0 0; padding: 0; list-style: none; }
-.journal-list > li { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 18px; padding: 16px 0; border-bottom: 1px solid var(--line); }
+.journal-list > li { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: start; gap: 18px; padding: 16px 0; border-bottom: 1px solid var(--line); }
 .journal-list > li > div:first-child { min-width: 0; display: grid; gap: 5px; }
 .journal-list span, .journal-list small { color: var(--muted); font-size: 9px; }
 .journal-list strong { font: 500 15px/1.35 ui-serif, Georgia, "Songti SC", serif; }
 .journal-list p { margin: 0; color: var(--ink); font-size: 14px; line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; }
 .journal-readable-segments { display: grid; gap: 12px; margin: 8px 0; }
 .journal-readable-segment { display: grid; grid-template-columns: 58px minmax(0, 1fr); align-items: start; gap: 12px; }
+.journal-readable-segment.untimed { grid-template-columns: minmax(0, 1fr); }
 .journal-readable-segment time { color: var(--muted); font: 11px/1.65 ui-monospace, SFMono-Regular, Menlo, monospace; }
 .journal-readable-segment p { min-width: 0; }
+.journal-item-actions { align-self: start; align-items: center; gap: 6px; }
+.journal-item-actions .text-button { flex: none; min-height: 30px; height: auto; margin: 0; padding: 6px 10px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--soft); font: 500 11px/1.4 ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif; white-space: nowrap; cursor: pointer; transition: background .15s ease, border-color .15s ease, color .15s ease; }
+.journal-item-actions .text-button:hover:not(:disabled) { border-color: #b8c3b2; background: var(--accent-soft); color: #43533e; }
+.journal-item-actions .text-button:last-child:hover:not(:disabled) { border-color: #d4b9ae; background: #f0e7e1; color: #835b4e; }
+.journal-item-actions .text-button:disabled { opacity: .5; cursor: not-allowed; }
 .journal-explorer { display: grid; grid-template-columns: minmax(0, 1fr) 300px; align-items: start; gap: 28px; margin-top: 24px; }
 .journal-results { min-width: 0; }
 .journal-results-header { display: flex; align-items: end; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
