@@ -1606,23 +1606,6 @@ export default function GitHubWorkspacePage() {
     } finally { setSavingJournalEntryId(null); }
   }
 
-  async function updateJournalEntryDeletion(item: SyncedJournalEntry, operation: "trash" | "restore") {
-    const adapter = adapterRef.current;
-    if (!adapter || !connection || savingJournalEntryId || online === false) return;
-    if (!canWriteJournalDate(item.record.data.journal_date, localDateInTimezone(connection.timezone))) {
-      setErrorMessage("只能变更今天或昨天的日记；未操作。"); return;
-    }
-    setSavingJournalEntryId(item.record.id); setErrorMessage(""); setStatusMessage("");
-    const timestamp = new Date().toISOString();
-    const updated = setWorkspaceRecordDeleted(item.record, operation === "trash" ? timestamp : null, timestamp);
-    try {
-      const result = await adapter.writeText({ path: item.path, text: serializeRecord(updated), message: `journal: ${operation} ${item.record.id}`, expectedBlobSha: item.blobSha });
-      setJournalEntryFiles((current) => current.map((candidate) => candidate.record.id === item.record.id ? { record: updated, path: result.path, blobSha: result.blobSha } : candidate));
-      setStatusMessage(operation === "trash" ? "日记已移到可恢复回收站；Git 历史仍保留旧正文。" : "日记已恢复。没有覆盖同一天的其他记录。");
-    } catch (error) { setErrorMessage(friendlyError(error)); }
-    finally { setSavingJournalEntryId(null); }
-  }
-
   async function saveLearningArea(fields: LearningAreaFields) {
     const adapter = adapterRef.current;
     if (!adapter || !connection || savingLearningArea || online === false) return false;
@@ -2942,7 +2925,6 @@ export default function GitHubWorkspacePage() {
         savingId={savingJournalEntryId}
         onCreate={saveJournalEntry}
         onEdit={saveJournalEntryEdit}
-        onDeletionChange={updateJournalEntryDeletion}
         onRefresh={(month) => { void loadJournalEntries(adapterRef.current, month); }}
         onBrowseMonth={(month) => { void loadJournalMonth(month); }}
       />

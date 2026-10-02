@@ -5,7 +5,7 @@ import type { GitHubContentsAdapter } from "../../../../src/lib/github-data/gith
 import type { GitHubDirectoryItem } from "../../../../src/lib/github-data/github-contents";
 import { journalCatalogDates } from "../../../../src/lib/github-data/journal-archive-catalog";
 import { searchJournalDisplaySegments } from "../../../../src/lib/github-data/journal-display";
-import { activeJournalEntries, canWriteJournalDate, filterJournalEntries, journalEntryMarkdownFileName, journalEntrySubmittedTime, journalMonthDays, previousJournalDate, renderJournalEntryMarkdown, shiftJournalMonth, trashedJournalEntries } from "../../../../src/lib/github-data/journal-entries";
+import { activeJournalEntries, canWriteJournalDate, filterJournalEntries, journalEntrySubmittedTime, journalMonthDays, previousJournalDate, shiftJournalMonth, trashedJournalEntries } from "../../../../src/lib/github-data/journal-entries";
 import { JournalStatistics } from "./journal-statistics";
 import type { Connection, SyncedJournalEntry } from "./page-model";
 
@@ -25,12 +25,11 @@ type Props = {
   savingId: string | null;
   onCreate: (fields: JournalFields) => Promise<boolean>;
   onEdit: (item: SyncedJournalEntry, fields: Omit<JournalFields, "journalDate">) => Promise<boolean>;
-  onDeletionChange: (item: SyncedJournalEntry, operation: "trash" | "restore") => void;
   onRefresh: (month?: string) => void;
   onBrowseMonth: (month: string) => void;
 };
 
-export function JournalSection({ connection, adapter, online, todayDate, journalEntryFiles, journalEntryCatalog, loadedMonths, loadError, loading, saving, savingId, onCreate, onEdit, onDeletionChange, onRefresh, onBrowseMonth }: Props) {
+export function JournalSection({ connection, adapter, online, todayDate, journalEntryFiles, journalEntryCatalog, loadedMonths, loadError, loading, saving, savingId, onCreate, onEdit, onRefresh, onBrowseMonth }: Props) {
   const [view] = useState<"active" | "trash">("active");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [journalDate, setJournalDate] = useState("");
@@ -141,7 +140,7 @@ export function JournalSection({ connection, adapter, online, todayDate, journal
       return <li key={item.record.id} className={startsDay ? "journal-day-start" : undefined}>
         {startsDay ? <span className="journal-day-heading">{item.record.data.journal_date}</span> : null}
         <div className="journal-entry-content"><div className="journal-readable-segments">{item.segments.map((segment, index) => <div className={`journal-readable-segment${segment.time ? "" : " untimed"}`} key={`${item.record.id}-${index}`}>{segment.time ? <time>{segment.time}</time> : null}<p>{segment.body}</p></div>)}</div></div>
-        {canManage ? <div className="journal-item-actions">{view === "active" ? <><button className="text-button" type="button" onClick={() => beginEdit(item)} disabled={busy}>编辑</button><button className="text-button" type="button" onClick={() => downloadMarkdown(item)}>下载 Markdown</button></> : null}<button className="text-button" type="button" onClick={() => onDeletionChange(item, view === "active" ? "trash" : "restore")} disabled={busy || online === false}>{savingId === item.record.id ? "…" : view === "active" ? "移到回收站" : "恢复"}</button></div> : null}
+        {canManage && view === "active" ? <div className="journal-item-actions"><button className="text-button" type="button" onClick={() => beginEdit(item)} disabled={busy}>编辑</button></div> : null}
       </li>;
     })}</ol>}
       </div>
@@ -154,12 +153,4 @@ export function JournalSection({ connection, adapter, online, todayDate, journal
       </aside>
     </div>
   </section>;
-}
-
-function downloadMarkdown(item: SyncedJournalEntry) {
-  const blob = new Blob([renderJournalEntryMarkdown(item.record)], { type: "text/markdown;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url; anchor.download = journalEntryMarkdownFileName(item.record); anchor.click();
-  URL.revokeObjectURL(url);
 }
