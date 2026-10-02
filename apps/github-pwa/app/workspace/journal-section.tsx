@@ -4,7 +4,7 @@ import { useMemo, useState, type FormEvent } from "react";
 import type { GitHubContentsAdapter } from "../../../../src/lib/github-data/github-contents";
 import type { GitHubDirectoryItem } from "../../../../src/lib/github-data/github-contents";
 import { journalCatalogDates } from "../../../../src/lib/github-data/journal-archive-catalog";
-import { journalDisplaySegments } from "../../../../src/lib/github-data/journal-display";
+import { searchJournalDisplaySegments } from "../../../../src/lib/github-data/journal-display";
 import { activeJournalEntries, canWriteJournalDate, filterJournalEntries, journalEntryMarkdownFileName, journalEntrySubmittedTime, journalMonthDays, previousJournalDate, renderJournalEntryMarkdown, shiftJournalMonth, trashedJournalEntries } from "../../../../src/lib/github-data/journal-entries";
 import { LegacyJournalImportSection } from "./legacy-journal-import-section";
 import { LegacyJournalCheckpointHistory } from "./legacy-journal-checkpoint-history";
@@ -55,8 +55,9 @@ export function JournalSection({ connection, adapter, online, todayDate, journal
   const monthLoaded = loadedMonths.includes(displayedMonth);
   const resultsLoaded = recentView ? source.length > 0 || (!loading && !loadError) : monthLoaded;
   const visible = useMemo(() => {
-    const filtered = filterJournalEntries(records, { view, month: recentView ? undefined : displayedMonth, query: searchQuery }).filter((record) => !selectedDay || record.data.journal_date === selectedDay);
-    return (recentView ? filtered.slice(0, 3) : filtered).map((record) => byId.get(record.id)!);
+    const filtered = filterJournalEntries(records, { view, month: recentView ? undefined : displayedMonth }).filter((record) => !selectedDay || record.data.journal_date === selectedDay);
+    const matches = filtered.map((record) => ({ ...byId.get(record.id)!, segments: searchJournalDisplaySegments(record.data.body_markdown, searchQuery, journalEntrySubmittedTime(record).slice(0, 5)) })).filter((item) => item.segments.length > 0);
+    return recentView && !searchQuery.trim() ? matches.slice(0, 3) : matches;
   }, [byId, displayedMonth, recentView, records, searchQuery, selectedDay, view]);
   const busy = saving || Boolean(savingId);
   const selectedDate = journalDate || todayDate;
@@ -114,7 +115,7 @@ export function JournalSection({ connection, adapter, online, todayDate, journal
       const startsDay = itemIndex === 0 || visible[itemIndex - 1].record.data.journal_date !== item.record.data.journal_date;
       return <li key={item.record.id} className={startsDay ? "journal-day-start" : undefined}>
         {startsDay ? <span className="journal-day-heading">{item.record.data.journal_date}</span> : null}
-        <div className="journal-entry-content"><div className="journal-readable-segments">{journalDisplaySegments(item.record.data.body_markdown, journalEntrySubmittedTime(item.record).slice(0, 5)).map((segment, index) => <div className={`journal-readable-segment${segment.time ? "" : " untimed"}`} key={`${item.record.id}-${index}`}>{segment.time ? <time>{segment.time}</time> : null}<p>{segment.body}</p></div>)}</div></div>
+        <div className="journal-entry-content"><div className="journal-readable-segments">{item.segments.map((segment, index) => <div className={`journal-readable-segment${segment.time ? "" : " untimed"}`} key={`${item.record.id}-${index}`}>{segment.time ? <time>{segment.time}</time> : null}<p>{segment.body}</p></div>)}</div></div>
         {canManage ? <div className="journal-item-actions">{view === "active" ? <><button className="text-button" type="button" onClick={() => beginEdit(item)} disabled={busy}>编辑</button><button className="text-button" type="button" onClick={() => downloadMarkdown(item)}>下载 Markdown</button></> : null}<button className="text-button" type="button" onClick={() => onDeletionChange(item, view === "active" ? "trash" : "restore")} disabled={busy || online === false}>{savingId === item.record.id ? "…" : view === "active" ? "移到回收站" : "恢复"}</button></div> : null}
       </li>;
     })}</ol>}

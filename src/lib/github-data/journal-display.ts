@@ -17,3 +17,12 @@ export function journalDisplayPreview(markdown: string, limit = 90) {
     .replace(/[#>*_`\[\]()\-]/g, " ").replace(/\s+/g, " ").trim();
   return text.length > limit ? `${text.slice(0, limit)}…` : text;
 }
+
+export function searchJournalDisplaySegments(markdown: string, query: string, submittedTime: string | null = null) {
+  const normalize = (value: string) => value.normalize("NFKC").toLowerCase().replace(/\s+/gu, " ").trim();
+  const tokens = normalize(query).split(" ").filter(Boolean);
+  return journalDisplaySegments(markdown, submittedTime).filter((segment) => {
+    const body = normalize(segment.body);
+    return tokens.every((token) => body.includes(token));
+  });
+}
