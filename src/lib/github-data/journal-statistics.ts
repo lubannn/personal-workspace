@@ -5,14 +5,22 @@ export type JournalFileStatistics = { blobSha: string; date: string; entries: nu
 
 // Count prose, not Markdown syntax or URLs. Han characters count individually;
 // a Latin word (including internal apostrophes/hyphens) counts as one unit.
+// Punctuation counts separately; whitespace and formatting markers do not.
 export function journalWordCount(markdown: string): number {
   const prose = markdown
     .replace(/<!--[\s\S]*?-->/gu, "")
     .replace(/!?\[([^\]]*)\]\([^)]*\)/gu, "$1")
     .replace(/https?:\/\/\S+/gu, "")
     .replace(/^\s*\d+[.)]\s+/gmu, "")
-    .replace(/^\s*\[[ xX]\]\s*/gmu, "");
-  return (prose.match(/\p{Script=Han}|[\p{Script=Latin}\p{N}]+(?:['’\-][\p{Script=Latin}\p{N}]+)*|[^\p{Script=Han}\p{Script=Latin}\p{N}\p{P}\p{S}\p{Z}\p{C}\p{M}]/gu) ?? []).length;
+    .replace(/^\s*(?:#{1,6}|>|[-+*])\s+/gmu, "")
+    .replace(/^\s*\[[ xX]\]\s*/gmu, "")
+    .replace(/(\*\*|__|~~|`+)(.*?)\1/gsu, "$2");
+  const words = (prose.match(/\p{Script=Han}|[\p{Script=Latin}\p{N}]+(?:['’\-][\p{Script=Latin}\p{N}]+)*|[^\p{Script=Han}\p{Script=Latin}\p{N}\p{P}\p{S}\p{Z}\p{C}\p{M}\s]/gu) ?? []).length;
+  return words + (prose.match(/\p{P}/gu) ?? []).length;
+}
+
+export function cachedJournalStatistics(cache: Record<string, JournalFileStatistics>, path: string, blobSha: string) {
+  return cache[path]?.blobSha === blobSha ? cache[path] : undefined;
 }
 
 export function journalFileStatistics(record: JournalEntryRecord, blobSha: string): JournalFileStatistics {

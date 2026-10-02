@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { journalFileStatistics, journalWordCount, parseJournalStatisticsCache, sumJournalStatistics } from "./journal-statistics";
+import { cachedJournalStatistics, journalFileStatistics, journalWordCount, parseJournalStatisticsCache, sumJournalStatistics } from "./journal-statistics";
 import { createJournalEntryData, type JournalEntryRecord } from "./journal-entries";
 import { createJournalSegmentSnapshot, renderJournalSegmentsMarkdown } from "./journal-segment-codec";
 
@@ -8,10 +8,13 @@ function record(body: string): JournalEntryRecord {
 }
 
 describe("journal statistics", () => {
-  it("counts Chinese characters and English words, not English letters or Markdown punctuation", () => {
-    expect(journalWordCount("* 今天 happy birthday！")).toBe(4);
-    expect(journalWordCount("## **你好** [hello world](https://example.com)\n1. don't re-read 123")).toBe(7);
-    expect(journalWordCount("<!-- metadata --> 😀，。\n")).toBe(0);
+  it("counts punctuation but not spaces, line breaks, English letters, or Markdown formatting", () => {
+    expect(journalWordCount("* 今天 happy birthday！")).toBe(5);
+    expect(journalWordCount("## **你好** [hello world](https://example.com)\n1. don't re-read 123")).toBe(9);
+    expect(journalWordCount("<!-- metadata --> 😀，。\n")).toBe(2);
+    expect(journalWordCount("你好，world！\n\t ")).toBe(5);
+    expect(journalWordCount(" 　\n\t")).toBe(0);
+    expect(journalWordCount("Hello, world... (yes?)")).toBe(10);
   });
   it("counts each submitted entry once even when its body has multiple paragraphs", () => {
     const result = journalFileStatistics(record("今天\n\nhello world"), "sha");
@@ -29,5 +32,13 @@ describe("journal statistics", () => {
   it("rejects corrupt count caches", () => {
     expect(parseJournalStatisticsCache(JSON.stringify({ path: journalFileStatistics(record("正文"), "sha") })).path.words).toBe(2);
     expect(() => parseJournalStatisticsCache('{"path":{"entries":-1}}')).toThrow();
+  });
+  it("reuses unchanged file counts and requests only added or changed files", () => {
+    const item = journalFileStatistics(record("正文。"), "sha");
+    const cache = { old: item };
+    expect(cachedJournalStatistics(cache, "old", "sha")).toBe(item);
+    expect(cachedJournalStatistics(cache, "old", "new-sha")).toBeUndefined();
+    expect(cachedJournalStatistics(cache, "new", "sha")).toBeUndefined();
+    expect(cachedJournalStatistics(parseJournalStatisticsCache(JSON.stringify(cache)), "old", "sha")).toEqual(item);
   });
 });

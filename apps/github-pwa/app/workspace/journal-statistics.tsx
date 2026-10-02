@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { GitHubContentsAdapter, GitHubDirectoryItem } from "../../../../src/lib/github-data/github-contents";
 import { parseJournalEntryRecord } from "../../../../src/lib/github-data/journal-entries";
-import { journalFileStatistics, parseJournalStatisticsCache, sumJournalStatistics, type JournalFileStatistics } from "../../../../src/lib/github-data/journal-statistics";
+import { cachedJournalStatistics, journalFileStatistics, parseJournalStatisticsCache, sumJournalStatistics, type JournalFileStatistics } from "../../../../src/lib/github-data/journal-statistics";
 import type { Connection, SyncedJournalEntry } from "./page-model";
 
 export function JournalStatistics({ connection, adapter, catalog, loaded, busy }: { connection: Connection | null; adapter: GitHubContentsAdapter | null; catalog: GitHubDirectoryItem[]; loaded: SyncedJournalEntry[]; busy: boolean }) {
@@ -11,15 +11,17 @@ export function JournalStatistics({ connection, adapter, catalog, loaded, busy }
   const [running, setRunning] = useState(false);
   const [error, setError] = useState("");
   const generation = useRef(0);
-  const storageKey = connection ? `nexus-journal-counts-v1:${connection.ownerId}:${connection.repository}` : null;
+  // v1 excluded punctuation and cannot be reused under the new counting rule.
+  const storageKey = connection ? `nexus-journal-counts-v2:${connection.ownerId}:${connection.repository}` : null;
   const loadedStatistics = useMemo(() => Object.fromEntries(loaded.flatMap((item) => {
-    try { return [[item.path, journalFileStatistics(item.record, item.blobSha)] as const]; }
+    try { return [[item.path, cachedJournalStatistics(cache, item.path, item.blobSha) ?? journalFileStatistics(item.record, item.blobSha)] as const]; }
     catch { return []; } // An unreadable legacy body must not crash the journal view or produce a guessed total.
-  })), [loaded]);
+  })), [loaded, cache]);
+  const loadedStatisticsText = JSON.stringify(loadedStatistics);
   const files = useMemo(() => {
     const expected = new Map(catalog.filter((item) => item.type === "file" && item.name.endsWith(".json")).map((item) => [item.path, item.blobSha]));
     for (const item of loaded) expected.set(item.path, item.blobSha);
-    return [...expected].map(([path, blobSha]) => ({ path, blobSha, statistics: loadedStatistics[path] ?? (cache[path]?.blobSha === blobSha ? cache[path] : undefined) }));
+    return [...expected].map(([path, blobSha]) => ({ path, blobSha, statistics: loadedStatistics[path] ?? cachedJournalStatistics(cache, path, blobSha) }));
   }, [catalog, loaded, loadedStatistics, cache]);
   const missing = files.filter((item) => !item.statistics);
   const totals = sumJournalStatistics(files.flatMap((item) => item.statistics ? [item.statistics] : []));
@@ -36,12 +38,12 @@ export function JournalStatistics({ connection, adapter, catalog, loaded, busy }
   }, [storageKey]);
 
   useEffect(() => {
-    if (!storageKey || !Object.keys(loadedStatistics).length) return;
+    if (!storageKey || loadedStatisticsText === "{}") return;
     try {
       const stored = parseJournalStatisticsCache(localStorage.getItem(storageKey) ?? "{}");
-      localStorage.setItem(storageKey, JSON.stringify({ ...stored, ...loadedStatistics }));
+      localStorage.setItem(storageKey, JSON.stringify({ ...stored, ...parseJournalStatisticsCache(loadedStatisticsText) }));
     } catch { /* Storage is optional; saving diaries never depends on it. */ }
-  }, [storageKey, loadedStatistics]);
+  }, [storageKey, loadedStatisticsText]);
 
   useEffect(() => {
     if (busy) { generation.current += 1; queueMicrotask(() => setRunning(false)); }
@@ -78,9 +80,9 @@ export function JournalStatistics({ connection, adapter, catalog, loaded, busy }
     <div className="journal-statistics-counts" aria-label="全部日记统计" aria-live="polite">
       <span className="view-button">日记天数 {complete ? totals.days.toLocaleString() : "待统计"}</span>
       <span className="view-button">日记数量 {complete ? totals.entries.toLocaleString() : "待统计"}</span>
-      <span className="view-button" title="只统计正文；中文逐字、英文逐词，不含标点与 Markdown 标记">日记字数 {complete ? totals.words.toLocaleString() : "待统计"}</span>
+      <span className="view-button" title="中文逐字、英文逐词，标点逐个计数；不含空格、换行与 Markdown 格式标记">日记字数 {complete ? totals.words.toLocaleString() : "待统计"}</span>
     </div>
-    {missing.length > 0 ? <div className="journal-statistics-progress"><button className="text-button" type="button" disabled={!adapter || busy} onClick={() => { if (running) { generation.current += 1; setRunning(false); if (storageKey) { try { localStorage.setItem(storageKey, JSON.stringify(cache)); } catch { /* Optional count cache. */ } } } else void calculate(); }}>{running ? `暂停统计（${files.length - missing.length}/${files.length}）` : "统计历史"}</button><small>首次统计读取历史正文，可暂停续算；不自动读取全库。缓存仅包含日期、计数和文件版本。</small></div> : null}
+    {missing.length > 0 ? <div className="journal-statistics-progress"><button className="text-button" type="button" disabled={!adapter || busy} onClick={() => { if (running) { generation.current += 1; setRunning(false); if (storageKey) { try { localStorage.setItem(storageKey, JSON.stringify(cache)); } catch { /* Optional count cache. */ } } } else void calculate(); }}>{running ? `暂停统计（${files.length - missing.length}/${files.length}）` : "统计增量"}</button><small>当前有 {missing.length} 个文件待统计；仅读取新增或变动记录。首次使用此规则需统计一次历史正文。</small></div> : null}
     {error ? <small role="alert">{error}</small> : null}
   </div>;
 }
