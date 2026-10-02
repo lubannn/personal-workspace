@@ -1,9 +1,10 @@
 import { validWorkoutCandidate, type CorosWorkoutCandidate, type HealthStagingRecord } from "./health-staging-records";
 import { parseRecord, type WorkspaceRecord } from "./protocol";
+import { validAutomaticCorosFields, type AutomaticCorosFields, type CorosProvenance } from "./coros-sync-types";
 
 export const WORKOUT_VERSION = 1 as const;
 
-export type WorkoutData = CorosWorkoutCandidate & {
+export type ConfirmedWorkoutData = CorosWorkoutCandidate & {
   workout_version: typeof WORKOUT_VERSION;
   confirmation_status: "confirmed";
   staging_record_id: string;
@@ -11,14 +12,21 @@ export type WorkoutData = CorosWorkoutCandidate & {
   source_sha256: string;
   confirmed_at: string;
 };
+export type AutomaticWorkoutData = CorosWorkoutCandidate & AutomaticCorosFields & {
+  workout_version: 2;
+  import_key?: never;
+  source_sha256?: never;
+  confirmed_at?: never;
+};
+export type WorkoutData = ConfirmedWorkoutData | AutomaticWorkoutData;
 export type WorkoutRecord = WorkspaceRecord<WorkoutData>;
 
 // This builds canonical data; the caller must commit it atomically with the staging review.
-export function createConfirmedWorkoutData(staging: HealthStagingRecord, confirmedAt: string): WorkoutData {
+export function createConfirmedWorkoutData(staging: HealthStagingRecord, confirmedAt: string): ConfirmedWorkoutData {
   if (staging.deleted_at !== null || staging.data.health_type !== "workout" || staging.data.status !== "pending") {
     throw new Error("WORKOUT_STAGING_NOT_PENDING");
   }
-  const data: WorkoutData = {
+  const data: ConfirmedWorkoutData = {
     workout_version: WORKOUT_VERSION,
     ...staging.data.normalized_json,
     confirmation_status: "confirmed",
@@ -27,7 +35,14 @@ export function createConfirmedWorkoutData(staging: HealthStagingRecord, confirm
     source_sha256: staging.data.source.source_sha256,
     confirmed_at: confirmedAt,
   };
-  return validateWorkoutData(data);
+  validateWorkoutData(data);
+  return data;
+}
+
+export function createAutomaticWorkoutData(candidate: CorosWorkoutCandidate, provenance: CorosProvenance): AutomaticWorkoutData {
+  const data: AutomaticWorkoutData = { ...candidate, workout_version: 2, import_mode: "automatic", review_status: "validated", source: provenance };
+  validateWorkoutData(data);
+  return data;
 }
 
 export function parseWorkoutRecord(value: string): WorkoutRecord {
@@ -35,14 +50,15 @@ export function parseWorkoutRecord(value: string): WorkoutRecord {
   if (record.entity_type !== "workout") throw new Error("INVALID_WORKOUT_RECORD");
   try {
     validateWorkoutData(record.data as WorkoutData);
-    if (record.id !== `workout_${(record.data as WorkoutData).import_key}`) throw new Error("INVALID_WORKOUT_RECORD");
+    const data = record.data as WorkoutData;
+    if (data.workout_version === 1 && record.id !== `workout_${data.import_key}`) throw new Error("INVALID_WORKOUT_RECORD");
   }
   catch { throw new Error("INVALID_WORKOUT_RECORD"); }
   return record as WorkoutRecord;
 }
 
 export function isWorkoutLinkedToStaging(workout: WorkoutRecord, staging: HealthStagingRecord): boolean {
-  if (staging.data.health_type !== "workout") return false;
+  if (workout.data.workout_version !== 1 || staging.data.health_type !== "workout") return false;
   const candidate = workoutCandidateFromData(workout.data);
   return staging.deleted_at === null && staging.data.status === "confirmed"
     && staging.owner_id === workout.owner_id
@@ -57,6 +73,12 @@ function validateWorkoutData(data: WorkoutData): WorkoutData {
   const keys = "activity_type,confirmation_status,confirmed_at,distance,distance_unit,duration_seconds,end_at,import_key,metrics_json,source_sha256,staging_record_id,start_at,timezone,training_load,workout_version";
   if (!data || typeof data !== "object") throw new Error("INVALID_WORKOUT_DETAILS");
   const candidate = workoutCandidateFromData(data);
+  if (data.workout_version === 2) {
+    const automaticKeys = "activity_type,distance,distance_unit,duration_seconds,end_at,import_mode,metrics_json,review_status,source,start_at,timezone,training_load,workout_version";
+    if (Object.keys(data).sort().join(",") !== automaticKeys || !validWorkoutCandidate(candidate) || !validAutomaticCorosFields(data)
+      || typeof data.start_at !== "string" || typeof data.end_at !== "string" || typeof data.timezone !== "string" || !data.timezone) throw new Error("INVALID_WORKOUT_DETAILS");
+    return data;
+  }
   if (Object.keys(data).sort().join(",") !== keys || data.workout_version !== WORKOUT_VERSION
     || data.confirmation_status !== "confirmed" || !validWorkoutCandidate(candidate)
     || !/^[0-9a-f]{64}$/u.test(data.import_key) || !/^[0-9a-f]{64}$/u.test(data.source_sha256)

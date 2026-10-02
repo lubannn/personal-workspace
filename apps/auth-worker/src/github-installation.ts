@@ -48,7 +48,8 @@ export async function signGitHubAppJwt(
   config: Pick<GitHubInstallationConfig, "appId" | "privateKeyPem">,
   nowSeconds = Math.floor(Date.now() / 1000),
 ): Promise<string> {
-  if (!/^[1-9]\d*$/u.test(config.appId)) throw new Error("INVALID_GITHUB_APP_ID");
+  // GitHub accepts an App ID or the App's client ID as the JWT issuer.
+  if (!/^(?:[1-9]\d*|Iv[A-Za-z0-9]{8,64})$/u.test(config.appId)) throw new Error("INVALID_GITHUB_APP_ID");
   const key = await crypto.subtle.importKey(
     "pkcs8",
     pemBytes(config.privateKeyPem),
@@ -85,6 +86,7 @@ export async function createPrivateDataInstallationAdapter(
       authorization: `Bearer ${jwt}`,
       "content-type": "application/json",
       "x-github-api-version": API_VERSION,
+      "user-agent": "PersonalWorkspace-CorosSync/1.0",
     },
     body: JSON.stringify({
       repositories: [config.repository],
@@ -100,6 +102,7 @@ export async function createPrivateDataInstallationAdapter(
     owner: config.owner,
     repository: config.repository,
     token: payload.token,
+    userAgent: "PersonalWorkspace-CorosSync/1.0",
   }, fetcher);
   const repository = await adapter.verifyPrivateRepository();
   if (repository.fullName.toLowerCase() !== `${config.owner}/${config.repository}`.toLowerCase()) {

@@ -1,17 +1,26 @@
 import { parseRecord, type WorkspaceRecord } from "./protocol";
 import type { HealthMetricCandidate } from "./health-staging-records";
+import { validAutomaticCorosFields, type AutomaticCorosFields, type CorosProvenance } from "./coros-sync-types";
 
 export const HEALTH_METRIC_VERSION = 1 as const;
-export type HealthMetricData = HealthMetricCandidate & {
+export type ConfirmedHealthMetricData = HealthMetricCandidate & {
   health_metric_version: typeof HEALTH_METRIC_VERSION;
   confirmation_status: "confirmed";
   staging_record_id: string;
 };
+export type AutomaticHealthMetricData = HealthMetricCandidate & AutomaticCorosFields & { health_metric_version: 2 };
+export type HealthMetricData = ConfirmedHealthMetricData | AutomaticHealthMetricData;
 export type HealthMetricRecord = WorkspaceRecord<HealthMetricData>;
 
-export function createConfirmedHealthMetricData(candidate: HealthMetricCandidate, stagingRecordId: string): HealthMetricData {
+export function createConfirmedHealthMetricData(candidate: HealthMetricCandidate, stagingRecordId: string): ConfirmedHealthMetricData {
   if (!stagingRecordId.trim()) throw new Error("INVALID_HEALTH_STAGING_ID");
   const data = { health_metric_version: HEALTH_METRIC_VERSION, ...candidate, confirmation_status: "confirmed" as const, staging_record_id: stagingRecordId };
+  validateData(data);
+  return data;
+}
+
+export function createAutomaticHealthMetricData(candidate: HealthMetricCandidate, provenance: CorosProvenance): AutomaticHealthMetricData {
+  const data: AutomaticHealthMetricData = { ...candidate, health_metric_version: 2, import_mode: "automatic", review_status: "validated", source: provenance };
   validateData(data);
   return data;
 }
@@ -24,9 +33,14 @@ export function parseHealthMetricRecord(value: string): HealthMetricRecord {
 }
 
 function validateData(data: HealthMetricData) {
+  if (!data || typeof data !== "object") throw new Error("INVALID_HEALTH_METRIC_DETAILS");
   const keys = "aggregation_period,confirmation_status,health_metric_version,local_date,measured_at,metric_type,staging_record_id,timezone,unit,value";
-  if (Object.keys(data).sort().join(",") !== keys || data.health_metric_version !== 1 || data.confirmation_status !== "confirmed"
-    || !data.staging_record_id || !/^[a-z0-9][a-z0-9_-]{0,63}$/u.test(data.metric_type) || !data.unit || data.unit.length > 64
+  const automaticKeys = "aggregation_period,health_metric_version,import_mode,local_date,measured_at,metric_type,review_status,source,timezone,unit,value";
+  const validOrigin = data.health_metric_version === 2
+    ? Object.keys(data).sort().join(",") === automaticKeys && validAutomaticCorosFields(data)
+      && typeof data.measured_at === "string" && typeof data.timezone === "string" && Boolean(data.timezone)
+    : Object.keys(data).sort().join(",") === keys && data.health_metric_version === 1 && data.confirmation_status === "confirmed" && Boolean(data.staging_record_id);
+  if (!validOrigin || !/^[a-z0-9][a-z0-9_-]{0,63}$/u.test(data.metric_type) || !data.unit || data.unit.length > 64
     || !Number.isFinite(data.value) || !isDateOnly(data.local_date) || Number.isNaN(Date.parse(data.measured_at))
     || !["instant", "daily"].includes(data.aggregation_period)) throw new Error("INVALID_HEALTH_METRIC_DETAILS");
   try { new Intl.DateTimeFormat("en", { timeZone: data.timezone }).format(); } catch { throw new Error("INVALID_HEALTH_METRIC_DETAILS"); }

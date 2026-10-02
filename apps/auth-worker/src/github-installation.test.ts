@@ -21,8 +21,14 @@ describe("background GitHub installation identity", () => {
     expect(token.split(".")).toHaveLength(3);
   });
 
+  it("accepts an App client ID as the JWT issuer", async () => {
+    const token = await signGitHubAppJwt({ appId: "IvSyntheticClient123", privateKeyPem: await fixturePrivateKey() });
+    expect(JSON.parse(Buffer.from(token.split(".")[1], "base64url").toString("utf8")).iss).toBe("IvSyntheticClient123");
+  });
+
   it("requests only Contents write for the selected repository", async () => {
     const fetcher = vi.fn<typeof fetch>(async (input, init) => {
+      expect(new Headers(init?.headers).get("user-agent")).toBe("PersonalWorkspace-CorosSync/1.0");
       const url = String(input);
       if (url.endsWith("/access_tokens")) {
         expect(JSON.parse(String(init?.body))).toEqual({ repositories: ["personal-workspace-data"], permissions: { contents: "write" } });

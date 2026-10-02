@@ -13,3 +13,4 @@ exports/
 *.log
 coverage/
 *.tsbuildinfo
+*.private-key.pem

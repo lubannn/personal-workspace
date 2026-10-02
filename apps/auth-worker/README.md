@@ -51,7 +51,45 @@ rotating refresh tokens, and an explicit GitHub user/repository allowlist.
 
 The deployed D1 schema contains authentication sessions plus encrypted COROS connection and short-lived OAuth attempt tables. Workspace business data continues to flow directly between the browser and the private GitHub repository.
 
-## COROS connector staged release (paused)
+## COROS automatic sync (2026-10-02 implementation)
+
+The connector now supports authenticated enable/pause/status/queued-refresh and
+conflict inspection. A ten-minute Cron Trigger performs one bounded window at a
+time. Recent sleep (three days) and workouts (seven days) run first and refresh
+every two hours; older records backfill in three-day windows. A failed domain
+backs off independently. Checkpoints advance only after a successful atomic Git
+transaction. No logged-in browser or running personal computer is required.
+
+`0003_coros_sync_jobs.sql` stores operational cursors and a ten-minute lease.
+Canonical health records and conflict facts remain in the private repository;
+its SHA-checked derived index is rebuilt after portable restore. The scheduler
+checks connection/lease before reads and immediately before the Git ref update.
+Formatting changes and truncated responses fail explicitly, without advancing
+coverage. Only sleep and workout summaries are enabled in this release; daily
+metrics, raw FIT/GPS, and training writes are not scheduled.
+
+Production configuration additionally requires `GITHUB_APP_PRIVATE_KEY` as a
+Worker Secret. The existing App client ID, installation ID, GitHub account ID,
+workspace owner ID and timezone are pinned in the Worker config. The App token
+is constrained to Contents write on `personal-workspace-data`. No browser token
+is reused. The key is not currently provisioned by this implementation.
+
+One-time setup, from an operator's trusted machine:
+
+```sh
+node scripts/configure-coros-background-key.mjs /absolute/path/to/app.private-key.pem
+```
+
+The script validates that the key belongs to the existing GitHub App and
+installation, then pipes it directly into Workers Secrets without printing it.
+After provisioning, enable/resume COROS in the health panel. Existing OAuth is
+reused unless expired. Never put the PEM in chat, source control, a test or a log.
+
+The Pages `/coros/*` service binding now forwards to this Worker just like
+`/auth/*`. New OAuth redirects return to the origin where authorization began;
+existing refresh credentials retain their originally registered redirect URI.
+
+### Earlier staged deployment (historical)
 
 The `0002_coros_connections.sql` migration was applied to the existing D1
 database on 2026-09-26. The paused connector and separate PWA
