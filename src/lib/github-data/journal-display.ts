@@ -2,8 +2,8 @@ import { parseJournalSegmentsMarkdown } from "./journal-segment-codec";
 
 export type JournalDisplaySegment = { time: string | null; body: string };
 
-export function journalDisplaySegments(markdown: string): JournalDisplaySegment[] {
-  if (!markdown.startsWith("<!-- pw-journal-segments:v1:")) return [{ time: null, body: markdown }];
+export function journalDisplaySegments(markdown: string, submittedTime: string | null = null): JournalDisplaySegment[] {
+  if (!markdown.startsWith("<!-- pw-journal-segments:v1:")) return [{ time: submittedTime, body: markdown }];
   try {
     return parseJournalSegmentsMarkdown(markdown).segments.map((segment) => ({ time: segment.local_time, body: segment.body_markdown }));
   } catch {

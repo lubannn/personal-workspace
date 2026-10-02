@@ -394,12 +394,14 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .journal-browser-search input { min-width: 0; }
 .journal-browser-meta { min-height: 42px; display: flex; align-items: center; justify-content: flex-end; gap: 9px; color: var(--muted); font-size: 9px; white-space: nowrap; }
 .journal-list { margin: 16px 0 0; padding: 0; list-style: none; }
-.journal-list > li { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: start; gap: 18px; padding: 16px 0; border-bottom: 1px solid var(--line); }
-.journal-list > li > div:first-child { min-width: 0; display: grid; gap: 5px; }
+.journal-list > li { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: start; column-gap: 18px; row-gap: 12px; padding: 8px 0; }
+.journal-list > li.journal-day-start:not(:first-child) { margin-top: 16px; padding-top: 20px; border-top: 1px solid var(--line); }
+.journal-day-heading { grid-column: 1 / -1; }
+.journal-entry-content { min-width: 0; }
 .journal-list span, .journal-list small { color: var(--muted); font-size: 9px; }
 .journal-list strong { font: 500 15px/1.35 ui-serif, Georgia, "Songti SC", serif; }
 .journal-list p { margin: 0; color: var(--ink); font-size: 14px; line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; }
-.journal-readable-segments { display: grid; gap: 12px; margin: 8px 0; }
+.journal-readable-segments { display: grid; gap: 16px; margin: 0; }
 .journal-readable-segment { display: grid; grid-template-columns: 58px minmax(0, 1fr); align-items: start; gap: 12px; }
 .journal-readable-segment.untimed { grid-template-columns: minmax(0, 1fr); }
 .journal-readable-segment time { color: var(--muted); font: 11px/1.65 ui-monospace, SFMono-Regular, Menlo, monospace; }
