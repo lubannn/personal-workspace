@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type FormEvent } from "react";
+import { useMemo, useRef, useState, type FormEvent } from "react";
 import type { GitHubContentsAdapter } from "../../../../src/lib/github-data/github-contents";
 import type { GitHubDirectoryItem } from "../../../../src/lib/github-data/github-contents";
 import { journalCatalogDates } from "../../../../src/lib/github-data/journal-archive-catalog";
@@ -42,6 +42,11 @@ export function JournalSection({ connection, adapter, online, todayDate, journal
   const [journalDate, setJournalDate] = useState("");
   const [bodyMarkdown, setBodyMarkdown] = useState("");
   const [month, setMonth] = useState("");
+  const [monthPickerOpen, setMonthPickerOpen] = useState(false);
+  const monthButtonRef = useRef<HTMLButtonElement>(null);
+  const [pickerYear, setPickerYear] = useState("");
+  const [pickerMonth, setPickerMonth] = useState("");
+  const [importToolsVisited, setImportToolsVisited] = useState(false);
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const records = useMemo(() => journalEntryFiles.map((item) => item.record), [journalEntryFiles]);
@@ -65,8 +70,35 @@ export function JournalSection({ connection, adapter, online, todayDate, journal
   const catalogDates = useMemo(() => journalCatalogDates(journalEntryCatalog), [journalEntryCatalog]);
   const daysWithEntries = useMemo(() => monthLoaded || view === "trash" ? new Set(source.map((item) => item.record.data.journal_date)) : new Set([...catalogDates, ...source.map((item) => item.record.data.journal_date)]), [catalogDates, monthLoaded, source, view]);
   const monthDays = useMemo(() => displayedMonth ? journalMonthDays(displayedMonth) : [], [displayedMonth]);
+  const displayedYear = Number(displayedMonth.slice(0, 4));
+  const yearOptions = useMemo(() => {
+    if (!displayedYear) return [];
+    const catalogYears = [...catalogDates].map((date) => Number(date.slice(0, 4))).filter((year) => Number.isInteger(year) && year > 0);
+    const first = Math.max(1, Math.min(displayedYear - 20, ...catalogYears));
+    const last = Math.min(9999, Math.max(displayedYear + 1, Number(currentMonth.slice(0, 4)) + 1, ...catalogYears));
+    return Array.from({ length: last - first + 1 }, (_, index) => String(last - index).padStart(4, "0"));
+  }, [catalogDates, currentMonth, displayedYear]);
 
-  function browseMonth(next: string) { setMonth(next); setSelectedDay(null); if (next) onBrowseMonth(next); }
+  function browseMonth(next: string) {
+    setMonth(next);
+    setSelectedDay(null);
+    setMonthPickerOpen(false);
+    if (next) onBrowseMonth(next);
+  }
+
+  function toggleMonthPicker() {
+    if (!monthPickerOpen) {
+      setPickerYear(displayedMonth.slice(0, 4));
+      setPickerMonth(displayedMonth.slice(5, 7));
+    }
+    setMonthPickerOpen(!monthPickerOpen);
+  }
+
+  function applyMonthSelection(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!/^\d{4}$/.test(pickerYear) || !/^(0[1-9]|1[0-2])$/.test(pickerMonth)) return;
+    browseMonth(`${pickerYear}-${pickerMonth}`);
+  }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -121,15 +153,17 @@ export function JournalSection({ connection, adapter, online, todayDate, journal
     })}</ol>}
       </div>
       <aside className="journal-calendar" aria-label="日记月历">
-        <div className="journal-calendar-heading"><button type="button" aria-label="上一个月" onClick={() => browseMonth(shiftJournalMonth(displayedMonth, -1))} disabled={!connection || loading || !displayedMonth}>‹</button><button type="button" className="journal-calendar-month" onClick={() => browseMonth(displayedMonth)} aria-label={`显示 ${displayedMonth} 全部日记`} aria-pressed={!recentView && !selectedDay} disabled={!connection || loading}>{displayedMonth.replace("-", "年")}月</button><button type="button" aria-label="下一个月" onClick={() => browseMonth(shiftJournalMonth(displayedMonth, 1))} disabled={!connection || loading || !displayedMonth}>›</button></div>
-        <div className="journal-calendar-jump"><input type="month" aria-label="选择月份" value={displayedMonth} onChange={(event) => browseMonth(event.target.value)} disabled={!connection || loading} /><button type="button" className="text-button" onClick={() => browseMonth(currentMonth)} disabled={!connection || loading || !currentMonth}>回到本月</button></div>
-        <button type="button" className="text-button" onClick={() => { setMonth(""); setSelectedDay(null); setSearchQuery(""); onRefresh(); }} disabled={!connection || loading}>最近日记</button>
+        <div className="journal-calendar-heading"><button type="button" aria-label="上一个月" onClick={() => browseMonth(shiftJournalMonth(displayedMonth, -1))} disabled={!connection || loading || !displayedMonth}>‹</button><button ref={monthButtonRef} type="button" className="journal-calendar-month" onClick={toggleMonthPicker} aria-label={`选择年份和月份，查看 ${displayedMonth} 全部日记`} aria-expanded={monthPickerOpen} aria-controls="journal-month-picker" disabled={!connection || loading || !displayedMonth}>{displayedMonth.replace("-", "年")}月 <span aria-hidden="true">⌄</span></button><button type="button" aria-label="下一个月" onClick={() => browseMonth(shiftJournalMonth(displayedMonth, 1))} disabled={!connection || loading || !displayedMonth}>›</button></div>
+        {monthPickerOpen ? <form className="journal-calendar-picker" id="journal-month-picker" onSubmit={applyMonthSelection} onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); setMonthPickerOpen(false); monthButtonRef.current?.focus(); } }} aria-label="跳转到年份和月份"><label>年份<select aria-label="选择年份" value={pickerYear} onChange={(event) => setPickerYear(event.target.value)}>{yearOptions.map((year) => <option key={year} value={year}>{year} 年</option>)}</select></label><label>月份<select aria-label="选择月份" value={pickerMonth} onChange={(event) => setPickerMonth(event.target.value)}>{Array.from({ length: 12 }, (_, index) => String(index + 1).padStart(2, "0")).map((value) => <option key={value} value={value}>{Number(value)} 月</option>)}</select></label><button className="secondary-button" type="submit">查看整月</button></form> : null}
+        <div className="journal-calendar-shortcuts"><button type="button" className="text-button" onClick={() => browseMonth(currentMonth)} disabled={!connection || loading || !currentMonth || (displayedMonth === currentMonth && !selectedDay)}>本月</button><button type="button" className="text-button" onClick={() => { setMonth(""); setSelectedDay(null); setSearchQuery(""); setMonthPickerOpen(false); onRefresh(); }} disabled={!connection || loading}>最近日记</button></div>
         <div className="journal-calendar-grid" role="group" aria-label={`${displayedMonth} 日期`}>{["一", "二", "三", "四", "五", "六", "日"].map((day) => <span className="journal-calendar-weekday" key={day}>{day}</span>)}{monthDays.map((date, index) => date ? <button key={date} type="button" className={["journal-calendar-day", daysWithEntries.has(date) ? "has-entry" : "", date === selectedDay ? "selected" : "", date === todayDate ? "today" : ""].filter(Boolean).join(" ")} aria-label={`${date}${daysWithEntries.has(date) ? "，有日记" : "，无日记"}`} aria-pressed={date === selectedDay} onClick={() => { browseMonth(displayedMonth); setSelectedDay(date); }} disabled={!connection || loading}>{Number(date.slice(-2))}</button> : <span key={`blank-${index}`} aria-hidden="true" />)}</div>
-        <p>圈出的日期有日记。点日期看当天，点月份看整月。</p>
+        <p>圈出的日期有日记。点日期看当天，点标题选择年月并看整月。</p>
       </aside>
     </div>
-    <LegacyJournalCheckpointHistory connection={connection} adapter={adapter} checkpoints={journalImportCheckpointFiles} loading={loadingLegacyHistory} online={online} onRefresh={onRefreshLegacyHistory} />
-    <LegacyJournalImportSection key={connection ? `${connection.ownerLogin}/${connection.repository}/${connection.timezone}` : "disconnected"} connection={connection} adapter={adapter} online={online} onCommitted={() => onLegacyImportCommitted(displayedMonth)} />
+    <details className="journal-import-tools" onToggle={(event) => { if (event.currentTarget.open) setImportToolsVisited(true); }}>
+      <summary className="journal-import-toggle">历史日记导入 <small>需要时展开，已导入的日记不受影响</small></summary>
+      {importToolsVisited ? <div className="journal-import-panel"><LegacyJournalImportSection key={connection ? `${connection.ownerLogin}/${connection.repository}/${connection.timezone}` : "disconnected"} connection={connection} adapter={adapter} online={online} onCommitted={() => onLegacyImportCommitted(displayedMonth)} /><details className="journal-import-audit"><summary>查看导入核对记录</summary><LegacyJournalCheckpointHistory connection={connection} adapter={adapter} checkpoints={journalImportCheckpointFiles} loading={loadingLegacyHistory} online={online} onRefresh={onRefreshLegacyHistory} /></details></div> : null}
+    </details>
   </section>;
 }
 
