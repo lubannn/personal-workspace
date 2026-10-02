@@ -16,6 +16,113 @@ function blobQueryResponse(init?: RequestInit) {
 }
 
 describe("GitHub contents adapter", () => {
+  it.each(["batch", "single", "REST fallback"])("propagates caller cancellation of a %s read without diagnosis or retries", async (mode) => {
+    const controller = new AbortController();
+    const reason = new Error("Obsolete month");
+    const fetcher = vi.fn<typeof fetch>().mockImplementation((_url, init) => new Promise((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => reject(new TypeError("transport canceled")), { once: true });
+    }));
+    if (mode === "REST fallback") fetcher.mockResolvedValueOnce(jsonResponse({}, 403));
+    const adapter = new GitHubContentsAdapter({ owner: "owner", repository: "data", token: "test-token" }, fetcher);
+    const file = listedBlob(1);
+    const pending = mode === "single" ? adapter.readBlobText(file.path, file.blobSha, controller.signal) : adapter.readBlobTexts([file], () => true, controller.signal);
+    const rejected = expect(pending).rejects.toBe(reason);
+    await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(mode === "REST fallback" ? 2 : 1));
+    controller.abort(reason);
+    await rejected;
+    expect(fetcher.mock.lastCall?.[1]?.signal?.aborted).toBe(true);
+    await expect(adapter.readBlobTexts([file], () => true, controller.signal)).rejects.toBe(reason);
+    expect(fetcher).toHaveBeenCalledTimes(mode === "REST fallback" ? 2 : 1);
+    if (mode !== "REST fallback") {
+      fetcher.mockImplementationOnce(async (_, init) => jsonResponse(blobQueryResponse(init)));
+      await expect(adapter.readBlobTexts([file])).resolves.toHaveLength(1);
+      expect(fetcher.mock.lastCall?.[0]).toBe("https://api.github.com/graphql");
+    }
+  });
+
+  it("restarts a canceled month probe for waiting health and replacement-month callers", async () => {
+    const controller = new AbortController();
+    const reason = new Error("Old month canceled");
+    const fetcher = vi.fn<typeof fetch>()
+      .mockImplementationOnce((_url, init) => new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true });
+      }))
+      .mockImplementation(async (_, init) => jsonResponse(blobQueryResponse(init)));
+    const adapter = new GitHubContentsAdapter({ owner: "owner", repository: "data", token: "test-token" }, fetcher);
+    const oldMonth = adapter.readBlobTexts([listedBlob(1)], () => true, controller.signal);
+    const rejected = expect(oldMonth).rejects.toBe(reason);
+    const health = adapter.readBlobTexts([listedBlob(2)]);
+    const replacementMonth = adapter.readBlobTexts([listedBlob(3)], () => true, new AbortController().signal);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    controller.abort(reason);
+    await rejected;
+    await expect(health).resolves.toMatchObject([{ blobSha: listedBlob(2).blobSha }]);
+    await expect(replacementMonth).resolves.toMatchObject([{ blobSha: listedBlob(3).blobSha }]);
+    expect(fetcher).toHaveBeenCalledTimes(3);
+    expect(fetcher.mock.calls.every(([url]) => String(url).endsWith("/graphql"))).toBe(true);
+    await adapter.readBlobTexts([listedBlob(2), listedBlob(3)]);
+    expect(fetcher).toHaveBeenCalledTimes(3);
+  });
+
+  it("cancels a month waiting on the shared probe without aborting the health request", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const fetcher = vi.fn<typeof fetch>(async (_, init) => {
+      await gate;
+      return jsonResponse(blobQueryResponse(init));
+    });
+    const adapter = new GitHubContentsAdapter({ owner: "owner", repository: "data", token: "test-token" }, fetcher);
+    const health = adapter.readBlobTexts([listedBlob(1)]);
+    const controller = new AbortController();
+    const month = adapter.readBlobTexts([listedBlob(2)], () => true, controller.signal);
+    const rejected = expect(month).rejects.toMatchObject({ name: "AbortError" });
+    controller.abort();
+    await rejected;
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(fetcher.mock.calls[0][1]?.signal?.aborted).toBe(false);
+    release();
+    await expect(health).resolves.toHaveLength(1);
+    await expect(adapter.readBlobTexts([listedBlob(2)])).resolves.toHaveLength(1);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
+  it("removes canceled months from the shared request-slot queue without consuming health slots", async () => {
+    const fetcher = vi.fn<typeof fetch>(async (_, init) => jsonResponse(blobQueryResponse(init)));
+    const adapter = new GitHubContentsAdapter({ owner: "owner", repository: "data", token: "test-token" }, fetcher);
+    await adapter.readBlobTexts([listedBlob(999)]);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    fetcher.mockImplementation(async (_, init) => { await gate; return jsonResponse(blobQueryResponse(init)); });
+    const health = adapter.readBlobTexts(Array.from({ length: 100 }, (_, index) => listedBlob(index)));
+    await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(5));
+    const controller = new AbortController();
+    const month = adapter.readBlobTexts([listedBlob(200)], () => true, controller.signal);
+    const rejected = expect(month).rejects.toMatchObject({ name: "AbortError" });
+    controller.abort();
+    await rejected;
+    expect(fetcher).toHaveBeenCalledTimes(5);
+    release();
+    await expect(health).resolves.toHaveLength(100);
+    await expect(adapter.readBlobTexts([listedBlob(200)])).resolves.toHaveLength(1);
+    expect(fetcher).toHaveBeenCalledTimes(6);
+  });
+
+  it.each([
+    ["unauthorized HTTP", () => jsonResponse({}, 401), "GITHUB_UNAUTHORIZED"],
+    ["unauthorized GraphQL", () => jsonResponse({ errors: [{ type: "UNAUTHENTICATED" }] }), "GITHUB_UNAUTHORIZED"],
+    ["HTTP rate limit", () => jsonResponse({}, 429), "GITHUB_RATE_LIMITED"],
+    ["secondary rate limit body", () => jsonResponse({ message: "You have exceeded a secondary rate limit." }, 403), "GITHUB_RATE_LIMITED"],
+    ["GraphQL rate limit", () => jsonResponse({ errors: [{ type: "RATE_LIMITED" }] }), "GITHUB_RATE_LIMITED"],
+    ["GraphQL extension rate limit", () => jsonResponse({ errors: [{ extensions: { code: "RATE_LIMITED" } }] }), "GITHUB_RATE_LIMITED"],
+  ] as const)("does not fall back or disable GraphQL for %s", async (_name, response, code) => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(response()).mockImplementation(async (_, init) => jsonResponse(blobQueryResponse(init)));
+    const adapter = new GitHubContentsAdapter({ owner: "owner", repository: "data", token: "test-token" }, fetcher);
+    await expect(adapter.readBlobTexts([listedBlob(1)])).rejects.toMatchObject({ code });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    await expect(adapter.readBlobTexts([listedBlob(1)])).resolves.toHaveLength(1);
+    expect(fetcher.mock.calls[1][0]).toBe("https://api.github.com/graphql");
+  });
+
   it("reads 225 immutable blobs with nine read-only queries and reuses unchanged SHAs", async () => {
     const fetcher = vi.fn<typeof fetch>(async (_, init) => jsonResponse(blobQueryResponse(init)));
     const adapter = new GitHubContentsAdapter({ owner: "owner", repository: "data", token: "test-token" }, fetcher);

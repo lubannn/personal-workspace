@@ -302,7 +302,7 @@ export default function GitHubWorkspacePage() {
     reportDraftFiles,
     setReportDraftFiles,
     journalEntryFiles,
-    setJournalEntryFiles,
+    rememberJournalEntry,
     journalEntryCatalog,
     journalLoadedMonths,
     journalLoadError,
@@ -364,6 +364,7 @@ export default function GitHubWorkspacePage() {
     loadReportDrafts,
     loadJournalEntries,
     loadJournalMonth,
+    loadRecentJournalEntries,
     loadLearningAreas,
     loadHabitDomain,
     loadHealthDomain,
@@ -1575,7 +1576,7 @@ export default function GitHubWorkspacePage() {
         todayDate: localDateInTimezone(connection.timezone), timezone: connection.timezone,
         bodyMarkdown: fields.bodyMarkdown, timestamp,
       });
-      setJournalEntryFiles((current) => [{ record: entry, path: file.path, blobSha: file.blobSha }, ...current]);
+      if (!rememberJournalEntry({ record: entry, path: file.path, blobSha: file.blobSha }, adapter)) return false;
       setStatusMessage("日记已保存到 GitHub；日期、时间与正文已记录，版本历史由 Git 保留。");
       return true;
     } catch (error) {
@@ -1597,7 +1598,7 @@ export default function GitHubWorkspacePage() {
         ownerId: connection.ownerId, current: item.record, path: item.path, expectedBlobSha: item.blobSha,
         todayDate: localDateInTimezone(connection.timezone), bodyMarkdown: fields.bodyMarkdown, timestamp,
       });
-      setJournalEntryFiles((current) => current.map((candidate) => candidate.record.id === item.record.id ? { record: entry, path: file.path, blobSha: file.blobSha } : candidate));
+      if (!rememberJournalEntry({ record: entry, path: file.path, blobSha: file.blobSha }, adapter)) return false;
       setStatusMessage("日记修改已保存；日期与首次提交时间保持不变，旧版本仍保留在 Git 历史中。");
       return true;
     } catch (error) {
@@ -2927,6 +2928,7 @@ export default function GitHubWorkspacePage() {
         onEdit={saveJournalEntryEdit}
         onRefresh={(month) => { void loadJournalEntries(adapterRef.current, month); }}
         onBrowseMonth={(month) => { void loadJournalMonth(month); }}
+        onBrowseRecent={() => { void loadRecentJournalEntries(); }}
       />
       </WorkspaceTabPanel>
 
