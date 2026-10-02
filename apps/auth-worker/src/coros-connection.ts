@@ -132,12 +132,17 @@ async function status(request: Request, env: CorosConnectionEnv, userId: string)
     "SELECT state, connected_at, last_sync_at, last_error_code FROM coros_connections WHERE github_user_id = ?1",
   ).bind(userId).first<ConnectionRow>();
   const job = await readSyncJob(env.DB!, userId);
+  const progress = job ? parseSyncProgress(job.progress_json) : null;
+  const pending = Boolean(job && (job.request_seq > (progress?.request?.sequence ?? 0) ||
+    (progress?.request && (["sleep", "workout"] as const).some(domain =>
+      progress.domains[domain].recentRequestSequence !== progress.request!.sequence ||
+      progress.domains[domain].backfillNext <= progress.request!.through))));
   return json({ connected: Boolean(row), state: row?.state ?? null,
     connectedAt: row?.connected_at ?? null, lastSyncAt: row?.last_sync_at ?? null,
     lastErrorCode: row?.last_error_code ?? null, sync: { readiness: syncReadiness(env),
-      progress: job ? parseSyncProgress(job.progress_json) : null,
+      progress, dailyRequestedDate: job?.daily_requested_date ?? null,
       running: Boolean(job?.lease_until && job.lease_until > new Date().toISOString()),
-      nextRunAt: job?.next_run_at ?? null } });
+      nextRunAt: pending ? job?.next_run_at ?? null : null } });
 }
 
 async function disconnect(request: Request, env: CorosConnectionEnv, userId: string): Promise<Response> {
@@ -152,7 +157,7 @@ async function disconnect(request: Request, env: CorosConnectionEnv, userId: str
   return json({ disconnected: true, remoteAuthorizationRevoked: false });
 }
 
-async function controlSync(request: Request, env: CorosConnectionEnv, userId: string, action: "enable" | "pause" | "sync"): Promise<Response> {
+async function controlSync(request: Request, env: CorosConnectionEnv, userId: string, action: "enable" | "pause" | "sync" | "daily"): Promise<Response> {
   if (request.method !== "POST") return json({ error: "METHOD_NOT_ALLOWED" }, 405);
   if (!validAuthenticatedMutation(request)) return json({ error: "CSRF_VALIDATION_FAILED" }, 403);
   if (userId !== env.COROS_GITHUB_USER_ID) return json({ error: "COROS_SYNC_ACCOUNT_NOT_CONFIGURED" }, 409);
@@ -181,30 +186,27 @@ async function controlSync(request: Request, env: CorosConnectionEnv, userId: st
       if (progress.startDate !== body.startDate) return json({ error: "COROS_SYNC_START_DATE_LOCKED" }, 409);
     } else {
       const progress = initialSyncProgress(body.startDate, timezone);
+      progress.backfillEnd = todayInTimezone(now, timezone);
       await env.DB!.prepare(`INSERT OR IGNORE INTO coros_sync_jobs
         (github_user_id, progress_json, next_run_at, updated_at) VALUES (?1, ?2, ?3, ?3)`)
         .bind(userId, JSON.stringify(progress), now.toISOString()).run();
     }
     await env.DB!.prepare("UPDATE coros_connections SET state = 'enabled', last_error_code = NULL WHERE github_user_id = ?1")
       .bind(userId).run();
-  } else {
-    if (row.state !== "enabled") return json({ error: "COROS_SYNC_PAUSED" }, 409);
-    const job = await readSyncJob(env.DB!, userId);
-    if (!job) return json({ error: "COROS_SYNC_NOT_CONFIGURED" }, 409);
-    if (job.lease_until && job.lease_until > now.toISOString()) return json({ error: "COROS_SYNC_BUSY" }, 409);
-    const progress = parseSyncProgress(job.progress_json);
-    for (const domain of ["sleep", "workout"] as const) {
-      progress.domains[domain].lastRecentAt = null; progress.domains[domain].recentNext = null;
-      progress.domains[domain].retryAfter = null;
-    }
-    const queued = await env.DB!.prepare("UPDATE coros_sync_jobs SET progress_json = ?1, next_run_at = ?3 WHERE github_user_id = ?2 AND (lease_until IS NULL OR lease_until <= ?3)")
-      .bind(JSON.stringify(progress), userId, now.toISOString()).run();
-    if (!queued.success || queued.meta?.changes !== 1) return json({ error: "COROS_SYNC_BUSY" }, 409);
-    return json({ state: "enabled", queued: true });
+  } else if (row.state !== "enabled") {
+    return json({ error: "COROS_SYNC_PAUSED" }, 409);
   }
-  await env.DB!.prepare("UPDATE coros_sync_jobs SET next_run_at = ?1 WHERE github_user_id = ?2")
-    .bind(now.toISOString(), userId).run();
-  return json({ state: "enabled", queued: true });
+  // Queue columns are independent of leased progress. Concurrent logins claim the date once;
+  // explicit refreshes append a request without resetting history or cancelling the active batch.
+  const today = todayInTimezone(now, env.COROS_SYNC_TIMEZONE ?? "Asia/Shanghai");
+  const queued = await env.DB!.prepare(`UPDATE coros_sync_jobs SET request_seq = request_seq + 1,
+    requested_through = ?1, daily_requested_date = ?1, next_run_at = ?2, updated_at = ?2
+    WHERE github_user_id = ?3
+    AND EXISTS (SELECT 1 FROM coros_connections WHERE github_user_id = ?3 AND state = 'enabled')
+    ${action === "daily" ? "AND (daily_requested_date IS NULL OR daily_requested_date < ?1)" : ""}`)
+    .bind(today, now.toISOString(), userId).run();
+  if (!queued.success) throw new Error("COROS_SYNC_QUEUE_FAILED");
+  return json({ state: "enabled", queued: queued.meta?.changes === 1 });
 }
 
 async function preview(request: Request, env: CorosConnectionEnv, userId: string): Promise<Response> {
@@ -241,6 +243,7 @@ export async function handleCorosConnectionRequest(request: Request, env: CorosC
     case "/coros/enable": return controlSync(request, env, user.id, "enable");
     case "/coros/pause": return controlSync(request, env, user.id, "pause");
     case "/coros/sync": return controlSync(request, env, user.id, "sync");
+    case "/coros/daily": return controlSync(request, env, user.id, "daily");
     default: return json({ error: "COROS_ROUTE_NOT_FOUND" }, 404);
   }
 }

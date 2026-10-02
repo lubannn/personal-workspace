@@ -51,14 +51,24 @@ rotating refresh tokens, and an explicit GitHub user/repository allowlist.
 
 The deployed D1 schema contains authentication sessions plus encrypted COROS connection and short-lived OAuth attempt tables. Workspace business data continues to flow directly between the browser and the private GitHub repository.
 
-## COROS automatic sync (2026-10-02 implementation)
+## COROS automatic sync (daily-login scheduling, 2026-10-03)
 
-The connector now supports authenticated enable/pause/status/queued-refresh and
-conflict inspection. A ten-minute Cron Trigger performs one bounded window at a
-time. Recent sleep (three days) and workouts (seven days) run first and refresh
-every two hours; older records backfill in three-day windows. A failed domain
-backs off independently. Checkpoints advance only after a successful atomic Git
-transaction. No logged-in browser or running personal computer is required.
+The connector supports authenticated enable/pause/status/queued-refresh and
+conflict inspection. The first authenticated workspace visit each local day
+queues an update; the server deduplicates the request across devices. It does
+not start a new COROS refresh every two hours. A ten-minute Cron Trigger drains
+queued work one bounded window at a time, including retries and the initial
+historical backfill. Once work is queued, it can continue after the browser or
+personal computer closes; a day without a login does not create a new daily
+update request.
+
+Recent sleep (three days) and workouts (seven days) receive priority. Initial
+history has a fixed end date captured when synchronization is enabled and is
+filled in three-day windows. Later updates preserve a continuous cursor: after
+a long absence, the recent window is refreshed and intervening unchecked days
+are filled in bounded windows. A recent result is not proof that the intervening
+history is complete. A failed domain backs off independently, and checkpoints
+advance only after a successful atomic Git transaction.
 
 `0003_coros_sync_jobs.sql` stores operational cursors and a ten-minute lease.
 Canonical health records and conflict facts remain in the private repository;
@@ -84,6 +94,10 @@ The script validates that the key belongs to the existing GitHub App and
 installation, then pipes it directly into Workers Secrets without printing it.
 After provisioning, enable/resume COROS in the health panel. Existing OAuth is
 reused unless expired. Never put the PEM in chat, source control, a test or a log.
+The helper requires the project's Node.js runtime (24 or newer), installed
+dependencies, and an authenticated Wrangler session with access to the existing
+Worker. It configures only the secret; it does not enable synchronization or
+write health records.
 
 The Pages `/coros/*` service binding now forwards to this Worker just like
 `/auth/*`. New OAuth redirects return to the origin where authorization began;
