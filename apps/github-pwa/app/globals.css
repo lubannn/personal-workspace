@@ -457,16 +457,6 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .journal-calendar-day.selected { background: var(--ink); border-color: var(--ink); color: white; }
 .journal-calendar-day:hover:not(:disabled), .journal-calendar-day:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .journal-calendar > p { margin: 16px 0 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
-.journal-import-tools { margin-top: 28px; padding-top: 17px; border-top: 1px solid #e7e3da; }
-.journal-import-toggle { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; width: 100%; padding: 9px 0; border: 0; background: transparent; color: var(--soft); cursor: pointer; text-align: left; font-size: 11px; font-weight: 650; list-style: none; }
-.journal-import-toggle::-webkit-details-marker { display: none; }
-.journal-import-toggle::before { content: "+"; display: grid; place-items: center; width: 20px; height: 20px; border: 1px solid var(--line); border-radius: 6px; color: var(--muted); font-size: 14px; line-height: 1; }
-.journal-import-tools[open] > .journal-import-toggle::before { content: "−"; }
-.journal-import-toggle > small { color: var(--muted); font-size: 10px; font-weight: 400; }
-.journal-import-toggle:hover { color: var(--accent); }
-.journal-import-panel { display: grid; gap: 18px; }
-.journal-import-audit { padding: 10px 14px; border: 1px solid #e7e3da; border-radius: 12px; background: #fdfcf9; }
-.journal-import-audit > summary { color: var(--soft); cursor: pointer; font-size: 10px; }
 .learning-card { margin-top: 18px; padding: 22px; border: 1px solid var(--line); border-radius: 18px; background: var(--paper); box-shadow: var(--shadow); }
 .learning-subtitle { max-width: 720px; margin: 5px 0 0; color: var(--muted); font-size: 10px; line-height: 1.6; }
 .learning-subsection-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 18px; margin-top: 22px; }

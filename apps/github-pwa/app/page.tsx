@@ -295,7 +295,6 @@ export default function GitHubWorkspacePage() {
     journalEntryCatalog,
     journalLoadedMonths,
     journalLoadError,
-    journalImportCheckpointFiles,
     learningAreaFiles,
     setLearningAreaFiles,
     learningGoalFiles,
@@ -334,9 +333,6 @@ export default function GitHubWorkspacePage() {
     loadingCalendarEvents,
     loadingReportDrafts,
     loadingJournalEntries,
-    loadingJournalSegments,
-    loadingJournalRevisions,
-    loadingJournalImportCheckpoints,
     loadingLearningAreas,
     loadingHabits,
     loadingHealth,
@@ -2926,9 +2922,7 @@ export default function GitHubWorkspacePage() {
         journalEntryCatalog={journalEntryCatalog}
         loadedMonths={journalLoadedMonths}
         loadError={journalLoadError}
-        journalImportCheckpointFiles={journalImportCheckpointFiles}
         loading={loadingJournalEntries}
-        loadingLegacyHistory={loadingJournalEntries || loadingJournalSegments || loadingJournalRevisions || loadingJournalImportCheckpoints}
         saving={savingJournalEntry}
         savingId={savingJournalEntryId}
         onCreate={saveJournalEntry}
@@ -2936,8 +2930,6 @@ export default function GitHubWorkspacePage() {
         onDeletionChange={updateJournalEntryDeletion}
         onRefresh={(month) => { void loadJournalEntries(adapterRef.current, month); }}
         onBrowseMonth={(month) => { void loadJournalMonth(month); }}
-        onRefreshLegacyHistory={async () => { await loadJournalImportCheckpoints(); }}
-        onLegacyImportCommitted={async (month) => { await Promise.all([loadJournalEntries(adapterRef.current, month), loadJournalImportCheckpoints()]); }}
       />
       </WorkspaceTabPanel>
 
