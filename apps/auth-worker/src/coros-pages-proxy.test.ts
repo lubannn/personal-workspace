@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { onRequest } from "./[[path]]";
+import { onRequest } from "../../../functions/coros/[[path]]";
 
 describe("COROS Pages service forwarding", () => {
   it("preserves the same-origin request and private response", async () => {
