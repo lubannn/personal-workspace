@@ -25,32 +25,28 @@ type Options = {
   setConnecting: (connecting: boolean) => void;
   setErrorMessage: (message: string) => void;
   setStatusMessage: (message: string) => void;
-  loadRecentCaptures: (adapter: GitHubContentsAdapter) => Promise<void>;
-  loadDashboardLayout: (adapter: GitHubContentsAdapter, ownerId: string) => Promise<void>;
-  loadTasks: (adapter: GitHubContentsAdapter) => Promise<void>;
-  loadTimeEntries: (adapter: GitHubContentsAdapter) => Promise<void>;
-  loadProjects: (adapter: GitHubContentsAdapter) => Promise<void>;
-  loadProjectPhases: (adapter: GitHubContentsAdapter) => Promise<void>;
-  loadMilestones: (adapter: GitHubContentsAdapter) => Promise<void>;
-  loadProjectNotes: (adapter: GitHubContentsAdapter) => Promise<void>;
-  loadProjectFileReferences: (adapter: GitHubContentsAdapter) => Promise<void>;
-  loadActivityEvents: (adapter: GitHubContentsAdapter) => Promise<void>;
-  loadCalendarEvents: (adapter: GitHubContentsAdapter) => Promise<void>;
-  loadReportDrafts: (adapter: GitHubContentsAdapter) => Promise<void>;
-  loadJournalEntries: (adapter: GitHubContentsAdapter) => Promise<void>;
-  loadJournalSegments: (adapter: GitHubContentsAdapter) => Promise<void>;
-  loadJournalRevisions: (adapter: GitHubContentsAdapter) => Promise<void>;
-  loadJournalImportCheckpoints: (adapter: GitHubContentsAdapter) => Promise<void>;
-  loadObsidianDocuments: (adapter: GitHubContentsAdapter) => Promise<void>;
-  loadSyncConflicts: (adapter: GitHubContentsAdapter) => Promise<void>;
-  loadLearningAreas: (adapter: GitHubContentsAdapter) => Promise<void>;
-  loadHabitDomain: (adapter: GitHubContentsAdapter) => Promise<void>;
-  loadHealthDomain: (adapter: GitHubContentsAdapter) => Promise<void>;
 };
+
+/** Best effort: the server deduplicates each account-local day. This must never block login. */
+export async function requestCorosDailySync(csrf: string, fetcher: typeof fetch = globalThis.fetch): Promise<void> {
+  if (!csrf) return;
+  const controller = new AbortController();
+  const timeout = globalThis.setTimeout(() => controller.abort(), 10_000);
+  try {
+    await fetcher("/coros/daily", {
+      method: "POST", credentials: "same-origin", cache: "no-store", signal: controller.signal,
+      headers: { accept: "application/json", "x-pw-csrf": csrf },
+    });
+  } catch {
+    // COROS being paused, unavailable or offline must not undo the restored workspace session.
+  } finally {
+    globalThis.clearTimeout(timeout);
+  }
+}
 
 export function useGitHubAppBootstrap(options: Options) {
   const started = useRef(false);
-  const { adapterRef, setConnection, setConnectionMethod, setAuthAvailability, setConnecting, setErrorMessage, setStatusMessage, loadRecentCaptures, loadDashboardLayout, loadTasks, loadTimeEntries, loadProjects, loadProjectPhases, loadMilestones, loadProjectNotes, loadProjectFileReferences, loadActivityEvents, loadCalendarEvents, loadReportDrafts, loadJournalEntries, loadJournalSegments, loadJournalRevisions, loadJournalImportCheckpoints, loadObsidianDocuments, loadSyncConflicts, loadLearningAreas, loadHabitDomain, loadHealthDomain } = options;
+  const { adapterRef, setConnection, setConnectionMethod, setAuthAvailability, setConnecting, setErrorMessage, setStatusMessage } = options;
 
   useEffect(() => {
     if (started.current) return;
@@ -79,8 +75,8 @@ export function useGitHubAppBootstrap(options: Options) {
         adapterRef.current = opened.adapter;
         setConnection(opened.connection);
         setConnectionMethod("github-app");
+        void requestCorosDailySync(csrf);
         setStatusMessage(`已通过 GitHub App 登录${status.login ? `（${status.login}）` : ""}，访问令牌仅保留在当前页面内存中。`);
-        await Promise.all([loadRecentCaptures(opened.adapter), loadDashboardLayout(opened.adapter, opened.connection.ownerId), loadTasks(opened.adapter), loadTimeEntries(opened.adapter), loadProjects(opened.adapter), loadProjectPhases(opened.adapter), loadMilestones(opened.adapter), loadProjectNotes(opened.adapter), loadProjectFileReferences(opened.adapter), loadActivityEvents(opened.adapter), loadCalendarEvents(opened.adapter), loadReportDrafts(opened.adapter), loadJournalEntries(opened.adapter), loadObsidianDocuments(opened.adapter), loadSyncConflicts(opened.adapter), loadLearningAreas(opened.adapter), loadHabitDomain(opened.adapter), loadHealthDomain(opened.adapter)]);
       } catch (error) {
         adapterRef.current = null;
         setConnection(null);
@@ -93,5 +89,5 @@ export function useGitHubAppBootstrap(options: Options) {
     }
 
     void bootstrap();
-  }, [adapterRef, loadActivityEvents, loadCalendarEvents, loadDashboardLayout, loadHabitDomain, loadHealthDomain, loadJournalEntries, loadJournalImportCheckpoints, loadJournalRevisions, loadJournalSegments, loadLearningAreas, loadMilestones, loadObsidianDocuments, loadProjectFileReferences, loadProjectNotes, loadProjectPhases, loadProjects, loadRecentCaptures, loadReportDrafts, loadSyncConflicts, loadTasks, loadTimeEntries, setAuthAvailability, setConnecting, setConnection, setConnectionMethod, setErrorMessage, setStatusMessage]);
+  }, [adapterRef, setAuthAvailability, setConnecting, setConnection, setConnectionMethod, setErrorMessage, setStatusMessage]);
 }

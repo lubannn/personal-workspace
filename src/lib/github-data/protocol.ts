@@ -18,6 +18,8 @@ export type EntityType =
   | "journal_import_checkpoint"
   | "obsidian_document"
   | "sync_conflict"
+  | "coros_sync_conflict"
+  | "coros_sync_index"
   | "learning_area"
   | "learning_goal"
   | "learning_activity"
@@ -63,6 +65,8 @@ const ENTITY_DIRECTORIES: Record<Exclude<EntityType, "journal">, string> = {
   journal_import_checkpoint: "journal-import-checkpoints",
   obsidian_document: "obsidian-documents",
   sync_conflict: "sync-conflicts",
+  coros_sync_conflict: "coros-sync-conflicts",
+  coros_sync_index: "coros-sync-index",
   learning_area: "learning-areas",
   learning_goal: "learning-goals",
   learning_activity: "learning-activities",

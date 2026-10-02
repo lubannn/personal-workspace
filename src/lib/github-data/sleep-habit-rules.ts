@@ -45,7 +45,7 @@ export function createSleepHabitRuleData(input: {
 
 export function evaluateSleepHabitRule(rule: HabitRuleRecord, session: SleepSessionRecord): SleepHabitEvaluation {
   if (!SLEEP_HABIT_RULE_TYPES.includes(rule.data.rule_type as SleepHabitRuleType)) throw new Error("UNSUPPORTED_SLEEP_HABIT_RULE");
-  if (!rule.data.enabled || session.deleted_at !== null || session.data.confirmation_status !== "confirmed" || session.data.session_type !== "main_sleep") throw new Error("SLEEP_SESSION_NOT_ELIGIBLE");
+  if (!rule.data.enabled || session.deleted_at !== null || (session.data.sleep_session_version !== 2 && session.data.confirmation_status !== "confirmed") || session.data.session_type !== "main_sleep") throw new Error("SLEEP_SESSION_NOT_ELIGIBLE");
   const ruleType = rule.data.rule_type as SleepHabitRuleType;
   const threshold = rule.data.config_json.threshold_local_time;
   const timezone = rule.data.config_json.timezone;

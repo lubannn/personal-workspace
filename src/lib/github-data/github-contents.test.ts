@@ -7,7 +7,209 @@ function jsonResponse(value: unknown, status = 200) {
   return new Response(JSON.stringify(value), { status, headers: { "Content-Type": "application/json" } });
 }
 
+const listedBlob = (index: number, sizeBytes = 2) => ({ path: `data/workouts/${index}.json`, blobSha: index.toString(16).padStart(40, "0"), sizeBytes });
+function blobQueryResponse(init?: RequestInit) {
+  const { variables } = JSON.parse(String(init?.body)) as { variables: Record<string, string> };
+  return { data: { repository: Object.fromEntries(Object.entries(variables).filter(([key]) => key.startsWith("oid")).map(([key, oid]) => [
+    `blob${key.slice(3)}`, { __typename: "Blob", oid, byteSize: 2, isTruncated: false, text: "{}" },
+  ])) } };
+}
+
 describe("GitHub contents adapter", () => {
+  it("reads 225 immutable blobs with nine read-only queries and reuses unchanged SHAs", async () => {
+    const fetcher = vi.fn<typeof fetch>(async (_, init) => jsonResponse(blobQueryResponse(init)));
+    const adapter = new GitHubContentsAdapter({ owner: "owner", repository: "data", token: "test-token" }, fetcher);
+    const files = Array.from({ length: 225 }, (_, index) => listedBlob(index));
+    expect(await adapter.readBlobTexts(files)).toHaveLength(225);
+    expect(fetcher).toHaveBeenCalledTimes(9);
+    for (const [url, init] of fetcher.mock.calls) {
+      expect(url).toBe("https://api.github.com/graphql");
+      expect(init).toMatchObject({ method: "POST", cache: "no-store" });
+      expect(JSON.parse(String(init?.body)).query).toMatch(/^query ReadWorkspaceBlobs/);
+      expect(JSON.parse(String(init?.body)).query).not.toContain("mutation");
+      expect(init?.signal).toBeInstanceOf(AbortSignal);
+    }
+    await adapter.readBlobTexts(files);
+    expect(fetcher).toHaveBeenCalledTimes(9);
+    await adapter.readBlobTexts([{ ...files[0], blobSha: "a".repeat(40) }, ...files.slice(1)]);
+    expect(fetcher).toHaveBeenCalledTimes(10);
+    expect(Object.keys(JSON.parse(String(fetcher.mock.lastCall?.[1]?.body)).variables)).toEqual(["owner", "repository", "oid0"]);
+  });
+
+  it("isolates private body caches between adapter instances and repository targets", async () => {
+    const fetcher = vi.fn<typeof fetch>(async (_, init) => jsonResponse(blobQueryResponse(init)));
+    const config = { owner: "owner", repository: "data", token: "test-token" };
+    const adapter = new GitHubContentsAdapter(config, fetcher);
+    const file = listedBlob(1);
+    await adapter.readBlobTexts([file]);
+    expect(await adapter.readBlobTexts([{ ...file, path: "data/sleep-sessions/copy.json" }])).toMatchObject([{ path: "data/sleep-sessions/copy.json" }]);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    await adapter.forRepository("owner", "other-data").readBlobTexts([file]);
+    await new GitHubContentsAdapter({ ...config, token: "another-token" }, fetcher).readBlobTexts([file]);
+    expect(fetcher).toHaveBeenCalledTimes(3);
+  });
+
+  it("runs multiple GraphQL batches concurrently after one probe, capped at four across collections", async () => {
+    let releaseProbe!: () => void;
+    const probeGate = new Promise<void>((resolve) => { releaseProbe = resolve; });
+    let active = 0;
+    let maxActive = 0;
+    let probePending = true;
+    const fetcher = vi.fn<typeof fetch>(async (_, init) => {
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      if (probePending) {
+        await probeGate;
+        probePending = false;
+      } else {
+        await new Promise<void>((resolve) => setTimeout(resolve, 1));
+      }
+      active -= 1;
+      return jsonResponse(blobQueryResponse(init));
+    });
+    const adapter = new GitHubContentsAdapter({ owner: "owner", repository: "data", token: "test-token" }, fetcher);
+    const first = adapter.readBlobTexts(Array.from({ length: 150 }, (_, index) => listedBlob(index)));
+    const second = adapter.readBlobTexts(Array.from({ length: 150 }, (_, index) => listedBlob(index + 150)));
+    // Both collections and all their chunk workers must share the first probe.
+    await Promise.resolve();
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    releaseProbe();
+    expect((await Promise.all([first, second])).flat()).toHaveLength(300);
+    expect(fetcher).toHaveBeenCalledTimes(12);
+    expect(maxActive).toBe(4);
+  });
+
+  it("stops queued query batches after a concurrent batch fails", async () => {
+    let calls = 0;
+    const fetcher = vi.fn<typeof fetch>(async (_, init) => {
+      calls += 1;
+      if (calls === 2) return jsonResponse({ errors: [{ type: "INTERNAL" }] });
+      if (calls > 2) await new Promise<void>((resolve) => setTimeout(resolve, 1));
+      return jsonResponse(blobQueryResponse(init));
+    });
+    const adapter = new GitHubContentsAdapter({ owner: "owner", repository: "data", token: "test-token" }, fetcher);
+    await expect(adapter.readBlobTexts(Array.from({ length: 1000 }, (_, index) => listedBlob(index)))).rejects.toMatchObject({ code: "GITHUB_GRAPHQL_ERROR" });
+    await new Promise<void>((resolve) => setTimeout(resolve, 5));
+    // One capability probe plus at most four in-flight queries; the remaining
+    // 35 batches must not launch and no REST retries should be added.
+    expect(fetcher.mock.calls.length).toBeLessThanOrEqual(5);
+    expect(fetcher.mock.calls.every(([url]) => String(url).endsWith("/graphql"))).toBe(true);
+  });
+
+  it("falls back once when GraphQL is unavailable and bounds REST concurrency across collections", async () => {
+    let active = 0;
+    let maxActive = 0;
+    const fetcher = vi.fn<typeof fetch>(async (url) => {
+      if (String(url).endsWith("/graphql")) return jsonResponse({}, 403);
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      await new Promise<void>((resolve) => setTimeout(resolve, 1));
+      active -= 1;
+      return jsonResponse({ sha: String(url).split("/").at(-1), size: 2, encoding: "base64", content: btoa("{}") });
+    });
+    const adapter = new GitHubContentsAdapter({ owner: "owner", repository: "data", token: "test-token" }, fetcher);
+    const first = Array.from({ length: 25 }, (_, index) => listedBlob(index));
+    const second = Array.from({ length: 25 }, (_, index) => listedBlob(index + 25));
+    const result = await Promise.all([adapter.readBlobTexts(first), adapter.readBlobTexts(second)]);
+    expect(result.flat()).toHaveLength(50);
+    expect(fetcher.mock.calls.filter(([url]) => String(url).endsWith("/graphql"))).toHaveLength(1);
+    expect(fetcher).toHaveBeenCalledTimes(51);
+    expect(maxActive).toBeLessThanOrEqual(4);
+    await adapter.readBlobTexts([...first, ...second]);
+    expect(fetcher).toHaveBeenCalledTimes(51);
+  });
+
+  it("rejects partial GraphQL errors without caching partial results or starting REST retries", async () => {
+    const fetcher = vi.fn<typeof fetch>()
+      .mockImplementationOnce(async (_, init) => jsonResponse({ ...blobQueryResponse(init), errors: [{ type: "INTERNAL", message: "private response details" }] }))
+      .mockImplementation(async (_, init) => jsonResponse(blobQueryResponse(init)));
+    const adapter = new GitHubContentsAdapter({ owner: "owner", repository: "data", token: "test-token" }, fetcher);
+    await expect(adapter.readBlobTexts([listedBlob(1), listedBlob(2)])).rejects.toMatchObject({ code: "GITHUB_GRAPHQL_ERROR" });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    await expect(adapter.readBlobTexts([listedBlob(1), listedBlob(2)])).resolves.toHaveLength(2);
+    expect(Object.keys(JSON.parse(String(fetcher.mock.lastCall?.[1]?.body)).variables)).toHaveLength(4);
+  });
+
+  it.each(["timeout", "unavailable", "rate limit", "secondary rate limit"])("does not fan out a GraphQL %s into REST requests", async (failure) => {
+    const fetcher = vi.fn<typeof fetch>(async () => {
+      if (failure === "timeout") throw new DOMException("timed out", "TimeoutError");
+      if (failure === "rate limit") return new Response("{}", { status: 403, headers: { "X-RateLimit-Remaining": "0" } });
+      if (failure === "secondary rate limit") return new Response("{}", { status: 403, headers: { "Retry-After": "60" } });
+      return jsonResponse({}, 503);
+    });
+    const adapter = new GitHubContentsAdapter({ owner: "owner", repository: "data", token: "test-token" }, fetcher);
+    await expect(adapter.readBlobTexts(Array.from({ length: 100 }, (_, index) => listedBlob(index)))).rejects.toBeInstanceOf(GitHubDataError);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it("supports tokens whose GraphQL blob access is denied while REST Contents access works", async () => {
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({ data: { repository: { blob0: null } }, errors: [{ type: "FORBIDDEN" }] }))
+      .mockImplementation(async (url) => jsonResponse({ sha: String(url).split("/").at(-1), size: 2, encoding: "base64", content: btoa("{}") }));
+    const adapter = new GitHubContentsAdapter({ owner: "owner", repository: "data", token: "test-token" }, fetcher);
+    await expect(adapter.readBlobTexts([listedBlob(1)])).resolves.toHaveLength(1);
+    await expect(adapter.readBlobTexts([listedBlob(2)])).resolves.toHaveLength(1);
+    expect(fetcher.mock.calls.filter(([url]) => String(url).endsWith("/graphql"))).toHaveLength(1);
+  });
+
+  it("checks UTF-8 byte counts and rejects missing aliases and malformed blob responses", async () => {
+    const valid = { data: { repository: { blob0: { __typename: "Blob", oid: listedBlob(1).blobSha, byteSize: 6, isTruncated: false, text: "正文" } } } };
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(jsonResponse(valid));
+    const adapter = new GitHubContentsAdapter({ owner: "owner", repository: "data", token: "test-token" }, fetcher);
+    await expect(adapter.readBlobTexts([listedBlob(1, 6)])).resolves.toMatchObject([{ text: "正文" }]);
+    for (const response of [null, { errors: {} }, { data: { repository: {} } }, { data: { repository: { blob0: null } } }]) {
+      const invalid = new GitHubContentsAdapter({ owner: "owner", repository: "data", token: "test-token" }, vi.fn<typeof fetch>().mockResolvedValueOnce(jsonResponse(response)));
+      await expect(invalid.readBlobTexts([listedBlob(1)])).rejects.toBeInstanceOf(GitHubDataError);
+    }
+    await expect(adapter.readBlobTexts([listedBlob(1, 7)])).rejects.toMatchObject({ code: "GITHUB_INVALID_RESPONSE" });
+  });
+
+  it("validates listed SHA, size, and path before sending a query", async () => {
+    const fetcher = vi.fn<typeof fetch>();
+    const adapter = new GitHubContentsAdapter({ owner: "owner", repository: "data", token: "test-token" }, fetcher);
+    await expect(adapter.readBlobTexts([{ ...listedBlob(1), blobSha: "bad" }])).rejects.toThrow("INVALID_GITHUB_BLOB_SHA");
+    await expect(adapter.readBlobTexts([{ ...listedBlob(1), path: "../secret.json" }])).rejects.toThrow("INVALID_GITHUB_PATH");
+    await expect(adapter.readBlobTexts([listedBlob(1, -1)])).rejects.toThrow("INVALID_GITHUB_BLOB_SIZE");
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { __typename: "Tree" }, { oid: "b".repeat(40) }, { byteSize: 3 }, { text: null }, { text: "incomplete" }, { isTruncated: undefined },
+  ])("rejects invalid or incomplete GraphQL blobs: %j", async (override) => {
+    const fetcher = vi.fn<typeof fetch>(async (_, init) => {
+      const body = blobQueryResponse(init);
+      Object.assign(body.data.repository.blob0, override);
+      return jsonResponse(body);
+    });
+    const adapter = new GitHubContentsAdapter({ owner: "owner", repository: "data", token: "test-token" }, fetcher);
+    await expect(adapter.readBlobTexts([listedBlob(1)])).rejects.toMatchObject({ code: "GITHUB_UNSUPPORTED_CONTENT" });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it("retrieves only truncated GraphQL blobs through REST and preserves requested ordering", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockImplementationOnce(async (_, init) => {
+      const body = blobQueryResponse(init);
+      body.data.repository.blob0.isTruncated = true;
+      body.data.repository.blob0.text = "{";
+      return jsonResponse(body);
+    }).mockResolvedValueOnce(jsonResponse({ sha: listedBlob(1).blobSha, size: 2, encoding: "base64", content: btoa("{}") }));
+    const adapter = new GitHubContentsAdapter({ owner: "owner", repository: "data", token: "test-token" }, fetcher);
+    expect((await adapter.readBlobTexts([listedBlob(1), listedBlob(2)])).map((file) => file.path)).toEqual([listedBlob(1).path, listedBlob(2).path]);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(fetcher.mock.lastCall?.[0]).toContain(`/git/blobs/${listedBlob(1).blobSha}`);
+  });
+
+  it("stops the next query batch after a refresh supersedes the read", async () => {
+    let current = true;
+    const fetcher = vi.fn<typeof fetch>(async (_, init) => {
+      current = false;
+      return jsonResponse(blobQueryResponse(init));
+    });
+    const adapter = new GitHubContentsAdapter({ owner: "owner", repository: "data", token: "test-token" }, fetcher);
+    await expect(adapter.readBlobTexts(Array.from({ length: 50 }, (_, index) => listedBlob(index)), () => current)).rejects.toThrow("HEALTH_LOAD_CANCELLED");
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
   it("reads a known immutable blob in one request without a Contents lookup", async () => {
     const sha = "a".repeat(40);
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({ sha, size: 6, encoding: "base64", content: btoa(unescape(encodeURIComponent("正文"))) }));

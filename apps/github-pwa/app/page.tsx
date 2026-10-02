@@ -109,6 +109,7 @@ import { createSleepHabitRuleData, evaluateSleepHabitRule, type SleepHabitRuleFi
 import { confirmHealthStaging, correctPendingHealthStaging, correctPendingSleepHealthStaging, createHealthStagingData, createSleepHealthStagingData, rejectHealthStaging, type HealthStagingFields, type SleepStagingFields } from "../../../src/lib/github-data/health-staging-records";
 import { createConfirmedHealthMetricData } from "../../../src/lib/github-data/health-metrics";
 import { createConfirmedSleepSessionData } from "../../../src/lib/github-data/sleep-sessions";
+import { listCompleteHealthDirectory } from "./workspace/health-collection-loading";
 import { commitWorkoutConfirmationTransaction, prepareWorkoutConfirmationTransaction } from "../../../src/lib/github-data/workout-confirmation-transaction";
 import { canWriteJournalDate } from "../../../src/lib/github-data/journal-entries";
 import { createJournalEntrySingleFile, updateJournalEntrySingleFile } from "../../../src/lib/github-data/journal-single-file-writes";
@@ -148,6 +149,7 @@ import {
 import { useOnlineStatus } from "./workspace/use-online-status";
 import { useWorkspaceCollections } from "./workspace/use-workspace-collections";
 import { useGitHubAppBootstrap } from "./workspace/use-github-app-bootstrap";
+import { WorkspaceModuleLoader, type WorkspaceCollectionLoaders } from "./workspace/workspace-module-loading";
 import { CaptureInboxSection } from "./workspace/capture-inbox-section";
 import { DashboardSection } from "./workspace/dashboard-section";
 import { AuthSection } from "./workspace/auth-section";
@@ -163,6 +165,7 @@ import { JournalSection } from "./workspace/journal-section";
 import { LearningSection } from "./workspace/learning-section";
 import { HabitsSection } from "./workspace/habits-section";
 import { HealthStagingSection } from "./workspace/health-staging-section";
+import { HealthRecordsSection } from "./workspace/health-records-section";
 import { WorkspaceTabNavigation, WorkspaceTabPanel, workspaceTabFromHash, type WorkspaceTabId } from "./workspace/workspace-tab-navigation";
 
 export default function GitHubWorkspacePage() {
@@ -173,6 +176,9 @@ export default function GitHubWorkspacePage() {
   const [token, setToken] = useState("");
   const [connection, setConnection] = useState<Connection | null>(null);
   const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<WorkspaceTabId>("overview");
+  const [workspaceTabReady, setWorkspaceTabReady] = useState(false);
+  const [visitedWorkspaceTabs, setVisitedWorkspaceTabs] = useState<Set<WorkspaceTabId>>(() => new Set());
+  const moduleLoaderRef = useRef(new WorkspaceModuleLoader<GitHubContentsAdapter>());
   const [connectionMethod, setConnectionMethod] = useState<ConnectionMethod | null>(null);
   const [authAvailability, setAuthAvailability] = useState<AuthAvailability>("checking");
   const [connecting, setConnecting] = useState(false);
@@ -244,14 +250,18 @@ export default function GitHubWorkspacePage() {
   const clearAdapters = useCallback(() => {
     adapterRef.current = null;
     restoreAdapterRef.current = null;
+    moduleLoaderRef.current.reset();
   }, []);
   const online = useOnlineStatus(clearAdapters);
   useEffect(() => {
     function openLinkedTab() {
-      const tab = workspaceTabFromHash(window.location.hash);
-      if (!tab) return;
+      const tab = workspaceTabFromHash(window.location.hash) ?? "overview";
       setActiveWorkspaceTab(tab);
-      const anchor = decodeURIComponent(window.location.hash.slice(1));
+      setVisitedWorkspaceTabs((visited) => new Set(visited).add(tab));
+      setWorkspaceTabReady(true);
+      let anchor: string;
+      try { anchor = decodeURIComponent(window.location.hash.slice(1)); }
+      catch { return; }
       window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
         document.getElementById(anchor)?.scrollIntoView({ block: "start", behavior: "instant" });
       }));
@@ -263,6 +273,7 @@ export default function GitHubWorkspacePage() {
 
   function selectWorkspaceTab(tab: WorkspaceTabId) {
     setActiveWorkspaceTab(tab);
+    setVisitedWorkspaceTabs((visited) => new Set(visited).add(tab));
     window.history.replaceState(window.history.state, "", `${window.location.pathname}${window.location.search}#workspace-panel-${tab}`);
     const anchor = document.getElementById("workspace-navigation-anchor");
     if (anchor) window.scrollTo({ top: anchor.offsetTop, behavior: "instant" });
@@ -336,6 +347,9 @@ export default function GitHubWorkspacePage() {
     loadingLearningAreas,
     loadingHabits,
     loadingHealth,
+    healthLoaded,
+    healthLoadError,
+    healthUnverifiedWorkoutCount,
     loadingDashboard,
     loadRecentCaptures,
     loadTasks,
@@ -350,11 +364,6 @@ export default function GitHubWorkspacePage() {
     loadReportDrafts,
     loadJournalEntries,
     loadJournalMonth,
-    loadJournalSegments,
-    loadJournalRevisions,
-    loadJournalImportCheckpoints,
-    loadObsidianDocuments,
-    loadSyncConflicts,
     loadLearningAreas,
     loadHabitDomain,
     loadHealthDomain,
@@ -370,28 +379,42 @@ export default function GitHubWorkspacePage() {
     setConnecting,
     setErrorMessage,
     setStatusMessage,
-    loadRecentCaptures,
-    loadDashboardLayout,
-    loadTasks,
-    loadTimeEntries,
-    loadProjects,
-    loadProjectPhases,
-    loadMilestones,
-    loadProjectNotes,
-    loadProjectFileReferences,
-    loadActivityEvents,
-    loadCalendarEvents,
-    loadReportDrafts,
-    loadJournalEntries,
-    loadJournalSegments,
-    loadJournalRevisions,
-    loadJournalImportCheckpoints,
-    loadObsidianDocuments,
-    loadSyncConflicts,
-    loadLearningAreas,
-    loadHabitDomain,
-    loadHealthDomain,
   });
+
+  const moduleLoaders = useMemo<WorkspaceCollectionLoaders<GitHubContentsAdapter>>(() => ({
+    captures: loadRecentCaptures,
+    dashboard: (adapter) => loadDashboardLayout(adapter, connection?.ownerId),
+    tasks: loadTasks,
+    timeEntries: loadTimeEntries,
+    projects: loadProjects,
+    projectPhases: loadProjectPhases,
+    milestones: loadMilestones,
+    projectNotes: loadProjectNotes,
+    projectFiles: loadProjectFileReferences,
+    activity: loadActivityEvents,
+    calendar: loadCalendarEvents,
+    reports: loadReportDrafts,
+    journal: loadJournalEntries,
+    learning: loadLearningAreas,
+    habits: loadHabitDomain,
+    health: loadHealthDomain,
+  }), [connection?.ownerId, loadActivityEvents, loadCalendarEvents, loadDashboardLayout, loadHabitDomain, loadHealthDomain, loadJournalEntries, loadLearningAreas, loadMilestones, loadProjectFileReferences, loadProjectNotes, loadProjectPhases, loadProjects, loadRecentCaptures, loadReportDrafts, loadTasks, loadTimeEntries]);
+
+  useEffect(() => {
+    const adapter = adapterRef.current;
+    if (!connection || !adapter || !workspaceTabReady || online === false) return;
+    void moduleLoaderRef.current.load(adapter, activeWorkspaceTab, moduleLoaders).catch((error: unknown) => {
+      if (adapterRef.current === adapter) setErrorMessage(friendlyError(error));
+    });
+  }, [activeWorkspaceTab, connection, moduleLoaders, online, workspaceTabReady]);
+
+  useEffect(() => {
+    const refreshSyncedHealth = () => {
+      if (connection && online !== false) void loadHealthDomain();
+    };
+    window.addEventListener("coros-sync-updated", refreshSyncedHealth);
+    return () => window.removeEventListener("coros-sync-updated", refreshSyncedHealth);
+  }, [connection, loadHealthDomain, online]);
 
   const workspaceTimezone = connection?.timezone ?? "Asia/Shanghai";
   const [currentTaskDate, setCurrentTaskDate] = useState("");
@@ -564,26 +587,6 @@ export default function GitHubWorkspacePage() {
       setConnectionMethod("personal-token");
       setToken("");
       setStatusMessage("已通过 Private 仓库检查。令牌仅保留在当前页面内存中。");
-      await Promise.all([
-        loadRecentCaptures(opened.adapter),
-        loadDashboardLayout(opened.adapter, opened.connection.ownerId),
-        loadTasks(opened.adapter),
-        loadTimeEntries(opened.adapter),
-        loadProjects(opened.adapter),
-        loadProjectPhases(opened.adapter),
-        loadMilestones(opened.adapter),
-        loadProjectNotes(opened.adapter),
-        loadProjectFileReferences(opened.adapter),
-        loadActivityEvents(opened.adapter),
-        loadCalendarEvents(opened.adapter),
-        loadReportDrafts(opened.adapter),
-        loadJournalEntries(opened.adapter),
-        loadObsidianDocuments(opened.adapter),
-        loadSyncConflicts(opened.adapter),
-        loadLearningAreas(opened.adapter),
-        loadHabitDomain(opened.adapter),
-        loadHealthDomain(opened.adapter),
-      ]);
     } catch (error) {
       adapterRef.current = null;
       setConnection(null);
@@ -596,6 +599,8 @@ export default function GitHubWorkspacePage() {
 
   function clearConnection(message: string) {
     adapterRef.current = null;
+    moduleLoaderRef.current.reset();
+    setVisitedWorkspaceTabs(new Set());
     setConnection(null);
     setConnectionMethod(null);
     setToken("");
@@ -2192,22 +2197,27 @@ export default function GitHubWorkspacePage() {
   }
 
   async function listHealthStagingFiles(adapter: GitHubContentsAdapter) {
-    try { return (await adapter.listDirectory("data/health-staging-records")).filter((item) => item.type === "file" && item.name.endsWith(".json")).sort((left, right) => left.path.localeCompare(right.path)); }
+    try { return (await listCompleteHealthDirectory(adapter, "data/health-staging-records")).filter((item) => item.type === "file" && item.name.endsWith(".json")).sort((left, right) => left.path.localeCompare(right.path)); }
     catch (error) { if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") return []; throw error; }
   }
 
   async function listHealthMetricFiles(adapter: GitHubContentsAdapter) {
-    try { return (await adapter.listDirectory("data/health-metrics")).filter((item) => item.type === "file" && item.name.endsWith(".json")).sort((left, right) => left.path.localeCompare(right.path)); }
+    try { return (await listCompleteHealthDirectory(adapter, "data/health-metrics")).filter((item) => item.type === "file" && item.name.endsWith(".json")).sort((left, right) => left.path.localeCompare(right.path)); }
     catch (error) { if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") return []; throw error; }
   }
 
   async function listSleepSessionFiles(adapter: GitHubContentsAdapter) {
-    try { return (await adapter.listDirectory("data/sleep-sessions")).filter((item) => item.type === "file" && item.name.endsWith(".json")).sort((left, right) => left.path.localeCompare(right.path)); }
+    try { return (await listCompleteHealthDirectory(adapter, "data/sleep-sessions")).filter((item) => item.type === "file" && item.name.endsWith(".json")).sort((left, right) => left.path.localeCompare(right.path)); }
+    catch (error) { if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") return []; throw error; }
+  }
+
+  async function listCorosSyncConflictFiles(adapter: GitHubContentsAdapter) {
+    try { return (await listCompleteHealthDirectory(adapter, "data/coros-sync-conflicts")).filter((item) => item.type === "file" && item.name.endsWith(".json")).sort((left, right) => left.path.localeCompare(right.path)); }
     catch (error) { if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") return []; throw error; }
   }
 
   async function listWorkoutFiles(adapter: GitHubContentsAdapter) {
-    try { return (await adapter.listDirectory("data/workouts")).filter((item) => item.type === "file" && item.name.endsWith(".json")).sort((left, right) => left.path.localeCompare(right.path)); }
+    try { return (await listCompleteHealthDirectory(adapter, "data/workouts")).filter((item) => item.type === "file" && item.name.endsWith(".json")).sort((left, right) => left.path.localeCompare(right.path)); }
     catch (error) { if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") return []; throw error; }
   }
 
@@ -2484,6 +2494,10 @@ export default function GitHubWorkspacePage() {
       const workoutExportFiles = [];
       for (let index = 0; index < workoutCandidates.length; index += batchSize) workoutExportFiles.push(...await Promise.all(workoutCandidates.slice(index, index + batchSize).map((item) => adapter.readText(item.path))));
 
+      const corosSyncConflictCandidates = await listCorosSyncConflictFiles(adapter);
+      const corosSyncConflictExportFiles = [];
+      for (let index = 0; index < corosSyncConflictCandidates.length; index += batchSize) corosSyncConflictExportFiles.push(...await Promise.all(corosSyncConflictCandidates.slice(index, index + batchSize).map((item) => adapter.readText(item.path))));
+
       setExportProgress("正在生成 SHA-256 manifest…");
       const generatedAt = new Date().toISOString();
       const portableExport = await buildPortableWorkspaceExport({
@@ -2519,6 +2533,7 @@ export default function GitHubWorkspacePage() {
         healthMetricFiles: healthMetricExportFiles,
         sleepSessionFiles: sleepSessionExportFiles,
         workoutFiles: workoutExportFiles,
+        corosSyncConflictFiles: corosSyncConflictExportFiles,
         generatedAt,
       });
       const inspection = await inspectPortableWorkspaceExport(portableExport);
@@ -2895,7 +2910,7 @@ export default function GitHubWorkspacePage() {
       <div id="workspace-navigation-anchor" />
       <WorkspaceTabNavigation activeTab={activeWorkspaceTab} onSelect={selectWorkspaceTab} />
 
-      <WorkspaceTabPanel tab="journal" activeTab={activeWorkspaceTab}>
+      <WorkspaceTabPanel tab="journal" activeTab={activeWorkspaceTab} mounted={workspaceTabReady && (activeWorkspaceTab === "journal" || visitedWorkspaceTabs.has("journal"))} key={connection ? `journal:${connection.ownerId}:${connection.repository}` : "journal:disconnected"}>
       <JournalSection
         connection={connection}
         adapter={adapterRef.current}
@@ -2916,7 +2931,7 @@ export default function GitHubWorkspacePage() {
       </WorkspaceTabPanel>
 
 
-      <WorkspaceTabPanel tab="overview" activeTab={activeWorkspaceTab}>
+      <WorkspaceTabPanel tab="overview" activeTab={activeWorkspaceTab} mounted={workspaceTabReady && (activeWorkspaceTab === "overview" || visitedWorkspaceTabs.has("overview"))} key={connection ? `overview:${connection.ownerId}:${connection.repository}` : "overview:disconnected"}>
       <DashboardSection
         connection={connection}
         online={online}
@@ -2971,7 +2986,7 @@ export default function GitHubWorkspacePage() {
       </WorkspaceTabPanel>
 
 
-      <WorkspaceTabPanel tab="calendar" activeTab={activeWorkspaceTab}>
+      <WorkspaceTabPanel tab="calendar" activeTab={activeWorkspaceTab} mounted={workspaceTabReady && (activeWorkspaceTab === "calendar" || visitedWorkspaceTabs.has("calendar"))} key={connection ? `calendar:${connection.ownerId}:${connection.repository}` : "calendar:disconnected"}>
       <CalendarSection
         key={connection?.timezone ?? "disconnected"}
         connection={connection}
@@ -2991,7 +3006,7 @@ export default function GitHubWorkspacePage() {
       </WorkspaceTabPanel>
 
 
-      <WorkspaceTabPanel tab="projects" activeTab={activeWorkspaceTab}>
+      <WorkspaceTabPanel tab="projects" activeTab={activeWorkspaceTab} mounted={workspaceTabReady && (activeWorkspaceTab === "projects" || visitedWorkspaceTabs.has("projects"))} key={connection ? `projects:${connection.ownerId}:${connection.repository}` : "projects:disconnected"}>
       <ProjectsSection
         connection={connection}
         online={online}
@@ -3045,7 +3060,7 @@ export default function GitHubWorkspacePage() {
       </WorkspaceTabPanel>
 
 
-      <WorkspaceTabPanel tab="tasks" activeTab={activeWorkspaceTab}>
+      <WorkspaceTabPanel tab="tasks" activeTab={activeWorkspaceTab} mounted={workspaceTabReady && (activeWorkspaceTab === "tasks" || visitedWorkspaceTabs.has("tasks"))} key={connection ? `tasks:${connection.ownerId}:${connection.repository}` : "tasks:disconnected"}>
       <TasksSection
         connection={connection}
         online={online}
@@ -3100,7 +3115,7 @@ export default function GitHubWorkspacePage() {
       </WorkspaceTabPanel>
 
 
-      <WorkspaceTabPanel tab="learning" activeTab={activeWorkspaceTab}>
+      <WorkspaceTabPanel tab="learning" activeTab={activeWorkspaceTab} mounted={workspaceTabReady && (activeWorkspaceTab === "learning" || visitedWorkspaceTabs.has("learning"))} key={connection ? `learning:${connection.ownerId}:${connection.repository}` : "learning:disconnected"}>
       <LearningSection
         connection={connection}
         online={online}
@@ -3137,7 +3152,7 @@ export default function GitHubWorkspacePage() {
       </WorkspaceTabPanel>
 
 
-      <WorkspaceTabPanel tab="habits" activeTab={activeWorkspaceTab}>
+      <WorkspaceTabPanel tab="habits" activeTab={activeWorkspaceTab} mounted={workspaceTabReady && (activeWorkspaceTab === "habits" || visitedWorkspaceTabs.has("habits"))} key={connection ? `habits:${connection.ownerId}:${connection.repository}` : "habits:disconnected"}>
       <HabitsSection
         connection={connection}
         online={online}
@@ -3159,7 +3174,19 @@ export default function GitHubWorkspacePage() {
       </WorkspaceTabPanel>
 
 
-      <WorkspaceTabPanel tab="health" activeTab={activeWorkspaceTab}>
+      <WorkspaceTabPanel tab="health" activeTab={activeWorkspaceTab} mounted={workspaceTabReady && (activeWorkspaceTab === "health" || visitedWorkspaceTabs.has("health"))} key={connection ? `health:${connection.ownerId}:${connection.repository}` : "health:disconnected"}>
+      <HealthRecordsSection
+        connected={connection !== null}
+        timezone={connection?.timezone ?? "Asia/Shanghai"}
+        loading={loadingHealth}
+        loaded={healthLoaded}
+        error={healthLoadError}
+        unverifiedWorkoutCount={healthUnverifiedWorkoutCount}
+        sleepSessions={sleepSessionFiles}
+        workouts={workoutFiles}
+        staging={healthStagingFiles}
+        onRefresh={() => void loadHealthDomain()}
+      />
       <HealthStagingSection
         connection={connection}
         adapter={adapterRef.current}
@@ -3167,8 +3194,6 @@ export default function GitHubWorkspacePage() {
         todayDate={currentTaskDate}
         staging={healthStagingFiles}
         metrics={healthMetricFiles}
-        sleepSessions={sleepSessionFiles}
-        workouts={workoutFiles}
         loading={loadingHealth}
         saving={savingHealth}
         savingId={savingHealthId}
@@ -3198,7 +3223,7 @@ export default function GitHubWorkspacePage() {
       </WorkspaceTabPanel>
 
 
-      <WorkspaceTabPanel tab="reports" activeTab={activeWorkspaceTab}>
+      <WorkspaceTabPanel tab="reports" activeTab={activeWorkspaceTab} mounted={workspaceTabReady && (activeWorkspaceTab === "reports" || visitedWorkspaceTabs.has("reports"))} key={connection ? `reports:${connection.ownerId}:${connection.repository}` : "reports:disconnected"}>
       <ReportsSection
         connection={connection}
         todayDate={currentTaskDate}
@@ -3217,7 +3242,7 @@ export default function GitHubWorkspacePage() {
       </WorkspaceTabPanel>
 
 
-      <WorkspaceTabPanel tab="data" activeTab={activeWorkspaceTab}>
+      <WorkspaceTabPanel tab="data" activeTab={activeWorkspaceTab} mounted={workspaceTabReady && (activeWorkspaceTab === "data" || visitedWorkspaceTabs.has("data"))} key={connection ? `data:${connection.ownerId}:${connection.repository}` : "data:disconnected"}>
       <ReadinessSection readiness={readiness} connectionMethod={connectionMethod} />
       <PortabilitySection
         connection={connection}
