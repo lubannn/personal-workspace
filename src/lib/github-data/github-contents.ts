@@ -182,7 +182,7 @@ export class GitHubContentsAdapter {
     );
   }
 
-  private async request<T>(pathname: string, init?: RequestInit): Promise<T> {
+  private async request<T>(pathname: string, init?: RequestInit, diagnoseTransport = true): Promise<T> {
     let response: Response;
     try {
       response = await this.fetcher(`${API_ROOT}${pathname}`, {
@@ -196,6 +196,7 @@ export class GitHubContentsAdapter {
         },
       });
     } catch (error) {
+      if (!diagnoseTransport) throw new GitHubDataError("GitHub statistics read timed out or failed.", 0, "GITHUB_TRANSPORT_ERROR");
       return this.throwTransportError(error);
     }
     if (!response.ok) {
@@ -251,6 +252,17 @@ export class GitHubContentsAdapter {
       }
     }
     throw new GitHubDataError("Expected a base64 encoded GitHub file.", 500, "GITHUB_UNSUPPORTED_CONTENT");
+  }
+
+  async readBlobText(pathname: string, blobSha: string): Promise<GitHubStoredFile> {
+    assertFilePath(pathname);
+    if (!/^[a-f0-9]{40}$/u.test(blobSha)) throw new Error("INVALID_GITHUB_BLOB_SHA");
+    const blob = await this.request<GitHubBlobReadResponse>(
+      `/repos/${encodeURIComponent(this.config.owner)}/${encodeURIComponent(this.config.repository)}/git/blobs/${blobSha}`,
+      { signal: AbortSignal.timeout(20_000) }, false,
+    );
+    if (blob.encoding !== "base64" || blob.sha !== blobSha) throw new GitHubDataError("Unexpected GitHub blob.", 500, "GITHUB_UNSUPPORTED_CONTENT");
+    return { path: pathname, blobSha, sizeBytes: blob.size, text: decodeBase64(blob.content) };
   }
 
   async listDirectory(pathname: string, refOverride?: string): Promise<GitHubDirectoryItem[]> {

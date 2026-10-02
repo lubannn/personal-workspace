@@ -8,6 +8,22 @@ function jsonResponse(value: unknown, status = 200) {
 }
 
 describe("GitHub contents adapter", () => {
+  it("reads a known immutable blob in one request without a Contents lookup", async () => {
+    const sha = "a".repeat(40);
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({ sha, size: 6, encoding: "base64", content: btoa(unescape(encodeURIComponent("正文"))) }));
+    const adapter = new GitHubContentsAdapter({ owner: "owner", repository: "data", token: "test-token" }, fetcher);
+    await expect(adapter.readBlobText("data/journal-entries/one.json", sha)).resolves.toMatchObject({ text: "正文", blobSha: sha });
+    expect(fetcher).toHaveBeenCalledTimes(1); expect(fetcher.mock.calls[0][0]).toContain(`/git/blobs/${sha}`);
+    expect(fetcher.mock.calls[0][1]?.signal).toBeInstanceOf(AbortSignal);
+    await expect(adapter.readBlobText("../bad", sha)).rejects.toThrow();
+    await expect(adapter.readBlobText("data/one.json", "bad")).rejects.toThrow();
+  });
+  it("does not add a diagnostic network probe when a statistics read fails", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockRejectedValue(new TypeError("network failed"));
+    const adapter = new GitHubContentsAdapter({ owner: "owner", repository: "data", token: "test-token" }, fetcher);
+    await expect(adapter.readBlobText("data/one.json", "a".repeat(40))).rejects.toMatchObject({ status: 0, code: "GITHUB_TRANSPORT_ERROR" });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
   it("verifies private visibility and round-trips Unicode text", async () => {
     const fetcher = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(jsonResponse({

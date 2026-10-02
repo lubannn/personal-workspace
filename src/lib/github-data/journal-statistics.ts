@@ -1,4 +1,5 @@
-import type { JournalEntryRecord } from "./journal-entries";
+import { parseJournalEntryRecord, type JournalEntryRecord } from "./journal-entries";
+import { GitHubDataError } from "./github-contents";
 import { parseJournalSegmentsMarkdown } from "./journal-segment-codec";
 
 export type JournalFileStatistics = { blobSha: string; date: string; entries: number; words: number; deleted: boolean };
@@ -21,6 +22,46 @@ export function journalWordCount(markdown: string): number {
 
 export function cachedJournalStatistics(cache: Record<string, JournalFileStatistics>, path: string, blobSha: string) {
   return cache[path]?.blobSha === blobSha ? cache[path] : undefined;
+}
+
+export async function collectJournalStatistics(input: {
+  files: { path: string; blobSha: string }[];
+  cache: Record<string, JournalFileStatistics>;
+  read: (path: string, blobSha: string) => Promise<{ text: string; blobSha: string }>;
+  cancelled: () => boolean;
+  checkpoint: (cache: Record<string, JournalFileStatistics>) => void;
+}) {
+  const cache = { ...input.cache };
+  const pending = input.files.filter((file) => !cachedJournalStatistics(cache, file.path, file.blobSha));
+  let failures = 0;
+  for (let offset = 0; offset < pending.length && !input.cancelled(); offset += 6) {
+    let completed = 0;
+    let blocked = false;
+    await Promise.all(pending.slice(offset, offset + 6).map(async (file) => {
+      try {
+        let stored;
+        for (let attempt = 0; ; attempt += 1) {
+          if (input.cancelled()) return;
+          try { stored = await input.read(file.path, file.blobSha); break; }
+          catch (error) {
+            const transient = error instanceof GitHubDataError && (error.status === 0 || error.status >= 500);
+            if (!transient || attempt >= 1 || input.cancelled()) throw error;
+          }
+        }
+        if (stored.blobSha !== file.blobSha) throw new Error("JOURNAL_STATISTICS_VERSION_CHANGED");
+        cache[file.path] = journalFileStatistics(parseJournalEntryRecord(stored.text), stored.blobSha);
+        completed += 1;
+      } catch (error) {
+        failures += 1;
+        if (error instanceof GitHubDataError && [401, 403, 429].includes(error.status)) blocked = true;
+      }
+    }));
+    // Keep every completed small batch, even if a sibling read fails or the
+    // user pauses/saves while it is in flight. Never discard successful counts.
+    input.checkpoint({ ...cache });
+    if (blocked || completed === 0) break;
+  }
+  return { cache, failures };
 }
 
 export function journalFileStatistics(record: JournalEntryRecord, blobSha: string): JournalFileStatistics {

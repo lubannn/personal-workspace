@@ -2,8 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { GitHubContentsAdapter, GitHubDirectoryItem } from "../../../../src/lib/github-data/github-contents";
-import { parseJournalEntryRecord } from "../../../../src/lib/github-data/journal-entries";
-import { cachedJournalStatistics, journalFileStatistics, parseJournalStatisticsCache, sumJournalStatistics, type JournalFileStatistics } from "../../../../src/lib/github-data/journal-statistics";
+import { cachedJournalStatistics, collectJournalStatistics, journalFileStatistics, parseJournalStatisticsCache, sumJournalStatistics, type JournalFileStatistics } from "../../../../src/lib/github-data/journal-statistics";
 import type { Connection, SyncedJournalEntry } from "./page-model";
 
 export function JournalStatistics({ connection, adapter, catalog, loaded, busy }: { connection: Connection | null; adapter: GitHubContentsAdapter | null; catalog: GitHubDirectoryItem[]; loaded: SyncedJournalEntry[]; busy: boolean }) {
@@ -54,21 +53,25 @@ export function JournalStatistics({ connection, adapter, catalog, loaded, busy }
     const token = ++generation.current;
     setRunning(true); setError("");
     try {
-      // Explicit, resumable statistics only. Never part of journal load or save.
-      let processed = 0;
-      const workingCache = { ...cache, ...loadedStatistics };
-      for (const item of missing) {
-        if (generation.current !== token) return;
-        const stored = await adapter.readText(item.path);
-        if (generation.current !== token) return;
-        if (stored.blobSha !== item.blobSha) throw new Error("历史日记已变动，请先从 GitHub 刷新后再统计。");
-        const statistics = journalFileStatistics(parseJournalEntryRecord(stored.text), stored.blobSha);
-        processed += 1;
-        const persist = processed % 25 === 0 || processed === missing.length;
-        workingCache[item.path] = statistics;
-        setCache({ ...workingCache });
-        if (persist) { try { localStorage.setItem(storageKey, JSON.stringify(workingCache)); } catch { /* Cache stores counts only, never prose or access tokens. */ } }
-      }
+      const result = await collectJournalStatistics({
+        files: missing, cache: { ...cache, ...loadedStatistics },
+        read: (path, blobSha) => adapter.readBlobText(path, blobSha),
+        cancelled: () => generation.current !== token,
+        checkpoint: (next) => {
+          let merged = next;
+          try {
+            const stored = parseJournalStatisticsCache(localStorage.getItem(storageKey) ?? "{}");
+            merged = { ...stored, ...next };
+            // Do not overwrite a newer save if it interrupted this scan.
+            if (generation.current !== token) {
+              for (const [path, value] of Object.entries(stored)) if (next[path]?.blobSha !== value.blobSha) merged[path] = value;
+            }
+            localStorage.setItem(storageKey, JSON.stringify(merged));
+          } catch { /* Counts remain usable in memory when storage is unavailable. */ }
+          setCache(merged);
+        },
+      });
+      if (generation.current === token && result.failures) setError("部分记录读取失败，已完成进度已保留。点“继续统计”只补算剩余记录。");
     } catch {
       if (generation.current === token) setError("统计未完成，请刷新后继续；已统计的结果会保留。");
     } finally {
@@ -78,11 +81,11 @@ export function JournalStatistics({ connection, adapter, catalog, loaded, busy }
 
   return <div className="journal-statistics">
     <div className="journal-statistics-counts" aria-label="全部日记统计" aria-live="polite">
-      <span className="view-button">日记天数 {complete ? totals.days.toLocaleString() : "待统计"}</span>
-      <span className="view-button">日记数量 {complete ? totals.entries.toLocaleString() : "待统计"}</span>
-      <span className="view-button" title="中文逐字、英文逐词，标点逐个计数；不含空格、换行与 Markdown 格式标记">日记字数 {complete ? totals.words.toLocaleString() : "待统计"}</span>
+      <span className="view-button">日记天数 {totals.days.toLocaleString()}{complete ? "" : "（已统计）"}</span>
+      <span className="view-button">日记数量 {totals.entries.toLocaleString()}{complete ? "" : "（已统计）"}</span>
+      <span className="view-button" title="中文逐字、英文逐词，标点逐个计数；不含空格、换行与 Markdown 格式标记">日记字数 {totals.words.toLocaleString()}{complete ? "" : "（已统计）"}</span>
     </div>
-    {missing.length > 0 ? <div className="journal-statistics-progress"><button className="text-button" type="button" disabled={!adapter || busy} onClick={() => { if (running) { generation.current += 1; setRunning(false); if (storageKey) { try { localStorage.setItem(storageKey, JSON.stringify(cache)); } catch { /* Optional count cache. */ } } } else void calculate(); }}>{running ? `暂停统计（${files.length - missing.length}/${files.length}）` : "统计增量"}</button><small>当前有 {missing.length} 个文件待统计；仅读取新增或变动记录。首次使用此规则需统计一次历史正文。</small></div> : null}
+    {missing.length > 0 ? <div className="journal-statistics-progress"><button className="text-button" type="button" disabled={!adapter || busy} onClick={() => { if (running) { generation.current += 1; setRunning(false); } else void calculate(); }}>{running ? `暂停统计（${files.length - missing.length}/${files.length}）` : "继续统计"}</button><small>剩余 {missing.length} 个文件；6 个并行读取，每批立即保留进度，只补算未完成记录。</small></div> : null}
     {error ? <small role="alert">{error}</small> : null}
   </div>;
 }

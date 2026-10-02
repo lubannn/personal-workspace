@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { cachedJournalStatistics, journalFileStatistics, journalWordCount, parseJournalStatisticsCache, sumJournalStatistics } from "./journal-statistics";
+import { cachedJournalStatistics, collectJournalStatistics, journalFileStatistics, journalWordCount, parseJournalStatisticsCache, sumJournalStatistics } from "./journal-statistics";
 import { createJournalEntryData, type JournalEntryRecord } from "./journal-entries";
 import { createJournalSegmentSnapshot, renderJournalSegmentsMarkdown } from "./journal-segment-codec";
+import { createWorkspaceRecord } from "./protocol";
 
 function record(body: string): JournalEntryRecord {
-  return { id: "journal_1", deleted_at: null, data: createJournalEntryData({ journalDate: "2026-10-02", timezone: "Asia/Shanghai", timestamp: "2026-10-02T07:20:00Z", bodyMarkdown: body }) } as JournalEntryRecord;
+  return createWorkspaceRecord({ entityType: "journal_entry", id: "journal_1", ownerId: "owner_1", timestamp: "2026-10-02T07:20:00Z", data: createJournalEntryData({ journalDate: "2026-10-02", timezone: "Asia/Shanghai", timestamp: "2026-10-02T07:20:00Z", bodyMarkdown: body }) });
 }
 
 describe("journal statistics", () => {
@@ -40,5 +41,27 @@ describe("journal statistics", () => {
     expect(cachedJournalStatistics(cache, "old", "new-sha")).toBeUndefined();
     expect(cachedJournalStatistics(cache, "new", "sha")).toBeUndefined();
     expect(cachedJournalStatistics(parseJournalStatisticsCache(JSON.stringify(cache)), "old", "sha")).toEqual(item);
+  });
+  it("reads in parallel, saves every small batch and resumes only missing records after a failure", async () => {
+    const files = Array.from({ length: 13 }, (_, index) => ({ path: `path_${index}`, blobSha: `sha_${index}` }));
+    let concurrency = 0; let peak = 0; let checkpoints = 0;
+    const read = async (path: string, blobSha: string) => {
+      concurrency += 1; peak = Math.max(peak, concurrency);
+      await Promise.resolve(); concurrency -= 1;
+      if (path === "path_2") throw new Error("network failed");
+      return { text: JSON.stringify(record("正文。")), blobSha };
+    };
+    const first = await collectJournalStatistics({ files, cache: {}, read, cancelled: () => false, checkpoint: () => { checkpoints += 1; } });
+    expect(peak).toBe(6); expect(checkpoints).toBe(3);
+    expect(first.failures).toBe(1); expect(Object.keys(first.cache)).toHaveLength(12);
+    const requested: string[] = [];
+    const resumed = await collectJournalStatistics({ files, cache: first.cache, read: async (path, blobSha) => { requested.push(path); return { text: JSON.stringify(record("正文。")), blobSha }; }, cancelled: () => false, checkpoint: () => {} });
+    expect(requested).toEqual(["path_2"]); expect(Object.keys(resumed.cache)).toHaveLength(13);
+  });
+  it("keeps successful in-flight counts when the scan is paused", async () => {
+    let paused = false;
+    let saved = {};
+    const result = await collectJournalStatistics({ files: Array.from({ length: 9 }, (_, index) => ({ path: `path_${index}`, blobSha: `sha_${index}` })), cache: {}, read: async (_path, blobSha) => { await Promise.resolve(); paused = true; return { text: JSON.stringify(record("正文。")), blobSha }; }, cancelled: () => paused, checkpoint: (cache) => { saved = cache; } });
+    expect(Object.keys(result.cache)).toHaveLength(6); expect(Object.keys(saved)).toHaveLength(6);
   });
 });
