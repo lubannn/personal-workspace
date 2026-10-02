@@ -201,4 +201,45 @@ describe("COROS scheduled synchronization", () => {
     await runCorosSync(fixture.env, new Date(), deps);
     expect(deps.refresh).not.toHaveBeenCalled(); expect(fixture.saved()?.next_run_at).toBe("2024-02-01T04:30:00.000Z");
   });
+
+  it("does not re-read completed history after two hours or a new calendar day without a login request", async () => {
+    const progress = initialSyncProgress("2024-01-01", "Asia/Shanghai");
+    for (const domain of ["sleep", "workout"] as const) {
+      progress.domains[domain].lastRecentAt = SYNC_TEST_NOW;
+      progress.domains[domain].backfillNext = "2024-02-02";
+    }
+    fixture.connection(); fixture.job(progress); const { deps } = dependencies();
+    for (const time of ["2024-02-01T07:00:00.000Z", "2024-03-01T04:00:00.000Z"]) {
+      vi.setSystemTime(time); await runCorosSync(fixture.env, new Date(), deps);
+    }
+    expect(deps.refresh).not.toHaveBeenCalled(); expect(deps.read).not.toHaveBeenCalled(); expect(deps.adapter).not.toHaveBeenCalled();
+  });
+
+  it("preserves a newer daily request queued while the worker is processing an older request", async () => {
+    fixture.connection(); fixture.job(); const { deps } = dependencies();
+    deps.read.mockImplementationOnce(async (_resource, _token, _tool, args) => {
+      fixture.sqlite.exec("UPDATE coros_sync_jobs SET request_seq = 2, requested_through = '2024-02-02', daily_requested_date = '2024-02-02'");
+      return readResult(args);
+    });
+    await runCorosSync(fixture.env, new Date(), deps);
+    expect(fixture.saved()).toMatchObject({ request_seq: 2, requested_through: "2024-02-02", next_run_at: SYNC_TEST_NOW,
+      progress: { request: { sequence: 1, through: "2024-02-01" }, domains: { sleep: { recentRequestSequence: 1 } } } });
+    await runCorosSync(fixture.env, new Date(), deps);
+    expect(deps.read).toHaveBeenLastCalledWith(expect.any(String), expect.any(String), "querySleepOverview", { startDate: "20240131", endDate: "20240202" });
+    expect(fixture.saved()?.progress.request).toEqual({ sequence: 2, through: "2024-02-02" });
+  });
+
+  it("advances contiguous coverage from the recent overlap without re-reading that range as history", async () => {
+    const progress = initialSyncProgress("2024-01-01", "Asia/Shanghai");
+    progress.domains.sleep.backfillNext = "2024-01-31";
+    progress.domains.workout.backfillNext = "2024-01-31";
+    fixture.connection(); fixture.job(progress); const { deps } = dependencies();
+    await runCorosSync(fixture.env, new Date(), deps);
+    vi.setSystemTime("2024-02-01T04:10:00.000Z"); await runCorosSync(fixture.env, new Date(), deps);
+    for (const domain of ["sleep", "workout"] as const) expect(fixture.saved()?.progress.domains[domain]).toMatchObject({
+      backfillNext: "2024-02-02", backfillThrough: "2024-02-01", recentRequestSequence: 1,
+    });
+    vi.setSystemTime("2024-02-01T04:20:00.000Z"); await runCorosSync(fixture.env, new Date(), deps);
+    expect(deps.read).toHaveBeenCalledTimes(2);
+  });
 });

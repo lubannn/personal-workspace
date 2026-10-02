@@ -4,7 +4,7 @@ import { callCorosReadTool } from "./coros-read-client";
 import { mapCorosSleep, mapCorosWorkouts } from "./coros-sync-mapping";
 import { createPrivateDataInstallationAdapter } from "./github-installation";
 import { writeCorosSyncBatch } from "./coros-sync-writer";
-import { nextSyncWindow, parseSyncProgress, readSyncJob, shiftDate, syncReadiness, todayInTimezone, type CorosSyncEnv } from "./coros-sync-state";
+import { acceptSyncRequest, nextSyncWindow, parseSyncProgress, readSyncJob, recentWindowStart, shiftDate, syncReadiness, type CorosSyncEnv } from "./coros-sync-state";
 
 const dependencies = { refresh: refreshEnabledCorosConnection, read: callCorosReadTool,
   adapter: createPrivateDataInstallationAdapter, write: writeCorosSyncBatch };
@@ -28,7 +28,7 @@ export async function runCorosSync(env: CorosSyncEnv, now = new Date(), deps: Co
   const job = await readSyncJob(db, userId);
   if (!job || job.lease_token !== token) return;
   let progress;
-  try { progress = parseSyncProgress(job.progress_json); }
+  try { progress = parseSyncProgress(job.progress_json); acceptSyncRequest(progress, job); }
   catch {
     await db.prepare("UPDATE coros_connections SET last_error_code = 'COROS_SYNC_STATE_INVALID', state = 'paused' WHERE github_user_id = ?1").bind(userId).run();
     await db.prepare("UPDATE coros_sync_jobs SET lease_token = NULL, lease_until = NULL WHERE github_user_id = ?1 AND lease_token = ?2").bind(userId, token).run();
@@ -88,8 +88,16 @@ export async function runCorosSync(env: CorosSyncEnv, now = new Date(), deps: Co
     const domain = progress.domains[window.domain];
     if (window.recent) {
       domain.recentThrough = window.through;
-      domain.recentNext = window.through < todayInTimezone(now, progress.timezone) ? shiftDate(window.through, 1) : null;
-      if (!domain.recentNext) domain.lastRecentAt = now.toISOString();
+      domain.recentNext = window.through < progress.request!.through ? shiftDate(window.through, 1) : null;
+      if (!domain.recentNext) {
+        domain.lastRecentAt = now.toISOString();
+        domain.recentRequestSequence = progress.request!.sequence;
+        // Advance contiguous coverage only when the entire remaining gap was in this recent window.
+        if (domain.backfillNext >= recentWindowStart(progress, window.domain) && domain.backfillNext <= window.through) {
+          domain.backfillThrough = window.through;
+          domain.backfillNext = shiftDate(window.through, 1);
+        }
+      }
     }
     else { domain.backfillThrough = window.through; domain.backfillNext = shiftDate(window.through, 1); }
     const latest = window.domain === "sleep" ? outcome.latestSleepDate : outcome.latestWorkoutDate;
@@ -114,8 +122,8 @@ export async function runCorosSync(env: CorosSyncEnv, now = new Date(), deps: Co
     await db.prepare("UPDATE coros_connections SET last_error_code = ?1 WHERE github_user_id = ?2 AND state = 'enabled'")
       .bind(code, userId).run();
   } finally {
-    await db.prepare(`UPDATE coros_sync_jobs SET progress_json = ?1, next_run_at = ?2,
+    await db.prepare(`UPDATE coros_sync_jobs SET progress_json = ?1, next_run_at = CASE WHEN request_seq > ?6 THEN ?3 ELSE ?2 END,
       lease_token = NULL, lease_until = NULL, updated_at = ?3 WHERE github_user_id = ?4 AND lease_token = ?5`)
-      .bind(JSON.stringify(progress), nextRunAt, now.toISOString(), userId, token).run();
+      .bind(JSON.stringify(progress), nextRunAt, now.toISOString(), userId, token, job.request_seq).run();
   }
 }

@@ -13,10 +13,11 @@ type CorosStatus = {
   lastSyncAt: string | null;
   lastErrorCode: string | null;
   sync?: {
-    readiness: { ready: boolean; missing: string[]; intervalMinutes: number; backfillIntervalMinutes: number };
+    readiness: { ready: boolean; missing: string[]; trigger: "daily_first_login"; backfillIntervalMinutes: number };
     progress: SyncProgress | null;
     running: boolean;
     nextRunAt: string | null;
+    dailyRequestedDate?: string | null;
   };
 };
 type CorosPreview = { machineReadable: boolean; format: "structured" | "content"; fields: string[]; blockTypes: string[] };
@@ -134,9 +135,9 @@ export function CorosConnectionSection({ connectionMethod }: { connectionMethod:
       if (path === "/coros/disconnect") {
         setPreview(null); setConfirmDisconnect(false);
         setMessage("已断开工作台与 COROS 的连接，停止后续同步。已入库的记录仍保留。");
-      } else if (path === "/coros/enable") setMessage("已开启自动同步。后台会优先读取最近记录，再逐步补齐所选日期范围。");
+      } else if (path === "/coros/enable") setMessage("已开启每日自动同步。每天首次登录或打开工作台时更新；首次会先读取最近记录，再分批补齐所选历史范围。");
       else if (path === "/coros/pause") setMessage("已暂停自动同步；正在处理的批次可能仍会完成。恢复后会接着已有进度继续。");
-      else setMessage("已加入同步队列，将在下一次后台检查时处理，通常在 10 分钟内开始。");
+      else setMessage("已请求额外更新，将在下一次后台处理时读取近期记录，通常在 10 分钟内开始。");
       await refresh();
     } catch { setMessage("操作结果暂时无法确认，请刷新状态后查看。已有记录仍保留。"); }
     finally { busyRef.current = false; setBusy(false); }
@@ -164,7 +165,7 @@ export function CorosConnectionSection({ connectionMethod }: { connectionMethod:
 
   return <section ref={section} className="learning-card health-card" aria-labelledby="coros-connection-title" aria-busy={busy || refreshing}>
     <div className="card-heading"><div><p className="eyebrow">COROS · Sync</p><h2 id="coros-connection-title">COROS 连接与自动同步</h2>
-      <p className="learning-subtitle">开启自动同步后，后台定期读取睡眠和运动，关闭页面也会继续。手表数据需要先同步到 COROS App。</p></div>
+      <p className="learning-subtitle">开启后，每天首次登录或打开工作台时自动更新一次睡眠和运动。已提交的任务会在后台继续，手表数据需先同步到 COROS App。</p></div>
       <div className="learning-view-actions"><button className="secondary-button" type="button" onClick={() => void refresh()} disabled={busy || refreshing || connectionMethod !== "github-app"}>{refreshing ? "检查中…" : "刷新状态"}</button></div>
     </div>
     {view === "loading" ? <p role="status">正在检查连接状态…</p> : null}
@@ -172,18 +173,20 @@ export function CorosConnectionSection({ connectionMethod }: { connectionMethod:
     {view === "login-required" ? <p>请先使用 GitHub App 登录工作台，再连接 COROS。后台同步需要独立授权，聊天中的 COROS 连接不会自动连接这里。</p> : null}
     {view === "error" ? <p role="alert">暂时无法确认 COROS 同步状态，请刷新状态重试。</p> : null}
     {view === "ready" && status ? <div>
-      <p><strong>{!status.connected ? "尚未连接 COROS" : enabled ? status.sync?.running ? "自动同步已开启 · 正在处理记录" : "自动同步已开启" : "COROS 已连接 · 自动同步已暂停"}</strong></p>
+      <p><strong>{!status.connected ? "尚未连接 COROS" : enabled ? status.sync?.running ? "每日自动同步已开启 · 正在处理记录" : "每日自动同步已开启" : "COROS 已连接 · 自动同步已暂停"}</strong></p>
       {status.connected && !ready ? <p role="status">{status.sync ? "后台保存健康记录所需的连接尚未配置完整。完成服务端配置后即可开启自动同步，无需反复手动导入。" : "后台同步服务正在准备，暂时无法开启。"}</p> : null}
-      {status.connected && ready ? <p className="learning-subtitle">优先读取最近记录，每 {status.sync?.readiness.intervalMinutes ?? 120} 分钟检查更新；历史记录每 {status.sync?.readiness.backfillIntervalMinutes ?? 10} 分钟分批补齐。暂停或断开连接可以停止后续读取。</p> : null}
-      {status.connected ? <p>最近成功同步：{displayTime(status.lastSyncAt)}{enabled && status.sync?.nextRunAt ? <> · 下次检查：{displayTime(status.sync.nextRunAt)}</> : null}</p> : null}
+      {status.connected && ready ? <p className="learning-subtitle">每天首次恢复有效登录后触发一次更新；当天需要补充新记录时，可点击「额外更新」。首次历史记录每 {status.sync?.readiness.backfillIntervalMinutes ?? 10} 分钟分批补齐，之后补充新增日期与近期更正；长时间未登录时，会接着上次进度补齐缺口。</p> : null}
+      {status.connected ? <p>最近成功同步：{displayTime(status.lastSyncAt)}{enabled && status.sync?.nextRunAt ? <> · 下次后台处理：{displayTime(status.sync.nextRunAt)}</> : null}</p> : null}
+      {enabled && status.sync && !status.sync.running && !status.sync.nextRunAt ? <p className="learning-subtitle">当前没有待处理批次，等待下一次每日更新或手动额外更新。</p> : null}
+      {status.sync?.dailyRequestedDate ? <p className="learning-subtitle">最近每日更新请求：{status.sync.dailyRequestedDate}（北京时间）</p> : null}
       {lastError ? <p role="alert">{lastError}</p> : null}
       {progress ? <>
-        <p className="learning-subtitle">历史起点：{progress.startDate}。下方分别显示已检查到的日期与实际取得的最新记录；已检查的日期可能没有记录，不代表已导入全部 COROS 历史。</p>
+        <p className="learning-subtitle">首次历史范围：{progress.startDate} 至 {progress.backfillEnd ?? "等待首次请求"}。{progress.request ? <>当前请求检查至 {progress.request.through}。</> : null} 下方分别显示已检查到的日期与实际取得的最新记录；已检查的日期可能没有记录，不代表已导入全部 COROS 历史。</p>
         <div className="health-records-summary">{(["sleep", "workout"] as const).map(domain => {
           const p = progress.domains[domain];
           return <article key={domain}><div className="health-records-summary-label"><span>{domain === "sleep" ? "睡眠同步" : "运动同步"}</span></div>
             <p className="health-records-count">{p.created}<span>{domain === "sleep" ? "段新增" : "次新增"}</span></p>
-            <dl className="health-records-range"><div><dt>最新记录日期</dt><dd>{p.latestRecordDate ?? "尚未取得记录"}</dd></div><div><dt>历史已检查至</dt><dd>{p.backfillThrough ?? "尚未开始"}</dd></div><div><dt>近期已检查至</dt><dd>{p.recentThrough ?? "尚未开始"}</dd></div></dl>
+            <dl className="health-records-range"><div><dt>最新记录日期</dt><dd>{p.latestRecordDate ?? "尚未取得记录"}</dd></div><div><dt>连续已检查至</dt><dd>{p.backfillThrough ?? "尚未开始"}</dd></div><div><dt>近期已检查至</dt><dd>{p.recentThrough ?? "尚未开始"}</dd></div></dl>
             {p.lastErrorCode ? <p role="alert">{errorMessage(p.lastErrorCode)}{enabled && p.retryAfter ? <> 下次重试：{displayTime(p.retryAfter)}</> : null}</p> : null}
             <p className="health-records-summary-note">{domain === "sleep" ? "按醒来日期归属，包含夜间睡眠与小睡" : "新增数量不包含已存在的记录"}</p>
           </article>;
@@ -194,7 +197,7 @@ export function CorosConnectionSection({ connectionMethod }: { connectionMethod:
       {!status.connected ? <button className="secondary-button" type="button" disabled={busy} onClick={() => void mutate("/coros/start")}>{busy ? "正在准备…" : "连接 COROS"}</button> :
         confirmDisconnect ? <div className="learning-view-actions"><button className="danger-button" type="button" disabled={busy} onClick={() => void mutate("/coros/disconnect")}>确认断开</button><button className="secondary-button" type="button" disabled={busy} onClick={() => setConfirmDisconnect(false)}>取消</button></div> :
           <div className="learning-view-actions">
-            {enabled ? <><button className="secondary-button" type="button" disabled={busy || !ready || status.sync?.running} onClick={() => void mutate("/coros/sync")}>请求更新</button><button className="secondary-button" type="button" disabled={busy} onClick={() => void mutate("/coros/pause")}>暂停自动同步</button></> : <>
+            {enabled ? <><button className="secondary-button" type="button" disabled={busy || !ready || status.sync?.running} onClick={() => void mutate("/coros/sync")}>额外更新</button><button className="secondary-button" type="button" disabled={busy} onClick={() => void mutate("/coros/pause")}>暂停自动同步</button></> : <>
               <button className="primary-button" type="button" disabled={busy || !ready || (!progress && !validStartDate(startDate))} onClick={() => void mutate("/coros/enable")}>{progress ? "恢复自动同步" : "开启自动同步"}</button>
               <button className="secondary-button" type="button" disabled={busy} onClick={() => void previewOneDay()}>检查 COROS 读取</button>
             </>}

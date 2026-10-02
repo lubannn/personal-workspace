@@ -11,7 +11,7 @@ export const SYNC_TEST_USER = "42";
 /** Executes the production SQL on SQLite rather than mocking SQL strings. */
 export function syncTestDatabase() {
   const sqlite = new Database(":memory:");
-  for (const filename of ["0002_coros_connections.sql", "0003_coros_sync_jobs.sql"]) {
+  for (const filename of ["0002_coros_connections.sql", "0003_coros_sync_jobs.sql", "0004_coros_daily_requests.sql"]) {
     sqlite.exec(readFileSync(new URL(`../migrations/${filename}`, import.meta.url), "utf8"));
   }
   const db: D1DatabaseLike = { prepare(query) {
@@ -33,12 +33,17 @@ export function syncTestDatabase() {
       "test-client", `${SYNC_TEST_ORIGIN}/coros/callback`, "https://mcpcn.coros.com/mcp", "encrypted-test-only", "mcp.tools", state, SYNC_TEST_NOW, SYNC_TEST_NOW);
   }
   function job(progress = initialSyncProgress("2024-01-01", "Asia/Shanghai")) {
-    sqlite.prepare("INSERT INTO coros_sync_jobs (github_user_id, progress_json, next_run_at, updated_at) VALUES (?, ?, ?, ?)")
+    progress.request ??= { sequence: 1, through: "2024-02-01" };
+    progress.backfillEnd ??= "2024-02-01";
+    for (const domain of ["sleep", "workout"] as const) {
+      if (progress.domains[domain].lastRecentAt && !progress.domains[domain].recentNext) progress.domains[domain].recentRequestSequence ??= 1;
+    }
+    sqlite.prepare("INSERT INTO coros_sync_jobs (github_user_id, progress_json, next_run_at, updated_at, request_seq, requested_through) VALUES (?, ?, ?, ?, 1, '2024-02-01')")
       .run(SYNC_TEST_USER, JSON.stringify(progress), SYNC_TEST_NOW, SYNC_TEST_NOW);
   }
   function saved() {
     const row = sqlite.prepare("SELECT * FROM coros_sync_jobs WHERE github_user_id = ?").get(SYNC_TEST_USER) as {
-      progress_json: string; next_run_at: string; lease_token: string | null; lease_until: string | null;
+      progress_json: string; next_run_at: string; lease_token: string | null; lease_until: string | null; request_seq: number; requested_through: string | null; daily_requested_date: string | null;
     } | undefined;
     return row ? { ...row, progress: parseSyncProgress(row.progress_json) } : null;
   }

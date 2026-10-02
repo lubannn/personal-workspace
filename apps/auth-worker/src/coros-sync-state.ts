@@ -13,22 +13,26 @@ export type DomainProgress = {
   backfillNext: string; backfillThrough: string | null; recentThrough: string | null;
   lastRecentAt: string | null; latestRecordDate: string | null; created: number;
   recentNext?: string | null; retryAfter?: string | null; lastErrorCode?: string | null;
+  recentRequestSequence?: number;
 };
 export type SyncProgress = {
   version: 1; startDate: string; timezone: string;
+  backfillEnd?: string;
+  request?: { sequence: number; through: string };
   domains: Record<SyncDomain, DomainProgress>;
   lastAttemptAt: string | null; lastSuccessAt: string | null; lastErrorCode: string | null;
   failureCount: number; conflicts: number;
   lastBatch: { domain: SyncDomain; from: string; through: string; created: number; unchanged: number; conflicts: number } | null;
 };
-export type SyncJob = { progress_json: string; lease_token: string | null; lease_until: string | null; next_run_at: string };
+export type SyncJob = { progress_json: string; lease_token: string | null; lease_until: string | null; next_run_at: string;
+  request_seq: number; requested_through: string | null; daily_requested_date: string | null };
 
 export function syncReadiness(env: CorosSyncEnv) {
   const missing: string[] = [];
   for (const key of ["GITHUB_APP_ID", "GITHUB_APP_INSTALLATION_ID", "GITHUB_APP_PRIVATE_KEY", "COROS_GITHUB_USER_ID", "COROS_WORKSPACE_OWNER_ID"] as const) {
     if (!env[key]?.trim()) missing.push(key);
   }
-  return { ready: missing.length === 0, missing, intervalMinutes: 120, backfillIntervalMinutes: 10 };
+  return { ready: missing.length === 0, missing, trigger: "daily_first_login" as const, backfillIntervalMinutes: 10 };
 }
 
 export function dateOnly(value: unknown): value is string {
@@ -57,31 +61,51 @@ export function parseSyncProgress(text: string): SyncProgress {
   const p = JSON.parse(text) as SyncProgress;
   if (p.version !== 1 || !dateOnly(p.startDate) || !p.domains || !Number.isInteger(p.failureCount)) throw new Error("COROS_SYNC_STATE_INVALID");
   todayInTimezone(new Date(), p.timezone);
+  if (p.backfillEnd && !dateOnly(p.backfillEnd)) throw new Error("COROS_SYNC_STATE_INVALID");
+  if (p.request && (!Number.isSafeInteger(p.request.sequence) || p.request.sequence < 1 || !dateOnly(p.request.through))) throw new Error("COROS_SYNC_STATE_INVALID");
   for (const domain of ["sleep", "workout"] as const) {
     if (!p.domains[domain] || !dateOnly(p.domains[domain].backfillNext)) throw new Error("COROS_SYNC_STATE_INVALID");
   }
   return p;
 }
 export async function readSyncJob(db: D1DatabaseLike, userId: string) {
-  return db.prepare("SELECT progress_json, lease_token, lease_until, next_run_at FROM coros_sync_jobs WHERE github_user_id = ?1")
+  return db.prepare("SELECT progress_json, lease_token, lease_until, next_run_at, request_seq, requested_through, daily_requested_date FROM coros_sync_jobs WHERE github_user_id = ?1")
     .bind(userId).first<SyncJob>();
 }
 
-/** Recent records are always pulled first, so historical backfill cannot delay today's sleep. */
+/** A request is independent of worker progress, so login cannot overwrite an in-flight batch. */
+export function acceptSyncRequest(p: SyncProgress, job: Pick<SyncJob, "request_seq" | "requested_through">) {
+  if (job.request_seq < 1 || !job.requested_through) return;
+  if (!dateOnly(job.requested_through) || job.requested_through < p.startDate) throw new Error("COROS_SYNC_STATE_INVALID");
+  p.backfillEnd ??= job.requested_through;
+  if (p.request && p.request.sequence >= job.request_seq) return;
+  p.request = { sequence: job.request_seq, through: job.requested_through };
+  for (const domain of ["sleep", "workout"] as const) {
+    p.domains[domain].recentNext = null;
+    p.domains[domain].retryAfter = null;
+  }
+}
+
+export function recentWindowStart(p: SyncProgress, domain: SyncDomain) {
+  return [p.startDate, shiftDate(p.request!.through, domain === "sleep" ? -2 : -6)].sort()[1];
+}
+
+/** No wall-clock recurrence: cron drains only previously requested ranges. */
 export function nextSyncWindow(p: SyncProgress, now: Date) {
-  const today = todayInTimezone(now, p.timezone);
+  if (!p.request) return null;
+  const through = p.request.through;
   for (const domain of ["sleep", "workout"] as const) {
     const d = p.domains[domain];
     if (d.retryAfter && d.retryAfter > now.toISOString()) continue;
-    if (!d.lastRecentAt || now.getTime() - Date.parse(d.lastRecentAt) >= 2 * 3600000) {
+    if (d.recentRequestSequence !== p.request.sequence) {
       // Live sleep responses can silently cap date ranges to the final three days.
-      return { domain, recent: true, from: d.recentNext ?? shiftDate(today, domain === "sleep" ? -2 : -6), through: today };
+      return { domain, recent: true, from: d.recentNext ?? recentWindowStart(p, domain), through };
     }
   }
-  const domain = (["sleep", "workout"] as const).filter((key) => p.domains[key].backfillNext <= today
+  const domain = (["sleep", "workout"] as const).filter((key) => p.domains[key].backfillNext <= through
     && (!p.domains[key].retryAfter || p.domains[key].retryAfter! <= now.toISOString()))
     .sort((a, b) => p.domains[a].backfillNext.localeCompare(p.domains[b].backfillNext))[0];
   if (!domain) return null;
   const from = p.domains[domain].backfillNext;
-  return { domain, recent: false, from, through: [shiftDate(from, 2), today].sort()[0] };
+  return { domain, recent: false, from, through: [shiftDate(from, 2), through].sort()[0] };
 }

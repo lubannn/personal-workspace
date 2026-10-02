@@ -27,6 +27,23 @@ type Options = {
   setStatusMessage: (message: string) => void;
 };
 
+/** Best effort: the server deduplicates each account-local day. This must never block login. */
+export async function requestCorosDailySync(csrf: string, fetcher: typeof fetch = globalThis.fetch): Promise<void> {
+  if (!csrf) return;
+  const controller = new AbortController();
+  const timeout = globalThis.setTimeout(() => controller.abort(), 10_000);
+  try {
+    await fetcher("/coros/daily", {
+      method: "POST", credentials: "same-origin", cache: "no-store", signal: controller.signal,
+      headers: { accept: "application/json", "x-pw-csrf": csrf },
+    });
+  } catch {
+    // COROS being paused, unavailable or offline must not undo the restored workspace session.
+  } finally {
+    globalThis.clearTimeout(timeout);
+  }
+}
+
 export function useGitHubAppBootstrap(options: Options) {
   const started = useRef(false);
   const { adapterRef, setConnection, setConnectionMethod, setAuthAvailability, setConnecting, setErrorMessage, setStatusMessage } = options;
@@ -58,6 +75,7 @@ export function useGitHubAppBootstrap(options: Options) {
         adapterRef.current = opened.adapter;
         setConnection(opened.connection);
         setConnectionMethod("github-app");
+        void requestCorosDailySync(csrf);
         setStatusMessage(`已通过 GitHub App 登录${status.login ? `（${status.login}）` : ""}，访问令牌仅保留在当前页面内存中。`);
       } catch (error) {
         adapterRef.current = null;

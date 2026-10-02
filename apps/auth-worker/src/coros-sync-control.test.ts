@@ -12,13 +12,18 @@ function request(action: string, body?: unknown, overrides?: Record<string, stri
 
 describe("COROS synchronization controls", () => {
   let fixture: ReturnType<typeof syncTestDatabase>;
+  function queueState() {
+    return fixture.sqlite.prepare("SELECT request_seq, requested_through, daily_requested_date FROM coros_sync_jobs WHERE github_user_id = ?").get(SYNC_TEST_USER) as {
+      request_seq: number; requested_through: string | null; daily_requested_date: string | null;
+    } | undefined;
+  }
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(SYNC_TEST_NOW); fixture = syncTestDatabase();
     vi.mocked(authenticatedGitHubUser).mockResolvedValue({ id: SYNC_TEST_USER, login: "example-owner" });
   });
   afterEach(() => { fixture.sqlite.close(); vi.useRealTimers(); vi.resetAllMocks(); });
 
-  it.each(["enable", "pause", "sync"])("requires valid same-origin CSRF on %s", async action => {
+  it.each(["enable", "pause", "sync", "daily"])("requires valid same-origin CSRF on %s", async action => {
     fixture.connection(); fixture.job();
     const before = fixture.saved();
     const response = await handleCorosConnectionRequest(request(action, { startDate: "2024-01-01" }, { origin: "https://other.example" }), fixture.env);
@@ -81,7 +86,7 @@ describe("COROS synchronization controls", () => {
     expect(response.status).toBe(409); expect(fixture.saved()).toEqual(before);
   });
 
-  it("queues a requested recent refresh without resetting historical cursors", async () => {
+  it("queues a requested refresh without rewriting any in-progress cursors", async () => {
     const progress = initialSyncProgress("2024-01-01", "Asia/Shanghai");
     for (const domain of ["sleep", "workout"] as const) {
       progress.domains[domain].lastRecentAt = SYNC_TEST_NOW; progress.domains[domain].recentNext = "2024-01-31";
@@ -89,28 +94,31 @@ describe("COROS synchronization controls", () => {
     }
     fixture.connection(); fixture.job(progress);
     fixture.sqlite.exec("UPDATE coros_sync_jobs SET next_run_at = '2024-02-01T06:00:00.000Z'");
+    const before = fixture.saved()!.progress_json;
     const response = await handleCorosConnectionRequest(request("sync"), fixture.env);
     expect(response.status).toBe(200); expect(await response.json()).toEqual({ state: "enabled", queued: true });
     expect(fixture.saved()?.next_run_at).toBe(SYNC_TEST_NOW);
-    for (const domain of ["sleep", "workout"] as const) expect(fixture.saved()?.progress.domains[domain]).toMatchObject({
-      backfillNext: "2024-01-13", lastRecentAt: null, recentNext: null, retryAfter: null,
-    });
+    expect(fixture.saved()!.progress_json).toBe(before);
+    expect(queueState()).toMatchObject({ request_seq: 2, requested_through: "2024-02-01" });
   });
 
-  it("does not replace progress while an active worker owns a lease", async () => {
+  it("accepts a new request while preserving an active worker's lease and progress", async () => {
     fixture.connection(); fixture.job();
     fixture.sqlite.exec("UPDATE coros_sync_jobs SET lease_token = 'active', lease_until = '2024-02-01T04:10:00.000Z'");
     const before = fixture.saved(); const response = await handleCorosConnectionRequest(request("sync"), fixture.env);
-    expect(response.status).toBe(409); expect(await response.json()).toEqual({ error: "COROS_SYNC_BUSY" }); expect(fixture.saved()).toEqual(before);
+    expect(response.status).toBe(200); expect(await response.json()).toMatchObject({ state: "enabled", queued: true });
+    expect(fixture.saved()?.progress_json).toBe(before!.progress_json);
+    expect(fixture.saved()).toMatchObject({ lease_token: "active", lease_until: "2024-02-01T04:10:00.000Z" });
+    expect(queueState()).toMatchObject({ request_seq: 2, requested_through: "2024-02-01" });
   });
 
-  it("loses a refresh request safely if a worker claims the lease after the status read", async () => {
+  it("retains a refresh request if a worker concurrently claims the lease", async () => {
     fixture.connection(); fixture.job();
     fixture.sqlite.exec("UPDATE coros_sync_jobs SET next_run_at = '2024-02-01T06:00:00.000Z'");
     const original = fixture.db.prepare.bind(fixture.db);
     fixture.db.prepare = query => {
       const statement = original(query);
-      if (query.startsWith("UPDATE coros_sync_jobs SET progress_json = ?1, next_run_at = ?3")) {
+      if (query.startsWith("UPDATE coros_sync_jobs") && query.includes("request_seq")) {
         const run = statement.run.bind(statement);
         statement.run = async () => {
           fixture.sqlite.exec("UPDATE coros_sync_jobs SET lease_token = 'concurrent-worker', lease_until = '2024-02-01T04:10:00.000Z'");
@@ -120,16 +128,84 @@ describe("COROS synchronization controls", () => {
       return statement;
     };
     const before = fixture.saved()!; const response = await handleCorosConnectionRequest(request("sync"), fixture.env);
-    expect(response.status).toBe(409); expect(await response.json()).toEqual({ error: "COROS_SYNC_BUSY" });
+    expect(response.status).toBe(200); expect(await response.json()).toMatchObject({ queued: true });
     expect(fixture.saved()?.progress_json).toBe(before.progress_json);
-    expect(fixture.saved()?.next_run_at).toBe(before.next_run_at);
+    expect(fixture.saved()?.next_run_at).toBe(SYNC_TEST_NOW);
     expect(fixture.saved()?.lease_token).toBe("concurrent-worker");
+    expect(queueState()).toMatchObject({ request_seq: 2, requested_through: "2024-02-01" });
   });
 
-  it("does not turn a paused connection on through the request-update route", async () => {
+  it.each(["sync", "daily"])("does not turn a paused connection on through the %s route", async action => {
     fixture.connection("paused"); fixture.job(); const before = fixture.saved();
-    const response = await handleCorosConnectionRequest(request("sync"), fixture.env);
+    const response = await handleCorosConnectionRequest(request(action), fixture.env);
     expect(response.status).toBe(409); expect(fixture.saved()).toEqual(before);
+  });
+
+  it("deduplicates concurrent first-login requests across devices on the server", async () => {
+    fixture.connection(); fixture.job();
+    const [first, second] = await Promise.all([
+      handleCorosConnectionRequest(request("daily"), fixture.env),
+      handleCorosConnectionRequest(request("daily"), fixture.env),
+    ]);
+    expect(first.status).toBe(200); expect(second.status).toBe(200);
+    const bodies = await Promise.all([first.json(), second.json()]) as Array<{ queued: boolean }>;
+    expect(bodies.filter((body) => body.queued)).toHaveLength(1);
+    expect(queueState()).toEqual({ request_seq: 2, requested_through: "2024-02-01", daily_requested_date: "2024-02-01" });
+    const third = await handleCorosConnectionRequest(request("daily"), fixture.env);
+    expect(await third.json()).toMatchObject({ queued: false });
+    expect(queueState()?.request_seq).toBe(2);
+  });
+
+  it("starts a new daily request at Shanghai midnight, not UTC midnight", async () => {
+    fixture.connection(); fixture.job();
+    vi.setSystemTime("2024-02-01T15:59:59.000Z");
+    expect(await (await handleCorosConnectionRequest(request("daily"), fixture.env)).json()).toMatchObject({ queued: true });
+    expect(queueState()?.daily_requested_date).toBe("2024-02-01");
+    vi.setSystemTime("2024-02-01T16:00:00.000Z");
+    expect(await (await handleCorosConnectionRequest(request("daily"), fixture.env)).json()).toMatchObject({ queued: true });
+    expect(queueState()).toEqual({ request_seq: 3, requested_through: "2024-02-02", daily_requested_date: "2024-02-02" });
+    vi.setSystemTime("2024-02-02T00:01:00.000Z");
+    expect(await (await handleCorosConnectionRequest(request("daily"), fixture.env)).json()).toMatchObject({ queued: false });
+    expect(queueState()?.request_seq).toBe(3);
+  });
+
+  it("queues the next daily target without disturbing the worker running yesterday's target", async () => {
+    fixture.connection(); fixture.job();
+    await handleCorosConnectionRequest(request("daily"), fixture.env);
+    const before = fixture.saved()!;
+    fixture.sqlite.exec("UPDATE coros_sync_jobs SET lease_token = 'worker-yesterday', lease_until = '2024-02-01T16:10:00.000Z'");
+    vi.setSystemTime("2024-02-01T16:00:00.000Z");
+    expect(await (await handleCorosConnectionRequest(request("daily"), fixture.env)).json()).toMatchObject({ queued: true });
+    expect(queueState()).toMatchObject({ request_seq: 3, requested_through: "2024-02-02" });
+    expect(fixture.saved()?.progress_json).toBe(before.progress_json);
+    expect(fixture.saved()).toMatchObject({ lease_token: "worker-yesterday", lease_until: "2024-02-01T16:10:00.000Z" });
+  });
+
+  it("does not consume the daily trigger when synchronization is unconfigured", async () => {
+    fixture.connection(); fixture.job(); const before = fixture.saved();
+    const response = await handleCorosConnectionRequest(request("daily"), { ...fixture.env, GITHUB_APP_PRIVATE_KEY: undefined });
+    expect(response.status).toBe(409); expect(await response.json()).toMatchObject({ error: "COROS_SYNC_NOT_CONFIGURED" });
+    expect(fixture.saved()).toEqual(before);
+  });
+
+  it("guards against a pause between authorization read and daily queue update", async () => {
+    fixture.connection(); fixture.job(); const before = fixture.saved();
+    const prepare = fixture.db.prepare.bind(fixture.db);
+    fixture.db.prepare = query => {
+      const statement = prepare(query);
+      if (query.startsWith("UPDATE coros_sync_jobs") && query.includes("request_seq")) {
+        const run = statement.run.bind(statement);
+        statement.run = async () => {
+          fixture.sqlite.exec("UPDATE coros_connections SET state = 'paused'");
+          return run();
+        };
+      }
+      return statement;
+    };
+    const response = await handleCorosConnectionRequest(request("daily"), fixture.env);
+    expect(response.status).toBeLessThan(500);
+    expect(fixture.saved()).toEqual(before);
+    expect(fixture.sqlite.prepare("SELECT state FROM coros_connections").get()).toEqual({ state: "paused" });
   });
 
   it("disconnect removes the credential and job so later invocations cannot continue", async () => {
