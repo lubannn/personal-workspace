@@ -17,6 +17,7 @@ import {
   type JournalRevisionRecord,
 } from "./journal-revisions";
 import { createWorkspaceRecord, recordPath, serializeRecord, updateWorkspaceRecord } from "./protocol";
+import { parseWorkspaceDescriptor } from "./workspace";
 
 export const JOURNAL_REVISION_WRITES_ENABLED = true as const;
 
@@ -51,15 +52,15 @@ export async function createJournalEntryAtomically(
 ): Promise<AtomicJournalWriteResult> {
   const timestamp = input.timestamp ?? new Date().toISOString();
   const snapshot = await adapter.readBranchSnapshot();
-  const entryFiles = await listJsonFiles(adapter, "data/journal-entries", snapshot.headCommitSha);
-  const entries = await loadJournalEntries(adapter, entryFiles, snapshot.headCommitSha);
-  if (entries.some((entry) => entry.owner_id !== input.ownerId)) throw new Error("JOURNAL_OWNER_MISMATCH");
-  if (entries.some((entry) => entry.id === input.journalEntryId)) throw new Error("JOURNAL_ENTRY_ID_CONFLICT");
-
-  const revisionItems = await listJsonFiles(adapter, "data/journal-revisions", snapshot.headCommitSha);
-  const revisions = await loadJournalRevisions(adapter, revisionItems, snapshot.headCommitSha);
+  const entryPath = recordPath("journal_entry", input.journalEntryId);
   const revisionPath = recordPath("journal_revision", input.revisionId);
-  if (revisionItems.some((item) => item.path === revisionPath) || revisions.some((revision) => revision.id === input.revisionId)) throw new Error("JOURNAL_REVISION_ID_CONFLICT");
+  const [workspaceFile] = await Promise.all([
+    adapter.readText("workspace.json", snapshot.headCommitSha),
+    assertNewJournalPath(adapter, entryPath, snapshot.headCommitSha, "JOURNAL_ENTRY_ID_CONFLICT"),
+    assertNewJournalPath(adapter, revisionPath, snapshot.headCommitSha, "JOURNAL_REVISION_ID_CONFLICT"),
+  ]);
+  const workspace = parseWorkspaceDescriptor(workspaceFile.text);
+  if (workspace.owner_id !== input.ownerId) throw new Error("JOURNAL_OWNER_MISMATCH");
 
   const entry = createWorkspaceRecord({
     entityType: "journal_entry",
@@ -240,6 +241,7 @@ async function commitJournalRecords(
     message,
     expectedHeadCommitSha: snapshot.headCommitSha,
     baseTreeSha: snapshot.rootTreeSha,
+    inlineContent: true,
   });
   return {
     entry,
@@ -254,6 +256,15 @@ async function commitJournalRecords(
   };
 }
 
+async function assertNewJournalPath(adapter: JournalRevisionTransactionAdapter, path: string, ref: string, conflictCode: string) {
+  try { await adapter.readText(path, ref); }
+  catch (error) {
+    if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") return;
+    throw error;
+  }
+  throw new Error(conflictCode);
+}
+
 async function listJsonFiles(adapter: JournalRevisionTransactionAdapter, path: string, ref: string): Promise<GitHubDirectoryItem[]> {
   try {
     return (await adapter.listDirectory(path, ref)).filter((item) => item.type === "file" && item.name.endsWith(".json"));
@@ -261,16 +272,6 @@ async function listJsonFiles(adapter: JournalRevisionTransactionAdapter, path: s
     if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") return [];
     throw error;
   }
-}
-
-async function loadJournalEntries(adapter: JournalRevisionTransactionAdapter, items: GitHubDirectoryItem[], ref: string) {
-  const records = await Promise.all(items.map(async (item) => {
-    const record = parseJournalEntryRecord((await adapter.readText(item.path, ref)).text);
-    if (recordPath("journal_entry", record.id) !== item.path) throw new Error("JOURNAL_ENTRY_PATH_MISMATCH");
-    return record;
-  }));
-  if (new Set(records.map((record) => record.id)).size !== records.length) throw new Error("DUPLICATE_JOURNAL_ENTRY_ID");
-  return records;
 }
 
 async function loadJournalRevisions(adapter: JournalRevisionTransactionAdapter, items: GitHubDirectoryItem[], ref: string) {

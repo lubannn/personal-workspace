@@ -106,8 +106,9 @@ export async function buildLegacyJournalCommitPlan(input: {
   assertCommitPlanInput(input);
   const identity = await legacyJournalDryRunIdentity(input.preview);
   const identityHash = await sha256Text(identity.dryRunId);
-  const importBatchId = `legacy_import_${identityHash.slice(0, 32)}`;
   const selectedDates = [...input.selectedDates].sort();
+  const batchIdentityHash = await sha256Text(`${identity.dryRunId}:${selectedDates.join(",")}`);
+  const importBatchId = `legacy_import_${batchIdentityHash.slice(0, 32)}`;
   const previewByDate = new Map(input.preview.parse.entries.map((entry) => [entry.date, entry]));
   const items: LegacyJournalCommitPlanItem[] = [];
 
@@ -121,6 +122,7 @@ export async function buildLegacyJournalCommitPlan(input: {
         importBatchId,
         identityHash,
         plannedAt: input.plannedAt,
+        sourceType: input.preview.source.format === "txt" ? "legacy_text" : "legacy_word",
       });
     } catch (error) {
       items.push({ date, status: "conflict", conflicts: [planningErrorCode(error)], artifacts: null });
@@ -281,6 +283,7 @@ async function createPlannedArtifacts(input: {
   importBatchId: string;
   identityHash: string;
   plannedAt: string;
+  sourceType: "legacy_word" | "legacy_text";
 }): Promise<LegacyJournalPlannedArtifacts> {
   const dateKey = input.previewEntry.date.replaceAll("-", "");
   const entryId = `journal_legacy_${input.identityHash.slice(0, 16)}_${dateKey}`;
@@ -308,7 +311,7 @@ async function createPlannedArtifacts(input: {
         occurredAt,
         bodyMarkdown: segment.bodyMarkdown,
         sortOrder: index,
-        sourceRef: { source_type: "legacy_word", import_batch_id: input.importBatchId, source_locator: sourceLocator },
+        sourceRef: { source_type: input.sourceType, import_batch_id: input.importBatchId, source_locator: sourceLocator },
       }),
     });
   });

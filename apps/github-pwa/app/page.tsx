@@ -110,12 +110,8 @@ import { confirmHealthStaging, correctPendingHealthStaging, correctPendingSleepH
 import { createConfirmedHealthMetricData } from "../../../src/lib/github-data/health-metrics";
 import { createConfirmedSleepSessionData } from "../../../src/lib/github-data/sleep-sessions";
 import { commitWorkoutConfirmationTransaction, prepareWorkoutConfirmationTransaction } from "../../../src/lib/github-data/workout-confirmation-transaction";
-import { createJournalEntryData, updateJournalEntryData } from "../../../src/lib/github-data/journal-entries";
-import {
-  createJournalEntryAtomically,
-  JOURNAL_REVISION_WRITES_ENABLED,
-  updateJournalEntryAtomically,
-} from "../../../src/lib/github-data/journal-revision-transactions";
+import { canWriteJournalDate } from "../../../src/lib/github-data/journal-entries";
+import { createJournalEntrySingleFile, updateJournalEntrySingleFile } from "../../../src/lib/github-data/journal-single-file-writes";
 import {
   DEFAULT_OWNER,
   DEFAULT_REPOSITORY,
@@ -296,10 +292,10 @@ export default function GitHubWorkspacePage() {
     setReportDraftFiles,
     journalEntryFiles,
     setJournalEntryFiles,
-    journalRevisionFiles,
-    setJournalRevisionFiles,
+    journalEntryCatalog,
+    journalLoadedMonths,
+    journalLoadError,
     journalImportCheckpointFiles,
-    obsidianDocumentFiles,
     learningAreaFiles,
     setLearningAreaFiles,
     learningGoalFiles,
@@ -357,6 +353,7 @@ export default function GitHubWorkspacePage() {
     loadCalendarEvents,
     loadReportDrafts,
     loadJournalEntries,
+    loadJournalMonth,
     loadJournalSegments,
     loadJournalRevisions,
     loadJournalImportCheckpoints,
@@ -585,9 +582,6 @@ export default function GitHubWorkspacePage() {
         loadCalendarEvents(opened.adapter),
         loadReportDrafts(opened.adapter),
         loadJournalEntries(opened.adapter),
-        loadJournalSegments(opened.adapter),
-        loadJournalRevisions(opened.adapter),
-        loadJournalImportCheckpoints(opened.adapter),
         loadObsidianDocuments(opened.adapter),
         loadSyncConflicts(opened.adapter),
         loadLearningAreas(opened.adapter),
@@ -1568,33 +1562,20 @@ export default function GitHubWorkspacePage() {
   async function saveJournalEntry(fields: { journalDate: string; bodyMarkdown: string }) {
     const adapter = adapterRef.current;
     if (!adapter || !connection || savingJournalEntry || online === false) return false;
+    if (!canWriteJournalDate(fields.journalDate, localDateInTimezone(connection.timezone))) {
+      setErrorMessage("只能写今天或昨天的日记；未保存。"); return false;
+    }
     setSavingJournalEntry(true); setErrorMessage(""); setStatusMessage("");
     const timestamp = new Date().toISOString();
-    const id = `journal_entry_${timestamp.replaceAll(/\D/g, "").slice(0, 17)}_${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`;
+    const id = `journal_entry_${fields.journalDate.replaceAll("-", "")}_${timestamp.replaceAll(/\D/g, "").slice(0, 17)}_${crypto.randomUUID().replaceAll("-", "")}`;
     try {
-      if (JOURNAL_REVISION_WRITES_ENABLED) {
-        const revisionId = `journal_revision_${timestamp.replaceAll(/\D/g, "").slice(0, 17)}_${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`;
-        const atomic = await createJournalEntryAtomically(adapter, {
-          ownerId: connection.ownerId,
-          journalEntryId: id,
-          revisionId,
-          journalDate: fields.journalDate,
-          timezone: connection.timezone,
-          bodyMarkdown: fields.bodyMarkdown,
-          timestamp,
-        });
-        setJournalEntryFiles((current) => [{ record: atomic.entry, path: atomic.entryFile.path, blobSha: atomic.entryFile.blobSha }, ...current]);
-        setJournalRevisionFiles((current) => [
-          ...atomic.revisions.map((record, index) => ({ record, path: atomic.revisionFiles[index]!.path, blobSha: atomic.revisionFiles[index]!.blobSha })),
-          ...current,
-        ]);
-        setStatusMessage("日记与初始 Revision 已通过一个 Git commit 原子保存；没有连接、扫描或写入 Obsidian Vault。");
-        return true;
-      }
-      const record = createWorkspaceRecord({ entityType: "journal_entry", id, ownerId: connection.ownerId, timestamp, data: createJournalEntryData({ journalDate: fields.journalDate, timezone: connection.timezone, bodyMarkdown: fields.bodyMarkdown, timestamp }) });
-      const result = await adapter.writeText({ path: recordPath("journal_entry", id), text: serializeRecord(record), message: `journal: create ${id}` });
-      setJournalEntryFiles((current) => [{ record, path: result.path, blobSha: result.blobSha }, ...current]);
-      setStatusMessage("日记已保存到 Private canonical JSON；没有连接、扫描或写入 Obsidian Vault。");
+      const { entry, file } = await createJournalEntrySingleFile(adapter, {
+        ownerId: connection.ownerId, id, journalDate: fields.journalDate,
+        todayDate: localDateInTimezone(connection.timezone), timezone: connection.timezone,
+        bodyMarkdown: fields.bodyMarkdown, timestamp,
+      });
+      setJournalEntryFiles((current) => [{ record: entry, path: file.path, blobSha: file.blobSha }, ...current]);
+      setStatusMessage("日记已保存到 GitHub；日期、时间与正文已记录，版本历史由 Git 保留。");
       return true;
     } catch (error) {
       setErrorMessage(friendlyJournalWriteError(error, "create"));
@@ -1605,34 +1586,18 @@ export default function GitHubWorkspacePage() {
   async function saveJournalEntryEdit(item: SyncedJournalEntry, fields: { bodyMarkdown: string }) {
     const adapter = adapterRef.current;
     if (!adapter || !connection || savingJournalEntryId || online === false) return false;
+    if (!canWriteJournalDate(item.record.data.journal_date, localDateInTimezone(connection.timezone))) {
+      setErrorMessage("只能修改今天或昨天的日记；未保存。"); return false;
+    }
     setSavingJournalEntryId(item.record.id); setErrorMessage(""); setStatusMessage("");
     const timestamp = new Date().toISOString();
     try {
-      if (JOURNAL_REVISION_WRITES_ENABLED) {
-        const atomic = await updateJournalEntryAtomically(adapter, {
-          ownerId: connection.ownerId,
-          journalEntryId: item.record.id,
-          expectedJournalEntryBlobSha: item.blobSha,
-          expectedCurrentRevisionId: item.record.data.current_revision_id,
-          baselineRevisionId: `journal_revision_${timestamp.replaceAll(/\D/g, "").slice(0, 17)}_${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`,
-          revisionId: `journal_revision_${timestamp.replaceAll(/\D/g, "").slice(0, 17)}_${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`,
-          bodyMarkdown: fields.bodyMarkdown,
-          timestamp,
-        });
-        setJournalEntryFiles((current) => current.map((candidate) => candidate.record.id === item.record.id ? { record: atomic.entry, path: atomic.entryFile.path, blobSha: atomic.entryFile.blobSha } : candidate));
-        setJournalRevisionFiles((current) => [
-          ...atomic.revisions.map((record, index) => ({ record, path: atomic.revisionFiles[index]!.path, blobSha: atomic.revisionFiles[index]!.blobSha })),
-          ...current,
-        ]);
-        setStatusMessage(atomic.revisions.length > 0
-          ? `日记正文与 ${atomic.revisions.length} 个不可变 Revision 已通过一个 Git commit 原子保存。`
-          : `日记元数据已保存为 v${atomic.entry.version}；正文 Revision 未发生变化。`);
-        return true;
-      }
-      const updated = updateWorkspaceRecord(item.record, updateJournalEntryData(item.record, { bodyMarkdown: fields.bodyMarkdown, timestamp }), timestamp);
-      const result = await adapter.writeText({ path: item.path, text: serializeRecord(updated), message: `journal: update ${item.record.id}`, expectedBlobSha: item.blobSha });
-      setJournalEntryFiles((current) => current.map((candidate) => candidate.record.id === item.record.id ? { record: updated, path: result.path, blobSha: result.blobSha } : candidate));
-      setStatusMessage(`日记修订已保存为 v${updated.version}；日期与首次记录时间保持不变。`);
+      const { entry, file } = await updateJournalEntrySingleFile(adapter, {
+        ownerId: connection.ownerId, current: item.record, path: item.path, expectedBlobSha: item.blobSha,
+        todayDate: localDateInTimezone(connection.timezone), bodyMarkdown: fields.bodyMarkdown, timestamp,
+      });
+      setJournalEntryFiles((current) => current.map((candidate) => candidate.record.id === item.record.id ? { record: entry, path: file.path, blobSha: file.blobSha } : candidate));
+      setStatusMessage("日记修改已保存；日期与首次提交时间保持不变，旧版本仍保留在 Git 历史中。");
       return true;
     } catch (error) {
       setErrorMessage(friendlyJournalWriteError(error, "edit"));
@@ -1643,6 +1608,9 @@ export default function GitHubWorkspacePage() {
   async function updateJournalEntryDeletion(item: SyncedJournalEntry, operation: "trash" | "restore") {
     const adapter = adapterRef.current;
     if (!adapter || !connection || savingJournalEntryId || online === false) return;
+    if (!canWriteJournalDate(item.record.data.journal_date, localDateInTimezone(connection.timezone))) {
+      setErrorMessage("只能变更今天或昨天的日记；未操作。"); return;
+    }
     setSavingJournalEntryId(item.record.id); setErrorMessage(""); setStatusMessage("");
     const timestamp = new Date().toISOString();
     const updated = setWorkspaceRecordDeleted(item.record, operation === "trash" ? timestamp : null, timestamp);
@@ -2955,9 +2923,10 @@ export default function GitHubWorkspacePage() {
         online={online}
         todayDate={currentTaskDate}
         journalEntryFiles={journalEntryFiles}
-        journalRevisionFiles={journalRevisionFiles}
+        journalEntryCatalog={journalEntryCatalog}
+        loadedMonths={journalLoadedMonths}
+        loadError={journalLoadError}
         journalImportCheckpointFiles={journalImportCheckpointFiles}
-        obsidianDocumentFiles={obsidianDocumentFiles}
         loading={loadingJournalEntries}
         loadingLegacyHistory={loadingJournalEntries || loadingJournalSegments || loadingJournalRevisions || loadingJournalImportCheckpoints}
         saving={savingJournalEntry}
@@ -2965,10 +2934,10 @@ export default function GitHubWorkspacePage() {
         onCreate={saveJournalEntry}
         onEdit={saveJournalEntryEdit}
         onDeletionChange={updateJournalEntryDeletion}
-        onRefresh={() => loadJournalEntries()}
-        onRefreshLegacyHistory={async () => { await Promise.all([loadJournalEntries(), loadJournalSegments(), loadJournalRevisions(), loadJournalImportCheckpoints()]); }}
-        onLegacyImportCommitted={async () => { await Promise.all([loadJournalEntries(), loadJournalSegments(), loadJournalRevisions(), loadJournalImportCheckpoints()]); }}
-        onObsidianCanonicalChanged={async () => { await Promise.all([loadObsidianDocuments(), loadSyncConflicts()]); }}
+        onRefresh={(month) => { void loadJournalEntries(adapterRef.current, month); }}
+        onBrowseMonth={(month) => { void loadJournalMonth(month); }}
+        onRefreshLegacyHistory={async () => { await loadJournalImportCheckpoints(); }}
+        onLegacyImportCommitted={async (month) => { await Promise.all([loadJournalEntries(adapterRef.current, month), loadJournalImportCheckpoints()]); }}
       />
       </WorkspaceTabPanel>
 

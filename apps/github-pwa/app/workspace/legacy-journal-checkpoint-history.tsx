@@ -32,9 +32,9 @@ export function LegacyJournalCheckpointHistory({ connection, adapter, checkpoint
       if (!adapter || !checkpoint) throw new Error("CHECKPOINT_UNAVAILABLE");
       const result = await readLegacyJournalCheckpointRollbackPreview(adapter, checkpoint.path);
       setPreview(result);
-      await onRefresh();
-    } catch {
-      setPreviewError("无法从同一个最新 GitHub HEAD 完成只读核对；未使用旧数据生成预览，回滚保持阻断。");
+    } catch (error) {
+      const reason = error instanceof Error && "code" in error && typeof error.code === "string" ? `（${error.code}）` : "";
+      setPreviewError(`无法从同一个最新 GitHub HEAD 完成只读核对${reason}；未使用旧数据生成预览，回滚保持阻断。`);
     } finally {
       setInspecting(false);
       setInspectingId(null);
@@ -43,9 +43,10 @@ export function LegacyJournalCheckpointHistory({ connection, adapter, checkpoint
 
   return <section className="legacy-checkpoint-history" aria-labelledby="legacy-checkpoint-history-title">
     <div className="legacy-checkpoint-history-heading">
-      <div><p className="eyebrow">Import safety · read only</p><h3 id="legacy-checkpoint-history-title">Legacy 导入 Checkpoint 历史</h3><p>Checkpoint 是与导入实体同批创建的不可变记录。预览会先刷新 GitHub，再核对当前 Entry、Revision、Segment 与原计划 hash；不会写入或自动回滚。</p></div>
+      <div><p className="eyebrow">Import safety · read only</p><h3 id="legacy-checkpoint-history-title">Legacy 导入 Checkpoint 历史</h3><p>这是导入后的技术核对记录，平时阅读日记无需操作。只读预览仅核对所选批次，不会写入或自动回滚。</p></div>
       <button className="secondary-button" type="button" onClick={() => void onRefresh()} disabled={!connection || loading || online === false}>{loading ? "刷新中…" : "刷新历史"}</button>
     </div>
+    <details><summary>查看导入核对记录（{ordered.length} 批，通常无需打开）</summary>
     {!connection ? <p className="empty-note">连接后显示 Private 仓库中的导入 Checkpoint。</p> : loading && checkpoints.length === 0 ? <p className="empty-note">正在读取 Checkpoint…</p> : ordered.length === 0 ? <p className="empty-note">尚无 Legacy Journal 导入 Checkpoint。</p> : <ol className="legacy-checkpoint-list">{ordered.map((checkpoint) => {
       const firstDate = checkpoint.data.items[0]?.date ?? "—";
       const lastDate = checkpoint.data.items.at(-1)?.date ?? firstDate;
@@ -62,6 +63,7 @@ export function LegacyJournalCheckpointHistory({ connection, adapter, checkpoint
       <ol>{preview.items.map((item) => <li key={item.entryId} data-status={item.status}><span>{item.date}</span><strong>{rollbackStatusLabel(item.status)}</strong><code>{item.entryId}</code>{item.blockers.length ? <small>{item.blockers.map(rollbackBlockerLabel).join(" · ")}</small> : <small>当前记录与 checkpoint 的原子计划一致。</small>}</li>)}</ol>
       <p className="legacy-rollback-boundary">这里没有执行入口。未来实际软删除仍需独立动作确认，并在写入前重新检查 HEAD 与每个 Entry blob SHA；Git 历史无法物理擦除。</p>
     </div> : null}
+    </details>
   </section>;
 }
 

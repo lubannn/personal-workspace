@@ -24,7 +24,7 @@ type GitHubFileResponse = {
   path: string;
   sha: string;
   size: number;
-  encoding: "base64";
+  encoding: "base64" | "none";
   content: string;
 };
 
@@ -45,6 +45,11 @@ type GitHubCommitResponse = {
 
 type GitHubBlobResponse = { sha: string };
 type GitHubTreeResponse = { sha: string };
+type GitHubBlobReadResponse = { sha: string; size: number; encoding: "base64"; content: string };
+type GitHubRecursiveTreeResponse = {
+  truncated: boolean;
+  tree: Array<{ path: string; type: "blob" | "tree" | "commit"; sha: string; size?: number }>;
+};
 
 type GitHubDirectoryResponse = Array<{
   type: "file" | "dir" | "symlink" | "submodule";
@@ -177,7 +182,7 @@ export class GitHubContentsAdapter {
     );
   }
 
-  private async request<T>(pathname: string, init?: RequestInit): Promise<T> {
+  private async request<T>(pathname: string, init?: RequestInit, diagnoseTransport = true): Promise<T> {
     let response: Response;
     try {
       response = await this.fetcher(`${API_ROOT}${pathname}`, {
@@ -191,6 +196,7 @@ export class GitHubContentsAdapter {
         },
       });
     } catch (error) {
+      if (!diagnoseTransport) throw new GitHubDataError("GitHub statistics read timed out or failed.", 0, "GITHUB_TRANSPORT_ERROR");
       return this.throwTransportError(error);
     }
     if (!response.ok) {
@@ -231,15 +237,62 @@ export class GitHubContentsAdapter {
     const result = await this.request<GitHubFileResponse>(
       `/repos/${encodeURIComponent(this.config.owner)}/${encodeURIComponent(this.config.repository)}/contents/${encodeRepositoryPath(pathname)}${branch}`,
     );
-    if (result.type !== "file" || result.encoding !== "base64") {
+    if (result.type !== "file") {
       throw new GitHubDataError("Expected a base64 encoded GitHub file.", 500, "GITHUB_UNSUPPORTED_CONTENT");
     }
-    return { path: result.path, blobSha: result.sha, sizeBytes: result.size, text: decodeBase64(result.content) };
+    if (result.encoding === "base64") {
+      return { path: result.path, blobSha: result.sha, sizeBytes: result.size, text: decodeBase64(result.content) };
+    }
+    if (result.encoding === "none" && /^[a-f0-9]{40}$/.test(result.sha)) {
+      const blob = await this.request<GitHubBlobReadResponse>(
+        `/repos/${encodeURIComponent(this.config.owner)}/${encodeURIComponent(this.config.repository)}/git/blobs/${result.sha}`,
+      );
+      if (blob.encoding === "base64" && blob.sha === result.sha) {
+        return { path: result.path, blobSha: blob.sha, sizeBytes: blob.size, text: decodeBase64(blob.content) };
+      }
+    }
+    throw new GitHubDataError("Expected a base64 encoded GitHub file.", 500, "GITHUB_UNSUPPORTED_CONTENT");
+  }
+
+  async readBlobText(pathname: string, blobSha: string): Promise<GitHubStoredFile> {
+    assertFilePath(pathname);
+    if (!/^[a-f0-9]{40}$/u.test(blobSha)) throw new Error("INVALID_GITHUB_BLOB_SHA");
+    const blob = await this.request<GitHubBlobReadResponse>(
+      `/repos/${encodeURIComponent(this.config.owner)}/${encodeURIComponent(this.config.repository)}/git/blobs/${blobSha}`,
+      { signal: AbortSignal.timeout(20_000) }, false,
+    );
+    if (blob.encoding !== "base64" || blob.sha !== blobSha) throw new GitHubDataError("Unexpected GitHub blob.", 500, "GITHUB_UNSUPPORTED_CONTENT");
+    return { path: pathname, blobSha, sizeBytes: blob.size, text: decodeBase64(blob.content) };
   }
 
   async listDirectory(pathname: string, refOverride?: string): Promise<GitHubDirectoryItem[]> {
     if (pathname) assertFilePath(pathname);
     const ref = refOverride ?? this.config.branch;
+    if (pathname === "data/journal-entries") {
+      let tree = await this.request<GitHubRecursiveTreeResponse>(
+        `/repos/${encodeURIComponent(this.config.owner)}/${encodeURIComponent(this.config.repository)}/git/trees/${encodeURIComponent(ref ?? "main")}`,
+      );
+      for (const segment of pathname.split("/")) {
+        if (tree.truncated) throw new GitHubDataError("The GitHub repository tree is incomplete.", 500, "GITHUB_TREE_TRUNCATED");
+        const directory = tree.tree.find((item) => item.path === segment && item.type === "tree");
+        if (!directory) throw new GitHubDataError("GitHub directory not found.", 404, "GITHUB_NOT_FOUND");
+        tree = await this.request<GitHubRecursiveTreeResponse>(
+          `/repos/${encodeURIComponent(this.config.owner)}/${encodeURIComponent(this.config.repository)}/git/trees/${directory.sha}`,
+        );
+      }
+      if (tree.truncated) throw new GitHubDataError("The GitHub repository tree is incomplete.", 500, "GITHUB_TREE_TRUNCATED");
+      return tree.tree.filter((item) => !item.path.includes("/") && (item.type === "blob" || item.type === "tree"))
+        .map((item) => ({ type: item.type === "tree" ? "directory" as const : "file" as const, name: item.path, path: `${pathname}/${item.path}`, blobSha: item.sha, sizeBytes: item.size ?? 0 }));
+    }
+    if (/^data\/journal-(entries|segments|revisions)$/.test(pathname)) {
+      const tree = await this.request<GitHubRecursiveTreeResponse>(
+        `/repos/${encodeURIComponent(this.config.owner)}/${encodeURIComponent(this.config.repository)}/git/trees/${encodeURIComponent(ref ?? "main")}?recursive=1`,
+      );
+      if (tree.truncated) throw new GitHubDataError("The GitHub repository tree is incomplete.", 500, "GITHUB_TREE_TRUNCATED");
+      const prefix = `${pathname}/`;
+      return tree.tree.filter((item) => item.path.startsWith(prefix) && !item.path.slice(prefix.length).includes("/") && (item.type === "blob" || item.type === "tree"))
+        .map((item) => ({ type: item.type === "tree" ? "directory" as const : "file" as const, name: item.path.slice(prefix.length), path: item.path, blobSha: item.sha, sizeBytes: item.size ?? 0 }));
+    }
     const branch = ref ? `?ref=${encodeURIComponent(ref)}` : "";
     const contentsPath = pathname ? `/contents/${encodeRepositoryPath(pathname)}` : "/contents";
     const result = await this.request<GitHubDirectoryResponse>(

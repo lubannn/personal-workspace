@@ -44,6 +44,10 @@ export type LegacyJournalPlanningSnapshot = {
   segments: JournalSegmentRecord[];
 };
 
+export type LegacyJournalScopedPlanningSnapshot = LegacyJournalPlanningSnapshot & {
+  existingPaths: Set<string>;
+};
+
 export type LegacyJournalAtomicPayloadPreview = {
   ownerId: string;
   planSha256: string;
@@ -74,6 +78,96 @@ export async function readLegacyJournalPlanningSnapshot(
     loadCollection(adapter, "data/journal-segments", snapshot.headCommitSha, parseJournalSegmentRecord, "journal_segment"),
   ]);
   return { headCommitSha: snapshot.headCommitSha, entries, revisions, segments };
+}
+
+/** Only records on the selected dates are needed to plan a new batch. The full tree still guards every planned path. */
+export async function readLegacyJournalScopedPlanningSnapshot(
+  adapter: LegacyJournalAtomicWriterAdapter,
+  dates: readonly string[],
+): Promise<LegacyJournalScopedPlanningSnapshot> {
+  const selectedDates = new Set(dates);
+  const snapshot = await adapter.readBranchSnapshot();
+  const listOrEmpty = async (directory: string) => {
+    try { return await adapter.listDirectory(directory, snapshot.headCommitSha); }
+    catch (error) {
+      if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") return [];
+      throw error;
+    }
+  };
+  const [entryItems, revisionItems, segmentItems] = await Promise.all([
+    listOrEmpty("data/journal-entries"),
+    listOrEmpty("data/journal-revisions"),
+    listOrEmpty("data/journal-segments"),
+  ]);
+  const existingPaths = new Set([...entryItems, ...revisionItems, ...segmentItems]
+    .filter((item) => item.type === "file")
+    .map((item) => item.path));
+  const indexed = new Map<string, { record: JournalEntryRecord; blobSha: string }>();
+  try {
+    const file = await adapter.readText("data/journal-history-index.json", snapshot.headCommitSha);
+    const index: unknown = JSON.parse(file.text);
+    if (!index || typeof index !== "object" || !("kind" in index) || index.kind !== "legacy_journal_entry_index" || !("entries" in index) || !Array.isArray(index.entries)) {
+      throw new Error("INVALID_JOURNAL_HISTORY_INDEX");
+    }
+    for (const item of index.entries) {
+      if (!item || typeof item.path !== "string" || typeof item.blobSha !== "string" || !/^[a-f0-9]{40}$/u.test(item.blobSha)) throw new Error("INVALID_JOURNAL_HISTORY_INDEX");
+      const record = parseJournalEntryRecord(JSON.stringify(item.record));
+      if (recordPath("journal_entry", record.id) !== item.path || indexed.has(item.path)) throw new Error("INVALID_JOURNAL_HISTORY_INDEX");
+      indexed.set(item.path, { record, blobSha: item.blobSha });
+    }
+  } catch (error) {
+    if (!(error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND")) throw error;
+  }
+  const entries: JournalEntryRecord[] = [];
+  const changed = entryItems.filter((item) => item.type === "file" && item.name.endsWith(".json") && indexed.get(item.path)?.blobSha !== item.blobSha);
+  for (const item of entryItems) {
+    if (item.type !== "file" || !item.name.endsWith(".json")) continue;
+    const match = indexed.get(item.path);
+    if (match?.blobSha === item.blobSha && selectedDates.has(match.record.data.journal_date)) entries.push(match.record);
+  }
+  for (let offset = 0; offset < changed.length; offset += 8) {
+    const chunk = await Promise.all(changed.slice(offset, offset + 8).map(async (item) => {
+      const file = await adapter.readText(item.path, snapshot.headCommitSha);
+      const record = parseJournalEntryRecord(file.text);
+      if (recordPath("journal_entry", record.id) !== item.path) throw new Error("LEGACY_IMPORT_REMOTE_PATH_MISMATCH");
+      return record;
+    }));
+    entries.push(...chunk.filter((record) => selectedDates.has(record.data.journal_date)));
+  }
+  return { headCommitSha: snapshot.headCommitSha, entries, revisions: [], segments: [], existingPaths };
+}
+
+/** Hydrate only this batch's legacy history so the planner can recognize a completed batch. */
+export async function readLegacyJournalBatchHistory(
+  adapter: LegacyJournalAtomicWriterAdapter,
+  snapshot: LegacyJournalScopedPlanningSnapshot,
+  dates: readonly string[],
+): Promise<LegacyJournalScopedPlanningSnapshot> {
+  const selected = new Set(dates);
+  const entries = snapshot.entries.filter((entry) => selected.has(entry.data.journal_date));
+  const revisionPaths = new Set(entries.flatMap((entry) => entry.data.current_revision_id
+    ? [recordPath("journal_revision", entry.data.current_revision_id)] : []));
+  const legacyPrefixes = entries.filter((entry) => entry.id.startsWith("journal_legacy_"))
+    .map((entry) => entry.id);
+  const paths = [...snapshot.existingPaths].filter((path) => revisionPaths.has(path)
+    || legacyPrefixes.some((id) => path.startsWith(`data/journal-revisions/${id}_`)
+      || path.startsWith(`data/journal-segments/${id}_`)));
+  const revisions: JournalRevisionRecord[] = [];
+  const segments: JournalSegmentRecord[] = [];
+  for (let offset = 0; offset < paths.length; offset += 8) {
+    const records = await Promise.all(paths.slice(offset, offset + 8).map(async (path) => {
+      const file = await adapter.readText(path, snapshot.headCommitSha);
+      const record = path.startsWith("data/journal-revisions/")
+        ? parseJournalRevisionRecord(file.text) : parseJournalSegmentRecord(file.text);
+      if (recordPath(record.entity_type, record.id) !== path) throw new Error("LEGACY_IMPORT_REMOTE_PATH_MISMATCH");
+      return record;
+    }));
+    for (const record of records) {
+      if (record.entity_type === "journal_revision") revisions.push(record as JournalRevisionRecord);
+      else segments.push(record as JournalSegmentRecord);
+    }
+  }
+  return { ...snapshot, revisions, segments };
 }
 
 export async function prepareLegacyJournalAtomicPayload(
@@ -178,15 +272,11 @@ export async function reconcileLegacyJournalBatch(
     };
   }
 
-  const [entries, revisions, segments] = await Promise.all([
-    loadCollection(adapter, "data/journal-entries", snapshot.headCommitSha, parseJournalEntryRecord, "journal_entry"),
-    loadCollection(adapter, "data/journal-revisions", snapshot.headCommitSha, parseJournalRevisionRecord, "journal_revision"),
-    loadCollection(adapter, "data/journal-segments", snapshot.headCommitSha, parseJournalSegmentRecord, "journal_segment"),
-  ]);
-  const plannedIds = new Set(plan.files.map((file) => file.recordId));
-  if ([...entries, ...revisions, ...segments].some((record) => plannedIds.has(record.id))) blockers.push("LEGACY_RECONCILIATION_PARTIAL_RECORDS");
   const pendingDates = new Set(plan.items.filter((item) => item.status === "pending").map((item) => item.date));
-  if (entries.some((entry) => pendingDates.has(entry.data.journal_date))) blockers.push("LEGACY_RECONCILIATION_DATE_CONFLICT");
+  const scoped = await readLegacyJournalScopedPlanningSnapshot(adapter, [...pendingDates]);
+  if (scoped.headCommitSha !== snapshot.headCommitSha) throw new GitHubConflictError("The branch advanced during Legacy Journal reconciliation.");
+  if (plan.files.some((file) => scoped.existingPaths.has(file.path))) blockers.push("LEGACY_RECONCILIATION_PARTIAL_RECORDS");
+  if (scoped.entries.some((entry) => pendingDates.has(entry.data.journal_date))) blockers.push("LEGACY_RECONCILIATION_DATE_CONFLICT");
   return {
     status: blockers.length ? "conflict" : "not_committed",
     observedHeadCommitSha: snapshot.headCommitSha,
@@ -209,16 +299,19 @@ export async function writeLegacyJournalBatchAtomically(
     throw new GitHubConflictError("The branch advanced after the Legacy Journal commit plan was built.");
   }
   const payload = await prepareLegacyJournalAtomicPayload(input.plan, input.committedAt, { enforceLimits: true });
-  const [entries, revisions, segments, checkpoints] = await Promise.all([
-    loadCollection(adapter, "data/journal-entries", snapshot.headCommitSha, parseJournalEntryRecord, "journal_entry"),
-    loadCollection(adapter, "data/journal-revisions", snapshot.headCommitSha, parseJournalRevisionRecord, "journal_revision"),
-    loadCollection(adapter, "data/journal-segments", snapshot.headCommitSha, parseJournalSegmentRecord, "journal_segment"),
-    loadCollection(adapter, "data/journal-import-checkpoints", snapshot.headCommitSha, parseJournalImportCheckpointRecord, "journal_import_checkpoint"),
-  ]);
-
-  assertRemoteState(payload.ownerId, input.plan, entries, revisions, segments, checkpoints);
+  const pendingDates = input.plan.items.filter((item) => item.status === "pending").map((item) => item.date);
+  const scoped = await readLegacyJournalScopedPlanningSnapshot(adapter, pendingDates);
+  if (scoped.headCommitSha !== snapshot.headCommitSha) throw new GitHubConflictError("The branch advanced during Legacy Journal validation.");
+  if (scoped.entries.some((entry) => entry.owner_id !== payload.ownerId)) throw new Error("LEGACY_IMPORT_REMOTE_OWNER_MISMATCH");
+  if (input.plan.files.some((file) => scoped.existingPaths.has(file.path))) throw new Error("LEGACY_IMPORT_REMOTE_ID_CONFLICT");
+  if (scoped.entries.some((entry) => pendingDates.includes(entry.data.journal_date))) throw new Error("LEGACY_IMPORT_REMOTE_DATE_CONFLICT");
   const checkpointRecord = payload.checkpointRecord!;
-  if (checkpoints.some((record) => record.id === checkpointRecord.id)) throw new Error("LEGACY_IMPORT_CHECKPOINT_ALREADY_EXISTS");
+  try {
+    await adapter.readText(payload.checkpointPath, snapshot.headCommitSha);
+    throw new Error("LEGACY_IMPORT_CHECKPOINT_ALREADY_EXISTS");
+  } catch (error) {
+    if (!(error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND")) throw error;
+  }
 
   const result = await adapter.writeAtomicFiles({
     files: payload.files,
@@ -309,21 +402,6 @@ async function validatePlan(plan: LegacyJournalCommitPlan) {
     if (await sha256JournalRevisionBody(item.revision.data.body_markdown) !== item.revision.data.content_sha256) throw new Error("LEGACY_IMPORT_REVISION_HASH_MISMATCH");
   }
   return { ownerId: [...ownerIds][0]!, items: validatedItems };
-}
-
-function assertRemoteState(
-  ownerId: string,
-  plan: LegacyJournalCommitPlan,
-  entries: JournalEntryRecord[],
-  revisions: JournalRevisionRecord[],
-  segments: JournalSegmentRecord[],
-  checkpoints: JournalImportCheckpointRecord[],
-) {
-  if ([...entries, ...revisions, ...segments, ...checkpoints].some((record) => record.owner_id !== ownerId)) throw new Error("LEGACY_IMPORT_REMOTE_OWNER_MISMATCH");
-  const pending = plan.items.filter((item) => item.status === "pending");
-  const plannedIds = new Set(plan.files.map((file) => file.recordId));
-  if ([...entries, ...revisions, ...segments].some((record) => plannedIds.has(record.id))) throw new Error("LEGACY_IMPORT_REMOTE_ID_CONFLICT");
-  if (entries.some((entry) => pending.some((item) => item.date === entry.data.journal_date))) throw new Error("LEGACY_IMPORT_REMOTE_DATE_CONFLICT");
 }
 
 async function loadCollection<T>(

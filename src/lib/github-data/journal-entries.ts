@@ -125,6 +125,29 @@ export function shiftJournalMonth(month: string, offset: number) {
   return `${String(shiftedYear).padStart(4, "0")}-${String(shiftedMonth).padStart(2, "0")}`;
 }
 
+export function previousJournalDate(today: string) {
+  if (!isDateOnly(today)) throw new Error("INVALID_JOURNAL_DATE");
+  const date = new Date(`${today}T12:00:00Z`);
+  date.setUTCDate(date.getUTCDate() - 1);
+  return date.toISOString().slice(0, 10);
+}
+
+export function canWriteJournalDate(date: string, today: string) {
+  return isDateOnly(date) && isDateOnly(today) && (date === today || date === previousJournalDate(today));
+}
+
+export function journalMonthDays(month: string) {
+  if (!isMonthOnly(month)) throw new Error("INVALID_JOURNAL_MONTH");
+  const [year, number] = month.split("-").map(Number);
+  const firstDay = new Date(0);
+  firstDay.setUTCFullYear(year, number - 1, 1);
+  const lastDay = new Date(0);
+  lastDay.setUTCFullYear(year, number, 0);
+  const firstWeekday = (firstDay.getUTCDay() + 6) % 7;
+  const count = lastDay.getUTCDate();
+  return [...Array(firstWeekday).fill(null), ...Array.from({ length: count }, (_, index) => `${month}-${String(index + 1).padStart(2, "0")}`)] as (string | null)[];
+}
+
 export function renderJournalEntryMarkdown(record: JournalEntryRecord) {
   const title = record.data.title || record.data.journal_date;
   return [

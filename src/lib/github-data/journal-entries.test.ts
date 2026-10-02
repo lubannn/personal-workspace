@@ -1,13 +1,30 @@
 import { describe, expect, it } from "vitest";
 
 import { createWorkspaceRecord, serializeRecord, setWorkspaceRecordDeleted, updateWorkspaceRecord } from "./protocol";
-import { activeJournalEntries, createJournalEntryData, filterJournalEntries, journalEntryMarkdownFileName, journalEntrySubmittedTime, parseJournalEntryRecord, recentJournalEntries, renderJournalEntryMarkdown, shiftJournalMonth, trashedJournalEntries, updateJournalEntryData } from "./journal-entries";
+import { activeJournalEntries, canWriteJournalDate, createJournalEntryData, filterJournalEntries, journalEntryMarkdownFileName, journalEntrySubmittedTime, journalMonthDays, parseJournalEntryRecord, previousJournalDate, recentJournalEntries, renderJournalEntryMarkdown, shiftJournalMonth, trashedJournalEntries, updateJournalEntryData } from "./journal-entries";
 
 function journal(id: string, date: string, timestamp = `${date}T12:00:00.000Z`) {
   return createWorkspaceRecord({ entityType: "journal_entry" as const, id, ownerId: "owner_1", timestamp, data: createJournalEntryData({ journalDate: date, timezone: "Asia/Shanghai", title: "日记", bodyMarkdown: "今天完成了验收。", mood: "平静", timestamp }) });
 }
 
 describe("journal entries", () => {
+  it("allows only today and yesterday, including month and leap-year boundaries", () => {
+    expect(previousJournalDate("2026-03-01")).toBe("2026-02-28");
+    expect(previousJournalDate("2024-03-01")).toBe("2024-02-29");
+    expect(previousJournalDate("2027-01-01")).toBe("2026-12-31");
+    expect(canWriteJournalDate("2026-12-31", "2027-01-01")).toBe(true);
+    expect(canWriteJournalDate("2027-01-01", "2027-01-01")).toBe(true);
+    expect(canWriteJournalDate("2026-12-30", "2027-01-01")).toBe(false);
+    expect(canWriteJournalDate("2027-01-02", "2027-01-01")).toBe(false);
+    expect(canWriteJournalDate("2027-02-31", "2027-01-01")).toBe(false);
+  });
+
+  it("builds a Monday-first month grid", () => {
+    const days = journalMonthDays("2026-09");
+    expect(days.slice(0, 3)).toEqual([null, "2026-09-01", "2026-09-02"]);
+    expect(days.at(-1)).toBe("2026-09-30");
+    expect(days.filter(Boolean)).toHaveLength(30);
+  });
   it("creates and parses a restricted daily canonical record without claiming Obsidian sync", () => {
     const record = journal("journal_1", "2026-08-31");
     expect(parseJournalEntryRecord(serializeRecord(record))).toEqual(record);

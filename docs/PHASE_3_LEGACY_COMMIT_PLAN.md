@@ -30,7 +30,7 @@
 
 安全限制：
 
-- 每批必须显式选择 1–25 个日期；不默认提交整份多年文档；
+- 用户可以一次选择整份多年 `.txt` / `.docx`；工作台按日期数和 250 文件原子上限确定性切成安全批次，每个批次仍单独生成精确计划与确认范围；
 - 日期必须存在于当前 preview，选择集合去重并按日期规范排序；
 - archive error/blocking、未处理 orphan、非法日期或空 Segment 会阻断；
 - 计划只生成文件文本与 SHA-256，不调用任何写接口；
@@ -41,7 +41,7 @@
 
 1. 一个 `JournalEntry`，指向 Revision 1；
 2. 一个 `content_mode = segments` 的不可变 `JournalRevision`，`created_by = legacy_importer`、`change_reason = legacy_import`；
-3. 一个或多个不可变 `JournalSegment`，保留时间、确定性顺序和 `legacy_word` source ref；
+3. 一个或多个不可变 `JournalSegment`，保留时间、确定性顺序和 `legacy_word` / `legacy_text` source ref；
 4. marker codec 物化正文和逐文件 SHA-256。
 
 有时间的 Legacy Segment 使用日记日期、段落时间和 workspace IANA timezone 转成真实 instant；DST 不存在的墙上时间不得进入计划。来源定位集合如果无法在 canonical `source_locator` 安全上限内完整表达，也会阻断而不是截断。

@@ -62,7 +62,7 @@ function parseSourceRef(value: unknown): JournalSegmentSourceRef | null {
   const keys = Object.keys(source).sort();
   if (keys.join(",") !== "import_batch_id,source_locator,source_type") throw new Error();
   return {
-    source_type: String(source.source_type ?? "") as "legacy_word",
+    source_type: String(source.source_type ?? "") as "legacy_word" | "legacy_text",
     import_batch_id: String(source.import_batch_id ?? ""),
     source_locator: String(source.source_locator ?? ""),
   };

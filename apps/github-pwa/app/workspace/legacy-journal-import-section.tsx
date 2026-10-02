@@ -2,12 +2,15 @@
 
 import { useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 
-import { previewLegacyJournalDocx, type LegacyDocxPreview } from "../../../../src/lib/github-data/legacy-docx-preview";
+import { previewLegacyJournalDocx, type LegacyJournalPreview } from "../../../../src/lib/github-data/legacy-docx-preview";
+import { previewLegacyJournalText } from "../../../../src/lib/github-data/legacy-text-preview";
 import { buildLegacyJournalDryRun } from "../../../../src/lib/github-data/legacy-journal-dry-run";
-import { buildLegacyJournalCommitPlan, LEGACY_JOURNAL_IMPORT_COMMIT_ENABLED, MAX_LEGACY_JOURNAL_DATES_PER_COMMIT, type LegacyJournalCommitPlan } from "../../../../src/lib/github-data/legacy-journal-commit-plan";
+import { buildLegacyJournalCommitPlan, LEGACY_JOURNAL_IMPORT_COMMIT_ENABLED, type LegacyJournalCommitPlan } from "../../../../src/lib/github-data/legacy-journal-commit-plan";
+import { buildLegacyJournalDateBatches } from "../../../../src/lib/github-data/legacy-journal-batches";
 import { buildLegacyJournalCommitActionConfirmation, legacyJournalCommitStatusFromReconciliation, runLegacyJournalCommitAttempt, type LegacyJournalCommitActionStatus } from "../../../../src/lib/github-data/legacy-journal-commit-action";
-import { prepareLegacyJournalAtomicPayload, readLegacyJournalPlanningSnapshot, reconcileLegacyJournalBatch, writeLegacyJournalBatchAtomically, type LegacyJournalAtomicPayloadPreview, type LegacyJournalAtomicWriteResult, type LegacyJournalReconciliation } from "../../../../src/lib/github-data/legacy-journal-atomic-writer";
-import type { GitHubContentsAdapter } from "../../../../src/lib/github-data/github-contents";
+import { prepareLegacyJournalAtomicPayload, readLegacyJournalBatchHistory, readLegacyJournalScopedPlanningSnapshot, reconcileLegacyJournalBatch, writeLegacyJournalBatchAtomically, type LegacyJournalAtomicPayloadPreview, type LegacyJournalAtomicWriteResult, type LegacyJournalReconciliation } from "../../../../src/lib/github-data/legacy-journal-atomic-writer";
+import { isLegacyJournalSourceFullyImported } from "../../../../src/lib/github-data/legacy-journal-import-status";
+import { GitHubDataError, type GitHubContentsAdapter } from "../../../../src/lib/github-data/github-contents";
 import {
   compareLegacyJournalPreviews,
   type LegacyImportCorrection,
@@ -15,13 +18,13 @@ import {
   type LegacyImportDiagnostic,
   type LegacyPreviewComparison,
 } from "../../../../src/lib/github-data/legacy-journal-import";
-import type { Connection } from "./page-model";
+import { targetRepositoryName, type Connection } from "./page-model";
 
 type PreviewFilter = "all" | "issues" | "low-confidence";
 
 export function LegacyJournalImportSection({ connection, adapter, online, onCommitted }: { connection: Connection | null; adapter: GitHubContentsAdapter | null; online: boolean | null; onCommitted: () => Promise<void> }) {
   const timezone = connection?.timezone ?? "Asia/Shanghai";
-  const [preview, setPreview] = useState<LegacyDocxPreview | null>(null);
+  const [preview, setPreview] = useState<LegacyJournalPreview | null>(null);
   const [sourceFile, setSourceFile] = useState<File | null>(null);
   const [checking, setChecking] = useState(false);
   const [applyingCorrection, setApplyingCorrection] = useState(false);
@@ -36,7 +39,6 @@ export function LegacyJournalImportSection({ connection, adapter, online, onComm
   const [correctionReason, setCorrectionReason] = useState("");
   const [comparison, setComparison] = useState<LegacyPreviewComparison | null>(null);
   const [dryRunResult, setDryRunResult] = useState<{ fileName: string; sha256: string; journalFiles: number } | null>(null);
-  const [selectedDates, setSelectedDates] = useState<string[]>([]);
   const [planning, setPlanning] = useState(false);
   const [plan, setPlan] = useState<LegacyJournalCommitPlan | null>(null);
   const [payload, setPayload] = useState<LegacyJournalAtomicPayloadPreview | null>(null);
@@ -67,7 +69,7 @@ export function LegacyJournalImportSection({ connection, adapter, online, onComm
     return preview.parse.entries;
   }, [filter, preview]);
   const blocking = diagnostics.some((issue) => issue.severity === "blocking" || issue.severity === "error");
-  const targetRepository = connection ? `${connection.ownerLogin}/${connection.repository}` : "";
+  const targetRepository = targetRepositoryName(connection);
   const exactDateRange = plan?.selectedDates.length ? `${plan.selectedDates[0]}..${plan.selectedDates.at(-1)}` : "";
   const confirmationMatches = Boolean(plan && repositoryConfirmation === targetRepository && dateRangeConfirmation === exactDateRange);
   const payloadWithinLimits = Boolean(payload && payload.limitBlockers.length === 0);
@@ -84,10 +86,9 @@ export function LegacyJournalImportSection({ connection, adapter, online, onComm
     setComparison(null);
     setDryRunResult(null);
     try {
-      const nextPreview = await previewLegacyJournalDocx(file, { timezone });
+      const nextPreview = await previewLegacyJournalFile(file, { timezone });
       const firstLocator = firstCorrectionLocator(nextPreview);
       setPreview(nextPreview);
-      setSelectedDates(nextPreview.parse.entries.length <= MAX_LEGACY_JOURNAL_DATES_PER_COMMIT ? nextPreview.parse.entries.map((entry) => entry.date) : []);
       resetCommitPlan();
       setCorrectionLocator(firstLocator);
       setCorrectionAction(nextPreview.parse.tokens.find((token) => token.sourceLocator === firstLocator)?.kind === "UNSUPPORTED_OBJECT" ? "skip" : "assign-body");
@@ -110,7 +111,6 @@ export function LegacyJournalImportSection({ connection, adapter, online, onComm
     setCorrectionReason("");
     setComparison(null);
     setDryRunResult(null);
-    setSelectedDates([]);
     resetCommitPlan();
     setPickerKey((value) => value + 1);
   }
@@ -139,11 +139,10 @@ export function LegacyJournalImportSection({ connection, adapter, online, onComm
         ...(correctionAction === "set-time-heading" ? { time: correctionTime } : {}),
         ...(correctionAction === "assign-body" ? { time: correctionTime || null } : {}),
       };
-      const reparsed = await previewLegacyJournalDocx(sourceFile, { timezone, corrections: [...preview.parse.corrections, correction] });
+      const reparsed = await previewLegacyJournalFile(sourceFile, { timezone, corrections: [...preview.parse.corrections, correction] });
       setComparison(compareLegacyJournalPreviews(preview.parse, reparsed.parse));
       setPreview(reparsed);
       setDryRunResult(null);
-      setSelectedDates(reparsed.parse.entries.length <= MAX_LEGACY_JOURNAL_DATES_PER_COMMIT ? reparsed.parse.entries.map((entry) => entry.date) : []);
       resetCommitPlan();
       setCorrectionReason("");
     } catch (caught) {
@@ -165,31 +164,41 @@ export function LegacyJournalImportSection({ connection, adapter, online, onComm
     commitStartedRef.current = false;
   }
 
-  function toggleDate(date: string) {
-    resetCommitPlan();
-    setSelectedDates((current) => current.includes(date) ? current.filter((item) => item !== date) : [...current, date].sort());
-  }
-
   async function buildCommitPlan() {
-    if (!preview || !connection || !adapter || selectedDates.length === 0) return;
+    if (!preview || !connection || !adapter) return;
     setPlanning(true);
     setError(null);
     resetCommitPlan();
     try {
-      const snapshot = await readLegacyJournalPlanningSnapshot(adapter);
-      const nextPlan = await buildLegacyJournalCommitPlan({
-        preview,
-        ownerId: connection.ownerId,
-        expectedHeadCommitSha: snapshot.headCommitSha,
-        selectedDates,
-        existing: snapshot,
-        plannedAt: new Date().toISOString(),
-      });
+      const batches = buildLegacyJournalDateBatches(preview.parse.entries);
+      const snapshot = await readLegacyJournalScopedPlanningSnapshot(adapter, preview.parse.entries.map((entry) => entry.date));
+      if (await isLegacyJournalSourceFullyImported(adapter, preview, snapshot)) {
+        setCommitNotice("这份文件中的全部日期都已经导入，无需再次提交。");
+        return;
+      }
+      let nextPlan: LegacyJournalCommitPlan | null = null;
+      for (const batch of batches) {
+        const batchSnapshot = await readLegacyJournalBatchHistory(adapter, snapshot, batch.dates);
+        const candidate = await buildLegacyJournalCommitPlan({
+          preview,
+          ownerId: connection.ownerId,
+          expectedHeadCommitSha: snapshot.headCommitSha,
+          selectedDates: batch.dates,
+          existing: batchSnapshot,
+          plannedAt: new Date().toISOString(),
+        });
+        if (candidate.files.some((file) => snapshot.existingPaths.has(file.path))) throw new Error("LEGACY_IMPORT_REMOTE_PATH_CONFLICT");
+        if (candidate.summary.pending > 0 || candidate.summary.conflicts > 0) { nextPlan = candidate; break; }
+      }
+      if (!nextPlan) {
+        setCommitNotice("这份文件中的全部日期都已经导入，无需再次提交。");
+        return;
+      }
       const nextPayload = nextPlan.commitReady ? await prepareLegacyJournalAtomicPayload(nextPlan) : null;
       setPlan(nextPlan);
       setPayload(nextPayload);
     } catch (caught) {
-      setError(friendlyLegacyImportError(caught));
+      setError(friendlyLegacyImportError(caught, "remote"));
     } finally {
       setPlanning(false);
     }
@@ -208,7 +217,7 @@ export function LegacyJournalImportSection({ connection, adapter, online, onComm
         if (result.status === "committed") await onCommitted();
       }
     } catch (caught) {
-      if (commitStatus === "idle") setError(friendlyLegacyImportError(caught));
+      if (commitStatus === "idle") setError(friendlyLegacyImportError(caught, "remote"));
       else {
         setCommitStatus("unknown");
         setCommitNotice("仍无法确认本批结果。禁止再次提交；请恢复网络后只读核对当前计划，或重新加载数据并人工处理。");
@@ -285,17 +294,17 @@ export function LegacyJournalImportSection({ connection, adapter, online, onComm
 
   return <section className="legacy-import" aria-labelledby="legacy-import-title">
     <div className="legacy-import-heading">
-      <div><p className="eyebrow">Phase 3 · Local-only preview</p><h3 id="legacy-import-title">Legacy Word 导入预览</h3><p>选择只读 `.docx` 工作副本后，文件只在当前浏览器内解压、计算 SHA-256 和生成诊断；不会上传、修改源文件、写入 Journal 或连接 Obsidian。</p></div>
+      <div><p className="eyebrow">Local-only preview</p><h3 id="legacy-import-title">历史日记 TXT / Word 导入</h3><p>选择完整的 `.txt` 日记导出或 `.docx` 工作副本后，文件只在当前浏览器内解析和生成诊断；不会上传或修改源文件。正式写入会由工作台自动切成安全批次。</p></div>
       {preview || error ? <button className="text-button" type="button" onClick={discardPreview} disabled={checking}>丢弃本地预览</button> : null}
     </div>
     <div className="legacy-import-picker">
-      <label className={`file-picker ${checking ? "disabled" : ""}`}>{checking ? "正在只读解析…" : "选择脱敏 .docx 副本"}<input key={pickerKey} type="file" accept="application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx" onChange={inspectFile} disabled={checking} /></label>
-      <span>最大 256 MiB · 默认时区 {timezone} · 不支持旧 `.doc`、加密文档或宏提交</span>
+      <label className={`file-picker ${checking ? "disabled" : ""}`}>{checking ? "正在只读解析…" : "选择完整日记 .txt / .docx"}<input key={pickerKey} type="file" accept="text/plain,.txt,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx" onChange={inspectFile} disabled={checking} /></label>
+      <span>TXT 最大 32 MiB · DOCX 最大 256 MiB · 默认时区 {timezone}</span>
     </div>
-    {error ? <div className="legacy-import-error" role="alert"><strong>本地处理未完成</strong><p>{error}</p></div> : null}
+    {error ? <div className="legacy-import-error" role="alert"><strong>操作未完成</strong><p>{error}</p></div> : null}
     {preview ? <>
       <div className="legacy-import-source">
-        <div><strong>{preview.source.fileName}</strong><span>{formatBytes(preview.source.byteSize)} · {preview.archiveEntryCount} 个 ZIP 条目 · 原文件未修改</span></div>
+        <div><strong>{preview.source.fileName}</strong><span>{formatBytes(preview.source.byteSize)} · {preview.source.format === "docx" ? `${preview.archiveEntryCount} 个 ZIP 条目` : "UTF-8 TXT"} · 原文件未修改</span></div>
         <code>SHA-256 {preview.source.sha256}</code>
         <small>Parser {preview.parserVersion} · Mapping {preview.mappingVersion}</small>
       </div>
@@ -331,13 +340,17 @@ export function LegacyJournalImportSection({ connection, adapter, online, onComm
         {preview.parse.corrections.length ? <ol className="legacy-correction-history">{preview.parse.corrections.map((correction) => <li key={correction.id}><div><code>{correction.sourceLocator}</code><strong>{correction.action}</strong><span>{correction.recordedAt}</span></div><p>{correction.reason}</p>{correction.supersedesId ? <small>取代 {correction.supersedesId}</small> : null}</li>)}</ol> : null}
       </div>
       <div className="legacy-import-preview-heading">
-        <div><h4>按日 Markdown 预览</h4><span>显示 {Math.min(visibleEntries.length, 100)} / {visibleEntries.length}；源顺序保持不变</span></div>
+        <div><h4>日记预览</h4><span>显示 {Math.min(visibleEntries.length, 100)} / {visibleEntries.length}；源顺序保持不变</span></div>
         <div aria-label="预览筛选"><button className="view-button" type="button" aria-pressed={filter === "all"} onClick={() => setFilter("all")}>全部</button><button className="view-button" type="button" aria-pressed={filter === "issues"} onClick={() => setFilter("issues")}>仅异常</button><button className="view-button" type="button" aria-pressed={filter === "low-confidence"} onClick={() => setFilter("low-confidence")}>低置信度</button></div>
       </div>
       {visibleEntries.length === 0 ? <p className="empty-note">当前筛选没有条目。</p> : <ol className="legacy-import-entries">{visibleEntries.slice(0, 100).map((entry) => <li key={entry.date}>
-        <div><strong>{entry.date}</strong><span>{entry.segments.length} segments · {entry.confidence} confidence</span><code>{entry.outputPath}</code></div>
-        {entry.inheritedContext.length ? <p>{entry.inheritedContext.join("；")}</p> : null}
-        <pre>{entry.markdown}</pre>
+        <h5>{entry.date}</h5>
+        <div className="legacy-journal-reading" aria-label={`${entry.date} 的日记`}>
+          {entry.segments.map((segment, index) => <div className="legacy-journal-reading-row" key={`${entry.date}-${segment.time ?? "untimed"}-${index}`}>
+            <time>{segment.time ?? "—"}</time>
+            <p>{segment.bodyMarkdown}</p>
+          </div>)}
+        </div>
       </li>)}</ol>}
       {visibleEntries.length > 100 ? <p className="empty-note">为避免巨大文档阻塞界面，本页只渲染前 100 条；统计与诊断仍覆盖整份文档。</p> : null}
       <div className={`legacy-dry-run ${preview.parse.dryRunReady && !blocking ? "ready" : "blocked"}`}>
@@ -347,12 +360,10 @@ export function LegacyJournalImportSection({ connection, adapter, online, onComm
       </div>
       <div className="legacy-commit-panel" aria-labelledby="legacy-commit-title">
         <div className="legacy-commit-heading"><div><p className="eyebrow">Fail-closed commit review</p><h4 id="legacy-commit-title">Legacy Journal 精确提交计划</h4><p>计划读取同一 branch snapshot 并固定 HEAD、目标日期、canonical 文件与 hash。生成计划和 reconciliation 都是只读操作。</p></div><span className="legacy-production-gate" data-open={LEGACY_JOURNAL_IMPORT_COMMIT_ENABLED}>Production gate · {LEGACY_JOURNAL_IMPORT_COMMIT_ENABLED ? "OPEN" : "CLOSED"}</span></div>
-        <fieldset className="legacy-date-selection" disabled={!connection || planning || blocking || !preview.parse.dryRunReady}>
-          <legend>选择本批日期（最多 {MAX_LEGACY_JOURNAL_DATES_PER_COMMIT} 天）</legend>
-          <div>{preview.parse.entries.map((entry) => <label key={entry.date}><input type="checkbox" checked={selectedDates.includes(entry.date)} onChange={() => toggleDate(entry.date)} disabled={!selectedDates.includes(entry.date) && selectedDates.length >= MAX_LEGACY_JOURNAL_DATES_PER_COMMIT} /><span>{entry.date}</span><small>{entry.segments.length} segments</small></label>)}</div>
-        </fieldset>
-        <button className="secondary-button" type="button" onClick={buildCommitPlan} disabled={!connection || !adapter || online === false || planning || blocking || !preview.parse.dryRunReady || selectedDates.length === 0}>{planning ? "正在读取精确 HEAD…" : "生成只读 Commit Plan"}</button>
-        {!connection ? <p className="empty-note">连接目标 Private 数据仓库后才能生成计划；DOCX 正文仍只在当前浏览器内处理。</p> : null}
+        <div className="legacy-import-gate ready"><strong>自动安全分批</strong><p>整份文件只需选择一次。工作台会按原子文件上限确定批次；每批提交后点击“生成下一安全批次”即可继续，中断后重新选择同一文件也会跳过已确认批次。</p></div>
+        <button className="secondary-button" type="button" onClick={buildCommitPlan} disabled={!connection || !adapter || online === false || planning || blocking || !preview.parse.dryRunReady}>{planning ? "正在读取精确 HEAD…" : "生成下一安全批次"}</button>
+        {!plan && commitNotice ? <div className="legacy-import-gate ready" role="status"><strong>核对完成</strong><p>{commitNotice}</p></div> : null}
+        {!connection ? <p className="empty-note">连接目标 Private 数据仓库后才能生成计划；源文件正文仍只在当前浏览器内处理。</p> : null}
         {plan ? <>
           <div className="legacy-commit-target"><div><span>目标 Private 仓库</span><strong>{targetRepository}</strong></div><div><span>精确日期范围</span><strong>{exactDateRange}</strong></div><div><span>Expected HEAD</span><code>{plan.expectedHeadCommitSha}</code></div><div><span>Dry Run ID</span><code>{plan.dryRunId}</code></div><div><span>Plan SHA-256</span><code>{payload?.planSha256 ?? "因冲突未生成"}</code></div><div><span>Correction SHA-256</span><code>{plan.correctionSetSha256}</code></div></div>
           <div className="legacy-commit-summary" aria-label="Commit Plan 摘要"><SummaryMetric label="Pending" value={String(plan.summary.pending)} /><SummaryMetric label="Already imported" value={String(plan.summary.alreadyImported)} /><SummaryMetric label="Conflicts" value={String(plan.summary.conflicts)} /><SummaryMetric label="原子文件" value={payload ? String(payload.fileCount) : "—"} /><SummaryMetric label={payload?.byteCountExact === false ? "业务 UTF-8 bytes" : "UTF-8 bytes"} value={payload ? payload.byteCount.toLocaleString("en-US") : "—"} /></div>
@@ -374,15 +385,15 @@ function SummaryMetric({ label, value }: { label: string; value: string }) {
 }
 
 function DiagnosticList({ diagnostics }: { diagnostics: LegacyImportDiagnostic[] }) {
-  return <div className="legacy-import-diagnostics"><h4>Diagnostics {diagnostics.length}</h4><ul>{diagnostics.slice(0, 100).map((issue, index) => <li key={`${issue.code}-${issue.sourceLocator ?? index}`} data-severity={issue.severity}><strong>{issue.severity} · {issue.code}</strong><span>{issue.sourceLocator ? `${issue.sourceLocator}：` : ""}{issue.message}</span></li>)}</ul>{diagnostics.length > 100 ? <p>仅显示前 100 条；摘要计数覆盖全部诊断。</p> : null}</div>;
+  return <div className="legacy-import-diagnostics"><h4>Diagnostics {diagnostics.length}</h4><ul>{diagnostics.slice(0, 100).map((issue, index) => <li key={`${issue.code}-${issue.sourceLocator ?? index}`} data-severity={issue.severity}><strong>{issue.severity} · {issue.code}</strong><div className="legacy-diagnostic-content"><span>{issue.sourceLocator ? `${issue.sourceLocator}：` : ""}{issue.message}</span>{issue.duplicateGroups?.length ? <details className="legacy-duplicate-review"><summary>查看完全相同的记录</summary>{issue.duplicateGroups.map((group, groupIndex) => <article key={`${group.date}-${group.time ?? "untimed"}-${groupIndex}`}><header><strong>{group.time ?? "未记录时间"}</strong><span>完全相同 {group.occurrences.length} 条</span></header><p>{group.bodyMarkdown}</p><ol>{group.occurrences.map((occurrence, occurrenceIndex) => <li key={`${groupIndex}-${occurrenceIndex}`}><span>记录 {occurrenceIndex + 1}</span><code>{occurrence.sourceLocators.join(" · ")}</code></li>)}</ol></article>)}</details> : null}</div></li>)}</ul>{diagnostics.length > 100 ? <p>仅显示前 100 条；摘要计数覆盖全部诊断。</p> : null}</div>;
 }
 
 function ReparseComparison({ comparison }: { comparison: LegacyPreviewComparison }) {
   return <div className="legacy-reparse-diff" role="status"><strong>重解析差异</strong><div><span>新增日期 {comparison.addedDates.length}</span><span>删除日期 {comparison.removedDates.length}</span><span>变化日期 {comparison.changedDates.length}</span><span>诊断 −{comparison.diagnosticsRemoved} / +{comparison.diagnosticsAdded}</span><span>孤立块 {comparison.orphanBlocksBefore} → {comparison.orphanBlocksAfter}</span></div>{comparison.addedDates.length || comparison.removedDates.length || comparison.changedDates.length ? <code>{[...comparison.addedDates.map((date) => `+${date}`), ...comparison.removedDates.map((date) => `−${date}`), ...comparison.changedDates.map((date) => `~${date}`)].join(" · ")}</code> : null}</div>;
 }
 
-function friendlyLegacyImportError(error: unknown) {
-  const code = error instanceof Error ? error.message : "";
+function friendlyLegacyImportError(error: unknown, stage: "local" | "remote" = "local") {
+  const code = error instanceof GitHubDataError ? error.code : error instanceof Error ? error.message : "";
   const messages: Record<string, string> = {
     LEGACY_IMPORT_DOCX_REQUIRED: "请选择 `.docx` 工作副本；旧 `.doc` 必须先在不覆盖原件的前提下转换为 `.docx`。",
     LEGACY_IMPORT_EMPTY_FILE: "文件为空，未执行解析。",
@@ -404,12 +415,21 @@ function friendlyLegacyImportError(error: unknown) {
     INVALID_LEGACY_CORRECTION_REASON: "请填写不超过 1000 字的修正理由。",
     INVALID_LEGACY_CORRECTION_DATE: "请选择合法的完整目标日期。",
     INVALID_LEGACY_CORRECTION_TIME: "请选择合法的目标时间。",
-    INVALID_LEGACY_IMPORT_DATE_SELECTION: `请选择 1–${MAX_LEGACY_JOURNAL_DATES_PER_COMMIT} 个不重复日期。`,
+    INVALID_LEGACY_IMPORT_DATE_SELECTION: "自动批次包含无效或重复日期，未生成提交计划。",
+    LEGACY_IMPORT_TXT_REQUIRED: "请选择 `.txt` 历史日记导出文件。",
+    LEGACY_IMPORT_TEXT_FILE_TOO_LARGE: "TXT 文件超过 32 MiB 安全上限，未执行解析。",
+    LEGACY_IMPORT_INVALID_UTF8_TEXT: "TXT 不是有效 UTF-8，请重新导出为 UTF-8 文本。",
+    LEGACY_IMPORT_TEXT_MONTHS_MISSING: "TXT 中没有找到“YYYY年MM月的日记”月份标题。",
+    LEGACY_IMPORT_TEXT_INVALID_MONTH: "TXT 月份标题超出 01–12，预览已阻断。",
+    LEGACY_IMPORT_SINGLE_DATE_FILE_LIMIT_EXCEEDED: "某一天的历史记录过多，无法放入单个安全原子批次。",
     LEGACY_IMPORT_PLAN_NOT_READY: "Preview 仍有阻断项，未生成 Commit Plan。",
     LEGACY_IMPORT_ATOMIC_FILE_LIMIT_EXCEEDED: "计划超过 250 个原子文件（含 checkpoint），已阻断。",
     LEGACY_IMPORT_ATOMIC_BYTE_LIMIT_EXCEEDED: "计划超过 10 MiB UTF-8 payload 上限，已阻断。",
+    LEGACY_IMPORT_REMOTE_PATH_CONFLICT: "目标日记文件已存在，已阻止覆盖；请核对源文件和现有记录。",
+    GITHUB_RATE_LIMITED: "GitHub 暂时限制读取，请稍后重试；没有写入数据。",
+    GITHUB_UNAVAILABLE: "GitHub 暂时不可用，请稍后重试；没有写入数据。",
   };
-  return messages[code] ?? "只读解析失败，源文件未被修改，也没有写入任何数据。";
+  return messages[code] ?? (stage === "remote" ? "远端只读核对未完成，请稍后重试；没有写入数据。" : "只读解析失败，源文件未被修改，也没有写入任何数据。");
 }
 
 function reconciliationLabel(status: LegacyJournalReconciliation["status"]) {
@@ -440,7 +460,13 @@ function commitStatusLabel(status: LegacyJournalCommitActionStatus) {
   return "等待动作时确认";
 }
 
-function firstCorrectionLocator(preview: LegacyDocxPreview) {
+function previewLegacyJournalFile(file: File, options: { timezone: string; corrections?: LegacyImportCorrection[] }) {
+  return /\.txt$/iu.test(file.name)
+    ? previewLegacyJournalText(file, options)
+    : previewLegacyJournalDocx(file, options);
+}
+
+function firstCorrectionLocator(preview: LegacyJournalPreview) {
   return preview.parse.orphanBlocks.at(0)?.sourceLocators.at(0)
     ?? preview.parse.unsupportedBlocks.at(0)?.sourceLocator
     ?? preview.parse.diagnostics.find((issue) => issue.sourceLocator)?.sourceLocator

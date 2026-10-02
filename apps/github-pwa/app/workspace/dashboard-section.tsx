@@ -4,6 +4,7 @@ import type { DashboardLayout, DashboardWidgetConfig, DashboardWidgetSize } from
 import { projectMilestoneProgress, projectTaskProgress } from "../../../../src/lib/github-data/projects";
 import { calendarEventsForDate } from "../../../../src/lib/github-data/calendar-events";
 import { recentJournalEntries } from "../../../../src/lib/github-data/journal-entries";
+import { journalDisplayPreview } from "../../../../src/lib/github-data/journal-display";
 import { formatTaskDue, type Connection, type SavedCapture, type SyncedCalendarEvent, type SyncedJournalEntry, type SyncedMilestone, type SyncedProject, type SyncedTask } from "./page-model";
 
 type WidgetDefinition = { eyebrow: string; title: string; empty: string };
@@ -151,7 +152,7 @@ export function DashboardSection(props: Props) {
                   {!connection ? <p className="widget-empty">连接 Private 数据仓库后显示最近日记。</p>
                     : loadingJournalEntries ? <p className="widget-empty">正在读取最近日记…</p>
                       : recentJournals.length === 0 ? <p className="widget-empty">还没有日记。</p>
-                        : <ul>{recentJournals.map((item) => <li key={item.record.id}><div><strong>{item.record.data.title || item.record.data.journal_date}</strong><small>{item.record.data.journal_date}</small></div><p>{journalPreview(item.record.data.body_markdown)}</p></li>)}</ul>}
+                        : <ul>{recentJournals.map((item) => <li key={item.record.id}><div><strong>{item.record.data.title || item.record.data.journal_date}</strong><small>{item.record.data.journal_date}</small></div><p>{journalDisplayPreview(item.record.data.body_markdown)}</p></li>)}</ul>}
                 </div>
               ) : <p className="widget-empty">{definition.empty}</p>}
             </article>
@@ -176,9 +177,4 @@ function projectDashboardMeta(item: SyncedProject) {
 function formatScheduleTime(startAt: string, endAt: string, timezone: string) {
   const formatter = new Intl.DateTimeFormat("zh-CN", { timeZone: timezone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
   return `${formatter.format(new Date(startAt))}–${formatter.format(new Date(endAt))}`;
-}
-
-function journalPreview(value: string) {
-  const text = value.replace(/[#>*_`\[\]()\-]/g, " ").replace(/\s+/g, " ").trim();
-  return text.length > 90 ? `${text.slice(0, 90)}…` : text;
 }

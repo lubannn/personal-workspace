@@ -8,6 +8,22 @@ function jsonResponse(value: unknown, status = 200) {
 }
 
 describe("GitHub contents adapter", () => {
+  it("reads a known immutable blob in one request without a Contents lookup", async () => {
+    const sha = "a".repeat(40);
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({ sha, size: 6, encoding: "base64", content: btoa(unescape(encodeURIComponent("正文"))) }));
+    const adapter = new GitHubContentsAdapter({ owner: "owner", repository: "data", token: "test-token" }, fetcher);
+    await expect(adapter.readBlobText("data/journal-entries/one.json", sha)).resolves.toMatchObject({ text: "正文", blobSha: sha });
+    expect(fetcher).toHaveBeenCalledTimes(1); expect(fetcher.mock.calls[0][0]).toContain(`/git/blobs/${sha}`);
+    expect(fetcher.mock.calls[0][1]?.signal).toBeInstanceOf(AbortSignal);
+    await expect(adapter.readBlobText("../bad", sha)).rejects.toThrow();
+    await expect(adapter.readBlobText("data/one.json", "bad")).rejects.toThrow();
+  });
+  it("does not add a diagnostic network probe when a statistics read fails", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockRejectedValue(new TypeError("network failed"));
+    const adapter = new GitHubContentsAdapter({ owner: "owner", repository: "data", token: "test-token" }, fetcher);
+    await expect(adapter.readBlobText("data/one.json", "a".repeat(40))).rejects.toMatchObject({ status: 0, code: "GITHUB_TRANSPORT_ERROR" });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
   it("verifies private visibility and round-trips Unicode text", async () => {
     const fetcher = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(jsonResponse({
@@ -93,6 +109,41 @@ describe("GitHub contents adapter", () => {
     ]);
     expect(fetcher.mock.calls[0]?.[0]).toContain("data/captures?ref=main");
     expect(fetcher.mock.calls[0]?.[1]).toMatchObject({ cache: "no-store" });
+  });
+
+  it("reads a large file through the Git blob API when Contents omits its body", async () => {
+    const sha = "a".repeat(40);
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({ type: "file", path: "data/journal-history-index.json", sha, size: 2_000_000, encoding: "none", content: "" }))
+      .mockResolvedValueOnce(jsonResponse({ sha, size: 2_000_000, encoding: "base64", content: btoa("history") }));
+    const adapter = new GitHubContentsAdapter(
+      { owner: "owner", repository: "personal-workspace-data", branch: "main", token: "test-token" },
+      fetcher,
+    );
+    await expect(adapter.readText("data/journal-history-index.json")).resolves.toMatchObject({ text: "history", blobSha: sha });
+    expect(fetcher.mock.calls[1]?.[0]).toContain(`/git/blobs/${sha}`);
+  });
+
+  it("lists journal entries through the small directory tree rather than the whole repository", async () => {
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({ truncated: false, tree: [{ path: "data", type: "tree", sha: "data-tree" }] }))
+      .mockResolvedValueOnce(jsonResponse({ truncated: false, tree: [{ path: "journal-entries", type: "tree", sha: "entries-tree" }] }))
+      .mockResolvedValueOnce(jsonResponse({ truncated: false, tree: [
+        { path: "one.json", type: "blob", sha: "entry-one", size: 123 },
+        { path: "nested", type: "tree", sha: "nested-tree" },
+      ] }));
+    const adapter = new GitHubContentsAdapter(
+      { owner: "owner", repository: "personal-workspace-data", branch: "main", token: "test-token" }, fetcher,
+    );
+    await expect(adapter.listDirectory("data/journal-entries")).resolves.toEqual([
+      { type: "file", name: "one.json", path: "data/journal-entries/one.json", blobSha: "entry-one", sizeBytes: 123 },
+      { type: "directory", name: "nested", path: "data/journal-entries/nested", blobSha: "nested-tree", sizeBytes: 0 },
+    ]);
+    expect(fetcher.mock.calls.map((call) => call[0])).toEqual([
+      "https://api.github.com/repos/owner/personal-workspace-data/git/trees/main",
+      "https://api.github.com/repos/owner/personal-workspace-data/git/trees/data-tree",
+      "https://api.github.com/repos/owner/personal-workspace-data/git/trees/entries-tree",
+    ]);
   });
 
   it("lists an initialized repository root and reuses the in-memory credential for an isolated target", async () => {

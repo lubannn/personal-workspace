@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { prepareLegacyJournalAtomicPayload } from "./legacy-journal-atomic-writer";
-import type { GitHubContentsAdapter } from "./github-contents";
+import { GitHubDataError, type GitHubContentsAdapter } from "./github-contents";
 import { buildLegacyJournalCheckpointRollbackPreview, newestLegacyJournalCheckpoints, readLegacyJournalCheckpointRollbackPreview } from "./legacy-journal-checkpoint-history";
 import { buildLegacyJournalCommitPlan } from "./legacy-journal-commit-plan";
 import type { LegacyDocxPreview } from "./legacy-docx-preview";
@@ -20,7 +20,7 @@ function preview(): LegacyDocxPreview {
     { sourceLocator: "word/document.xml#p3", text: "脱敏正文" },
   ], { timezone: "Asia/Shanghai", sourceSha256 });
   return {
-    source: { fileName: "sanitized.docx", byteSize: 1_024, lastModified: null, sha256: sourceSha256 },
+    source: { fileName: "sanitized.docx", byteSize: 1_024, lastModified: null, sha256: sourceSha256, format: "docx" },
     batchIdentity: `${sourceSha256}:${LEGACY_JOURNAL_PARSER_VERSION}:${LEGACY_JOURNAL_MAPPING_VERSION}`,
     parserVersion: LEGACY_JOURNAL_PARSER_VERSION,
     mappingVersion: LEGACY_JOURNAL_MAPPING_VERSION,
@@ -103,5 +103,49 @@ describe("Legacy Journal checkpoint history and read-only rollback preview", () 
       readText: async (path: string) => ({ path, text: files.get(path)!, blobSha: "d".repeat(40), sizeBytes: files.get(path)!.length }),
     } as unknown as GitHubContentsAdapter;
     await expect(readLegacyJournalCheckpointRollbackPreview(adapter, checkpointPath)).rejects.toThrow("LEGACY_ROLLBACK_PREVIEW_HEAD_CHANGED");
+  });
+
+  it("reads only the selected checkpoint files when the repository contains other journal records", async () => {
+    const { artifacts, checkpoint } = await fixture();
+    const checkpointPath = recordPath("journal_import_checkpoint", checkpoint.id);
+    const files = new Map([
+      [recordPath("journal_entry", artifacts.entry.id), serializeRecord(artifacts.entry)],
+      [recordPath("journal_revision", artifacts.revision.id), serializeRecord(artifacts.revision)],
+      ...artifacts.segments.map((record) => [recordPath("journal_segment", record.id), serializeRecord(record)] as const),
+      [checkpointPath, serializeRecord(checkpoint)],
+      ["data/journal-revisions/journal_legacy_other_r1.json", "not requested"],
+      ["data/journal-segments/journal_legacy_other_s0001.json", "not requested"],
+    ]);
+    const reads: string[] = [];
+    const adapter = {
+      readBranchSnapshot: async () => ({ branch: "main", headCommitSha: headSha, rootTreeSha: "b".repeat(40) }),
+      listDirectory: async (directory: string) => [...files.keys()].filter((path) => path.startsWith(`${directory}/`)).map((path) => ({ type: "file" as const, name: path.slice(directory.length + 1), path, blobSha: "d".repeat(40), sizeBytes: files.get(path)!.length })),
+      readText: async (path: string) => { reads.push(path); return { path, text: files.get(path)!, blobSha: "d".repeat(40), sizeBytes: files.get(path)!.length }; },
+    } as unknown as GitHubContentsAdapter;
+    await expect(readLegacyJournalCheckpointRollbackPreview(adapter, checkpointPath)).resolves.toMatchObject({ summary: { ready: 1, blocked: 0 } });
+    expect(reads).not.toContain("data/journal-revisions/journal_legacy_other_r1.json");
+    expect(reads).not.toContain("data/journal-segments/journal_legacy_other_s0001.json");
+  });
+
+  it("retries a transient read failure without accepting an incomplete checkpoint", async () => {
+    const { artifacts, checkpoint } = await fixture();
+    const checkpointPath = recordPath("journal_import_checkpoint", checkpoint.id);
+    const files = new Map([
+      [recordPath("journal_entry", artifacts.entry.id), serializeRecord(artifacts.entry)],
+      [recordPath("journal_revision", artifacts.revision.id), serializeRecord(artifacts.revision)],
+      ...artifacts.segments.map((record) => [recordPath("journal_segment", record.id), serializeRecord(record)] as const),
+      [checkpointPath, serializeRecord(checkpoint)],
+    ]);
+    let failed = false;
+    const adapter = {
+      readBranchSnapshot: async () => ({ branch: "main", headCommitSha: headSha, rootTreeSha: "b".repeat(40) }),
+      listDirectory: async (directory: string) => [...files.keys()].filter((path) => path.startsWith(`${directory}/`)).map((path) => ({ type: "file" as const, name: path.slice(directory.length + 1), path, blobSha: "d".repeat(40), sizeBytes: files.get(path)!.length })),
+      readText: async (path: string) => {
+        if (!failed && path === checkpointPath) { failed = true; throw new GitHubDataError("temporary", 503, "GITHUB_UNAVAILABLE"); }
+        return { path, text: files.get(path)!, blobSha: "d".repeat(40), sizeBytes: files.get(path)!.length };
+      },
+    } as unknown as GitHubContentsAdapter;
+    await expect(readLegacyJournalCheckpointRollbackPreview(adapter, checkpointPath)).resolves.toMatchObject({ summary: { ready: 1, blocked: 0 } });
+    expect(failed).toBe(true);
   });
 });

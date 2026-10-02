@@ -292,7 +292,7 @@ Phase 3A Journal Core 把记录保存到 `data/journal-entries/<id>.json`。当�
 - `id`, `journal_entry_id`, `local_time`, `occurred_at`
 - `body_markdown`, `sort_order`, `source_ref`
 
-它允许保留旧日记中同一天的多个时间片段。Segment 是 create-only 快照；`source_ref` 仅保存稳定导入批次与源定位，不保存绝对路径。新日记可以只用 `body_markdown`，也可使用 segments；确定性 codec 使用版本化 marker、规范化顺序和正文 marker 转义保证 round trip。
+它允许保留旧日记中同一天的多个时间片段。Segment 是 create-only 快照；`source_ref.source_type` 接受 `legacy_word` 或 `legacy_text`，仅保存稳定导入批次与源定位，不保存绝对路径。新日记可以只用 `body_markdown`，也可使用 segments；确定性 codec 使用版本化 marker、规范化顺序和正文 marker 转义保证 round trip。
 
 canonical 文件位于 `data/journal-segments/<id>.json`。记录固定 `version = 1` 且不可软删除；同一 JournalEntry 的 `sort_order` 必须唯一，portable inspection 会拒绝父记录缺失、孤立 Segment 和跨日记引用。
 
