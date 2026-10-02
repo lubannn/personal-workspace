@@ -42,10 +42,10 @@ export function HealthRecordsSection({ connected, timezone, loading, loaded, err
 
   return <section className="learning-card health-records" aria-labelledby="health-records-title" aria-busy={loading}>
     <div className="card-heading health-records-heading">
-      <div><p className="eyebrow">Health · Records</p><h2 id="health-records-title">睡眠与运动</h2><p className="learning-subtitle">查看已经确认入库的记录，按日期回看你的睡眠与运动。</p></div>
-      <button className="secondary-button health-records-refresh" type="button" onClick={onRefresh} disabled={!connected || loading}><RefreshCw size={13} aria-hidden="true" />{loading ? "读取中…" : error ? "重试读取" : "刷新记录"}</button>
+      <div><p className="eyebrow">Health · Records</p><h2 id="health-records-title">睡眠与运动</h2><p className="learning-subtitle">查看工作台已入库的记录。以下日期范围不代表 COROS 中的最新数据。</p></div>
+      <button className="secondary-button health-records-refresh" type="button" onClick={onRefresh} disabled={!connected || loading}><RefreshCw size={13} aria-hidden="true" />{loading ? "读取中…" : error ? "重试读取" : "刷新已入库记录"}</button>
     </div>
-    <div className="health-records-sync-note"><span className="health-records-status-dot" aria-hidden="true" /><p>COROS 自动同步已暂停。FIT / TCX 文件导入包含运动记录；COROS 睡眠历史尚未同步，可在下方手工补充。</p></div>
+    <div className="health-records-sync-note"><span className="health-records-status-dot" aria-hidden="true" /><p>刷新只读取 GitHub 仓库中已保存的数据，不会拉取 COROS 新记录。当前版本尚未实现 COROS 自动同步；FIT / TCX 文件导入只包含运动，睡眠需单独录入。</p></div>
     {!connected ? <p className="health-records-empty">连接私人数据仓库后，即可查看记录数量、最早日期和完整列表。</p> : <>
       {error ? <p className="health-records-load-message health-records-load-error" role="alert">{loaded ? "本次刷新未完成，以下保留上次成功读取的记录；数量与日期可能不是最新。" : "健康记录读取未完成，暂时无法确认数量与最早日期。"}<span>{error}</span></p> : loading ? <p className="health-records-load-message" role="status">{loaded ? "正在刷新，以下为上次成功读取的记录。" : "正在读取全部健康记录，完成后显示数量与最早日期…"}</p> : !loaded ? <p className="health-records-empty" role="status">健康记录尚未读取，点击「刷新记录」查看。</p> : null}
       {canShowRecords ? <>

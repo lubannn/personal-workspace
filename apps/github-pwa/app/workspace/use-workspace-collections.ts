@@ -716,9 +716,11 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
   }, [adapterRef, setErrorMessage]);
 
   const loadHealthDomain = useCallback(async (adapter = adapterRef.current) => {
-    if (!adapter || adapter !== adapterRef.current) return;
+    if (!adapter || adapter !== adapterRef.current) return false;
     const requestId = ++healthLoadRequestRef.current;
-    const isCurrent = () => healthLoadRequestRef.current === requestId && adapterRef.current === adapter;
+    const isActiveRequest = () => healthLoadRequestRef.current === requestId && adapterRef.current === adapter;
+    let failed = false;
+    const isCurrent = () => !failed && isActiveRequest();
     setLoadingHealth(true); setHealthLoadError(""); setErrorMessage("");
     try {
       const [staging, metrics, sleepSessions, workouts] = await Promise.all([
@@ -727,7 +729,7 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
         loadHealthDirectory(adapter, "data/sleep-sessions", parseSleepSessionRecord, isCurrent),
         loadHealthDirectory(adapter, "data/workouts", parseWorkoutRecord, isCurrent),
       ]);
-      if (!isCurrent()) return;
+      if (!isCurrent()) return false;
       const stagingById = new Map(staging.map((item) => [item.record.id, item.record]));
       let unverifiedWorkoutCount = 0;
       const verifiedWorkouts = workouts.filter((item) => {
@@ -740,15 +742,19 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
       setWorkoutFiles(verifiedWorkouts);
       setHealthUnverifiedWorkoutCount(unverifiedWorkoutCount);
       setHealthLoaded(true);
+      return true;
     } catch (error) {
-      if (!isCurrent()) return;
+      if (!isCurrent()) return false;
+      // Stop queued batches in sibling directories after any incomplete read.
+      failed = true;
       const message = error instanceof Error && error.message === "HEALTH_DIRECTORY_LIMIT"
         ? "健康记录目录已达到读取上限，暂时无法确认完整记录范围。请联系维护者扩展读取方式。"
         : error instanceof Error && error.message === "HEALTH_RECORD_INVALID"
           ? "部分健康记录格式无效，本次读取未完成；请检查数据后重试。"
           : `健康记录读取未完成：${friendlyError(error)}`;
       setHealthLoadError(message); setErrorMessage(message);
-    } finally { if (isCurrent()) setLoadingHealth(false); }
+      return false;
+    } finally { if (isActiveRequest()) setLoadingHealth(false); }
   }, [adapterRef, setErrorMessage]);
 
   const loadProjectFileReferences = useCallback(async (adapter = adapterRef.current) => {

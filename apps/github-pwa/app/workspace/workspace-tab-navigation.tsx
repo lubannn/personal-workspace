@@ -81,6 +81,6 @@ export function WorkspaceTabNavigation({ activeTab, onSelect }: { activeTab: Wor
   </nav>;
 }
 
-export function WorkspaceTabPanel({ tab, activeTab, children }: { tab: WorkspaceTabId; activeTab: WorkspaceTabId; children: ReactNode }) {
-  return <div id={`workspace-panel-${tab}`} className="workspace-tab-panel" role="tabpanel" aria-labelledby={`workspace-tab-${tab}`} tabIndex={0} hidden={activeTab !== tab}>{children}</div>;
+export function WorkspaceTabPanel({ tab, activeTab, mounted = true, children }: { tab: WorkspaceTabId; activeTab: WorkspaceTabId; mounted?: boolean; children?: ReactNode }) {
+  return <div id={`workspace-panel-${tab}`} className="workspace-tab-panel" role="tabpanel" aria-labelledby={`workspace-tab-${tab}`} tabIndex={0} hidden={activeTab !== tab}>{mounted ? children : null}</div>;
 }
