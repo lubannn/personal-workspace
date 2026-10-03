@@ -81,13 +81,25 @@ export async function runCorosSync(env: CorosSyncEnv, now = new Date(), deps: Co
     const args = { startDate: window.from.replaceAll("-", ""), endDate: window.through.replaceAll("-", "") };
     let mapped;
     if (window.domain === "sleep") {
-      let result;
-      try { result = await deps.read(ready.resourceUrl, ready.accessToken, "querySleepOverview", args); }
+      const readSleep = async (through: string) => {
+        const parameters = { ...args, endDate: through.replaceAll("-", "") };
+        let result;
+        try { result = await deps.read(ready.resourceUrl, ready.accessToken, "querySleepOverview", parameters); }
+        catch (error) {
+          if (!(error instanceof Error) || error.message !== "COROS_READ_TOOL_UNAVAILABLE") throw error;
+          result = await deps.read(ready.resourceUrl, ready.accessToken, "querySleepData", parameters);
+        }
+        return mapCorosSleep(result, { ...range, endDate: through });
+      };
+      try { mapped = await readSleep(window.through); }
       catch (error) {
-        if (!(error instanceof Error) || error.message !== "COROS_READ_TOOL_UNAVAILABLE") throw error;
-        result = await deps.read(ready.resourceUrl, ready.accessToken, "querySleepData", args);
+        if (!(error instanceof Error) || error.message !== "COROS_SYNC_FORMAT_UNSUPPORTED" || window.from === window.through) throw error;
+        // A partial multi-day response does not prove omitted days are empty.
+        // Re-query the first day explicitly and advance only that verified day.
+        await assertActive();
+        window.through = window.from;
+        mapped = await readSleep(window.through);
       }
-      mapped = mapCorosSleep(result, range);
     } else {
       for (;;) {
         const result = await deps.read(ready.resourceUrl, ready.accessToken, "querySportRecords", {

@@ -168,12 +168,38 @@ describe("COROS scheduled synchronization", () => {
     expect(deps.write).not.toHaveBeenCalled(); expect(fixture.saved()?.progress.lastErrorCode).toBe("COROS_SYNC_WORKSPACE_MISMATCH");
   });
 
-  it("does not advance coverage when COROS silently returns fewer requested sleep days", async () => {
+  it("re-queries the first sleep day when COROS silently omits days and never advances the full range", async () => {
     fixture.connection(); fixture.job(); const { deps } = dependencies();
     deps.read.mockImplementation(async (_resource, _token, _tool, args) => readResult({ ...args, startDate: args.endDate }));
     await runCorosSync(fixture.env, new Date(), deps);
-    expect(deps.write).not.toHaveBeenCalled();
-    expect(fixture.saved()?.progress.domains.sleep).toMatchObject({ lastRecentAt: null, recentThrough: null, backfillNext: "2024-01-01", lastErrorCode: "COROS_SYNC_FORMAT_UNSUPPORTED" });
+    expect(deps.read.mock.calls.map(call => call[3])).toEqual([
+      { startDate: "20240130", endDate: "20240201" }, { startDate: "20240130", endDate: "20240130" },
+    ]);
+    expect(deps.write).toHaveBeenCalledTimes(1);
+    expect(fixture.saved()?.progress.domains.sleep).toMatchObject({ lastRecentAt: null, recentThrough: "2024-01-30", recentNext: "2024-01-31", backfillNext: "2024-01-01", lastErrorCode: null });
+  });
+
+  it("advances only one historical day after an explicit empty-day fallback verifies a partial response", async () => {
+    const progress = initialSyncProgress("2024-01-10", "Asia/Shanghai");
+    for (const domain of ["sleep", "workout"] as const) progress.domains[domain].lastRecentAt = SYNC_TEST_NOW;
+    fixture.connection(); fixture.job(progress); const { deps } = dependencies();
+    deps.read.mockImplementation(async (_resource, _token, _tool, args) => args.startDate === args.endDate
+      ? { format: "content", payload: [{ type: "text", text: "No sleep overview data found." }] }
+      : readResult({ ...args, startDate: args.endDate }, true, true));
+    expect(await runCorosSync(fixture.env, new Date(), deps, { forceDue: true })).toMatchObject({ status: "processed", batch: { from: "2024-01-10", through: "2024-01-10", created: 0 } });
+    expect(deps.read.mock.calls.map(call => call[3])).toEqual([
+      { startDate: "20240110", endDate: "20240112" }, { startDate: "20240110", endDate: "20240110" },
+    ]);
+    expect(fixture.saved()?.progress.domains.sleep).toMatchObject({ backfillThrough: "2024-01-10", backfillNext: "2024-01-11" });
+    expect(deps.adapter).not.toHaveBeenCalled(); expect(deps.write).not.toHaveBeenCalled();
+  });
+
+  it("still blocks malformed single-day sleep without advancing or retrying a broader range", async () => {
+    fixture.connection(); fixture.job(initialSyncProgress("2024-02-01", "Asia/Shanghai")); const { deps } = dependencies();
+    deps.read.mockResolvedValue({ format: "content", payload: [{ type: "text", text: "unrecognized day response" }] });
+    expect(await runCorosSync(fixture.env, new Date(), deps, { forceDue: true })).toMatchObject({ status: "error", errorCode: "COROS_SYNC_FORMAT_UNSUPPORTED" });
+    expect(deps.read).toHaveBeenCalledTimes(1); expect(deps.write).not.toHaveBeenCalled();
+    expect(fixture.saved()?.progress.domains.sleep).toMatchObject({ backfillNext: "2024-02-01", backfillThrough: null, recentThrough: null });
   });
 
   it("shrinks a capped workout window and resumes its unprocessed remainder", async () => {
