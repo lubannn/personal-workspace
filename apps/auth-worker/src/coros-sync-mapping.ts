@@ -206,11 +206,14 @@ export function mapCorosWorkouts(result: CorosReadResult, options: CorosSyncDate
     if (!heading || integer(heading[1]) !== index + 1) return fail(); inRange(heading[2], bounds);
     const fields = new Map<string, string>();
     for (const raw of rawLines) {
-      if (!raw.startsWith("   ")) return fail();
+      // Without pace/speed, COROS can leave the metric row's leading separator.
+      // Accept that exact prefix only for the optional heart-rate/calorie fields.
+      const detachedMetrics = raw.startsWith(" | ");
+      if (!detachedMetrics && !raw.startsWith("   ")) return fail();
       const line = raw.slice(3);
       // Location and coordinates are deliberately not retained or used to infer anything.
-      if (/^(?:Location|Start Coordinates): .+$/u.test(line)) continue;
-      if (line.startsWith("Time Window: ")) {
+      if (!detachedMetrics && /^(?:Location|Start Coordinates): .+$/u.test(line)) continue;
+      if (!detachedMetrics && line.startsWith("Time Window: ")) {
         if (fields.has("Time Window")) return fail();
         fields.set("Time Window", line.slice(13));
         continue;
@@ -218,6 +221,7 @@ export function mapCorosWorkouts(result: CorosReadResult, options: CorosSyncDate
       for (const part of line.split(" | ")) {
         const match = /^([^:]+): (.+)$/u.exec(part);
         if (!match || fields.has(match[1])) return fail();
+        if (detachedMetrics && !["Avg HR", "Calories"].includes(match[1])) return fail();
         if (!["Time Window", "Duration", "Distance", "Sets", "Average Pace", "Average Speed", "Avg HR", "Calories", "LabelId", "SportType"].includes(match[1])) return fail();
         fields.set(match[1], match[2]);
       }

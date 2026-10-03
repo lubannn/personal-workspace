@@ -40,6 +40,10 @@ const workout = `Sport Records — 2024-01-02 to 2024-01-02 (1 records)
    Duration: 50:00 | Distance: 6.25 km
    Average Pace: 8:00 /km | Avg HR: 120 bpm | Calories: 350 kcal
    LabelId: 123456789012345678 | SportType: 100`;
+const strength = workout.replace("Outdoor Run", "Strength Training")
+  .replace("Duration: 50:00 | Distance: 6.25 km", "Duration: 45:00 | Sets: 24")
+  .replace("   Average Pace: 8:00 /km | Avg HR: 120 bpm | Calories: 350 kcal", " | Avg HR: 105 bpm | Calories: 210 kcal")
+  .replace("SportType: 100", "SportType: 402");
 
 describe("strict COROS sleep text mapping", () => {
   it("keeps window duration separate from explicit asleep and uses wake date for identity", () => {
@@ -149,6 +153,28 @@ describe("strict COROS workout text mapping", () => {
   it("supports set-based activities without guessing distance", () => {
     const input = workout.replace("Distance: 6.25 km", "Sets: 500").replace("SportType: 100", "SportType: 901");
     expect(mapCorosWorkouts(result(input), options).items[0].candidate).toMatchObject({ activity_type: "other", distance: null });
+  });
+  it.each([true, false])("accepts a no-pace strength metric row with the exact leading separator (encoded=%s)", encoded => {
+    const mapped = mapCorosWorkouts(result(strength, encoded), options);
+    expect(mapped.reportedCount).toBe(1);
+    expect(mapped.items[0].candidate).toMatchObject({ activity_type: "strength", duration_seconds: 3600, distance: null,
+      metrics_json: { elapsed_seconds: 3600, moving_seconds: 2700, average_heart_rate_bpm: 105, calories: 210 } });
+    expect(validWorkoutCandidate(mapped.items[0].candidate)).toBe(true);
+  });
+  it.each([
+    strength.replace(" | Avg HR:", "Avg HR:"),
+    strength.replace(" | Avg HR:", "  | Avg HR:"),
+    strength.replace(" | Avg HR:", " | Unknown:"),
+    strength.replace(" | Avg HR: 105 bpm", " | Average Pace: 8:00 /km"),
+    strength.replace(" | Avg HR: 105 bpm", " | Time Window: startTimestamp=1704153600"),
+    strength.replace(" | Avg HR: 105 bpm", " | Location: Synthetic location"),
+    strength.replace("Avg HR: 105 bpm", "Avg HR:105 bpm"),
+    strength.replace("Avg HR: 105 bpm", "Avg HR: 105 beats/min"),
+    strength.replace("Calories: 210 kcal", "Calories: 210 kJ"),
+    strength.replace("Calories: 210 kcal", "Calories: 210 kcal | Avg HR: 105 bpm"),
+    strength + "\n   Calories: 210 kcal",
+  ])("rejects malformed or unrestricted separator rows and duplicate metrics", input => {
+    expect(() => mapCorosWorkouts(result(input), options)).toThrow("COROS_SYNC_FORMAT_UNSUPPORTED");
   });
   it("normalizes a one-second display rounding excess without changing exact workout timestamps", () => {
     const input = workout.replace("Outdoor Run", "Jump Rope").replace("endTimestamp=1704157200", "endTimestamp=1704154800")
