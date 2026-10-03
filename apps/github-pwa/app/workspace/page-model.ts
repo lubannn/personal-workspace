@@ -219,6 +219,9 @@ export function friendlyError(error: unknown) {
     if (error.code === "GITHUB_NETWORK_ERROR") return "浏览器无法访问 GitHub API。请确认当前网络能打开 api.github.com，然后重试。";
     if (error.code === "GITHUB_CROSS_ORIGIN_BLOCKED") return "GitHub 请求未能完成，可能是网络、代理或浏览器连接中断。请保留正文，检查连接后再试。";
     if (error.code === "GITHUB_AUTH_REQUEST_BLOCKED") return "GitHub 的公开接口可访问，但本次授权请求未能完成。请保留正文，检查网络、代理或浏览器扩展后再试。";
+    if (error.code === "GITHUB_TRANSPORT_ERROR") return "GitHub 数据读取超时或连接中断。请保留当前正文，稍后点击刷新重试。";
+    if (error.code === "GITHUB_GRAPHQL_ERROR") return "GitHub 批量读取未完成。请稍后点击刷新重试。";
+    if (["GITHUB_INVALID_RESPONSE", "GITHUB_UNSUPPORTED_CONTENT", "GITHUB_TREE_TRUNCATED"].includes(error.code)) return "GitHub 返回的数据不完整或格式异常，暂时无法核验结果。请保留当前正文并刷新核对。";
     if (error.code === "GITHUB_RATE_LIMITED") return "GitHub API 请求次数已达上限，请稍后再试。";
     if (error.code === "GITHUB_BAD_REQUEST") return "GitHub 拒绝了连接请求（HTTP 400）。请使用 fine-grained token，并只授权 personal-workspace-data。";
     if (error.code === "GITHUB_UNAVAILABLE") return `GitHub 服务暂时不可用（HTTP ${error.status}），请稍后重试。`;

@@ -59,14 +59,6 @@ type GitHubGraphQLBlobResponse = {
   } | null> | null } | null;
   errors?: GitHubGraphQLError[];
 };
-type GitHubGraphQLTreeResponse = {
-  data?: { repository?: { object?: {
-    __typename?: string;
-    oid?: string;
-    entries?: Array<{ name: string; type: string; oid: string; size: number }> | null;
-  } | null } | null } | null;
-  errors?: GitHubGraphQLError[];
-};
 type GitHubRecursiveTreeResponse = {
   truncated: boolean;
   tree: Array<{ path: string; type: "blob" | "tree" | "commit"; sha: string; size?: number }>;
@@ -482,7 +474,7 @@ export class GitHubContentsAdapter {
         if (this.graphQLAvailable === undefined) {
           this.graphQLFirstReadSignal = signal;
           this.graphQLFirstRead = this.readGraphQLBlobBatch(batch, assertCurrent, signal).then((result) => {
-            if (result === null || this.graphQLAvailable !== false) this.graphQLAvailable = result !== null;
+            this.graphQLAvailable = result !== null;
             return result;
           });
           try { records = await this.graphQLFirstRead; }
@@ -529,87 +521,53 @@ export class GitHubContentsAdapter {
     });
   }
 
-  private async listGraphQLJournalDirectory(ref: string): Promise<GitHubDirectoryItem[] | null> {
-    let result: GitHubGraphQLTreeResponse;
+  private async readJournalDirectoryTree(ref: string): Promise<GitHubRecursiveTreeResponse> {
+    let tree: GitHubRecursiveTreeResponse;
     try {
-      result = await this.withBlobReadSlot(() => this.request<GitHubGraphQLTreeResponse>("/graphql", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        signal: blobReadSignal(),
-        body: JSON.stringify({
-          query: `query ReadJournalDirectory($owner: String!, $repository: String!, $expression: String!) {
-            repository(owner: $owner, name: $repository) {
-              object(expression: $expression) { __typename oid ... on Tree { entries { name type oid size } } }
-            }
-          }`,
-          variables: { owner: this.config.owner, repository: this.config.repository, expression: `${ref}:data/journal-entries` },
-        }),
-      }, false));
+      tree = await this.request<GitHubRecursiveTreeResponse>(
+        `/repos/${encodeURIComponent(this.config.owner)}/${encodeURIComponent(this.config.repository)}/git/trees/${encodeURIComponent(ref)}`,
+        { signal: blobReadSignal() }, false,
+      );
     } catch (error) {
-      if (error instanceof GitHubDataError && ["GITHUB_FORBIDDEN", "GITHUB_NOT_FOUND", "GITHUB_BAD_REQUEST"].includes(error.code)) return null;
+      // A missing ref or an unreadable known tree is not proof of an empty
+      // journal directory. Only a complete parent listing can establish that.
+      if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") {
+        throw new GitHubDataError("The GitHub directory tree could not be read.", 500, "GITHUB_INVALID_RESPONSE");
+      }
       throw error;
     }
-    if (!result || typeof result !== "object" || (result.errors !== undefined && !Array.isArray(result.errors))) {
-      throw new GitHubDataError("Invalid GitHub directory query response.", 500, "GITHUB_INVALID_RESPONSE");
-    }
-    if (result.errors?.length) {
-      assertGraphQLAuthAndRate(result.errors);
-      const noTree = !result.data?.repository?.object;
-      if (noTree && result.errors.every((error) => ["FORBIDDEN", "INSUFFICIENT_SCOPES"].includes(error.type ?? error.extensions?.type ?? error.extensions?.code ?? ""))) return null;
-      throw new GitHubDataError("GitHub did not return a complete directory query.", 500, "GITHUB_GRAPHQL_ERROR");
-    }
-    const repository = result.data?.repository;
-    if (!repository || typeof repository !== "object" || Array.isArray(repository)) {
-      throw new GitHubDataError("GitHub did not return the requested repository.", 500, "GITHUB_INVALID_RESPONSE");
-    }
-    if (repository.object === null) {
-      throw new GitHubDataError("GitHub directory not found.", 404, "GITHUB_NOT_FOUND");
-    }
-    const tree = repository.object;
-    if (!tree || tree.__typename !== "Tree" || typeof tree.oid !== "string" || !/^[a-f0-9]{40}$/u.test(tree.oid) || !Array.isArray(tree.entries)) {
+    if (tree?.truncated === true) throw new GitHubDataError("The GitHub repository tree is incomplete.", 500, "GITHUB_TREE_TRUNCATED");
+    if (!tree || tree.truncated !== false || !Array.isArray(tree.tree)) {
       throw new GitHubDataError("Invalid GitHub directory tree.", 500, "GITHUB_INVALID_RESPONSE");
     }
-    const names = new Set<string>();
-    const records: GitHubDirectoryItem[] = [];
-    for (const entry of tree.entries) {
-      if (!entry || typeof entry.name !== "string" || !entry.name || [".", ".."].includes(entry.name) || /[/\\]/u.test(entry.name)
-        || Array.from(entry.name).some((character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127)
-        || names.has(entry.name) || !["blob", "tree", "commit"].includes(entry.type)
-        || typeof entry.oid !== "string" || !/^[a-f0-9]{40}$/u.test(entry.oid) || !Number.isSafeInteger(entry.size) || entry.size < 0) {
+    const paths = new Set<string>();
+    for (const item of tree.tree) {
+      if (!item || typeof item.path !== "string" || !item.path || [".", ".."].includes(item.path) || /[/\\\\]/u.test(item.path)
+        || Array.from(item.path).some((character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127)
+        || paths.has(item.path) || !["blob", "tree", "commit"].includes(item.type)
+        || typeof item.sha !== "string" || !/^[a-f0-9]{40}$/u.test(item.sha)
+        || (item.type === "blob" || item.size !== undefined) && (!Number.isSafeInteger(item.size) || item.size! < 0)) {
         throw new GitHubDataError("Invalid GitHub directory entry.", 500, "GITHUB_INVALID_RESPONSE");
       }
-      names.add(entry.name);
-      if (entry.type === "commit") continue;
-      records.push({ type: entry.type === "blob" ? "file" : "directory", name: entry.name, path: `data/journal-entries/${entry.name}`, blobSha: entry.oid, sizeBytes: entry.size });
+      paths.add(item.path);
     }
-    return records;
+    return tree;
   }
 
   async listDirectory(pathname: string, refOverride?: string): Promise<GitHubDirectoryItem[]> {
     if (pathname) assertFilePath(pathname);
     const ref = refOverride ?? this.config.branch;
     if (pathname === "data/journal-entries") {
-      if (this.graphQLAvailable !== false) {
-        const directory = await this.listGraphQLJournalDirectory(ref ?? "main");
-        if (directory !== null) {
-          this.graphQLAvailable ??= true;
-          return directory;
-        }
-        this.graphQLAvailable = false;
-      }
-      let tree = await this.request<GitHubRecursiveTreeResponse>(
-        `/repos/${encodeURIComponent(this.config.owner)}/${encodeURIComponent(this.config.repository)}/git/trees/${encodeURIComponent(ref ?? "main")}`,
-      );
+      // Follow only root -> data -> journal-entries. A non-recursive tree read
+      // handles large archives without one unbounded GraphQL directory query.
+      let tree = await this.readJournalDirectoryTree(ref ?? "main");
       for (const segment of pathname.split("/")) {
-        if (tree.truncated) throw new GitHubDataError("The GitHub repository tree is incomplete.", 500, "GITHUB_TREE_TRUNCATED");
-        const directory = tree.tree.find((item) => item.path === segment && item.type === "tree");
+        const directory = tree.tree.find((item) => item.path === segment);
         if (!directory) throw new GitHubDataError("GitHub directory not found.", 404, "GITHUB_NOT_FOUND");
-        tree = await this.request<GitHubRecursiveTreeResponse>(
-          `/repos/${encodeURIComponent(this.config.owner)}/${encodeURIComponent(this.config.repository)}/git/trees/${directory.sha}`,
-        );
+        if (directory.type !== "tree") throw new GitHubDataError("Expected a GitHub directory tree.", 500, "GITHUB_INVALID_RESPONSE");
+        tree = await this.readJournalDirectoryTree(directory.sha);
       }
-      if (tree.truncated) throw new GitHubDataError("The GitHub repository tree is incomplete.", 500, "GITHUB_TREE_TRUNCATED");
-      return tree.tree.filter((item) => !item.path.includes("/") && (item.type === "blob" || item.type === "tree"))
+      return tree.tree.filter((item) => item.type === "blob" || item.type === "tree")
         .map((item) => ({ type: item.type === "tree" ? "directory" as const : "file" as const, name: item.path, path: `${pathname}/${item.path}`, blobSha: item.sha, sizeBytes: item.size ?? 0 }));
     }
     if (/^data\/journal-(entries|segments|revisions)$/.test(pathname)) {

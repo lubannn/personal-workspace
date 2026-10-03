@@ -96,23 +96,27 @@ describe("session journal archive reader", () => {
     expect(listing).toHaveBeenCalledTimes(1);
   });
 
-  it("loads a fresh catalog and only three recent bodies in two HTTP queries", async () => {
-    const recent = [fixture("2026-10-01", 101), fixture("2026-10-02", 102), fixture("2026-10-03", 103)];
-    const fixtures = [...monthFiles("2026-09", 30), ...recent];
+  it("loads a large fresh catalog through three REST trees before one recent-body query", async () => {
+    const recent = [fixture("2026-10-01", 10_001), fixture("2026-10-02", 10_002), fixture("2026-10-03", 10_003)];
+    const fixtures = [...monthFiles("2026-09", 2313), ...recent];
     const catalog = fixtures.map(({ item, stored }) => ({ ...item, sizeBytes: new TextEncoder().encode(stored.text).byteLength }));
     const recentBlobs = new Map(recent.map(({ stored }) => [stored.blobSha, stored.text]));
     const requestedShas: string[] = [];
+    const treeRoot = "https://api.github.com/repos/fake-owner/fake-journals/git/trees/";
+    const dataSha = "a".repeat(40);
+    const journalSha = "b".repeat(40);
+    const treeResponses = new Map([
+      [`${treeRoot}main`, { truncated: false, tree: [{ path: "data", type: "tree", sha: dataSha, size: 0 }] }],
+      [`${treeRoot}${dataSha}`, { truncated: false, tree: [{ path: "journal-entries", type: "tree", sha: journalSha, size: 0 }] }],
+      [`${treeRoot}${journalSha}`, { truncated: false, tree: catalog.map((file) => ({ path: file.name, type: "blob", sha: file.blobSha, size: file.sizeBytes })) }],
+    ]);
     const fetcher = vi.fn<typeof fetch>(async (url, init) => {
+      const tree = treeResponses.get(String(url));
+      if (tree) {
+        return new Response(JSON.stringify(tree), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
       expect(url).toBe("https://api.github.com/graphql");
       const { query, variables } = JSON.parse(String(init?.body)) as { query: string; variables: Record<string, string> };
-      if (query.includes("ReadJournalDirectory")) {
-        expect(variables.expression).toBe("main:data/journal-entries");
-        expect(query).not.toMatch(/\btext\b/);
-        return new Response(JSON.stringify({ data: { repository: { object: {
-          __typename: "Tree", oid: "a".repeat(40),
-          entries: catalog.map((file) => ({ name: file.name, type: "blob", oid: file.blobSha, size: file.sizeBytes })),
-        } } } }), { status: 200, headers: { "Content-Type": "application/json" } });
-      }
       expect(query).toContain("ReadWorkspaceBlobs");
       const repository = Object.fromEntries(Object.entries(variables).filter(([key]) => key.startsWith("oid")).map(([key, oid]) => {
         requestedShas.push(oid);
@@ -123,15 +127,16 @@ describe("session journal archive reader", () => {
       return new Response(JSON.stringify({ data: { repository } }), { status: 200, headers: { "Content-Type": "application/json" } });
     });
     const adapter = new GitHubContentsAdapter({ owner: "fake-owner", repository: "fake-journals", branch: "main", token: "fake-token" }, fetcher);
-    const onCatalog = vi.fn(() => expect(fetcher).toHaveBeenCalledTimes(1));
+    const onCatalog = vi.fn(() => expect(fetcher).toHaveBeenCalledTimes(3));
     const reader = new JournalArchiveReader(adapter);
     const snapshot = await reader.load(undefined, { onCatalog });
     expect(onCatalog).toHaveBeenCalledExactlyOnceWith({ catalog, catalogReady: true, entries: [], loadedMonths: [] });
+    expect(snapshot.catalog).toHaveLength(2316);
     expect(snapshot.entries).toHaveLength(3);
     expect(requestedShas.sort()).toEqual([...recentBlobs.keys()].sort());
-    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(fetcher.mock.calls.map(([url]) => url)).toEqual([...treeResponses.keys(), "https://api.github.com/graphql"]);
     expect(await reader.load()).toEqual(snapshot);
-    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(fetcher).toHaveBeenCalledTimes(4);
   });
 
   it("reuses a warm month and retains entries from every visited month", async () => {
