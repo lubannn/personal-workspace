@@ -118,7 +118,7 @@ export function JournalSection({ connection, adapter, online, todayDate, journal
 
   return <section className="journal-card" aria-labelledby="journal-title">
     <div className="card-heading">
-      <div><p className="eyebrow">Nexus · Journal</p><h2 id="journal-title">日记</h2><p className="journal-subtitle">随时回看；仅今天和昨天可以写入或修改。日期按工作台时区计算。</p></div>
+      <div><p className="eyebrow">Nexus · Journal</p><h2 id="journal-title">日记</h2></div>
       <div className="journal-view-actions" aria-label="日记视图与同步">
         <JournalStatistics key={connection ? `${connection.ownerId}:${connection.repository}` : "disconnected"} connection={connection} adapter={adapter} catalog={journalEntryCatalog} loaded={journalEntryFiles} busy={loading || busy} />
         <button className="secondary-button" type="button" onClick={() => onRefresh(recentView ? undefined : displayedMonth)} disabled={!connection || loading}>{loading ? "刷新中…" : "从 GitHub 刷新"}</button>
@@ -127,9 +127,10 @@ export function JournalSection({ connection, adapter, online, todayDate, journal
     {view === "active" ? <form className="journal-form" onSubmit={submit}>
       <div className="journal-form-meta">
         <label>写入日期<select value={selectedDate} onChange={(event) => setJournalDate(event.target.value)} disabled={!connection || busy || Boolean(editingId) || !todayDate}><option value={todayDate}>今天 · {todayDate}</option>{todayDate ? <option value={previousJournalDate(todayDate)}>昨天 · {previousJournalDate(todayDate)}</option> : null}</select></label>
+        <div className="journal-form-actions">{editingId ? <button className="secondary-button" type="button" onClick={resetForm} disabled={busy}>取消编辑</button> : null}<button className="primary-button" type="submit" disabled={!connection || !writable || !bodyMarkdown.trim() || busy || online === false}>{busy ? "保存中…" : editingId ? "保存修订" : "保存日记"}</button></div>
       </div>
       <label className="journal-body">Markdown 正文<textarea value={bodyMarkdown} onChange={(event) => setBodyMarkdown(event.target.value)} maxLength={2_000_000} placeholder="今天发生了什么？" disabled={!connection || busy} /></label>
-      <footer><span>{editingId ? "修订会保留首次提交时间。" : "同一天可以写多篇；每篇自动记录提交时间。"}{!writable && selectedDate ? " 该日期已不能修改，请取消编辑。" : ""}</span><div>{editingId ? <button className="secondary-button" type="button" onClick={resetForm} disabled={busy}>取消编辑</button> : null}<button className="primary-button" type="submit" disabled={!connection || !writable || !bodyMarkdown.trim() || busy || online === false}>{busy ? "保存中…" : editingId ? "保存修订" : "保存日记"}</button></div></footer>
+      {!writable && selectedDate ? <p className="journal-form-warning" role="alert">该日期已不能修改，请取消编辑。</p> : null}
     </form> : null}
     <div className="journal-explorer">
       <div className="journal-results">
@@ -150,7 +151,6 @@ export function JournalSection({ connection, adapter, online, todayDate, journal
         {monthPickerOpen ? <form className="journal-calendar-picker" id="journal-month-picker" onSubmit={applyMonthSelection} onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); setMonthPickerOpen(false); monthButtonRef.current?.focus(); } }} aria-label="跳转到年份和月份"><label>年份<select aria-label="选择年份" value={pickerYear} onChange={(event) => setPickerYear(event.target.value)}>{yearOptions.map((year) => <option key={year} value={year}>{year} 年</option>)}</select></label><label>月份<select aria-label="选择月份" value={pickerMonth} onChange={(event) => setPickerMonth(event.target.value)}>{Array.from({ length: 12 }, (_, index) => String(index + 1).padStart(2, "0")).map((value) => <option key={value} value={value}>{Number(value)} 月</option>)}</select></label><button className="secondary-button" type="submit">查看整月</button></form> : null}
         <div className="journal-calendar-shortcuts"><button type="button" className="text-button" onClick={() => browseMonth(currentMonth)} disabled={!connection || !currentMonth || (displayedMonth === currentMonth && !selectedDay)}>本月</button><button type="button" className="text-button" onClick={() => { setMonth(""); setSelectedDay(null); setSearchQuery(""); setMonthPickerOpen(false); onBrowseRecent(); }} disabled={!connection}>最近日记</button></div>
         <div className="journal-calendar-grid" role="group" aria-label={`${displayedMonth} 日期`}>{["一", "二", "三", "四", "五", "六", "日"].map((day) => <span className="journal-calendar-weekday" key={day}>{day}</span>)}{monthDays.map((date, index) => date ? <button key={date} type="button" className={["journal-calendar-day", daysWithEntries.has(date) ? "has-entry" : "", date === selectedDay ? "selected" : "", date === todayDate ? "today" : ""].filter(Boolean).join(" ")} aria-label={`${date}${daysWithEntries.has(date) ? "，有日记" : "，无日记"}`} aria-pressed={date === selectedDay} onClick={() => { browseMonth(displayedMonth); setSelectedDay(date); }} disabled={!connection}>{Number(date.slice(-2))}</button> : <span key={`blank-${index}`} aria-hidden="true" />)}</div>
-        <p>圈出的日期有日记。点日期看当天，点标题选择年月并看整月。</p>
       </aside>
     </div>
   </section>;
