@@ -5,7 +5,8 @@ This Worker was introduced in two deliberately separate stages.
 ## Current stage: GitHub App OAuth live
 
 - Canonical Cloudflare entry: `https://nexus.lubannn.workers.dev/`.
-- Serves the existing static PWA from `apps/github-pwa/out`.
+- Proxies the static PWA from the fixed production origin
+  `https://personal-workspace-app.pages.dev`.
 - Exposes `GET /health`, `GET /auth/status`, `GET /auth/login`,
   `GET /auth/callback`, `POST /auth/token`, `POST /auth/logout`, and
   `POST /auth/logout-all`.
@@ -17,6 +18,15 @@ This Worker was introduced in two deliberately separate stages.
 - The production deployment is configured and still fails closed if any
   required GitHub App credential, allowlist value, key, or D1 binding is absent.
 - Leaves the existing GitHub Pages + memory-only PAT entry unchanged.
+
+The public-app proxy only accepts GET/HEAD. It assigns the path separately from
+the fixed origin and rejects authority-like paths (`//...`), including after
+removing the legacy `/personal-workspace` prefix. Upstream redirects are checked
+manually: only credential-free URLs on that same HTTPS origin are allowed, with
+at most five hops. Invalid redirects return a non-cacheable 502 without exposing
+their Location. Incoming Cookie/Authorization headers are never forwarded by
+this proxy, and upstream Set-Cookie headers are stripped. The separate `/auth/*`,
+`/coros/*`, and `/health` handlers retain their existing behavior.
 
 Build and run locally:
 

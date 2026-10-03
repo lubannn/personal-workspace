@@ -4,6 +4,8 @@ import { runCorosSync } from "./coros-sync";
 
 const PUBLIC_APP_ORIGIN = "https://personal-workspace-app.pages.dev";
 const LEGACY_PUBLIC_APP_BASE_PATH = "/personal-workspace";
+const MAX_PUBLIC_APP_REDIRECTS = 5;
+const PUBLIC_APP_REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 
 const PRIVATE_RESPONSE_HEADERS = {
   "cache-control": "no-store",
@@ -30,7 +32,7 @@ function methodNotAllowed(allowed: string): Response {
   );
 }
 
-function publicAppUrl(requestUrl: string): URL {
+function publicAppUrl(requestUrl: string): URL | null {
   const incoming = new URL(requestUrl);
   const upstreamPath =
     incoming.pathname === LEGACY_PUBLIC_APP_BASE_PATH
@@ -39,14 +41,35 @@ function publicAppUrl(requestUrl: string): URL {
         ? incoming.pathname.slice(LEGACY_PUBLIC_APP_BASE_PATH.length)
         : incoming.pathname;
 
-  const upstream = new URL(upstreamPath, PUBLIC_APP_ORIGIN);
+  // A leading // is an authority, not a relative path, when passed to new URL.
+  // Reject it and assign pathname separately so user input cannot choose a host.
+  if (upstreamPath.startsWith("//")) return null;
+  const upstream = new URL(PUBLIC_APP_ORIGIN);
+  upstream.pathname = upstreamPath;
   upstream.search = incoming.search;
   return upstream;
+}
+
+function publicAppRedirect(location: string | null, from: URL): URL | null {
+  if (!location) return null;
+  try {
+    const target = new URL(location, from);
+    if (target.origin !== PUBLIC_APP_ORIGIN || target.username || target.password || target.pathname.startsWith("//")) return null;
+    target.hash = "";
+    return target;
+  } catch {
+    return null;
+  }
 }
 
 async function proxyPublicApp(request: Request): Promise<Response> {
   if (request.method !== "GET" && request.method !== "HEAD") {
     return methodNotAllowed("GET and HEAD");
+  }
+
+  let upstreamUrl = publicAppUrl(request.url);
+  if (!upstreamUrl) {
+    return jsonResponse({ error: "INVALID_PROXY_PATH", message: "The workspace path is not allowed." }, 400);
   }
 
   const upstreamHeaders = new Headers();
@@ -55,13 +78,23 @@ async function proxyPublicApp(request: Request): Promise<Response> {
     if (value) upstreamHeaders.set(name, value);
   }
 
-  const upstreamResponse = await fetch(
-    new Request(publicAppUrl(request.url), {
+  let upstreamResponse: Response;
+  for (let redirects = 0; ; redirects += 1) {
+    upstreamResponse = await fetch(new Request(upstreamUrl, {
       method: request.method,
       headers: upstreamHeaders,
-      redirect: "follow",
-    }),
-  );
+      // Automatic following could leave the trusted origin after our first check.
+      redirect: "manual",
+    }));
+    if (upstreamResponse.status < 300 || upstreamResponse.status >= 400 || upstreamResponse.status === 304) break;
+
+    const target = publicAppRedirect(upstreamResponse.headers.get("location"), upstreamUrl);
+    await upstreamResponse.body?.cancel();
+    if (!PUBLIC_APP_REDIRECT_STATUSES.has(upstreamResponse.status) || !target || redirects >= MAX_PUBLIC_APP_REDIRECTS) {
+      return jsonResponse({ error: "INVALID_UPSTREAM_REDIRECT", message: "The workspace origin returned an unsupported redirect." }, 502);
+    }
+    upstreamUrl = target;
+  }
   const responseHeaders = new Headers(upstreamResponse.headers);
   responseHeaders.delete("set-cookie");
   responseHeaders.set("referrer-policy", "no-referrer");
