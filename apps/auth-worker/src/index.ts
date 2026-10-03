@@ -54,7 +54,7 @@ function publicAppRedirect(location: string | null, from: URL): URL | null {
   if (!location) return null;
   try {
     const target = new URL(location, from);
-    if (target.origin !== PUBLIC_APP_ORIGIN || target.username || target.password || target.pathname.startsWith("//")) return null;
+    if (target.protocol !== "https:" || target.origin !== PUBLIC_APP_ORIGIN || target.username || target.password || target.pathname.startsWith("//")) return null;
     target.hash = "";
     return target;
   } catch {

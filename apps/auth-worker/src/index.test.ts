@@ -184,6 +184,7 @@ describe("public app proxy origin guard", () => {
     "https://[invalid/redirect-secret",
     "javascript:redirect-secret",
     "data:text/html,redirect-secret",
+    "blob:https://personal-workspace-app.pages.dev/redirect-secret",
     "",
     null,
   ])("rejects an unsafe or missing redirect without fetching or exposing its target: %s", async (location) => {
