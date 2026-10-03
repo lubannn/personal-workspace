@@ -11,6 +11,7 @@ import { callCorosReadTool } from "./coros-read-client";
 import { decryptRefreshToken, encryptRefreshToken, sha256Base64Url } from "./security";
 import { dateOnly, initialSyncProgress, parseSyncProgress, readSyncJob, syncReadiness, todayInTimezone, type CorosSyncEnv } from "./coros-sync-state";
 import { readCorosConflictView } from "./coros-sync-conflict-view";
+import { runCorosSync } from "./coros-sync";
 
 const OAUTH_ATTEMPT_SECONDS = 10 * 60;
 const RESPONSE_HEADERS = {
@@ -230,6 +231,12 @@ export async function handleCorosConnectionRequest(request: Request, env: CorosC
   const user = await authenticatedGitHubUser(request, env);
   if (!user) return json({ error: "AUTHENTICATION_REQUIRED" }, 401);
   switch (path) {
+    case "/coros/drain": {
+      if (request.method !== "POST") return json({ error: "METHOD_NOT_ALLOWED" }, 405);
+      if (!validAuthenticatedMutation(request)) return json({ error: "CSRF_VALIDATION_FAILED" }, 403);
+      if (user.id !== env.COROS_GITHUB_USER_ID) return json({ error: "COROS_SYNC_ACCOUNT_NOT_CONFIGURED" }, 409);
+      return json(await runCorosSync(env, new Date(), undefined, { forceDue: true }));
+    }
     case "/coros/conflicts": {
       if (request.method !== "GET") return json({ error: "METHOD_NOT_ALLOWED" }, 405);
       if (user.id !== env.COROS_GITHUB_USER_ID) return json({ error: "COROS_SYNC_ACCOUNT_NOT_CONFIGURED" }, 409);

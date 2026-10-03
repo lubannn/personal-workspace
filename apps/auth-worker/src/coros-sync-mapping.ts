@@ -86,6 +86,12 @@ const sleepFields = new Set([
 
 export function mapCorosSleep(result: CorosReadResult, options: CorosSyncDateRange): { items: SleepItem[]; reportedCount: number } {
   const bounds = range(options); const text = resultText(result);
+  if (text === "No sleep overview data found.") {
+    // This observed empty response has no dates. Accept it only within the
+    // tool's verified three-day window; a larger request could be silently capped.
+    if ((Date.parse(bounds.end) - Date.parse(bounds.start)) / 86400000 >= 3) return fail();
+    return { items: [], reportedCount: 0 };
+  }
   const prefix = "Sleep Overview\n========================\nNote: each record below is dated by its wake-up day.\n\n";
   if (!text.startsWith(prefix)) return fail();
   const sections = text.slice(prefix.length).split(/\n\n/u);
@@ -226,7 +232,11 @@ export function mapCorosWorkouts(result: CorosReadResult, options: CorosSyncDate
     // instants, but reject unrelated timestamps instead of trusting a plausible heading.
     const localStartDate = new Date((start + 8 * 3600) * 1000).toISOString().slice(0, 10);
     if (Math.abs(Date.parse(localStartDate) - Date.parse(heading[2])) > 86400000) return fail();
-    const moving = durationSeconds(fields.get("Duration") ?? ""); if (moving > elapsed) return fail();
+    const reportedMoving = durationSeconds(fields.get("Duration") ?? "");
+    if (reportedMoving > elapsed + 1) return fail();
+    // COROS display duration can round one second above its integer epoch span.
+    // Keep the exact instants/elapsed span and bound normalized active time to it.
+    const moving = Math.min(reportedMoving, elapsed);
     const id = fields.get("LabelId"); if (!id || !/^\d{1,30}$/u.test(id)) return fail();
     const code = integer(fields.get("SportType") ?? "", 65535);
     let distance: number | null = null;

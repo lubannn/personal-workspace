@@ -5,12 +5,17 @@ import type { CorosReadResult } from "./coros-read-client";
 import { initialSyncProgress, shiftDate } from "./coros-sync-state";
 import { SYNC_TEST_NOW, SYNC_TEST_USER, syncTestDatabase } from "./coros-sync-test-helpers";
 
-function readResult(args: Record<string, unknown>, sleep = true): CorosReadResult {
+function readResult(args: Record<string, unknown>, sleep = true, empty = false): CorosReadResult {
   const date = (value: unknown) => String(value).replace(/^(\d{4})(\d{2})(\d{2})$/u, "$1-$2-$3");
   const start = date(args.startDate); const end = date(args.endDate);
-  if (!sleep) return { format: "content", payload: [{ type: "text", text: `No sport records found from ${start} to ${end}.` }] };
+  if (!sleep) {
+    const timestamp = Date.parse(`${start}T08:00:00Z`) / 1000;
+    return { format: "content", payload: [{ type: "text", text: empty ? `No sport records found from ${start} to ${end}.`
+      : `Sport Records — ${start} to ${end} (1 records)\n========================\n\n1. Indoor Run — ${start}\n   Time Window: startTimestamp=${timestamp} | endTimestamp=${timestamp + 600}\n   Duration: 10:00\n   LabelId: 8000 | SportType: 101` }] };
+  }
   const days: string[] = [];
-  for (let d = start; d <= end; d = shiftDate(d, 1)) days.push(`${d}\nSleep detail for this day is not available yet.`);
+  for (let d = start; d <= end; d = shiftDate(d, 1)) days.push(empty ? `${d}\nSleep detail for this day is not available yet.`
+    : `${d}\nSleep Score: 80\nMain Sleep: 8h 0min\nMain Sleep Window: ${shiftDate(d, -1)} 23:00 - ${d} 07:00\nNaps Total: 0 min`);
   return { format: "content", payload: [{ type: "text", text: `Sleep Overview\n========================\nNote: each record below is dated by its wake-up day.\n\n${days.join("\n\n")}` }] };
 }
 function cappedWorkouts(args: Record<string, unknown>): CorosReadResult {
@@ -241,5 +246,75 @@ describe("COROS scheduled synchronization", () => {
     });
     vi.setSystemTime("2024-02-01T04:20:00.000Z"); await runCorosSync(fixture.env, new Date(), deps);
     expect(deps.read).toHaveBeenCalledTimes(2);
+  });
+
+  it("drains one window per authenticated call without resetting or incrementing the queued request", async () => {
+    fixture.connection(); fixture.job(); const { deps } = dependencies();
+    fixture.sqlite.exec("UPDATE coros_sync_jobs SET next_run_at = '2024-02-01T05:00:00.000Z'");
+    expect(await runCorosSync(fixture.env, new Date(), deps)).toMatchObject({ status: "deferred", retryAt: "2024-02-01T05:00:00.000Z" });
+    expect(deps.read).not.toHaveBeenCalled();
+    expect(await runCorosSync(fixture.env, new Date(), deps, { forceDue: true })).toMatchObject({ status: "processed", batch: { domain: "sleep" } });
+    expect(deps.read).toHaveBeenCalledTimes(1);
+    expect(await runCorosSync(fixture.env, new Date(), deps, { forceDue: true })).toMatchObject({ status: "processed", batch: { domain: "workout" } });
+    expect(deps.read).toHaveBeenCalledTimes(2);
+    expect(fixture.saved()).toMatchObject({ request_seq: 1, progress: { request: { sequence: 1, through: "2024-02-01" } } });
+  });
+
+  it("never bypasses an active lease or per-domain error backoff during drain", async () => {
+    const progress = initialSyncProgress("2024-01-01", "Asia/Shanghai");
+    for (const domain of ["sleep", "workout"] as const) progress.domains[domain].retryAfter = "2024-02-01T06:00:00.000Z";
+    fixture.connection(); fixture.job(progress); const { deps } = dependencies();
+    fixture.sqlite.exec("UPDATE coros_sync_jobs SET lease_token = 'other-worker', lease_until = '2024-02-01T04:10:00.000Z'");
+    expect(await runCorosSync(fixture.env, new Date(), deps, { forceDue: true })).toEqual({ status: "busy", retryAt: "2024-02-01T04:10:00.000Z" });
+    expect(fixture.saved()?.lease_token).toBe("other-worker");
+    fixture.sqlite.exec("UPDATE coros_sync_jobs SET lease_token = NULL, lease_until = NULL");
+    expect(await runCorosSync(fixture.env, new Date(), deps, { forceDue: true })).toMatchObject({ status: "deferred", retryAt: "2024-02-01T06:00:00.000Z" });
+    expect(deps.refresh).not.toHaveBeenCalled(); expect(deps.read).not.toHaveBeenCalled(); expect(deps.write).not.toHaveBeenCalled();
+    expect(fixture.saved()?.progress.domains.sleep.backfillNext).toBe("2024-01-01");
+  });
+
+  it("reports completed coverage without reading COROS or creating a new daily request", async () => {
+    const progress = initialSyncProgress("2024-01-01", "Asia/Shanghai");
+    for (const domain of ["sleep", "workout"] as const) {
+      progress.domains[domain].lastRecentAt = SYNC_TEST_NOW;
+      progress.domains[domain].backfillNext = "2024-02-02";
+    }
+    fixture.connection(); fixture.job(progress); const { deps } = dependencies();
+    expect(await runCorosSync(fixture.env, new Date(), deps, { forceDue: true })).toMatchObject({ status: "complete", retryAt: null });
+    expect(deps.refresh).not.toHaveBeenCalled(); expect(deps.read).not.toHaveBeenCalled();
+    expect(fixture.saved()?.request_seq).toBe(1);
+  });
+
+  it("checkpoints a validated empty window without Git access or changing stored counts/latest dates", async () => {
+    const progress = initialSyncProgress("2024-01-01", "Asia/Shanghai");
+    progress.conflicts = 2; progress.domains.sleep.created = 7; progress.domains.sleep.latestRecordDate = "2024-01-29";
+    fixture.connection(); fixture.job(progress); const { deps } = dependencies();
+    deps.read.mockImplementation(async (_resource, _token, tool, args) => readResult(args, tool !== "querySportRecords", true));
+    expect(await runCorosSync(fixture.env, new Date(), deps, { forceDue: true })).toMatchObject({ status: "processed", batch: { created: 0, unchanged: 0, conflicts: 0 } });
+    expect(deps.adapter).not.toHaveBeenCalled(); expect(deps.write).not.toHaveBeenCalled();
+    expect(fixture.saved()?.progress).toMatchObject({ conflicts: 2, domains: { sleep: { created: 7, latestRecordDate: "2024-01-29", recentThrough: "2024-02-01", recentRequestSequence: 1 } } });
+  });
+
+  it("adapts a 30-day historical workout window and preserves the exact unprocessed remainder", async () => {
+    const progress = initialSyncProgress("2024-01-01", "Asia/Shanghai");
+    for (const domain of ["sleep", "workout"] as const) progress.domains[domain].lastRecentAt = SYNC_TEST_NOW;
+    progress.domains.sleep.backfillNext = "2024-02-02";
+    fixture.connection(); fixture.job(progress); const { deps } = dependencies();
+    deps.read.mockImplementationOnce(async (_resource, _token, _tool, args) => cappedWorkouts(args));
+    expect(await runCorosSync(fixture.env, new Date(), deps, { forceDue: true })).toMatchObject({ status: "processed", batch: { from: "2024-01-01", through: "2024-01-15" } });
+    expect(deps.read.mock.calls.map(call => call[3].endDate)).toEqual(["20240130", "20240115"]);
+    expect(fixture.saved()?.progress.domains.workout.backfillNext).toBe("2024-01-16");
+    await runCorosSync(fixture.env, new Date(), deps, { forceDue: true });
+    expect(deps.read).toHaveBeenLastCalledWith(expect.any(String), expect.any(String), "querySportRecords", expect.objectContaining({ startDate: "20240116", endDate: "20240201" }));
+    expect(fixture.saved()?.progress.domains.workout.backfillNext).toBe("2024-02-02");
+  });
+
+  it("returns only a safe error code when a drain window fails", async () => {
+    fixture.connection(); fixture.job(); const { deps } = dependencies();
+    deps.read.mockRejectedValue(new Error("private health body with token"));
+    const result = await runCorosSync(fixture.env, new Date(), deps, { forceDue: true });
+    expect(result).toMatchObject({ status: "error", errorCode: "COROS_SYNC_FAILED", retryAt: "2024-02-01T04:20:00.000Z" });
+    expect(JSON.stringify(result)).not.toContain("private health body");
+    expect(fixture.saved()?.progress.domains.sleep.backfillThrough).toBeNull();
   });
 });

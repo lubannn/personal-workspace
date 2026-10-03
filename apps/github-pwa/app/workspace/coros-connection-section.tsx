@@ -5,6 +5,7 @@ import type { SyncProgress } from "../../../auth-worker/src/coros-sync-state";
 import { readCookie, type ConnectionMethod } from "./page-model";
 import "./health-records.css";
 import { CorosConflicts } from "./coros-conflicts";
+import { drainCorosHistory } from "./coros-history-client";
 
 type CorosStatus = {
   connected: boolean;
@@ -62,6 +63,10 @@ export function CorosConnectionSection({ connectionMethod }: { connectionMethod:
   const [message, setMessage] = useState("");
   const [preview, setPreview] = useState<CorosPreview | null>(null);
   const [startDate, setStartDate] = useState("2025-05-01");
+  const [historyRunning, setHistoryRunning] = useState(false);
+  const [historyBatches, setHistoryBatches] = useState(0);
+  const [historyBatch, setHistoryBatch] = useState<SyncProgress["lastBatch"]>(null);
+  const historyController = useRef<AbortController | null>(null);
   const inFlight = useRef<AbortController | null>(null);
   const busyRef = useRef(false);
   const lastSyncAt = useRef<string | null | undefined>(undefined);
@@ -99,10 +104,14 @@ export function CorosConnectionSection({ connectionMethod }: { connectionMethod:
   useEffect(() => {
     lastSyncAt.current = undefined;
     const timer = window.setTimeout(() => {
+      busyRef.current = false; setBusy(false); setHistoryRunning(false);
       if (connectionMethod !== "github-app") { setView("login-required"); setStatus(null); }
       else { setView("loading"); void refresh(); }
     }, 0);
-    return () => { window.clearTimeout(timer); inFlight.current?.abort(); inFlight.current = null; };
+    return () => {
+      window.clearTimeout(timer); inFlight.current?.abort(); inFlight.current = null;
+      historyController.current?.abort(); historyController.current = null;
+    };
   }, [connectionMethod, refresh]);
 
   useEffect(() => {
@@ -114,6 +123,47 @@ export function CorosConnectionSection({ connectionMethod }: { connectionMethod:
     document.addEventListener("visibilitychange", poll);
     return () => { window.clearInterval(timer); document.removeEventListener("visibilitychange", poll); };
   }, [refresh, status?.connected, status?.state]);
+
+  async function backfillHistory() {
+    if (busyRef.current || connectionMethod !== "github-app") return;
+    const csrf = readCookie("__Host-pw_csrf");
+    if (!csrf) { setMessage("GitHub 登录会话已失效，请重新登录。"); return; }
+    const controller = new AbortController(); historyController.current = controller;
+    busyRef.current = true; setBusy(true); setHistoryRunning(true); setHistoryBatches(0); setHistoryBatch(null); setMessage("");
+    inFlight.current?.abort(); inFlight.current = null; setRefreshing(false);
+    let remainingConflicts = status?.sync?.progress?.conflicts ?? 0;
+    try {
+      const result = await drainCorosHistory({ csrf, signal: controller.signal, onUpdate: (update, processed) => {
+        if (controller.signal.aborted) return;
+        setHistoryBatches(processed);
+        if (update.batch) setHistoryBatch(update.batch);
+        if (update.progress) remainingConflicts = update.progress.conflicts;
+        if (update.progress) setStatus(current => current?.sync ? { ...current, lastSyncAt: update.progress!.lastSuccessAt,
+          lastErrorCode: update.progress!.lastErrorCode, sync: { ...current.sync, progress: update.progress!, running: update.status === "busy" } } : current);
+      } });
+      if (controller.signal.aborted) return;
+      if (result.status === "complete") setMessage(remainingConflicts > 0
+        ? `本次历史范围已检查完成，可直接入库的记录已保存。另有 ${remainingConflicts} 项差异保留原记录，仍需在「待核对记录」中检查。`
+        : "本次历史范围已检查完成，取得的睡眠与运动记录已保存。下方进度显示实际取得的最新记录日期。");
+      else if (result.status === "deferred") setMessage(`本次补齐暂缓，后台会接着已保存的进度继续。${result.retryAt ? `下次可重试：${displayTime(result.retryAt)}。` : "请稍后继续。"}`);
+      else if (result.status === "busy") setMessage("后台仍在处理另一批记录，已保存进度。稍后可点击「继续补齐历史」。");
+      else if (result.status === "limit") setMessage("本次连续补齐已达到批次数量上限，已保存进度。可点击「继续补齐历史」处理剩余日期。");
+      else setMessage(errorMessage(result.errorCode) ?? "本次补齐没有完成，已保存进度。请刷新状态后重试。");
+    } catch (error) {
+      if (!controller.signal.aborted) setMessage(errorMessage(error instanceof Error ? error.message : null) ?? "本次补齐暂时中断，已保存进度。请刷新状态后继续。");
+    } finally {
+      if (historyController.current === controller) {
+        historyController.current = null; busyRef.current = false;
+        setBusy(false); setHistoryRunning(false);
+        await refresh();
+      }
+    }
+  }
+
+  function stopHistoryBackfill() {
+    historyController.current?.abort();
+    setMessage("已停止本次连续补齐；已提交的一批可能仍会完成。进度已保留，每日自动同步设置不变，后台会继续处理已请求的范围。");
+  }
 
   async function mutate(path: Mutation) {
     if (busyRef.current) return;
@@ -175,11 +225,15 @@ export function CorosConnectionSection({ connectionMethod }: { connectionMethod:
     {view === "ready" && status ? <div>
       <p><strong>{!status.connected ? "尚未连接 COROS" : enabled ? status.sync?.running ? "每日自动同步已开启 · 正在处理记录" : "每日自动同步已开启" : "COROS 已连接 · 自动同步已暂停"}</strong></p>
       {status.connected && !ready ? <p role="status">{status.sync ? "后台保存健康记录所需的连接尚未配置完整。完成服务端配置后即可开启自动同步，无需反复手动导入。" : "后台同步服务正在准备，暂时无法开启。"}</p> : null}
-      {status.connected && ready ? <p className="learning-subtitle">每天首次恢复有效登录后触发一次更新；当天需要补充新记录时，可点击「额外更新」。首次历史记录每 {status.sync?.readiness.backfillIntervalMinutes ?? 10} 分钟分批补齐，之后补充新增日期与近期更正；长时间未登录时，会接着上次进度补齐缺口。</p> : null}
+      {status.connected && ready ? <p className="learning-subtitle">每天首次恢复有效登录后触发一次更新；当天需要补充新记录时，可点击「额外更新」。首次历史记录每 {status.sync?.readiness.backfillIntervalMinutes ?? 10} 分钟分批补齐，也可点击「补齐历史记录」连续处理。关闭页面后，本次连续处理停止，后台仍会接着已保存进度继续。</p> : null}
       {status.connected ? <p>最近成功同步：{displayTime(status.lastSyncAt)}{enabled && status.sync?.nextRunAt ? <> · 下次后台处理：{displayTime(status.sync.nextRunAt)}</> : null}</p> : null}
       {enabled && status.sync && !status.sync.running && !status.sync.nextRunAt ? <p className="learning-subtitle">当前没有待处理批次，等待下一次每日更新或手动额外更新。</p> : null}
       {status.sync?.dailyRequestedDate ? <p className="learning-subtitle">最近每日更新请求：{status.sync.dailyRequestedDate}（北京时间）</p> : null}
       {lastError ? <p role="alert">{lastError}</p> : null}
+      {historyRunning || historyBatches > 0 ? <p role="status">{historyRunning ? "正在连续补齐历史记录" : "本次连续补齐"} · 已完成 {historyBatches} 批。
+        {historyBatch ? <> 最近一批：{historyBatch.domain === "sleep" ? "睡眠" : "运动"} {historyBatch.from} 至 {historyBatch.through}，新增 {historyBatch.created} 条，已有 {historyBatch.unchanged} 条{historyBatch.conflicts > 0 ? `，待核对 ${historyBatch.conflicts} 条` : ""}。</> : null}
+      </p> : null}
+      {historyRunning ? <button className="secondary-button" type="button" onClick={stopHistoryBackfill}>停止本次连续补齐</button> : null}
       {progress ? <>
         <p className="learning-subtitle">首次历史范围：{progress.startDate} 至 {progress.backfillEnd ?? "等待首次请求"}。{progress.request ? <>当前请求检查至 {progress.request.through}。</> : null} 下方分别显示已检查到的日期与实际取得的最新记录；已检查的日期可能没有记录，不代表已导入全部 COROS 历史。</p>
         <div className="health-records-summary">{(["sleep", "workout"] as const).map(domain => {
@@ -197,7 +251,7 @@ export function CorosConnectionSection({ connectionMethod }: { connectionMethod:
       {!status.connected ? <button className="secondary-button" type="button" disabled={busy} onClick={() => void mutate("/coros/start")}>{busy ? "正在准备…" : "连接 COROS"}</button> :
         confirmDisconnect ? <div className="learning-view-actions"><button className="danger-button" type="button" disabled={busy} onClick={() => void mutate("/coros/disconnect")}>确认断开</button><button className="secondary-button" type="button" disabled={busy} onClick={() => setConfirmDisconnect(false)}>取消</button></div> :
           <div className="learning-view-actions">
-            {enabled ? <><button className="secondary-button" type="button" disabled={busy || !ready || status.sync?.running} onClick={() => void mutate("/coros/sync")}>额外更新</button><button className="secondary-button" type="button" disabled={busy} onClick={() => void mutate("/coros/pause")}>暂停自动同步</button></> : <>
+            {enabled ? <><button className="primary-button" type="button" disabled={busy || !ready} onClick={() => void backfillHistory()}>{historyRunning ? "正在补齐历史…" : historyBatches > 0 ? "继续补齐历史" : "补齐历史记录"}</button><button className="secondary-button" type="button" disabled={busy || !ready || status.sync?.running} onClick={() => void mutate("/coros/sync")}>额外更新</button><button className="secondary-button" type="button" disabled={busy} onClick={() => void mutate("/coros/pause")}>暂停自动同步</button></> : <>
               <button className="primary-button" type="button" disabled={busy || !ready || (!progress && !validStartDate(startDate))} onClick={() => void mutate("/coros/enable")}>{progress ? "恢复自动同步" : "开启自动同步"}</button>
               <button className="secondary-button" type="button" disabled={busy} onClick={() => void previewOneDay()}>检查 COROS 读取</button>
             </>}

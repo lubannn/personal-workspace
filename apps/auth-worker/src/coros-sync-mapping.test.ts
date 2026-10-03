@@ -92,6 +92,18 @@ describe("strict COROS sleep text mapping", () => {
     expect(mapCorosSleep(result(`${prefix}2024-01-02\nSleep detail for this day is not available yet.`), options)).toEqual({ items: [], reportedCount: 1 });
     expect(mapCorosSleep(result(`${modern}\n\n2024-01-03\nSleep detail for this day is not available yet.`), { ...options, endDate: "20240103" }).reportedCount).toBe(2);
   });
+  it.each([true, false])("accepts the exact empty sleep response for at most three requested days (encoded=%s)", encoded => {
+    for (const endDate of ["20240102", "20240103", "20240104"]) {
+      expect(mapCorosSleep(result("No sleep overview data found.", encoded), { ...options, endDate })).toEqual({ items: [], reportedCount: 0 });
+    }
+    expect(mapCorosSleep(result("No sleep overview data found.", encoded), { ...options, startDate: "20240228", endDate: "20240301" })).toEqual({ items: [], reportedCount: 0 });
+  });
+  it("refuses unscoped empty sleep responses for ranges the tool could truncate", () => {
+    expect(() => mapCorosSleep(result("No sleep overview data found."), { ...options, endDate: "20240105" })).toThrow("COROS_SYNC_FORMAT_UNSUPPORTED");
+    for (const input of ["", "No sleep overview data found", "No sleep overview data found.\nMore records omitted.", "No sleep data found."]) {
+      expect(() => mapCorosSleep(result(input), options)).toThrow("COROS_SYNC_FORMAT_UNSUPPORTED");
+    }
+  });
   it("accepts the same reviewed grammar from structured text", () => {
     expect(mapCorosSleep({ format: "structured", payload: { text: modern } }, options).items).toHaveLength(2);
   });
@@ -137,6 +149,16 @@ describe("strict COROS workout text mapping", () => {
   it("supports set-based activities without guessing distance", () => {
     const input = workout.replace("Distance: 6.25 km", "Sets: 500").replace("SportType: 100", "SportType: 901");
     expect(mapCorosWorkouts(result(input), options).items[0].candidate).toMatchObject({ activity_type: "other", distance: null });
+  });
+  it("normalizes a one-second display rounding excess without changing exact workout timestamps", () => {
+    const input = workout.replace("Outdoor Run", "Jump Rope").replace("endTimestamp=1704157200", "endTimestamp=1704154800")
+      .replace("Duration: 50:00 | Distance: 6.25 km", "Duration: 20:01 | Sets: 500").replace("SportType: 100", "SportType: 901");
+    const candidate = mapCorosWorkouts(result(input), options).items[0].candidate;
+    expect(candidate).toMatchObject({ start_at: "2024-01-02T00:00:00.000Z", end_at: "2024-01-02T00:20:00.000Z",
+      activity_type: "other", distance: null, duration_seconds: 1200, metrics_json: { elapsed_seconds: 1200, moving_seconds: 1200 } });
+    expect(validWorkoutCandidate(candidate)).toBe(true);
+    expect(mapCorosWorkouts(result(input.replace("Duration: 20:01", "Duration: 19:59")), options).items[0].candidate.metrics_json.moving_seconds).toBe(1199);
+    expect(() => mapCorosWorkouts(result(input.replace("Duration: 20:01", "Duration: 20:02")), options)).toThrow("COROS_SYNC_FORMAT_UNSUPPORTED");
   });
   it("allows absent optional measurements", () => {
     const input = workout.replace(" | Distance: 6.25 km", "").replace("   Average Pace: 8:00 /km | Avg HR: 120 bpm | Calories: 350 kcal\n", "");
