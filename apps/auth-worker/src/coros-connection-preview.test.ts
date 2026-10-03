@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { handleCorosConnectionRequest, type CorosConnectionEnv } from "./coros-connection";
-import { refreshPausedCorosConnectionForPreview } from "./coros-credentials";
+import { refreshEnabledCorosConnection, refreshPausedCorosConnectionForPreview } from "./coros-credentials";
 import { callCorosReadTool } from "./coros-read-client";
 import { randomToken } from "./security";
 
-vi.mock("./coros-credentials", () => ({ refreshPausedCorosConnectionForPreview: vi.fn() }));
+vi.mock("./coros-credentials", () => ({ refreshPausedCorosConnectionForPreview: vi.fn(), refreshEnabledCorosConnection: vi.fn() }));
 vi.mock("./coros-read-client", () => ({ callCorosReadTool: vi.fn() }));
 
 const origin = "https://nexus.lubannn.workers.dev";
@@ -35,6 +35,7 @@ describe("paused COROS one-day preview", () => {
     expect(body).toContain("heartRate.average");
     expect(body).not.toMatch(/2026-09-25|12345|\b61\b|secret-access-token/u);
     expect(callCorosReadTool).toHaveBeenCalledWith("https://mcpcn.coros.com/mcp", "secret-access-token", "queryDailyHealthData", { days: 1 });
+    expect(refreshEnabledCorosConnection).not.toHaveBeenCalled();
   });
 
   it("never refreshes a credential without same-origin CSRF proof", async () => {
