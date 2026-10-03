@@ -15,6 +15,16 @@ function blobQueryResponse(init?: RequestInit) {
   ])) } };
 }
 
+function journalDirectoryResponse(entries = [{ name: "one.json", type: "blob", oid: "a".repeat(40), size: 2 }]) {
+  return { data: { repository: { object: { __typename: "Tree", oid: "b".repeat(40), entries } } } };
+}
+
+function journalRestTreeResponse(url: string) {
+  if (url.endsWith("/main")) return jsonResponse({ truncated: false, tree: [{ path: "data", type: "tree", sha: "c".repeat(40) }] });
+  if (url.endsWith("/" + "c".repeat(40))) return jsonResponse({ truncated: false, tree: [{ path: "journal-entries", type: "tree", sha: "d".repeat(40) }] });
+  return jsonResponse({ truncated: false, tree: [{ path: "one.json", type: "blob", sha: "a".repeat(40), size: 2 }] });
+}
+
 describe("GitHub contents adapter", () => {
   it.each(["batch", "single", "REST fallback"])("propagates caller cancellation of a %s read without diagnosis or retries", async (mode) => {
     const controller = new AbortController();
@@ -433,8 +443,164 @@ describe("GitHub contents adapter", () => {
     expect(fetcher.mock.calls[1]?.[0]).toContain(`/git/blobs/${sha}`);
   });
 
-  it("lists journal entries through the small directory tree rather than the whole repository", async () => {
+  it("lists more than 1,000 journal files in one metadata-only GraphQL request", async () => {
+    const entries = Array.from({ length: 1501 }, (_, index) => ({ name: `journal_${index}.json`, type: "blob", oid: listedBlob(index).blobSha, size: index }));
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(jsonResponse(journalDirectoryResponse([
+      ...entries,
+      { name: "archive", type: "tree", oid: "e".repeat(40), size: 0 },
+      { name: "submodule", type: "commit", oid: "f".repeat(40), size: 0 },
+    ])));
+    const adapter = new GitHubContentsAdapter({ owner: "owner", repository: "data", branch: "main", token: "test-token" }, fetcher);
+    const records = await adapter.listDirectory("data/journal-entries", "refs/heads/journal-history");
+    expect(records).toEqual([
+      ...entries.map((entry) => ({ type: "file", name: entry.name, path: `data/journal-entries/${entry.name}`, blobSha: entry.oid, sizeBytes: entry.size })),
+      { type: "directory", name: "archive", path: "data/journal-entries/archive", blobSha: "e".repeat(40), sizeBytes: 0 },
+    ]);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    const [url, init] = fetcher.mock.calls[0];
+    expect(url).toBe("https://api.github.com/graphql");
+    expect(init).toMatchObject({ method: "POST", cache: "no-store" });
+    expect(init?.signal).toBeInstanceOf(AbortSignal);
+    const body = JSON.parse(String(init?.body));
+    expect(body.variables).toEqual({ owner: "owner", repository: "data", expression: "refs/heads/journal-history:data/journal-entries" });
+    expect(body.query).toContain("object(expression: $expression)");
+    expect(body.query).toContain("entries { name type oid size }");
+    expect(body.query).not.toMatch(/\b(text|content|mutation)\b|journal-history|data\/journal-entries|test-token/u);
+  });
+
+  it("accepts an explicitly empty journal tree and uses the default branch", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(jsonResponse(journalDirectoryResponse([])));
+    const adapter = new GitHubContentsAdapter({ owner: "owner", repository: "data", token: "test-token" }, fetcher);
+    await expect(adapter.listDirectory("data/journal-entries")).resolves.toEqual([]);
+    expect(JSON.parse(String(fetcher.mock.calls[0][1]?.body)).variables.expression).toBe("main:data/journal-entries");
+  });
+
+  it("distinguishes an unverified repository from a missing directory inside a valid repository", async () => {
     const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({ data: { repository: null } }))
+      .mockResolvedValueOnce(jsonResponse({ data: { repository: { object: null } } }));
+    const adapter = new GitHubContentsAdapter({ owner: "owner", repository: "data", token: "test-token" }, fetcher);
+    await expect(adapter.listDirectory("data/journal-entries")).rejects.toMatchObject({ status: 500, code: "GITHUB_INVALID_RESPONSE" });
+    await expect(adapter.listDirectory("data/journal-entries")).rejects.toMatchObject({ status: 404, code: "GITHUB_NOT_FOUND" });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
+  it("rejects malformed, missing, or partial directory results without falling back", async () => {
+    const invalidEntries = [
+      null, { name: "../secret.json" }, { name: "" }, { name: "." }, { name: ".." }, { name: "nested/file.json" }, { name: "nested\\file.json" },
+      { name: "bad\u0000.json" }, { name: 1 }, { type: "unknown" }, { oid: "bad" }, { oid: null },
+      { size: -1 }, { size: 1.5 }, { size: "2" }, { size: null }, { size: Number.MAX_SAFE_INTEGER + 1 },
+    ];
+    const invalidResponses: unknown[] = [
+      null, {}, { data: {} }, { data: { repository: {} } }, { errors: {} }, { errors: [null] },
+      { data: { repository: null } }, { data: { repository: { object: null } } },
+      { ...journalDirectoryResponse(), errors: [{ type: "INTERNAL" }] },
+      { ...journalDirectoryResponse(), errors: [{ type: "FORBIDDEN" }] },
+      ...[{ __typename: "Blob" }, { oid: "bad" }, { entries: null }, { entries: {} }, { entries: undefined }].map((override) => ({
+        data: { repository: { object: { ...journalDirectoryResponse().data.repository.object, ...override } } },
+      })),
+      ...invalidEntries.map((override) => journalDirectoryResponse([
+        journalDirectoryResponse().data.repository.object.entries[0],
+        (override === null ? null : { name: "two.json", type: "blob", oid: "e".repeat(40), size: 2, ...override }) as never,
+      ])),
+      journalDirectoryResponse(Array(2).fill(journalDirectoryResponse().data.repository.object.entries[0])),
+    ];
+    for (const response of invalidResponses) {
+      const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(jsonResponse(response)).mockResolvedValueOnce(jsonResponse(journalDirectoryResponse()));
+      const adapter = new GitHubContentsAdapter({ owner: "owner", repository: "data", token: "test-token" }, fetcher);
+      await expect(adapter.listDirectory("data/journal-entries")).rejects.toBeInstanceOf(GitHubDataError);
+      expect(fetcher).toHaveBeenCalledTimes(1);
+      await expect(adapter.listDirectory("data/journal-entries")).resolves.toHaveLength(1);
+      expect(fetcher.mock.calls[1][0]).toBe("https://api.github.com/graphql");
+    }
+  });
+
+  it.each([
+    ["unauthorized HTTP", () => jsonResponse({}, 401), "GITHUB_UNAUTHORIZED"],
+    ["unauthorized GraphQL", () => jsonResponse({ errors: [{ type: "UNAUTHENTICATED" }] }), "GITHUB_UNAUTHORIZED"],
+    ["HTTP rate limit", () => jsonResponse({}, 429), "GITHUB_RATE_LIMITED"],
+    ["secondary rate limit", () => jsonResponse({ message: "You have exceeded a secondary rate limit." }, 403), "GITHUB_RATE_LIMITED"],
+    ["GraphQL rate limit", () => jsonResponse({ errors: [{ type: "RATE_LIMITED" }] }), "GITHUB_RATE_LIMITED"],
+    ["unavailable HTTP", () => jsonResponse({}, 503), "GITHUB_UNAVAILABLE"],
+  ] as const)("does not fan out a journal directory %s failure or disable future queries", async (_name, response, code) => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(response()).mockResolvedValueOnce(jsonResponse(journalDirectoryResponse()));
+    const adapter = new GitHubContentsAdapter({ owner: "owner", repository: "data", token: "test-token" }, fetcher);
+    await expect(adapter.listDirectory("data/journal-entries")).rejects.toMatchObject({ code });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    await expect(adapter.listDirectory("data/journal-entries")).resolves.toHaveLength(1);
+    expect(fetcher.mock.calls[1][0]).toBe("https://api.github.com/graphql");
+  });
+
+  it.each([new TypeError("network failed"), new DOMException("timed out", "TimeoutError")])("does not retry or diagnose a failed directory transport: %s", async (failure) => {
+    const fetcher = vi.fn<typeof fetch>().mockRejectedValueOnce(failure);
+    const adapter = new GitHubContentsAdapter({ owner: "owner", repository: "data", token: "test-token" }, fetcher);
+    await expect(adapter.listDirectory("data/journal-entries")).rejects.toMatchObject({ code: "GITHUB_TRANSPORT_ERROR" });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["FORBIDDEN", "INSUFFICIENT_SCOPES"])("remembers directory GraphQL %s and shares REST fallback with body reads", async (type) => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(jsonResponse({ errors: [{ type }] })).mockImplementation(async (url) => {
+      if (String(url).includes("/git/blobs/")) return jsonResponse({ sha: String(url).split("/").at(-1), size: 2, encoding: "base64", content: btoa("{}") });
+      return journalRestTreeResponse(String(url));
+    });
+    const adapter = new GitHubContentsAdapter({ owner: "owner", repository: "data", token: "test-token" }, fetcher);
+    await expect(adapter.listDirectory("data/journal-entries")).resolves.toHaveLength(1);
+    await expect(adapter.listDirectory("data/journal-entries")).resolves.toHaveLength(1);
+    await expect(adapter.readBlobTexts([listedBlob(1)])).resolves.toHaveLength(1);
+    expect(fetcher.mock.calls.filter(([url]) => String(url).endsWith("/graphql"))).toHaveLength(1);
+    expect(fetcher).toHaveBeenCalledTimes(8);
+  });
+
+  it("respects GraphQL permission failures already learned by body reads", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(jsonResponse({}, 403)).mockImplementation(async (url) => {
+      if (String(url).includes("/git/blobs/")) return jsonResponse({ sha: String(url).split("/").at(-1), size: 2, encoding: "base64", content: btoa("{}") });
+      return journalRestTreeResponse(String(url));
+    });
+    const adapter = new GitHubContentsAdapter({ owner: "owner", repository: "data", token: "test-token" }, fetcher);
+    await adapter.readBlobTexts([listedBlob(1)]);
+    await expect(adapter.listDirectory("data/journal-entries")).resolves.toHaveLength(1);
+    expect(fetcher.mock.calls.filter(([url]) => String(url).endsWith("/graphql"))).toHaveLength(1);
+    expect(fetcher).toHaveBeenCalledTimes(5);
+  });
+
+  it("keeps a concurrent canceled body probe independent of the directory query", async () => {
+    const controller = new AbortController();
+    const fetcher = vi.fn<typeof fetch>()
+      .mockImplementationOnce((_url, init) => new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true });
+      }))
+      .mockResolvedValueOnce(jsonResponse(journalDirectoryResponse()))
+      .mockImplementation(async (_, init) => jsonResponse(blobQueryResponse(init)));
+    const adapter = new GitHubContentsAdapter({ owner: "owner", repository: "data", token: "test-token" }, fetcher);
+    const oldMonth = adapter.readBlobTexts([listedBlob(1)], () => true, controller.signal);
+    const rejected = expect(oldMonth).rejects.toMatchObject({ name: "AbortError" });
+    const directory = adapter.listDirectory("data/journal-entries");
+    controller.abort();
+    await rejected;
+    await expect(directory).resolves.toHaveLength(1);
+    await expect(adapter.readBlobTexts([listedBlob(2)])).resolves.toHaveLength(1);
+    expect(fetcher).toHaveBeenCalledTimes(3);
+  });
+
+  it("keeps a directory permission failure after an already-running body probe succeeds", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const fetcher = vi.fn<typeof fetch>().mockImplementationOnce(async (_, init) => {
+      await gate;
+      return jsonResponse(blobQueryResponse(init));
+    }).mockResolvedValueOnce(jsonResponse({}, 403)).mockImplementation(async (url) => journalRestTreeResponse(String(url)));
+    const adapter = new GitHubContentsAdapter({ owner: "owner", repository: "data", token: "test-token" }, fetcher);
+    const body = adapter.readBlobTexts([listedBlob(1)]);
+    await expect(adapter.listDirectory("data/journal-entries")).resolves.toHaveLength(1);
+    release();
+    await expect(body).resolves.toHaveLength(1);
+    await expect(adapter.listDirectory("data/journal-entries")).resolves.toHaveLength(1);
+    expect(fetcher.mock.calls.filter(([url]) => String(url).endsWith("/graphql"))).toHaveLength(2);
+  });
+
+  it("falls back to the small REST directory tree when GraphQL permission is denied", async () => {
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({}, 403))
       .mockResolvedValueOnce(jsonResponse({ truncated: false, tree: [{ path: "data", type: "tree", sha: "data-tree" }] }))
       .mockResolvedValueOnce(jsonResponse({ truncated: false, tree: [{ path: "journal-entries", type: "tree", sha: "entries-tree" }] }))
       .mockResolvedValueOnce(jsonResponse({ truncated: false, tree: [
@@ -449,6 +615,7 @@ describe("GitHub contents adapter", () => {
       { type: "directory", name: "nested", path: "data/journal-entries/nested", blobSha: "nested-tree", sizeBytes: 0 },
     ]);
     expect(fetcher.mock.calls.map((call) => call[0])).toEqual([
+      "https://api.github.com/graphql",
       "https://api.github.com/repos/owner/personal-workspace-data/git/trees/main",
       "https://api.github.com/repos/owner/personal-workspace-data/git/trees/data-tree",
       "https://api.github.com/repos/owner/personal-workspace-data/git/trees/entries-tree",

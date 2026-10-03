@@ -304,6 +304,7 @@ export default function GitHubWorkspacePage() {
     journalEntryFiles,
     rememberJournalEntry,
     journalEntryCatalog,
+    journalCatalogReady,
     journalLoadedMonths,
     journalLoadError,
     learningAreaFiles,
@@ -2919,6 +2920,7 @@ export default function GitHubWorkspacePage() {
         todayDate={currentTaskDate}
         journalEntryFiles={journalEntryFiles}
         journalEntryCatalog={journalEntryCatalog}
+        catalogReady={journalCatalogReady}
         loadedMonths={journalLoadedMonths}
         loadError={journalLoadError}
         loading={loadingJournalEntries}

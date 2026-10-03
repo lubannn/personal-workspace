@@ -3,7 +3,7 @@ import { journalMonthFileCandidates, recentJournalFileCandidates } from "./journ
 import { parseJournalEntryRecord, type JournalEntryRecord } from "./journal-entries";
 
 export type JournalArchiveEntry = { record: JournalEntryRecord; path: string; blobSha: string };
-export type JournalArchiveSnapshot = { catalog: GitHubDirectoryItem[]; entries: JournalArchiveEntry[]; loadedMonths: string[] };
+export type JournalArchiveSnapshot = { catalog: GitHubDirectoryItem[]; catalogReady: boolean; entries: JournalArchiveEntry[]; loadedMonths: string[] };
 
 type DirectoryRequest = { id: number; saveVersion: number; result: Promise<GitHubDirectoryItem[]> };
 const MAX_BATCH_FILES = 40;
@@ -29,6 +29,7 @@ export class JournalArchiveReader {
   snapshot(): JournalArchiveSnapshot {
     return {
       catalog: [...this.catalog.values()],
+      catalogReady: this.initialized,
       entries: [...this.entries.values()].filter((entry) => this.catalog.get(entry.path)?.blobSha === entry.blobSha),
       loadedMonths: [...this.loadedMonths].sort(),
     };
@@ -49,16 +50,22 @@ export class JournalArchiveReader {
     });
   }
 
-  async load(month?: string, options: { refresh?: boolean; signal?: AbortSignal } = {}): Promise<JournalArchiveSnapshot> {
+  async load(month?: string, options: {
+    refresh?: boolean;
+    signal?: AbortSignal;
+    onCatalog?: (snapshot: JournalArchiveSnapshot) => void;
+  } = {}): Promise<JournalArchiveSnapshot> {
     const { signal } = options;
     signal?.throwIfAborted();
     // Validate before making a request, even when this month has already been visited.
     if (month) journalMonthFileCandidates([], month);
-    await this.ensureCatalog(Boolean(options.refresh), signal);
-    signal?.throwIfAborted();
+    const catalogId = await this.ensureCatalog(Boolean(options.refresh), signal);
+    this.assertCurrent(catalogId, signal);
+    // Calendar and SHA-matched statistics can use the catalog while bodies load.
+    options.onCatalog?.(this.snapshot());
+    this.assertCurrent(catalogId, signal);
     if (month && this.loadedMonths.has(month)) return this.snapshot();
 
-    const catalogId = this.catalogId;
     const candidates = month ? journalMonthFileCandidates([...this.catalog.values()], month)
       : recentJournalFileCandidates([...this.catalog.values()]);
     const missing = candidates.filter((file) => this.entries.get(file.path)?.blobSha !== file.blobSha);
@@ -96,7 +103,7 @@ export class JournalArchiveReader {
   }
 
   private async ensureCatalog(refresh: boolean, signal?: AbortSignal) {
-    if (!refresh && this.initialized && !this.directoryRequest) return;
+    if (!refresh && this.initialized && !this.directoryRequest) return this.catalogId;
     if (refresh || !this.directoryRequest) {
       this.directoryRequest = { id: ++this.requestId, saveVersion: this.saveVersion, result: this.readDirectory() };
     }
@@ -128,6 +135,7 @@ export class JournalArchiveReader {
       this.initialized = true;
     }
     if (this.directoryRequest === request) this.directoryRequest = undefined;
+    return request.id;
   }
 
   private async readDirectory() {

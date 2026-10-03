@@ -60,6 +60,7 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
   const [reportDraftFiles, setReportDraftFiles] = useState<SyncedReportDraft[]>([]);
   const [journalEntryFiles, setJournalEntryFiles] = useState<SyncedJournalEntry[]>([]);
   const [journalEntryCatalog, setJournalEntryCatalog] = useState<GitHubDirectoryItem[]>([]);
+  const [journalCatalogReady, setJournalCatalogReady] = useState(false);
   const [journalLoadedMonths, setJournalLoadedMonths] = useState<string[]>([]);
   const [journalLoadError, setJournalLoadError] = useState("");
   const journalReaderRef = useRef<{ adapter: GitHubContentsAdapter; reader: JournalArchiveReader } | null>(null);
@@ -481,6 +482,10 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     previous?.controller.abort();
     if (journalReaderRef.current?.adapter !== adapter) {
       journalReaderRef.current = { adapter, reader: new JournalArchiveReader(adapter) };
+      setJournalCatalogReady(false);
+      setJournalEntryCatalog([]);
+      setJournalEntryFiles([]);
+      setJournalLoadedMonths([]);
     }
     const { reader } = journalReaderRef.current;
     const request = { controller: new AbortController(), adapter, month };
@@ -494,9 +499,20 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
       // Rapid arrow clicks should fetch the final selected month, not every
       // intermediate month. Cached months remain immediate.
       if (month && !cached && !refresh) await waitForJournalNavigation(signal);
-      const snapshot = await reader.load(month, { refresh, signal });
+      const snapshot = await reader.load(month, {
+        refresh, signal,
+        onCatalog: (catalogSnapshot) => {
+          if (signal.aborted || adapterRef.current !== adapter || journalRequestRef.current !== request) return;
+          // Counts and calendar dates only need the catalog, not diary bodies.
+          setJournalEntryCatalog(catalogSnapshot.catalog);
+          setJournalCatalogReady(catalogSnapshot.catalogReady);
+          setJournalEntryFiles(catalogSnapshot.entries);
+          setJournalLoadedMonths(catalogSnapshot.loadedMonths);
+        },
+      });
       if (signal.aborted || adapterRef.current !== adapter || journalRequestRef.current !== request) return;
       setJournalEntryCatalog(snapshot.catalog);
+      setJournalCatalogReady(snapshot.catalogReady);
       setJournalEntryFiles(snapshot.entries);
       setJournalLoadedMonths(snapshot.loadedMonths);
     } catch (error) {
@@ -843,6 +859,7 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     setReportDraftFiles([]);
     setJournalEntryFiles([]);
     setJournalEntryCatalog([]);
+    setJournalCatalogReady(false);
     setJournalLoadedMonths([]);
     setJournalLoadError("");
     journalRequestRef.current?.controller.abort();
@@ -895,6 +912,7 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     journalEntryFiles,
     rememberJournalEntry,
     journalEntryCatalog,
+    journalCatalogReady,
     journalLoadedMonths,
     journalLoadError,
     journalSegmentFiles,

@@ -18,6 +18,7 @@ type Props = {
   todayDate: string;
   journalEntryFiles: SyncedJournalEntry[];
   journalEntryCatalog: GitHubDirectoryItem[];
+  catalogReady: boolean;
   loadedMonths: string[];
   loadError: string;
   loading: boolean;
@@ -30,7 +31,7 @@ type Props = {
   onBrowseRecent: () => void;
 };
 
-export function JournalSection({ connection, adapter, online, todayDate, journalEntryFiles, journalEntryCatalog, loadedMonths, loadError, loading, saving, savingId, onCreate, onEdit, onRefresh, onBrowseMonth, onBrowseRecent }: Props) {
+export function JournalSection({ connection, adapter, online, todayDate, journalEntryFiles, journalEntryCatalog, catalogReady, loadedMonths, loadError, loading, saving, savingId, onCreate, onEdit, onRefresh, onBrowseMonth, onBrowseRecent }: Props) {
   const [view] = useState<"active" | "trash">("active");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [journalDate, setJournalDate] = useState("");
@@ -120,7 +121,7 @@ export function JournalSection({ connection, adapter, online, todayDate, journal
     <div className="card-heading">
       <div><p className="eyebrow">Nexus · Journal</p><h2 id="journal-title">日记</h2></div>
       <div className="journal-view-actions" aria-label="日记视图与同步">
-        <JournalStatistics key={connection ? `${connection.ownerId}:${connection.repository}` : "disconnected"} connection={connection} adapter={adapter} catalog={journalEntryCatalog} loaded={journalEntryFiles} busy={loading || busy} />
+        <JournalStatistics key={connection ? `${connection.ownerId}:${connection.repository}` : "disconnected"} connection={connection} adapter={adapter} catalog={journalEntryCatalog} catalogReady={catalogReady} loaded={journalEntryFiles} busy={loading || busy} />
         <button className="secondary-button" type="button" onClick={() => onRefresh(recentView ? undefined : displayedMonth)} disabled={!connection || loading}>{loading ? "刷新中…" : "从 GitHub 刷新"}</button>
       </div>
     </div>

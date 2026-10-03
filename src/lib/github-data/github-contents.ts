@@ -48,6 +48,7 @@ type GitHubCommitResponse = {
 type GitHubBlobResponse = { sha: string };
 type GitHubTreeResponse = { sha: string };
 type GitHubBlobReadResponse = { sha: string; size: number; encoding: "base64"; content: string };
+type GitHubGraphQLError = { type?: string; message?: string; extensions?: { code?: string; type?: string } };
 type GitHubGraphQLBlobResponse = {
   data?: { repository?: Record<string, {
     __typename?: string;
@@ -56,7 +57,15 @@ type GitHubGraphQLBlobResponse = {
     isTruncated?: boolean;
     text?: string | null;
   } | null> | null } | null;
-  errors?: Array<{ type?: string; message?: string; extensions?: { code?: string; type?: string } }>;
+  errors?: GitHubGraphQLError[];
+};
+type GitHubGraphQLTreeResponse = {
+  data?: { repository?: { object?: {
+    __typename?: string;
+    oid?: string;
+    entries?: Array<{ name: string; type: string; oid: string; size: number }> | null;
+  } | null } | null } | null;
+  errors?: GitHubGraphQLError[];
 };
 type GitHubRecursiveTreeResponse = {
   truncated: boolean;
@@ -118,6 +127,20 @@ function assertFilePath(value: string) {
 function blobReadSignal(signal?: AbortSignal) {
   const timeout = AbortSignal.timeout(20_000);
   return signal ? AbortSignal.any([signal, timeout]) : timeout;
+}
+
+function assertGraphQLAuthAndRate(errors: GitHubGraphQLError[]) {
+  for (const error of errors) {
+    if (!error || typeof error !== "object") throw new GitHubDataError("Invalid GitHub query error.", 500, "GITHUB_INVALID_RESPONSE");
+    const type = error.type ?? error.extensions?.type ?? error.extensions?.code ?? "";
+    const message = typeof error.message === "string" ? error.message : "";
+    if (type === "RATE_LIMITED" || /rate limit|abuse detection/i.test(message)) {
+      throw new GitHubDataError("GitHub request was rate limited.", 403, "GITHUB_RATE_LIMITED");
+    }
+    if (["UNAUTHORIZED", "UNAUTHENTICATED", "BAD_CREDENTIALS"].includes(type) || /bad credentials|requires authentication/i.test(message)) {
+      throw new GitHubDataError("GitHub authentication failed.", 401, "GITHUB_UNAUTHORIZED");
+    }
+  }
 }
 
 function awaitWithSignal<T>(pending: Promise<T>, signal?: AbortSignal): Promise<T> {
@@ -401,15 +424,7 @@ export class GitHubContentsAdapter {
       throw new GitHubDataError("Invalid GitHub blob query response.", 500, "GITHUB_INVALID_RESPONSE");
     }
     if (result.errors?.length) {
-      for (const error of result.errors) {
-        const type = error.type ?? error.extensions?.type ?? error.extensions?.code ?? "";
-        if (type === "RATE_LIMITED" || /rate limit|abuse detection/i.test(error.message ?? "")) {
-          throw new GitHubDataError("GitHub request was rate limited.", 403, "GITHUB_RATE_LIMITED");
-        }
-        if (["UNAUTHORIZED", "UNAUTHENTICATED", "BAD_CREDENTIALS"].includes(type) || /bad credentials|requires authentication/i.test(error.message ?? "")) {
-          throw new GitHubDataError("GitHub authentication failed.", 401, "GITHUB_UNAUTHORIZED");
-        }
-      }
+      assertGraphQLAuthAndRate(result.errors);
       const noBlobs = !result.data?.repository || Object.values(result.data.repository).every((blob) => blob === null);
       if (noBlobs && result.errors.every((error) => ["FORBIDDEN", "INSUFFICIENT_SCOPES", "NOT_FOUND"].includes(error.type ?? ""))) return null;
       throw new GitHubDataError("GitHub did not return a complete blob query.", 500, "GITHUB_GRAPHQL_ERROR");
@@ -467,7 +482,7 @@ export class GitHubContentsAdapter {
         if (this.graphQLAvailable === undefined) {
           this.graphQLFirstReadSignal = signal;
           this.graphQLFirstRead = this.readGraphQLBlobBatch(batch, assertCurrent, signal).then((result) => {
-            this.graphQLAvailable = result !== null;
+            if (result === null || this.graphQLAvailable !== false) this.graphQLAvailable = result !== null;
             return result;
           });
           try { records = await this.graphQLFirstRead; }
@@ -514,10 +529,74 @@ export class GitHubContentsAdapter {
     });
   }
 
+  private async listGraphQLJournalDirectory(ref: string): Promise<GitHubDirectoryItem[] | null> {
+    let result: GitHubGraphQLTreeResponse;
+    try {
+      result = await this.withBlobReadSlot(() => this.request<GitHubGraphQLTreeResponse>("/graphql", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: blobReadSignal(),
+        body: JSON.stringify({
+          query: `query ReadJournalDirectory($owner: String!, $repository: String!, $expression: String!) {
+            repository(owner: $owner, name: $repository) {
+              object(expression: $expression) { __typename oid ... on Tree { entries { name type oid size } } }
+            }
+          }`,
+          variables: { owner: this.config.owner, repository: this.config.repository, expression: `${ref}:data/journal-entries` },
+        }),
+      }, false));
+    } catch (error) {
+      if (error instanceof GitHubDataError && ["GITHUB_FORBIDDEN", "GITHUB_NOT_FOUND", "GITHUB_BAD_REQUEST"].includes(error.code)) return null;
+      throw error;
+    }
+    if (!result || typeof result !== "object" || (result.errors !== undefined && !Array.isArray(result.errors))) {
+      throw new GitHubDataError("Invalid GitHub directory query response.", 500, "GITHUB_INVALID_RESPONSE");
+    }
+    if (result.errors?.length) {
+      assertGraphQLAuthAndRate(result.errors);
+      const noTree = !result.data?.repository?.object;
+      if (noTree && result.errors.every((error) => ["FORBIDDEN", "INSUFFICIENT_SCOPES"].includes(error.type ?? error.extensions?.type ?? error.extensions?.code ?? ""))) return null;
+      throw new GitHubDataError("GitHub did not return a complete directory query.", 500, "GITHUB_GRAPHQL_ERROR");
+    }
+    const repository = result.data?.repository;
+    if (!repository || typeof repository !== "object" || Array.isArray(repository)) {
+      throw new GitHubDataError("GitHub did not return the requested repository.", 500, "GITHUB_INVALID_RESPONSE");
+    }
+    if (repository.object === null) {
+      throw new GitHubDataError("GitHub directory not found.", 404, "GITHUB_NOT_FOUND");
+    }
+    const tree = repository.object;
+    if (!tree || tree.__typename !== "Tree" || typeof tree.oid !== "string" || !/^[a-f0-9]{40}$/u.test(tree.oid) || !Array.isArray(tree.entries)) {
+      throw new GitHubDataError("Invalid GitHub directory tree.", 500, "GITHUB_INVALID_RESPONSE");
+    }
+    const names = new Set<string>();
+    const records: GitHubDirectoryItem[] = [];
+    for (const entry of tree.entries) {
+      if (!entry || typeof entry.name !== "string" || !entry.name || [".", ".."].includes(entry.name) || /[/\\]/u.test(entry.name)
+        || Array.from(entry.name).some((character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127)
+        || names.has(entry.name) || !["blob", "tree", "commit"].includes(entry.type)
+        || typeof entry.oid !== "string" || !/^[a-f0-9]{40}$/u.test(entry.oid) || !Number.isSafeInteger(entry.size) || entry.size < 0) {
+        throw new GitHubDataError("Invalid GitHub directory entry.", 500, "GITHUB_INVALID_RESPONSE");
+      }
+      names.add(entry.name);
+      if (entry.type === "commit") continue;
+      records.push({ type: entry.type === "blob" ? "file" : "directory", name: entry.name, path: `data/journal-entries/${entry.name}`, blobSha: entry.oid, sizeBytes: entry.size });
+    }
+    return records;
+  }
+
   async listDirectory(pathname: string, refOverride?: string): Promise<GitHubDirectoryItem[]> {
     if (pathname) assertFilePath(pathname);
     const ref = refOverride ?? this.config.branch;
     if (pathname === "data/journal-entries") {
+      if (this.graphQLAvailable !== false) {
+        const directory = await this.listGraphQLJournalDirectory(ref ?? "main");
+        if (directory !== null) {
+          this.graphQLAvailable ??= true;
+          return directory;
+        }
+        this.graphQLAvailable = false;
+      }
       let tree = await this.request<GitHubRecursiveTreeResponse>(
         `/repos/${encodeURIComponent(this.config.owner)}/${encodeURIComponent(this.config.repository)}/git/trees/${encodeURIComponent(ref ?? "main")}`,
       );

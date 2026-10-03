@@ -14,6 +14,7 @@ function renderJournal(overrides: Partial<JournalProps> = {}) {
     todayDate: "2026-10-03",
     journalEntryFiles: [],
     journalEntryCatalog: [],
+    catalogReady: true,
     loadedMonths: [],
     loadError: "",
     loading: false,
