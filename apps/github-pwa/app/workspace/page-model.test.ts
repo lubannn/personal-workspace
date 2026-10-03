@@ -63,6 +63,19 @@ describe("formal PWA page behavior", () => {
       .toBe("安全检查未通过：数据仓库必须保持 Private。");
   });
 
+  it.each([
+    ["GITHUB_TRANSPORT_ERROR", "读取超时或连接中断"],
+    ["GITHUB_GRAPHQL_ERROR", "批量读取未完成"],
+    ["GITHUB_INVALID_RESPONSE", "数据不完整或格式异常"],
+    ["GITHUB_UNSUPPORTED_CONTENT", "数据不完整或格式异常"],
+    ["GITHUB_TREE_TRUNCATED", "数据不完整或格式异常"],
+  ])("identifies %s without hiding it behind a generic login failure or exposing response data", (code, message) => {
+    const result = friendlyError(new GitHubDataError("private upstream response", 500, code));
+    expect(result).toContain(message);
+    expect(result).not.toContain("private upstream response");
+    expect(result).not.toBe("连接 GitHub 时发生错误，请稍后重试。");
+  });
+
   it("explains atomic Journal conflicts and history failures without claiming a save", () => {
     expect(friendlyJournalWriteError(new GitHubDataError("conflict", 409, "GITHUB_SYNC_CONFLICT"), "edit"))
       .toBe("文件已在另一台设备更新，请刷新后重试。");
