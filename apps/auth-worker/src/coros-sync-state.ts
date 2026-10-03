@@ -107,5 +107,7 @@ export function nextSyncWindow(p: SyncProgress, now: Date) {
     .sort((a, b) => p.domains[a].backfillNext.localeCompare(p.domains[b].backfillNext))[0];
   if (!domain) return null;
   const from = p.domains[domain].backfillNext;
-  return { domain, recent: false, from, through: [shiftDate(from, 2), through].sort()[0] };
+  // Workout summaries are sparse and the caller halves windows that hit the result cap.
+  // Sleep responses have an observed three-day cap and must keep their smaller window.
+  return { domain, recent: false, from, through: [shiftDate(from, domain === "workout" ? 29 : 2), through].sort()[0] };
 }

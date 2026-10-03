@@ -33,6 +33,24 @@ describe("health record browsing", () => {
     expect(summarizeHealthRecords(rows, "Asia/Shanghai")).toEqual({ count: 1, earliest: "2024-02-02", latest: "2024-02-02" });
     expect(filterHealthRecords(rows, { from: "2024-02-02", to: "2024-02-02" }, "Asia/Shanghai")).toHaveLength(1);
     expect(filterHealthRecords(rows, { from: "2024-02-01", to: "2024-02-01" }, "Asia/Shanghai")).toHaveLength(0);
+    expect(rows[0].dateCorrection).toBeNull();
+  });
+
+  it("retains explicit COROS date correction evidence while sorting and filtering on corrected dates", () => {
+    const correction = { reason: "coros_legacy_nap_year_1982" as const,
+      original_start_at: "1982-03-15T05:10:00.000Z", original_end_at: "1982-03-15T05:40:00.000Z" };
+    const data = createAutomaticSleepSessionData({ start_at: "2030-03-15T05:10:00.000Z", end_at: "2030-03-15T05:40:00.000Z",
+      local_date: "2030-03-15", timezone: "Asia/Shanghai", session_type: "nap", duration_minutes: 30 },
+    { kind: "coros_mcp", source_id: "synthetic-corrected-nap", source_sha256: "d".repeat(64), mapping_version: 1, retrieved_at: "2030-03-16T00:00:00.000Z" },
+    { asleep_minutes: null, awake_minutes: null, score: null, wake_date: "2030-03-15", date_correction: correction });
+    const record = createWorkspaceRecord({ entityType: "sleep_session", id: "sleep_corrected", ownerId: "test-owner", timestamp, data });
+    const rows = buildHealthRecordRows([{ record, path: "synthetic.json", blobSha: "test" }], [], []).sleepRows;
+    expect(rows[0]).toMatchObject({ dateCorrection: correction, source: { kind: "coros_mcp", label: "COROS · 自动同步" },
+      recordDate: "2030-03-15", startAt: data.start_at, endAt: data.end_at, durationSeconds: 1800 });
+    expect(healthLocalParts(rows[0].dateCorrection!.original_start_at, rows[0].timezone)).toEqual({ date: "1982-03-15", time: "13:10" });
+    expect(healthLocalParts(rows[0].startAt, rows[0].timezone)).toEqual({ date: "2030-03-15", time: "13:10" });
+    expect(summarizeHealthRecords(rows, "Asia/Shanghai")).toEqual({ count: 1, earliest: "2030-03-15", latest: "2030-03-15" });
+    expect(filterHealthRecords(rows, { from: "1982-03-15", to: "1982-03-15" }, "Asia/Shanghai")).toEqual([]);
   });
 
   it("labels COROS imports only when confirmed source and workout content agree", async () => {

@@ -464,9 +464,11 @@ Workout 是独立 canonical entity：它有明确起止、运动类型、时长�
 
 v2 禁止 `confirmation_status`、`staging_record_id`，也不记录虚构的 `user_adjusted`、`adjustment_reason` 或 `confirmed_at`。新记录由用户已授权的后台同步写入；相同来源标识及内容指纹重复读取为 no-op。睡眠和运动记录 ID 分别为 `coros_sleep_<sha256(source_id)>`、`coros_workout_<sha256(source_id)>`，ID 中不暴露原始来源标识。来源修订或与既有人工/文件记录重复时保留现有 canonical，并写入 `CorosSyncConflict`。
 
-睡眠 v2 的 `duration_minutes` 始终表示起止窗口长度。`sleep_metrics_json` 恰含 `asleep_minutes`、`awake_minutes`、`score`、`wake_date`；数值缺失时使用 `null`，不根据模糊总计推算。`local_date` 仍是开始日以兼容旧语义；`wake_date` 必须与结束时刻的当地日期一致，健康页的日期统计和筛选按此醒来日。只接受已明确分类的 `main_sleep` 或 `nap`，分别保存每段时间。实际睡着/清醒时长不能超出窗口，评分范围为 0–100。
+睡眠 v2 的 `duration_minutes` 始终表示起止窗口长度。`sleep_metrics_json` 含 `asleep_minutes`、`awake_minutes`、`score`、`wake_date`；数值缺失时使用 `null`，不根据模糊总计推算。`local_date` 仍是开始日以兼容旧语义；`wake_date` 必须与结束时刻的当地日期一致，健康页的日期统计和筛选按此醒来日。只接受已明确分类的 `main_sleep` 或 `nap`，分别保存每段时间。实际睡着/清醒时长不能超出窗口，评分范围为 0–100。
 
-运动 v2 继续使用现有摘要字段：`duration_seconds` 和 `metrics_json.elapsed_seconds` 保存起止 epoch 的差；COROS 报告的运动时长另保存到 `metrics_json.moving_seconds`。距离缺失用 `null`，不视为 0；未提供的生理/运动指标用 `null`。不保留位置、GPS、原始响应或轨迹序列。自动 `HealthMetric` v2 数据格式已就绪；运行中同步哪些指标由已实现的映射器与配置决定，不能仅凭 schema 宣称该域历史已覆盖。
+用户明确授权的旧版小睡年份修复可附带 `date_correction`，含 `reason: coros_legacy_nap_year_1982` 与原始 `original_start_at`、`original_end_at`。仅当原始结束日期属于 1982 年、月日与 2025 年及之后的睡眠归属日相同，原始开始在同一当地日或前一日，且旧版小睡总时长标记、时刻、时区与时长均可核实时修正年份。跨午夜的小睡保留前一日开始的关系；原始时间保留，前端明确标注修正，小睡实际睡着、清醒与评分仍为未知。该证据参与来源指纹，导出、恢复与冲突候选均保留，不能用于任意日期改写。
+
+运动 v2 继续使用现有摘要字段：`duration_seconds` 和 `metrics_json.elapsed_seconds` 保存起止 epoch 的差；COROS 报告的运动时长另保存到 `metrics_json.moving_seconds`。若显示时长因取整比 epoch 窗口多 1 秒，仅将 `moving_seconds` 限制到窗口长度，起止时刻不变；超过 1 秒仍拒绝该批次。距离缺失用 `null`，不视为 0；未提供的生理/运动指标用 `null`。不保留位置、GPS、原始响应或轨迹序列。自动 `HealthMetric` v2 数据格式已就绪；运行中同步哪些指标由已实现的映射器与配置决定，不能仅凭 schema 宣称该域历史已覆盖。
 
 读取、导出与恢复均独立校验 v2 来源和摘要，无需人工 staging。健康目录达到 Contents API 1,000 条上限时切换到指定 Git tree 的完整文件清单；树响应被截断时整个读取失败，不显示不完整历史为全量。数据内版本升级不改变外层 envelope，因此 portable migration dry run 仍识别为当前外层 schema。
 

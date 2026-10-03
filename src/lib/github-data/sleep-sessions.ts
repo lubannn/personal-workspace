@@ -11,11 +11,17 @@ export type ConfirmedSleepSessionData = SleepSessionCandidate & {
   user_adjusted: boolean;
   adjustment_reason: string | null;
 };
+export type CorosSleepDateCorrection = {
+  reason: "coros_legacy_nap_year_1982";
+  original_start_at: string;
+  original_end_at: string;
+};
 export type CorosSleepMetrics = {
   asleep_minutes: number | null;
   awake_minutes: number | null;
   score: number | null;
   wake_date: string;
+  date_correction?: CorosSleepDateCorrection;
 };
 export type AutomaticSleepSessionData = SleepSessionCandidate & AutomaticCorosFields & {
   sleep_session_version: 2;
@@ -66,13 +72,14 @@ function validateData(data: SleepSessionData) {
       || typeof data.start_at !== "string" || typeof data.end_at !== "string" || typeof data.timezone !== "string" || !data.timezone
       || !["main_sleep", "nap"].includes(data.session_type) || !isDateOnly(data.local_date)
       || !Number.isFinite(duration) || duration <= 0 || duration > 2_160 || duration !== data.duration_minutes
-      || !metrics || Object.keys(metrics).sort().join(",") !== "asleep_minutes,awake_minutes,score,wake_date"
+      || !metrics || !["asleep_minutes,awake_minutes,score,wake_date", "asleep_minutes,awake_minutes,date_correction,score,wake_date"].includes(Object.keys(metrics).sort().join(","))
       || !validMinutes(metrics.asleep_minutes) || !validMinutes(metrics.awake_minutes)
       || (metrics.asleep_minutes !== null && metrics.awake_minutes !== null && metrics.asleep_minutes + metrics.awake_minutes > duration + 1)
       || !(metrics.score === null || (Number.isFinite(metrics.score) && metrics.score >= 0 && metrics.score <= 100))
       || !isDateOnly(metrics.wake_date)) throw new Error("INVALID_SLEEP_SESSION_DETAILS");
     try {
       if (localDateForInstant(data.start_at, data.timezone) !== data.local_date || localDateForInstant(data.end_at, data.timezone) !== metrics.wake_date) throw new Error("INVALID_SLEEP_SESSION_DETAILS");
+      if (Object.hasOwn(metrics, "date_correction") && !validDateCorrection(data)) throw new Error("INVALID_SLEEP_SESSION_DETAILS");
     } catch { throw new Error("INVALID_SLEEP_SESSION_DETAILS"); }
     return data;
   }
@@ -82,6 +89,27 @@ function validateData(data: SleepSessionData) {
     || Object.keys(data.sleep_metrics_json).length !== 0 || data.user_adjusted !== true || !data.adjustment_reason) throw new Error("INVALID_SLEEP_SESSION_DETAILS");
   try { if (localDateForInstant(data.start_at, data.timezone) !== data.local_date) throw new Error("INVALID_SLEEP_SESSION_DETAILS"); } catch { throw new Error("INVALID_SLEEP_SESSION_DETAILS"); }
   return data;
+}
+
+function validDateCorrection(data: AutomaticSleepSessionData): boolean {
+  const metrics = data.sleep_metrics_json; const correction = metrics.date_correction;
+  if (!correction || Object.keys(correction).sort().join(",") !== "original_end_at,original_start_at,reason"
+    || correction.reason !== "coros_legacy_nap_year_1982" || data.session_type !== "nap" || data.timezone !== "Asia/Shanghai"
+    || metrics.wake_date < "2025-01-01"
+    || metrics.asleep_minutes !== null || metrics.awake_minutes !== null || metrics.score !== null) return false;
+  const localOriginal = (original: string) => {
+    if (typeof original !== "string" || new Date(original).toISOString() !== original) return null;
+    return new Date(Date.parse(original) + 8 * 3600_000).toISOString();
+  };
+  const start = localOriginal(correction.original_start_at); const end = localOriginal(correction.original_end_at);
+  if (!start || !end || end.slice(0, 10) !== `1982${metrics.wake_date.slice(4)}`) return false;
+  const daySpan = (Date.parse(end.slice(0, 10)) - Date.parse(start.slice(0, 10))) / 86400_000;
+  if (![0, 1].includes(daySpan)) return false;
+  const startDate = new Date(Date.parse(metrics.wake_date) - daySpan * 86400_000).toISOString().slice(0, 10);
+  return data.local_date === startDate
+    && new Date(`${startDate}${start.slice(10, -1)}+08:00`).toISOString() === data.start_at
+    && new Date(`${metrics.wake_date}${end.slice(10, -1)}+08:00`).toISOString() === data.end_at
+    && Date.parse(correction.original_end_at) - Date.parse(correction.original_start_at) === Date.parse(data.end_at) - Date.parse(data.start_at);
 }
 
 function isDateOnly(value: string) { const parsed = /^\d{4}-\d{2}-\d{2}$/u.test(value) ? new Date(`${value}T00:00:00Z`) : null; return Boolean(parsed && !Number.isNaN(parsed.valueOf()) && parsed.toISOString().slice(0, 10) === value); }

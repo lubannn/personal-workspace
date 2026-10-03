@@ -55,7 +55,7 @@ describe("COROS explicitly requested sync windows", () => {
     const progress = requested(); recentComplete(progress);
     progress.domains.sleep.backfillNext = "2024-01-10";
     expect(progress.domains.workout.backfillNext).toBe("2024-01-01");
-    expect(nextSyncWindow(progress, now)).toEqual({ domain: "workout", recent: false, from: "2024-01-01", through: "2024-01-03" });
+    expect(nextSyncWindow(progress, now)).toEqual({ domain: "workout", recent: false, from: "2024-01-01", through: "2024-01-30" });
   });
 
   it("allows the healthy domain to continue while another requested domain waits to retry", () => {
