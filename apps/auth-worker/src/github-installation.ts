@@ -1,4 +1,5 @@
 import { GitHubContentsAdapter } from "../../../src/lib/github-data/github-contents";
+import { createDeadlineFetch } from "./http-deadline";
 
 const GITHUB_API_ORIGIN = "https://api.github.com";
 const API_VERSION = "2026-03-10";
@@ -78,7 +79,8 @@ export async function createPrivateDataInstallationAdapter(
     throw new Error("INVALID_GITHUB_REPOSITORY");
   }
   const jwt = await signGitHubAppJwt(config);
-  const response = await fetcher(`${GITHUB_API_ORIGIN}/app/installations/${config.installationId}/access_tokens`, {
+  const deadlineFetch = createDeadlineFetch(fetcher, "GITHUB_REQUEST_TIMEOUT");
+  const response = await deadlineFetch(`${GITHUB_API_ORIGIN}/app/installations/${config.installationId}/access_tokens`, {
     method: "POST",
     cache: "no-store",
     headers: {
@@ -103,7 +105,7 @@ export async function createPrivateDataInstallationAdapter(
     repository: config.repository,
     token: payload.token,
     userAgent: "PersonalWorkspace-CorosSync/1.0",
-  }, fetcher);
+  }, deadlineFetch);
   const repository = await adapter.verifyPrivateRepository();
   if (repository.fullName.toLowerCase() !== `${config.owner}/${config.repository}`.toLowerCase()) {
     throw new Error("GITHUB_INSTALLATION_REPOSITORY_MISMATCH");

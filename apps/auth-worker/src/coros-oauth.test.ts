@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createCorosAuthorization,
   discoverCorosOAuth,
@@ -20,8 +20,45 @@ const authMetadata = {
   grant_types_supported: ["authorization_code", "refresh_token"],
   token_endpoint_auth_methods_supported: ["none"],
 };
+const endpoints = { resource, issuer: origin, authorize: authMetadata.authorization_endpoint, token: authMetadata.token_endpoint, register: authMetadata.registration_endpoint };
+const client = { clientId: "client-1", redirectUri: callback };
+
+afterEach(() => vi.useRealTimers());
 
 describe("COROS OAuth boundary", () => {
+  it.each(["discovery", "registration", "exchange", "refresh"])("bounds stalled %s response bodies", async (operation) => {
+    vi.useFakeTimers();
+    const cancel = vi.fn();
+    const fetcher = vi.fn<typeof fetch>(async () => new Response(new ReadableStream({ cancel })));
+    const request = operation === "discovery" ? discoverCorosOAuth(resource, fetcher)
+      : operation === "registration" ? registerCorosOAuthClient(endpoints, callback, fetcher)
+        : operation === "exchange" ? exchangeCorosCode(endpoints, client, "code", "verifier", fetcher)
+          : refreshCorosToken(endpoints, client, "refresh-old", "mcp.tools", fetcher);
+    const result = expect(request).rejects.toMatchObject({ name: "AbortError", message: "COROS_OAUTH_TIMEOUT" });
+    await vi.advanceTimersByTimeAsync(30_000);
+    await result;
+    expect(cancel).toHaveBeenCalledTimes(1);
+    expect(fetcher.mock.calls[0][1]?.signal?.aborted).toBe(true);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it("bounds OAuth headers even when the transport ignores AbortSignal", async () => {
+    vi.useFakeTimers();
+    const fetcher = vi.fn<typeof fetch>(() => new Promise(() => undefined));
+    const request = discoverCorosOAuth(resource, fetcher);
+    const result = expect(request).rejects.toThrow("COROS_OAUTH_TIMEOUT");
+    await vi.advanceTimersByTimeAsync(30_000);
+    await result;
+    expect(fetcher.mock.calls[0][1]?.signal?.aborted).toBe(true);
+  });
+
+  it.each([true, false])("retains the 64 KiB limit with content-length=%s", async (withLength) => {
+    const cancel = vi.fn();
+    const body = new ReadableStream({ start(controller) { controller.enqueue(new Uint8Array(65_537)); }, cancel });
+    const fetcher = vi.fn<typeof fetch>(async () => new Response(body, { headers: withLength ? { "content-length": "65537" } : {} }));
+    await expect(discoverCorosOAuth(resource, fetcher)).rejects.toThrow("COROS_RESPONSE_TOO_LARGE");
+    expect(cancel).toHaveBeenCalledTimes(1);
+  });
   it("discovers only same-origin metadata with PKCE and refresh support", async () => {
     const fetcher = vi.fn<typeof fetch>(async (input) => Response.json(
       String(input).includes("protected-resource") ? protectedMetadata : authMetadata,
