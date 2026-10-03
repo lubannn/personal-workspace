@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { CorosProvenance } from "./coros-sync-types";
 import type { CorosWorkoutCandidate, SleepSessionCandidate } from "./health-staging-records";
 import { createAutomaticWorkoutData, parseWorkoutRecord } from "./workouts";
-import { createAutomaticSleepSessionData, parseSleepSessionRecord } from "./sleep-sessions";
+import { createAutomaticSleepSessionData, parseSleepSessionRecord, type CorosSleepMetrics } from "./sleep-sessions";
 import { createAutomaticHealthMetricData, parseHealthMetricRecord } from "./health-metrics";
 import { createWorkspaceRecord, recordPath, serializeRecord } from "./protocol";
 import { buildPortableWorkspaceExport, inspectPortableWorkspaceExport } from "./portable-export";
@@ -14,6 +14,10 @@ const timestamp = "2024-02-02T01:00:00.000Z";
 const provenance: CorosProvenance = { kind: "coros_mcp", source_id: "synthetic:record:1", source_sha256: "a".repeat(64), mapping_version: 1, retrieved_at: timestamp };
 const sleep: SleepSessionCandidate = { start_at: "2024-02-01T15:00:00.000Z", end_at: "2024-02-01T23:00:00.000Z", local_date: "2024-02-01", timezone: "Asia/Shanghai", session_type: "main_sleep", duration_minutes: 480 };
 const sleepMetrics = { asleep_minutes: 465, awake_minutes: 15, score: 85, wake_date: "2024-02-02" };
+const correctedNap: SleepSessionCandidate = { start_at: "2025-01-10T04:00:00.000Z", end_at: "2025-01-10T04:30:00.000Z",
+  local_date: "2025-01-10", timezone: "Asia/Shanghai", session_type: "nap", duration_minutes: 30 };
+const correctedMetrics: CorosSleepMetrics = { asleep_minutes: null, awake_minutes: null, score: null, wake_date: "2025-01-10",
+  date_correction: { reason: "coros_legacy_nap_year_1982", original_start_at: "1982-01-10T04:00:00.000Z", original_end_at: "1982-01-10T04:30:00.000Z" } };
 const workout: CorosWorkoutCandidate = {
   activity_type: "run", start_at: "2024-02-01T01:00:00.000Z", end_at: "2024-02-01T01:30:00.000Z", timezone: "Asia/Shanghai",
   duration_seconds: 1800, distance: 4000, distance_unit: "m", training_load: null,
@@ -52,6 +56,26 @@ describe("automatic COROS canonical records", () => {
     expect(() => createAutomaticSleepSessionData(sleep, provenance, { ...sleepMetrics, score: 101 })).toThrow("INVALID_SLEEP_SESSION_DETAILS");
   });
 
+  it("validates the exact legacy nap correction and rejects arbitrary date edits or invented measurements", () => {
+    const record = createWorkspaceRecord({ entityType: "sleep_session", id: "sleep_corrected_nap", ownerId: "github_fixture", timestamp,
+      data: createAutomaticSleepSessionData(correctedNap, provenance, correctedMetrics) });
+    expect(parseSleepSessionRecord(serializeRecord(record))).toEqual(record);
+    for (const dateCorrection of [
+      null, { ...correctedMetrics.date_correction, reason: "guessed" },
+      { ...correctedMetrics.date_correction, original_start_at: "1983-01-10T04:00:00.000Z" },
+      { ...correctedMetrics.date_correction, original_start_at: "1982-01-11T04:00:00.000Z" },
+      { ...correctedMetrics.date_correction, original_start_at: "1982-01-08T04:00:00.000Z" },
+      { ...correctedMetrics.date_correction, original_start_at: "1982-01-10T04:01:00.000Z" },
+      { ...correctedMetrics.date_correction, original_end_at: "1982-01-11T04:30:00.000Z" },
+      { ...correctedMetrics.date_correction, raw_text: "unexpected" },
+    ]) expect(() => parseSleepSessionRecord(JSON.stringify({ ...record, data: { ...record.data,
+      sleep_metrics_json: { ...correctedMetrics, date_correction: dateCorrection } } }))).toThrow("INVALID_SLEEP_SESSION_RECORD");
+    for (const metrics of [{ ...correctedMetrics, score: 80 }, { ...correctedMetrics, asleep_minutes: 30 }, { ...correctedMetrics, awake_minutes: 0 }]) {
+      expect(() => createAutomaticSleepSessionData(correctedNap, provenance, metrics)).toThrow("INVALID_SLEEP_SESSION_DETAILS");
+    }
+    expect(() => createAutomaticSleepSessionData({ ...correctedNap, session_type: "main_sleep" }, provenance, correctedMetrics)).toThrow("INVALID_SLEEP_SESSION_DETAILS");
+  });
+
   it("rejects forged confirmation, invalid provenance, unexpected sensitive fields and unknown mapping versions", () => {
     const records = automaticRecords();
     for (const [record, parse] of [[records.workout, parseWorkoutRecord], [records.sleep, parseSleepSessionRecord], [records.metric, parseHealthMetricRecord]] as const) {
@@ -63,13 +87,15 @@ describe("automatic COROS canonical records", () => {
     }
   });
 
-  it("exports and restores automatic records with no fabricated staging source", async () => {
+  it.each([false, true])("exports/restores automatic records and conflict candidates, retaining date corrections (%s)", async corrected => {
     const records = automaticRecords();
+    const candidate = corrected ? correctedNap : sleep; const metrics = corrected ? correctedMetrics : sleepMetrics;
+    if (corrected) records.sleep = { ...records.sleep, data: createAutomaticSleepSessionData(candidate, provenance, metrics) };
     const stored = (path: string, text: string) => ({ path, text, blobSha: "fixture", sizeBytes: new TextEncoder().encode(text).byteLength });
     const recordFile = (record: (typeof records)[keyof typeof records]) => stored(recordPath(record.entity_type, record.id), serializeRecord(record));
     const conflict = createCorosSyncConflictRecord({ id: "coros_conflict_fixture", ownerId: "github_fixture", detectedAt: timestamp, data: {
       source_id: provenance.source_id, source_sha256: provenance.source_sha256, mapping_version: 1, record_kind: "sleep", reason: "source_changed", existing_record_id: records.sleep.id,
-      existing_source_sha256: "b".repeat(64), candidate: { kind: "sleep", candidate: sleep, metrics: sleepMetrics },
+      existing_source_sha256: "b".repeat(64), candidate: { kind: "sleep", candidate, metrics },
     } });
     const exported = await buildPortableWorkspaceExport({
       repository: "fixture/personal-workspace-data", branch: "main", captureFiles: [],

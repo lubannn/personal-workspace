@@ -1,8 +1,9 @@
 import type { CorosWorkoutCandidate, SleepSessionCandidate } from "../../../src/lib/github-data/health-staging-records";
 import type { CorosReadResult } from "./coros-read-client";
+import type { CorosSleepDateCorrection, CorosSleepMetrics } from "../../../src/lib/github-data/sleep-sessions";
 
 export type CorosSyncDateRange = { startDate: string; endDate: string; timezone: string };
-export type CorosSyncSleepMetrics = { asleep_minutes: number | null; awake_minutes: number | null; score: number | null; wake_date: string };
+export type CorosSyncSleepMetrics = CorosSleepMetrics;
 export type CorosSyncCandidate =
   | { kind: "sleep"; sourceId: string; candidate: SleepSessionCandidate; metrics: CorosSyncSleepMetrics }
   | { kind: "workout"; sourceId: string; candidate: CorosWorkoutCandidate };
@@ -64,6 +65,20 @@ function window(value: string) {
   if (!Number.isInteger(minutes) || minutes <= 0 || minutes > 2160) return fail();
   return { start, end, minutes, startDate: match[1].slice(0, 10), endDate: match[2].slice(0, 10) };
 }
+type SleepWindow = ReturnType<typeof window> & { dateCorrection?: CorosSleepDateCorrection };
+function legacyNapDateCorrection(span: SleepWindow, date: string, fields: Map<string, string>): SleepWindow {
+  // User-authorized repair for the observed legacy COROS 1982 nap-year defect.
+  // Anchor the matching end month/day; start may be that day or the previous day.
+  const daySpan = (Date.parse(span.endDate) - Date.parse(span.startDate)) / 86400_000;
+  if (date < "2025-01-01" || span.endDate !== `1982${date.slice(4)}` || ![0, 1].includes(daySpan)
+    || !fields.get("Naps Total")?.endsWith(" (includes legacy reported durations)")
+    || fields.has("Naps Total (asleep)") || fields.has("Naps Period (incl. awake)")) return span;
+  const clock = (instant: string) => new Date(Date.parse(instant) + 8 * 3600_000).toISOString().slice(11, 16);
+  const startDate = new Date(Date.parse(date) - daySpan * 86400_000).toISOString().slice(0, 10);
+  const corrected = window(`${startDate} ${clock(span.start)} - ${date} ${clock(span.end)}`);
+  if (corrected.minutes !== span.minutes) return fail();
+  return { ...corrected, dateCorrection: { reason: "coros_legacy_nap_year_1982", original_start_at: span.start, original_end_at: span.end } };
+}
 function minutes(value: string) {
   const match = /^(?:(\d+)h(?: )?)?(\d+) ?min$/u.exec(value);
   if (!match || (match[1] && Number(match[2]) >= 60)) return fail();
@@ -99,30 +114,59 @@ export function mapCorosSleep(result: CorosReadResult, options: CorosSyncDateRan
   for (const section of sections) {
     const [dateLine, ...lines] = section.split("\n"); const date = inRange(dateLine, bounds);
     if (seen.has(date)) return fail(); seen.add(date);
-    if (lines.length === 1 && lines[0] === "Sleep detail for this day is not available yet.") continue;
-    const fields = new Map<string, string>(); const naps: ReturnType<typeof window>[] = [];
+    if ((lines.length === 1 && lines[0] === "Sleep detail for this day is not available yet.")
+      || (lines.length === 2 && lines[0] === "Sleep Score: 0" && lines[1] === "Sleep detail for this day is not available yet.")) continue;
+    const fields = new Map<string, string>(); const rawNaps: SleepWindow[] = [];
     for (const line of lines) {
       const match = /^([^:]+): (.+)$/u.exec(line);
       if (!match) return fail();
-      if (match[1] === "Nap Window") { naps.push(window(match[2])); continue; }
+      if (match[1] === "Nap Window") { rawNaps.push(window(match[2])); continue; }
       if (!sleepFields.has(match[1]) || fields.has(match[1])) return fail();
       fields.set(match[1], match[2]);
     }
-    // Observed legacy nap-only days omit every main-sleep field, including score.
-    // Their reported total is a period, not evidence of time actually asleep.
+    const naps = rawNaps.map(nap => legacyNapDateCorrection(nap, date, fields));
+    // Nap-only days omit main-sleep fields; the fuller layouts use -1 for an
+    // unavailable score. Legacy totals represent periods, not time asleep.
     if (!fields.has("Main Sleep Window")) {
       const legacyNaps = fields.get("Naps Total");
-      if (fields.size !== 1 || legacyNaps === undefined || naps.length === 0) return fail();
+      if (naps.length === 0) return fail();
       const napPeriod = naps.reduce((sum, nap) => sum + nap.minutes, 0);
-      if (naps.some(nap => nap.endDate !== date)
-        || minutes(legacyNaps.replace(/ \(includes legacy reported durations\)$/u, "")) !== napPeriod) return fail();
+      if (naps.some(nap => nap.endDate !== date)) return fail();
+      let napsAsleep: number | null = null;
+      if (legacyNaps === undefined) {
+        const allowed = new Set(["Sleep Score", "Daily Sleep", "Sleep metrics scope", "Naps Total (asleep)", "Naps Period (incl. awake)"]);
+        const daily = fields.get("Daily Sleep");
+        napsAsleep = optionalMinutes(fields, "Naps Total (asleep)");
+        if (fields.size !== allowed.size || [...fields.keys()].some(key => !allowed.has(key))
+          || fields.get("Sleep Score") !== "-1" || fields.get("Sleep metrics scope") !== "daily"
+          || optionalMinutes(fields, "Naps Period (incl. awake)") !== napPeriod
+          || napsAsleep === null || napsAsleep > napPeriod || !daily?.endsWith(" (incl. naps)")
+          || minutes(daily.slice(0, -13)) !== napsAsleep) return fail();
+      } else if (minutes(legacyNaps.replace(/ \(includes legacy reported durations\)$/u, "")) !== napPeriod) return fail();
+      else if (fields.size > 1) {
+        const ratios = ["Deep Sleep Ratio", "Light Sleep Ratio", "REM Ratio", "Awake Ratio"];
+        const allowed = new Set(["Naps Total", "Sleep Score", "Daily Sleep", "Awake Time", "Awake Count (>5 min)", ...ratios]);
+        const daily = fields.get("Daily Sleep");
+        if ([...fields.keys()].some(key => !allowed.has(key)) || fields.get("Sleep Score") !== "-1"
+          || !legacyNaps.endsWith(" (includes legacy reported durations)")
+          || !daily?.endsWith(" (incl. naps)") || minutes(daily.slice(0, -13)) !== napPeriod) return fail();
+        for (const key of ratios) {
+          const value = fields.get(key);
+          if (value !== undefined && (!/^\d+%$/u.test(value) || integer(value.slice(0, -1), 100) > 100)) return fail();
+        }
+        const awake = optionalMinutes(fields, "Awake Time");
+        if (awake !== null && awake > napPeriod) return fail();
+        if (fields.has("Awake Count (>5 min)")) integer(fields.get("Awake Count (>5 min)")!, 1000);
+      }
       const sorted = [...naps].sort((a, b) => a.start.localeCompare(b.start));
       if (sorted.some((span, i) => i > 0 && span.start < sorted[i - 1].end)) return fail();
       for (const nap of naps) items.push({
         kind: "sleep", sourceId: `sleep:${date}:nap:${nap.start}`,
         candidate: { start_at: nap.start, end_at: nap.end, local_date: nap.startDate,
           timezone: options.timezone, session_type: "nap", duration_minutes: nap.minutes },
-        metrics: { asleep_minutes: null, awake_minutes: null, score: null, wake_date: date },
+        metrics: { asleep_minutes: naps.length === 1 ? napsAsleep : null,
+          awake_minutes: naps.length === 1 && napsAsleep !== null ? nap.minutes - napsAsleep : null, score: null, wake_date: date,
+          ...(nap.dateCorrection ? { date_correction: nap.dateCorrection } : {}) },
       });
       continue;
     }
@@ -149,10 +193,11 @@ export function mapCorosSleep(result: CorosReadResult, options: CorosSyncDateRan
     if (modern && optionalMinutes(fields, "Main Sleep Period (incl. awake)") !== main.minutes) return fail();
     if (!modern && minutes(fields.get("Main Sleep")!) !== main.minutes) return fail();
     // Modern asleep is explicit. Legacy Main Sleep is an ambiguous reported period; never subtract awake to invent asleep.
-    const make = (span: ReturnType<typeof window>, type: "main_sleep" | "nap", slept: number | null, awakeMinutes: number | null): SleepItem => ({
+    const make = (span: SleepWindow, type: "main_sleep" | "nap", slept: number | null, awakeMinutes: number | null): SleepItem => ({
       kind: "sleep", sourceId: `sleep:${date}:${type === "main_sleep" ? "main" : `nap:${span.start}`}`,
       candidate: { start_at: span.start, end_at: span.end, local_date: span.startDate, timezone: options.timezone, session_type: type, duration_minutes: span.minutes },
-      metrics: { asleep_minutes: slept, awake_minutes: awakeMinutes, score: type === "main_sleep" ? score : null, wake_date: date },
+      metrics: { asleep_minutes: slept, awake_minutes: awakeMinutes, score: type === "main_sleep" ? score : null, wake_date: date,
+        ...(span.dateCorrection ? { date_correction: span.dateCorrection } : {}) },
     });
     const napPeriod = naps.reduce((sum, nap) => sum + nap.minutes, 0);
     let napsAsleep: number | null = null;

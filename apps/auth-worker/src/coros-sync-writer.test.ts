@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import { GitHubConflictError, type GitHubDirectoryItem } from "../../../src/lib/github-data/github-contents";
 import { createWorkspaceRecord, parseRecord, recordPath, serializeRecord, type WorkspaceRecord } from "../../../src/lib/github-data/protocol";
-import { createConfirmedSleepSessionData } from "../../../src/lib/github-data/sleep-sessions";
+import { createConfirmedSleepSessionData, parseSleepSessionRecord } from "../../../src/lib/github-data/sleep-sessions";
 import { parseCorosSyncConflictRecord } from "../../../src/lib/github-data/coros-sync-conflicts";
 import { COROS_SYNC_INDEX_PATH, parseCorosSyncIndexRecord } from "../../../src/lib/github-data/coros-sync-index";
 import type { CorosSyncCandidate } from "./coros-sync-mapping";
@@ -76,6 +76,29 @@ describe("atomic COROS synchronization writer", () => {
     expect(again).toMatchObject({ created: 0, conflicts: 1, totalPendingConflicts: 1 });
     expect(fake.adapter.writeAtomicFiles).toHaveBeenCalledTimes(2);
     expect(() => parseCorosSyncConflictRecord(JSON.stringify({ ...parseRecord(conflict[1]), data: { ...parseRecord(conflict[1]).data, raw_text: "unexpected" } }))).toThrow("INVALID_COROS_SYNC_CONFLICT_RECORD");
+  });
+
+  it("retains correction evidence in canonical data and fingerprints without duplicating a later corrected source", async () => {
+    const corrected: Extract<CorosSyncCandidate, { kind: "sleep" }> = {
+      kind: "sleep", sourceId: "sleep:2025-01-10:nap:2025-01-10T04:00:00.000Z",
+      candidate: { start_at: "2025-01-10T04:00:00.000Z", end_at: "2025-01-10T04:30:00.000Z", local_date: "2025-01-10",
+        timezone: "Asia/Shanghai", session_type: "nap", duration_minutes: 30 },
+      metrics: { asleep_minutes: null, awake_minutes: null, score: null, wake_date: "2025-01-10", date_correction: {
+        reason: "coros_legacy_nap_year_1982", original_start_at: "1982-01-10T04:00:00.000Z", original_end_at: "1982-01-10T04:30:00.000Z",
+      } },
+    };
+    const fake = fakeAdapter(); const input = { ownerId, items: [corrected], timestamp: "2025-01-11T00:00:00.000Z" };
+    expect(await writeCorosSyncBatch(fake.adapter, input)).toMatchObject({ created: 1, conflicts: 0 });
+    const original = [...fake.files].find(([path]) => path.startsWith("data/sleep-sessions/"))!;
+    expect(parseSleepSessionRecord(original[1]).data.sleep_metrics_json).toEqual(corrected.metrics);
+    expect(await writeCorosSyncBatch(fake.adapter, input)).toMatchObject({ created: 0, unchanged: 1, conflicts: 0 });
+    expect(fake.adapter.writeAtomicFiles).toHaveBeenCalledTimes(1);
+    const upstreamFixed = { ...corrected, metrics: { asleep_minutes: null, awake_minutes: null, score: null, wake_date: "2025-01-10" } };
+    expect(await writeCorosSyncBatch(fake.adapter, { ...input, items: [upstreamFixed] })).toMatchObject({ created: 0, conflicts: 1 });
+    expect(fake.files.get(original[0])).toBe(original[1]);
+    const conflict = [...fake.files].find(([path]) => path.includes("coros-sync-conflicts"))!;
+    expect(parseCorosSyncConflictRecord(conflict[1]).data).toMatchObject({ reason: "source_changed",
+      existing_record_id: parseRecord(original[1]).id, candidate: { kind: "sleep", metrics: upstreamFixed.metrics } });
   });
 
   it("does not resurrect deleted automatic sources or exact-interval legacy records", async () => {

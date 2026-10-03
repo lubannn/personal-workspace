@@ -64,6 +64,8 @@ export function CorosConnectionSection({ connectionMethod }: { connectionMethod:
   const [preview, setPreview] = useState<CorosPreview | null>(null);
   const [startDate, setStartDate] = useState("2025-05-01");
   const [historyRunning, setHistoryRunning] = useState(false);
+  const [historyWaiting, setHistoryWaiting] = useState(false);
+  const [historyRetryAt, setHistoryRetryAt] = useState<string | null>(null);
   const [historyBatches, setHistoryBatches] = useState(0);
   const [historyBatch, setHistoryBatch] = useState<SyncProgress["lastBatch"]>(null);
   const historyController = useRef<AbortController | null>(null);
@@ -129,13 +131,14 @@ export function CorosConnectionSection({ connectionMethod }: { connectionMethod:
     const csrf = readCookie("__Host-pw_csrf");
     if (!csrf) { setMessage("GitHub 登录会话已失效，请重新登录。"); return; }
     const controller = new AbortController(); historyController.current = controller;
-    busyRef.current = true; setBusy(true); setHistoryRunning(true); setHistoryBatches(0); setHistoryBatch(null); setMessage("");
+    busyRef.current = true; setBusy(true); setHistoryRunning(true); setHistoryWaiting(false); setHistoryRetryAt(null); setHistoryBatches(0); setHistoryBatch(null); setMessage("");
     inFlight.current?.abort(); inFlight.current = null; setRefreshing(false);
     let remainingConflicts = status?.sync?.progress?.conflicts ?? 0;
     try {
       const result = await drainCorosHistory({ csrf, signal: controller.signal, onUpdate: (update, processed) => {
         if (controller.signal.aborted) return;
         setHistoryBatches(processed);
+        setHistoryWaiting(update.status === "busy"); setHistoryRetryAt(update.status === "busy" ? update.retryAt ?? null : null);
         if (update.batch) setHistoryBatch(update.batch);
         if (update.progress) remainingConflicts = update.progress.conflicts;
         if (update.progress) setStatus(current => current?.sync ? { ...current, lastSyncAt: update.progress!.lastSuccessAt,
@@ -154,7 +157,7 @@ export function CorosConnectionSection({ connectionMethod }: { connectionMethod:
     } finally {
       if (historyController.current === controller) {
         historyController.current = null; busyRef.current = false;
-        setBusy(false); setHistoryRunning(false);
+        setBusy(false); setHistoryRunning(false); setHistoryWaiting(false); setHistoryRetryAt(null);
         await refresh();
       }
     }
@@ -230,7 +233,8 @@ export function CorosConnectionSection({ connectionMethod }: { connectionMethod:
       {enabled && status.sync && !status.sync.running && !status.sync.nextRunAt ? <p className="learning-subtitle">当前没有待处理批次，等待下一次每日更新或手动额外更新。</p> : null}
       {status.sync?.dailyRequestedDate ? <p className="learning-subtitle">最近每日更新请求：{status.sync.dailyRequestedDate}（北京时间）</p> : null}
       {lastError ? <p role="alert">{lastError}</p> : null}
-      {historyRunning || historyBatches > 0 ? <p role="status">{historyRunning ? "正在连续补齐历史记录" : "本次连续补齐"} · 已完成 {historyBatches} 批。
+      {historyRunning || historyBatches > 0 ? <p role="status">{historyRunning ? historyWaiting ? "后台正在处理，等待后自动继续补齐" : "正在连续补齐历史记录" : "本次连续补齐"} · 已完成 {historyBatches} 批。
+        {historyWaiting && historyRetryAt ? <>预计继续时间：{displayTime(historyRetryAt)}。</> : null}
         {historyBatch ? <> 最近一批：{historyBatch.domain === "sleep" ? "睡眠" : "运动"} {historyBatch.from} 至 {historyBatch.through}，新增 {historyBatch.created} 条，已有 {historyBatch.unchanged} 条{historyBatch.conflicts > 0 ? `，待核对 ${historyBatch.conflicts} 条` : ""}。</> : null}
       </p> : null}
       {historyRunning ? <button className="secondary-button" type="button" onClick={stopHistoryBackfill}>停止本次连续补齐</button> : null}

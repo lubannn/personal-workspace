@@ -1,4 +1,5 @@
 import { isWorkoutLinkedToStaging } from "../../../../src/lib/github-data/workouts";
+import type { CorosSleepMetrics } from "../../../../src/lib/github-data/sleep-sessions";
 import type { SyncedHealthStagingRecord, SyncedSleepSession, SyncedWorkout } from "./page-model";
 
 export const HEALTH_RECORDS_PAGE_SIZE = 10;
@@ -12,7 +13,7 @@ export type HealthRecordRow = {
   source: HealthRecordSource;
   recordDate?: string;
 };
-export type SleepRecordRow = HealthRecordRow & { category: string; durationSeconds: number; asleepSeconds: number | null; awakeSeconds: number | null; score: number | null };
+export type SleepRecordRow = HealthRecordRow & { category: string; durationSeconds: number; asleepSeconds: number | null; awakeSeconds: number | null; score: number | null; dateCorrection: CorosSleepMetrics["date_correction"] | null };
 export type WorkoutRecordRow = HealthRecordRow & { activity: string; durationSeconds: number; distanceMetres: number | null };
 export type HealthDateRange = { from: string; to: string };
 
@@ -50,6 +51,7 @@ export function buildHealthRecordRows(sleepSessions: SyncedSleepSession[], worko
         asleepSeconds: data.sleep_session_version === 2 && data.sleep_metrics_json.asleep_minutes !== null ? data.sleep_metrics_json.asleep_minutes * 60 : null,
         awakeSeconds: data.sleep_session_version === 2 && data.sleep_metrics_json.awake_minutes !== null ? data.sleep_metrics_json.awake_minutes * 60 : null,
         score: data.sleep_session_version === 2 ? data.sleep_metrics_json.score : null,
+        dateCorrection: data.sleep_session_version === 2 ? data.sleep_metrics_json.date_correction ?? null : null,
         source: data.sleep_session_version === 2 ? { kind: "coros_mcp" as const, label: "COROS · 自动同步" } : linked ? { kind: "manual" as const, label: source.data.source.label === "手工录入" ? "手工录入" : `手工录入 · ${source.data.source.label}` } : unknownSource,
       };
     }).sort(latestFirst);
