@@ -110,6 +110,21 @@ describe("COROS scheduled synchronization", () => {
     expect(saved.progress.domains.sleep.retryAfter).toBe("2024-02-01T05:40:00.000Z");
   });
 
+  it.each([
+    ["refresh", "COROS_OAUTH_TIMEOUT"], ["read", "COROS_READ_TIMEOUT"], ["adapter", "GITHUB_REQUEST_TIMEOUT"],
+  ] as const)("releases the lease and preserves coverage after a bounded %s timeout", async (stage, code) => {
+    fixture.connection(); fixture.job(); const { deps } = dependencies();
+    deps[stage].mockRejectedValue(new Error(code));
+    expect(await runCorosSync(fixture.env, new Date(), deps)).toMatchObject({ status: "error", errorCode: code });
+    const saved = fixture.saved()!;
+    expect(saved).toMatchObject({ lease_token: null, lease_until: null });
+    expect(saved.progress.domains.sleep).toMatchObject({ backfillNext: "2024-01-01", backfillThrough: null,
+      recentThrough: null, lastErrorCode: code, retryAfter: "2024-02-01T04:20:00.000Z" });
+    expect(saved.progress.lastSuccessAt).toBeNull();
+    expect(fixture.sqlite.prepare("SELECT state, last_error_code FROM coros_connections").get()).toEqual({ state: "enabled", last_error_code: code });
+    expect(deps.write).not.toHaveBeenCalled();
+  });
+
   it.each(["pause", "disconnect"] as const)("a %s during the read prevents writing its late result", async action => {
     fixture.connection(); fixture.job(); const { deps } = dependencies();
     deps.read.mockImplementation(async (_resource, _token, _tool, args) => {
