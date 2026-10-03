@@ -30,6 +30,7 @@ type Props = {
 
 export function AuthSection(props: Props) {
   const { online, connection, todayDate, connectionMethod, authAvailability, owner, repository, token, connecting, confirmingRevokeAll, revokingAll, errorMessage, statusMessage, onOwnerChange, onRepositoryChange, onTokenChange, onConnect, onDisconnect, onConfirmingRevokeAllChange, onRevokeAll } = props;
+  const visibleStatusMessage = connection && isConnectionSuccessMessage(statusMessage) ? "" : statusMessage;
   return <>
     <header className="topbar" id="top">
       <a className="brand" href="#top" aria-label="Nexus 工作台首页"><span aria-hidden="true">N</span><h1>Nexus</h1></a>
@@ -42,6 +43,7 @@ export function AuthSection(props: Props) {
     <section className={`connection-card ${connection ? "connected" : ""}`} aria-labelledby="connection-title">
       <div className="connection-copy">
         <p className="eyebrow">Private connection</p><h2 id="connection-title">{connection ? "私人数据已连接" : "连接你的数据仓库"}</h2>
+        {connection && connectionMethod ? <span className="connection-method">{connectionMethod === "github-app" ? "GitHub App" : "Token"}</span> : null}
         <p>{connection ? `${connection.repository} · Private · ${connection.timezone}` : authAvailability === "configured" ? "使用 GitHub App 登录；访问令牌只进入当前页面内存。也可继续使用 fine-grained token 作为备用方式。" : "使用只授权 personal-workspace-data 的 fine-grained token；需要 Metadata 读取和 Contents 读写权限。"}</p>
       </div>
       {connection ? <div className="connection-actions">
@@ -60,6 +62,11 @@ export function AuthSection(props: Props) {
         <a className="token-help" href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noreferrer">在 GitHub 创建备用最小权限令牌 ↗</a>
       </form>}
     </section>
-    {(errorMessage || statusMessage) ? <div className={`message-bar ${errorMessage ? "error" : "success"}`} role={errorMessage ? "alert" : "status"}>{errorMessage || statusMessage}</div> : null}
+    {(errorMessage || visibleStatusMessage) ? <div className={`message-bar ${errorMessage ? "error" : "success"}`} role={errorMessage ? "alert" : "status"}>{errorMessage || visibleStatusMessage}</div> : null}
   </>;
+}
+
+function isConnectionSuccessMessage(message: string) {
+  return message === "已通过 Private 仓库检查。令牌仅保留在当前页面内存中。"
+    || /^已通过 GitHub App 登录(?:（[^（）\r\n]+）)?，访问令牌仅保留在当前页面内存中。$/u.test(message);
 }
