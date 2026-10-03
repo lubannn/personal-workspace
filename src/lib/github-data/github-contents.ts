@@ -56,7 +56,7 @@ type GitHubGraphQLBlobResponse = {
     isTruncated?: boolean;
     text?: string | null;
   } | null> | null } | null;
-  errors?: Array<{ type?: string }>;
+  errors?: Array<{ type?: string; message?: string; extensions?: { code?: string; type?: string } }>;
 };
 type GitHubRecursiveTreeResponse = {
   truncated: boolean;
@@ -115,6 +115,21 @@ function assertFilePath(value: string) {
   if (segments.some((segment) => !segment || segment === "." || segment === "..")) throw new Error("INVALID_GITHUB_PATH");
 }
 
+function blobReadSignal(signal?: AbortSignal) {
+  const timeout = AbortSignal.timeout(20_000);
+  return signal ? AbortSignal.any([signal, timeout]) : timeout;
+}
+
+function awaitWithSignal<T>(pending: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return pending;
+  signal.throwIfAborted();
+  return new Promise<T>((resolve, reject) => {
+    const aborted = () => reject(signal.reason);
+    signal.addEventListener("abort", aborted, { once: true });
+    pending.then(resolve, reject).finally(() => signal.removeEventListener("abort", aborted));
+  });
+}
+
 function decodeBase64(value: string) {
   const binary = atob(value.replaceAll(/\s/g, ""));
   const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
@@ -148,6 +163,7 @@ export class GitHubContentsAdapter {
   private readonly blobTextCache = new Map<string, Omit<GitHubStoredFile, "path">>();
   private graphQLAvailable: boolean | undefined;
   private graphQLFirstRead: Promise<GitHubStoredFile[] | null> | null = null;
+  private graphQLFirstReadSignal: AbortSignal | undefined;
   private activeBlobReads = 0;
   private readonly blobReadWaiters: Array<() => void> = [];
 
@@ -205,7 +221,8 @@ export class GitHubContentsAdapter {
     );
   }
 
-  private async request<T>(pathname: string, init?: RequestInit, diagnoseTransport = true): Promise<T> {
+  private async request<T>(pathname: string, init?: RequestInit, diagnoseTransport = true, callerSignal?: AbortSignal): Promise<T> {
+    callerSignal?.throwIfAborted();
     let response: Response;
     try {
       response = await this.fetcher(`${API_ROOT}${pathname}`, {
@@ -220,20 +237,38 @@ export class GitHubContentsAdapter {
         },
       });
     } catch (error) {
+      callerSignal?.throwIfAborted();
+      if (error instanceof Error && error.name === "AbortError") throw error;
       if (!diagnoseTransport) throw new GitHubDataError("GitHub read timed out or failed.", 0, "GITHUB_TRANSPORT_ERROR");
       return this.throwTransportError(error);
     }
+    callerSignal?.throwIfAborted();
     if (!response.ok) {
       if (response.status === 409 || response.status === 422) throw new GitHubConflictError();
+      let rateLimited = response.status === 429 || (response.status === 403 && (
+        response.headers.get("X-RateLimit-Remaining") === "0" || response.headers.has("Retry-After")
+      ));
+      if (response.status === 403 && !rateLimited) {
+        const failure = await response.json().catch(() => null) as { message?: string } | null;
+        callerSignal?.throwIfAborted();
+        rateLimited = typeof failure?.message === "string" && /rate limit|abuse detection/i.test(failure.message);
+      }
       const code = response.status === 401 ? "GITHUB_UNAUTHORIZED"
-        : response.status === 429 || (response.status === 403 && (response.headers.get("X-RateLimit-Remaining") === "0" || response.headers.has("Retry-After"))) ? "GITHUB_RATE_LIMITED"
+        : rateLimited ? "GITHUB_RATE_LIMITED"
           : response.status === 403 ? "GITHUB_FORBIDDEN"
             : response.status === 404 ? "GITHUB_NOT_FOUND"
               : response.status === 400 ? "GITHUB_BAD_REQUEST"
                 : response.status >= 500 ? "GITHUB_UNAVAILABLE" : "GITHUB_API_ERROR";
       throw new GitHubDataError(`GitHub request failed with status ${response.status}.`, response.status, code);
     }
-    return response.json() as Promise<T>;
+    try {
+      const result = await response.json() as T;
+      callerSignal?.throwIfAborted();
+      return result;
+    } catch (error) {
+      callerSignal?.throwIfAborted();
+      throw error;
+    }
   }
 
   async verifyPrivateRepository(): Promise<GitHubRepositoryStatus> {
@@ -278,12 +313,12 @@ export class GitHubContentsAdapter {
     throw new GitHubDataError("Expected a base64 encoded GitHub file.", 500, "GITHUB_UNSUPPORTED_CONTENT");
   }
 
-  async readBlobText(pathname: string, blobSha: string): Promise<GitHubStoredFile> {
+  async readBlobText(pathname: string, blobSha: string, signal?: AbortSignal): Promise<GitHubStoredFile> {
     assertFilePath(pathname);
     if (!/^[a-f0-9]{40}$/u.test(blobSha)) throw new Error("INVALID_GITHUB_BLOB_SHA");
     const blob = await this.request<GitHubBlobReadResponse>(
       `/repos/${encodeURIComponent(this.config.owner)}/${encodeURIComponent(this.config.repository)}/git/blobs/${blobSha}`,
-      { signal: AbortSignal.timeout(20_000) }, false,
+      { signal: blobReadSignal(signal) }, false, signal,
     );
     if (blob.encoding !== "base64" || blob.sha !== blobSha) throw new GitHubDataError("Unexpected GitHub blob.", 500, "GITHUB_UNSUPPORTED_CONTENT");
     const text = decodeBase64(blob.content);
@@ -291,13 +326,29 @@ export class GitHubContentsAdapter {
     return { path: pathname, blobSha, sizeBytes: blob.size, text };
   }
 
-  private async withBlobReadSlot<T>(read: () => Promise<T>): Promise<T> {
+  private async withBlobReadSlot<T>(read: () => Promise<T>, signal?: AbortSignal): Promise<T> {
+    signal?.throwIfAborted();
     if (this.activeBlobReads >= BLOB_READ_CONCURRENCY) {
-      await new Promise<void>((resolve) => this.blobReadWaiters.push(resolve));
+      await new Promise<void>((resolve, reject) => {
+        const ready = () => {
+          signal?.removeEventListener("abort", aborted);
+          resolve();
+        };
+        const aborted = () => {
+          const index = this.blobReadWaiters.indexOf(ready);
+          if (index !== -1) this.blobReadWaiters.splice(index, 1);
+          reject(signal?.reason);
+        };
+        this.blobReadWaiters.push(ready);
+        signal?.addEventListener("abort", aborted, { once: true });
+      });
     } else {
       this.activeBlobReads += 1;
     }
-    try { return await read(); }
+    try {
+      signal?.throwIfAborted();
+      return await read();
+    }
     finally {
       const next = this.blobReadWaiters.shift();
       if (next) next();
@@ -305,21 +356,21 @@ export class GitHubContentsAdapter {
     }
   }
 
-  private async readRestBlobBatch(files: readonly ListedBlob[], assertCurrent: () => void) {
+  private async readRestBlobBatch(files: readonly ListedBlob[], assertCurrent: () => void, signal?: AbortSignal) {
     const records: GitHubStoredFile[] = [];
     for (let index = 0; index < files.length; index += BLOB_READ_CONCURRENCY) {
       assertCurrent();
       records.push(...await Promise.all(files.slice(index, index + BLOB_READ_CONCURRENCY).map((file) => this.withBlobReadSlot(async () => {
         assertCurrent();
-        const stored = await this.readBlobText(file.path, file.blobSha);
+        const stored = await this.readBlobText(file.path, file.blobSha, signal);
         if (stored.sizeBytes !== file.sizeBytes) throw new GitHubDataError("Unexpected GitHub blob size.", 500, "GITHUB_UNSUPPORTED_CONTENT");
         return stored;
-      }))));
+      }, signal))));
     }
     return records;
   }
 
-  private async readGraphQLBlobBatch(files: readonly ListedBlob[], assertCurrent: () => void): Promise<GitHubStoredFile[] | null> {
+  private async readGraphQLBlobBatch(files: readonly ListedBlob[], assertCurrent: () => void, signal?: AbortSignal): Promise<GitHubStoredFile[] | null> {
     const variables: Record<string, string> = { owner: this.config.owner, repository: this.config.repository };
     files.forEach((file, index) => { variables[`oid${index}`] = file.blobSha; });
     // Read immutable objects already returned by the authenticated directory
@@ -335,10 +386,11 @@ export class GitHubContentsAdapter {
         assertCurrent();
         return this.request<GitHubGraphQLBlobResponse>("/graphql", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ query, variables }), signal: AbortSignal.timeout(20_000),
-        }, false);
-      });
+          body: JSON.stringify({ query, variables }), signal: blobReadSignal(signal),
+        }, false, signal);
+      }, signal);
     } catch (error) {
+      signal?.throwIfAborted();
       // Some app tokens can read REST Contents but cannot use GraphQL. Remember
       // that capability once; transient/rate-limit failures must not fan out
       // into hundreds of REST retries.
@@ -349,6 +401,15 @@ export class GitHubContentsAdapter {
       throw new GitHubDataError("Invalid GitHub blob query response.", 500, "GITHUB_INVALID_RESPONSE");
     }
     if (result.errors?.length) {
+      for (const error of result.errors) {
+        const type = error.type ?? error.extensions?.type ?? error.extensions?.code ?? "";
+        if (type === "RATE_LIMITED" || /rate limit|abuse detection/i.test(error.message ?? "")) {
+          throw new GitHubDataError("GitHub request was rate limited.", 403, "GITHUB_RATE_LIMITED");
+        }
+        if (["UNAUTHORIZED", "UNAUTHENTICATED", "BAD_CREDENTIALS"].includes(type) || /bad credentials|requires authentication/i.test(error.message ?? "")) {
+          throw new GitHubDataError("GitHub authentication failed.", 401, "GITHUB_UNAUTHORIZED");
+        }
+      }
       const noBlobs = !result.data?.repository || Object.values(result.data.repository).every((blob) => blob === null);
       if (noBlobs && result.errors.every((error) => ["FORBIDDEN", "INSUFFICIENT_SCOPES", "NOT_FOUND"].includes(error.type ?? ""))) return null;
       throw new GitHubDataError("GitHub did not return a complete blob query.", 500, "GITHUB_GRAPHQL_ERROR");
@@ -368,13 +429,16 @@ export class GitHubContentsAdapter {
       }
       records.push({ path: file.path, blobSha: file.blobSha, sizeBytes: blob.byteSize, text: blob.text });
     }
-    records.push(...await this.readRestBlobBatch(truncated, assertCurrent));
+    records.push(...await this.readRestBlobBatch(truncated, assertCurrent, signal));
     return records;
   }
 
-  async readBlobTexts(files: readonly ListedBlob[], isCurrent: () => boolean = () => true): Promise<GitHubStoredFile[]> {
+  async readBlobTexts(files: readonly ListedBlob[], isCurrent: () => boolean = () => true, signal?: AbortSignal): Promise<GitHubStoredFile[]> {
     let failed = false;
-    const assertCurrent = () => { if (failed || !isCurrent()) throw new Error("HEALTH_LOAD_CANCELLED"); };
+    const assertCurrent = () => {
+      signal?.throwIfAborted();
+      if (failed || !isCurrent()) throw new Error("HEALTH_LOAD_CANCELLED");
+    };
     assertCurrent();
     for (const file of files) {
       assertFilePath(file.path);
@@ -389,20 +453,30 @@ export class GitHubContentsAdapter {
         const batch = missing.slice(nextIndex, nextIndex + BLOB_QUERY_BATCH_SIZE);
         nextIndex += BLOB_QUERY_BATCH_SIZE;
         let records: GitHubStoredFile[] | null = null;
-        if (this.graphQLAvailable === undefined && this.graphQLFirstRead) await this.graphQLFirstRead;
+        while (this.graphQLAvailable === undefined && this.graphQLFirstRead) {
+          const firstRead = this.graphQLFirstRead;
+          const firstReadSignal = this.graphQLFirstReadSignal;
+          try { await awaitWithSignal(firstRead, signal); }
+          catch (error) {
+            assertCurrent();
+            // A different collection's canceled probe must not cancel this read.
+            if (!firstReadSignal?.aborted && !(error instanceof Error && error.message === "HEALTH_LOAD_CANCELLED")) throw error;
+          }
+        }
         assertCurrent();
         if (this.graphQLAvailable === undefined) {
-          this.graphQLFirstRead = this.readGraphQLBlobBatch(batch, assertCurrent).then((result) => {
+          this.graphQLFirstReadSignal = signal;
+          this.graphQLFirstRead = this.readGraphQLBlobBatch(batch, assertCurrent, signal).then((result) => {
             this.graphQLAvailable = result !== null;
             return result;
           });
           try { records = await this.graphQLFirstRead; }
-          finally { this.graphQLFirstRead = null; }
+          finally { this.graphQLFirstRead = null; this.graphQLFirstReadSignal = undefined; }
         } else if (this.graphQLAvailable) {
-          records = await this.readGraphQLBlobBatch(batch, assertCurrent);
+          records = await this.readGraphQLBlobBatch(batch, assertCurrent, signal);
           if (records === null) this.graphQLAvailable = false;
         }
-        records ??= await this.readRestBlobBatch(batch, assertCurrent);
+        records ??= await this.readRestBlobBatch(batch, assertCurrent, signal);
         assertCurrent();
         for (const record of records) this.blobTextCache.set(record.blobSha, { blobSha: record.blobSha, sizeBytes: record.sizeBytes, text: record.text });
       }

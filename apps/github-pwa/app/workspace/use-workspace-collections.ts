@@ -19,8 +19,7 @@ import { parseProjectFileReferenceRecord } from "../../../../src/lib/github-data
 import { parseActivityEventRecord } from "../../../../src/lib/github-data/activity-events";
 import { parseCalendarEventRecord } from "../../../../src/lib/github-data/calendar-events";
 import { parseReportDraftRecord } from "../../../../src/lib/github-data/report-drafts";
-import { parseJournalEntryRecord } from "../../../../src/lib/github-data/journal-entries";
-import { journalMonthFileCandidates, recentJournalFileCandidates } from "../../../../src/lib/github-data/journal-archive-catalog";
+import { JournalArchiveReader } from "../../../../src/lib/github-data/journal-archive-reader";
 import { parseJournalSegmentRecord } from "../../../../src/lib/github-data/journal-segments";
 import { parseJournalRevisionRecord } from "../../../../src/lib/github-data/journal-revisions";
 import { parseJournalImportCheckpointRecord } from "../../../../src/lib/github-data/journal-import-checkpoints";
@@ -63,9 +62,8 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
   const [journalEntryCatalog, setJournalEntryCatalog] = useState<GitHubDirectoryItem[]>([]);
   const [journalLoadedMonths, setJournalLoadedMonths] = useState<string[]>([]);
   const [journalLoadError, setJournalLoadError] = useState("");
-  const journalCatalogRef = useRef<GitHubDirectoryItem[]>([]);
-  const journalCacheRef = useRef(new Map<string, SyncedJournalEntry>());
-  const journalLoadedMonthsRef = useRef(new Set<string>());
+  const journalReaderRef = useRef<{ adapter: GitHubContentsAdapter; reader: JournalArchiveReader } | null>(null);
+  const journalRequestRef = useRef<{ controller: AbortController; adapter: GitHubContentsAdapter; month?: string } | null>(null);
   const [journalSegmentFiles, setJournalSegmentFiles] = useState<SyncedJournalSegment[]>([]);
   const [journalRevisionFiles, setJournalRevisionFiles] = useState<SyncedJournalRevision[]>([]);
   const [journalImportCheckpointFiles, setJournalImportCheckpointFiles] = useState<SyncedJournalImportCheckpoint[]>([]);
@@ -476,54 +474,56 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     }
   }, [adapterRef, setErrorMessage]);
 
-  const loadJournalEntries = useCallback(async (adapter = adapterRef.current, month?: string) => {
+  const loadJournalView = useCallback(async (adapter: GitHubContentsAdapter | null, month?: string, refresh = false) => {
     if (!adapter) return;
-    setLoadingJournalEntries(true);
+    const previous = journalRequestRef.current;
+    if (!refresh && previous?.adapter === adapter && previous.month === month) return;
+    previous?.controller.abort();
+    if (journalReaderRef.current?.adapter !== adapter) {
+      journalReaderRef.current = { adapter, reader: new JournalArchiveReader(adapter) };
+    }
+    const { reader } = journalReaderRef.current;
+    const request = { controller: new AbortController(), adapter, month };
+    const { signal } = request.controller;
+    journalRequestRef.current = request;
+    const cached = Boolean(month && reader.isMonthLoaded(month));
+    setLoadingJournalEntries(!cached || refresh);
     setJournalLoadError("");
     setErrorMessage("");
     try {
-      let items: GitHubDirectoryItem[];
-      try { items = await adapter.listDirectory("data/journal-entries"); }
-      catch (error) {
-        if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") { items = []; }
-        else throw error;
+      // Rapid arrow clicks should fetch the final selected month, not every
+      // intermediate month. Cached months remain immediate.
+      if (month && !cached && !refresh) await waitForJournalNavigation(signal);
+      const snapshot = await reader.load(month, { refresh, signal });
+      if (signal.aborted || adapterRef.current !== adapter || journalRequestRef.current !== request) return;
+      setJournalEntryCatalog(snapshot.catalog);
+      setJournalEntryFiles(snapshot.entries);
+      setJournalLoadedMonths(snapshot.loadedMonths);
+    } catch (error) {
+      if (signal.aborted || adapterRef.current !== adapter || journalRequestRef.current !== request) return;
+      const message = friendlyError(error);
+      setJournalLoadError(message); setErrorMessage(message);
+    } finally {
+      if (journalRequestRef.current === request) {
+        journalRequestRef.current = null;
+        setLoadingJournalEntries(false);
       }
-      const files = items.filter((item) => item.type === "file" && item.name.endsWith(".json"));
-      const cache = new Map(journalCacheRef.current);
-      const candidates = month ? journalMonthFileCandidates(files, month) : recentJournalFileCandidates(files);
-      const records = await readJournalArchiveCandidates(adapter, candidates, cache);
-      if (adapterRef.current !== adapter) return;
-      journalCatalogRef.current = files;
-      journalCacheRef.current = cache;
-      journalLoadedMonthsRef.current = new Set(month ? [month] : []);
-      setJournalEntryCatalog(files);
-      setJournalEntryFiles(records);
-      setJournalLoadedMonths(month ? [month] : []);
-    } catch (error) { const message = friendlyError(error); setJournalLoadError(message); setErrorMessage(message); }
-    finally { setLoadingJournalEntries(false); }
+    }
   }, [adapterRef, setErrorMessage]);
 
-  const loadJournalMonth = useCallback(async (month: string, adapter = adapterRef.current) => {
-    if (!adapter || journalLoadedMonthsRef.current.has(month)) return;
-    if (journalCatalogRef.current.length === 0) { await loadJournalEntries(adapter, month); return; }
-    setLoadingJournalEntries(true);
-    setJournalLoadError("");
-    setErrorMessage("");
-    try {
-      const cache = new Map(journalCacheRef.current);
-      const records = await readJournalArchiveCandidates(adapter, journalMonthFileCandidates(journalCatalogRef.current, month), cache);
-      if (adapterRef.current !== adapter) return;
-      journalCacheRef.current = cache;
-      journalLoadedMonthsRef.current.add(month);
-      setJournalEntryFiles((current) => {
-        const merged = new Map(current.map((item) => [item.path, item]));
-        for (const record of records) merged.set(record.path, record);
-        return [...merged.values()];
-      });
-      setJournalLoadedMonths([...journalLoadedMonthsRef.current]);
-    } catch (error) { const message = friendlyError(error); setJournalLoadError(message); setErrorMessage(message); }
-    finally { setLoadingJournalEntries(false); }
-  }, [adapterRef, loadJournalEntries, setErrorMessage]);
+  const loadJournalEntries = useCallback((adapter = adapterRef.current, month?: string) => loadJournalView(adapter, month, true), [adapterRef, loadJournalView]);
+  const loadJournalMonth = useCallback((month: string, adapter = adapterRef.current) => loadJournalView(adapter, month), [adapterRef, loadJournalView]);
+  const loadRecentJournalEntries = useCallback(() => loadJournalView(adapterRef.current), [adapterRef, loadJournalView]);
+
+  function rememberJournalEntry(item: SyncedJournalEntry, adapter: GitHubContentsAdapter) {
+    if (adapterRef.current !== adapter) return false;
+    if (journalReaderRef.current?.adapter !== adapter) journalReaderRef.current = { adapter, reader: new JournalArchiveReader(adapter) };
+    const { reader } = journalReaderRef.current;
+    reader.remember(item);
+    setJournalEntryCatalog(reader.snapshot().catalog);
+    setJournalEntryFiles((entries) => [item, ...entries.filter((entry) => entry.path !== item.path)]);
+    return true;
+  }
 
   const loadJournalSegments = useCallback(async (adapter = adapterRef.current) => {
     if (!adapter) return;
@@ -845,9 +845,10 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     setJournalEntryCatalog([]);
     setJournalLoadedMonths([]);
     setJournalLoadError("");
-    journalCatalogRef.current = [];
-    journalCacheRef.current = new Map();
-    journalLoadedMonthsRef.current = new Set();
+    journalRequestRef.current?.controller.abort();
+    journalRequestRef.current = null;
+    journalReaderRef.current = null;
+    setLoadingJournalEntries(false);
     setJournalSegmentFiles([]);
     setJournalRevisionFiles([]);
     setJournalImportCheckpointFiles([]);
@@ -892,7 +893,7 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     reportDraftFiles,
     setReportDraftFiles,
     journalEntryFiles,
-    setJournalEntryFiles,
+    rememberJournalEntry,
     journalEntryCatalog,
     journalLoadedMonths,
     journalLoadError,
@@ -965,6 +966,7 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     loadReportDrafts,
     loadJournalEntries,
     loadJournalMonth,
+    loadRecentJournalEntries,
     loadJournalSegments,
     loadJournalRevisions,
     loadJournalImportCheckpoints,
@@ -978,26 +980,11 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
   };
 }
 
-async function readJournalArchiveCandidates(adapter: GitHubContentsAdapter, candidates: GitHubDirectoryItem[], cache: Map<string, SyncedJournalEntry>) {
-  const records: SyncedJournalEntry[] = [];
-  for (let offset = 0; offset < candidates.length; offset += 6) {
-    records.push(...await Promise.all(candidates.slice(offset, offset + 6).map(async (item) => {
-      const cached = cache.get(item.path);
-      if (cached?.blobSha === item.blobSha) return cached;
-      let stored;
-      for (let attempt = 0; ; attempt += 1) {
-        try { stored = await adapter.readText(item.path); break; }
-        catch (error) {
-          const transient = error instanceof GitHubDataError && (error.status === 0 || error.status === 429 || error.status >= 500 || error.code === "GITHUB_RATE_LIMITED");
-          if (!transient || attempt >= 2) throw error;
-          await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
-        }
-      }
-      if (stored.blobSha !== item.blobSha) throw new GitHubDataError("Journal entry changed while loading.", 409, "GITHUB_SYNC_CONFLICT");
-      const record = { record: parseJournalEntryRecord(stored.text), path: stored.path, blobSha: stored.blobSha };
-      cache.set(item.path, record);
-      return record;
-    })));
-  }
-  return records;
+function waitForJournalNavigation(signal: AbortSignal) {
+  return new Promise<void>((resolve, reject) => {
+    signal.throwIfAborted();
+    const abort = () => { clearTimeout(timer); reject(signal.reason); };
+    const timer = setTimeout(() => { signal.removeEventListener("abort", abort); resolve(); }, 180);
+    signal.addEventListener("abort", abort, { once: true });
+  });
 }
