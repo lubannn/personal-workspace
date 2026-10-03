@@ -30,6 +30,9 @@ Awake Time: 30 min
 Main Sleep Window: 2024-01-01 23:00 - 2024-01-02 07:00
 Naps Total: 30 min (includes legacy reported durations)
 Nap Window: 2024-01-02 12:00 - 2024-01-02 12:30`;
+const napOnly = `${prefix}2024-01-02
+Naps Total: 40 min (includes legacy reported durations)
+Nap Window: 2024-01-02 19:00 - 2024-01-02 19:40`;
 const workout = `Sport Records — 2024-01-02 to 2024-01-02 (1 records)
 ========================
 
@@ -61,6 +64,31 @@ describe("strict COROS sleep text mapping", () => {
     expect(mapped.items[0].candidate.duration_minutes).toBe(480);
     expect(mapped.items[0].metrics).toMatchObject({ asleep_minutes: null, awake_minutes: null });
     expect(mapped.items[1].metrics).toMatchObject({ asleep_minutes: null, awake_minutes: null });
+  });
+  it.each([true, false])("accepts legacy nap-only days without inventing main sleep or score (encoded=%s)", encoded => {
+    expect(mapCorosSleep(result(napOnly, encoded), options)).toEqual({ reportedCount: 1, items: [{
+      kind: "sleep", sourceId: "sleep:2024-01-02:nap:2024-01-02T11:00:00.000Z",
+      candidate: { start_at: "2024-01-02T11:00:00.000Z", end_at: "2024-01-02T11:40:00.000Z",
+        local_date: "2024-01-02", timezone: "Asia/Shanghai", session_type: "nap", duration_minutes: 40 },
+      metrics: { asleep_minutes: null, awake_minutes: null, score: null, wake_date: "2024-01-02" },
+    }] });
+  });
+  it("validates the combined period of multiple legacy naps without apportioning asleep time", () => {
+    const input = napOnly.replace("19:40", "19:20") + "\nNap Window: 2024-01-02 20:00 - 2024-01-02 20:20";
+    const mapped = mapCorosSleep(result(input), options);
+    expect(mapped.items.map(item => item.candidate.duration_minutes)).toEqual([20, 20]);
+    expect(mapped.items.every(item => item.metrics.asleep_minutes === null && item.metrics.score === null)).toBe(true);
+  });
+  it.each([
+    napOnly.replace("Naps Total: 40 min", "Naps Total: 41 min"),
+    napOnly.replace("19:40", "19:20") + "\nNap Window: 2024-01-02 19:10 - 2024-01-02 19:30",
+    napOnly.replace("2024-01-02 19:40", "2024-01-03 19:40"),
+    napOnly + "\nMain Sleep: 8h 0min",
+    napOnly + "\nMain Sleep Unknown: 8h 0min",
+    napOnly + "\nSleep Score: 80",
+    napOnly.replace("\nNap Window: 2024-01-02 19:00 - 2024-01-02 19:40", ""),
+  ])("rejects contradictory or unrecognized nap-only days", input => {
+    expect(() => mapCorosSleep(result(input), options)).toThrow("COROS_SYNC_FORMAT_UNSUPPORTED");
   });
   it("never apportions a total asleep duration between multiple naps", () => {
     const input = modern.replace("Naps Period (incl. awake): 1h 0min\nNap Window: 2024-01-02 13:00 - 2024-01-02 14:00", "Naps Period (incl. awake): 1h 0min\nNap Window: 2024-01-02 12:00 - 2024-01-02 12:30\nNap Window: 2024-01-02 13:00 - 2024-01-02 13:30");

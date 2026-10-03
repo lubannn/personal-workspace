@@ -108,6 +108,24 @@ export function mapCorosSleep(result: CorosReadResult, options: CorosSyncDateRan
       if (!sleepFields.has(match[1]) || fields.has(match[1])) return fail();
       fields.set(match[1], match[2]);
     }
+    // Observed legacy nap-only days omit every main-sleep field, including score.
+    // Their reported total is a period, not evidence of time actually asleep.
+    if (!fields.has("Main Sleep Window")) {
+      const legacyNaps = fields.get("Naps Total");
+      if (fields.size !== 1 || legacyNaps === undefined || naps.length === 0) return fail();
+      const napPeriod = naps.reduce((sum, nap) => sum + nap.minutes, 0);
+      if (naps.some(nap => nap.endDate !== date)
+        || minutes(legacyNaps.replace(/ \(includes legacy reported durations\)$/u, "")) !== napPeriod) return fail();
+      const sorted = [...naps].sort((a, b) => a.start.localeCompare(b.start));
+      if (sorted.some((span, i) => i > 0 && span.start < sorted[i - 1].end)) return fail();
+      for (const nap of naps) items.push({
+        kind: "sleep", sourceId: `sleep:${date}:nap:${nap.start}`,
+        candidate: { start_at: nap.start, end_at: nap.end, local_date: nap.startDate,
+          timezone: options.timezone, session_type: "nap", duration_minutes: nap.minutes },
+        metrics: { asleep_minutes: null, awake_minutes: null, score: null, wake_date: date },
+      });
+      continue;
+    }
     if (!fields.has("Main Sleep Window") || !fields.has("Sleep Score")) return fail();
     const main = window(fields.get("Main Sleep Window")!);
     if (main.endDate !== date || naps.some(nap => nap.endDate !== date)) return fail();
