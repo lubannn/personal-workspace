@@ -27,7 +27,7 @@ export async function readCorosConflictView(env: CorosSyncEnv) {
     const data = record.data; const candidate = data.candidate.candidate;
     const previous = data.resolution?.previous_record;
     return { id: record.id, kind: data.record_kind, reason: data.reason, status: data.status,
-      resolvedAt: data.resolution?.resolved_at ?? null,
+      resolvedAt: data.resolution?.resolved_at ?? null, resolutionAction: data.resolution?.action ?? null,
       scoreChange: previous && "sleep_metrics_json" in previous.data && data.candidate.kind === "sleep"
         ? { from: previous.data.sleep_metrics_json.score, to: data.candidate.metrics.score } : null,
       startAt: candidate.start_at, endAt: candidate.end_at, detectedAt: data.detected_at,

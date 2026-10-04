@@ -1,5 +1,5 @@
 import { GitHubConflictError, type GitHubContentsAdapter } from "../../../src/lib/github-data/github-contents";
-import { createCorosSyncConflictRecord, parseCorosSyncConflictRecord, type CorosSyncConflictPayload, type CorosSyncConflictRecord } from "../../../src/lib/github-data/coros-sync-conflicts";
+import { acceptCorosSourceRevision, supersedeCorosSourceRevision, createCorosSyncConflictRecord, parseCorosSyncConflictRecord, type CorosSyncConflictPayload, type CorosSyncConflictRecord } from "../../../src/lib/github-data/coros-sync-conflicts";
 import { createWorkspaceRecord, recordPath, serializeRecord, updateWorkspaceRecord } from "../../../src/lib/github-data/protocol";
 import { createAutomaticSleepSessionData, parseSleepSessionRecord, type SleepSessionRecord } from "../../../src/lib/github-data/sleep-sessions";
 import { createAutomaticWorkoutData, parseWorkoutRecord, type WorkoutRecord } from "../../../src/lib/github-data/workouts";
@@ -13,6 +13,7 @@ type ConflictDetail = { id: string; sourceId: string; reason: "source_changed" |
 export type CorosSyncWriteResult = {
   created: number;
   unchanged: number;
+  updated?: number;
   conflicts: number;
   totalPendingConflicts: number;
   conflictDetails: ConflictDetail[];
@@ -132,23 +133,32 @@ export async function writeCorosSyncBatch(adapter: SyncAdapter, input: {
     }
     const files: Array<{ path: string; text: string }> = [];
     // Adding a previously omitted daily total is schema enrichment, not a changed sleep episode.
-    // Read only the matching records, in a batch; existing facts and genuine revisions stay protected.
-    const enrichmentPaths = new Set([...unique.values()].flatMap(entry => {
+    // Read only changed sources in one batch; unchanged records stay on the compact index.
+    const changedPaths = new Set([...unique.values()].flatMap(entry => {
       const existing = sourceIndex.get(entry.key);
-      return entry.legacyFingerprint && existing?.deleted_at === null && existing.source?.source_sha256 === entry.legacyFingerprint ? [existing.path] : [];
+      return existing?.deleted_at === null && existing.source?.source_sha256 !== entry.fingerprint ? [existing.path] : [];
     }));
     const hydrated = new Map(stored.map(file => [file.path, file.text]));
-    const enrichmentFiles = canonicalFiles.filter(file => enrichmentPaths.has(file.path) && !hydrated.has(file.path));
-    if (enrichmentFiles.length) for (const file of await adapter.readBlobTexts(enrichmentFiles)) hydrated.set(file.path, file.text);
+    const changedFiles = canonicalFiles.filter(file => changedPaths.has(file.path) && !hydrated.has(file.path));
+    if (changedFiles.length) for (const file of await adapter.readBlobTexts(changedFiles)) hydrated.set(file.path, file.text);
     const paths = new Set(inventory.map((file) => file.path));
-    const result: CorosSyncWriteResult = { created: 0, unchanged: repeated, conflicts: 0, totalPendingConflicts: [...existingConflicts.values()].filter(conflict => conflict.data.status === "pending").length, conflictDetails: [], latestSleepDate: null, latestWorkoutDate: null };
+    const result: CorosSyncWriteResult = { created: 0, updated: 0, unchanged: repeated, conflicts: 0, totalPendingConflicts: [...existingConflicts.values()].filter(conflict => conflict.data.status === "pending").length, conflictDetails: [], latestSleepDate: null, latestWorkoutDate: null };
+    const closeOlderProposals = (sourceId: string, sourceSha256: string) => {
+      for (const audit of existingConflicts.values()) {
+        if (audit.data.status !== "pending" || audit.data.reason !== "source_changed" || audit.data.source_id !== sourceId) continue;
+        const resolved = supersedeCorosSourceRevision(audit, sourceSha256, input.timestamp);
+        existingConflicts.set(resolved.id, resolved);
+        files.push({ path: recordPath("coros_sync_conflict", resolved.id), text: serializeRecord(resolved) });
+        result.totalPendingConflicts -= 1;
+      }
+    };
     for (const entry of unique.values()) {
       const sameSource = sourceIndex.get(entry.key);
       const duplicate = sameSource ?? records.find((record) => sameInterval(record, entry.item));
       const oldSource = duplicate?.source ?? null;
       // Respect tombstones even if COROS later changes the source. Never recreate a deletion.
       if (duplicate && duplicate.deleted_at !== null) { result.unchanged += 1; continue; }
-      if (sameSource && oldSource?.source_sha256 === entry.fingerprint) { result.unchanged += 1; continue; }
+      if (sameSource && oldSource?.source_sha256 === entry.fingerprint) { closeOlderProposals(entry.item.sourceId, entry.fingerprint); result.unchanged += 1; continue; }
       if (sameSource && entry.item.kind === "sleep" && entry.legacyFingerprint && oldSource?.source_sha256 === entry.legacyFingerprint) {
         const current = parseSleepSessionRecord(hydrated.get(sameSource.path)!);
         const candidate = entry.item.candidate;
@@ -164,7 +174,30 @@ export async function writeCorosSyncBatch(adapter: SyncAdapter, input: {
         parseSleepSessionRecord(text);
         files.push({ path: sameSource.path, text });
         Object.assign(sameSource, corosSyncIndexEntry(next, await corosCanonicalBlobSha(text)));
+        closeOlderProposals(entry.item.sourceId, entry.fingerprint);
         result.unchanged += 1;
+        continue;
+      }
+      if (sameSource) {
+        const text = hydrated.get(sameSource.path)!;
+        const current = entry.item.kind === "sleep" ? parseSleepSessionRecord(text) : parseWorkoutRecord(text);
+        if ("source" in current.data && Date.parse(current.data.source.retrieved_at) > Date.parse(input.timestamp)) { result.unchanged += 1; continue; }
+        const prior = [...existingConflicts.values()].find(audit => audit.data.status === "pending" && audit.data.reason === "source_changed"
+          && audit.data.source_id === entry.item.sourceId && audit.data.source_sha256 === entry.fingerprint
+          && audit.data.existing_record_id === current.id && audit.data.existing_source_sha256 === oldSource?.source_sha256);
+        const id = prior?.id ?? `coros_conflict_${await hash(stableJson({ source: entry.key, fingerprint: entry.fingerprint, existingId: current.id, previousVersion: current.version }))}`;
+        const audit = prior ?? createCorosSyncConflictRecord({ id, ownerId: input.ownerId, detectedAt: input.timestamp, data: {
+          source_id: entry.item.sourceId, source_sha256: entry.fingerprint, mapping_version: 1, record_kind: entry.item.kind,
+          reason: "source_changed", existing_record_id: current.id, existing_source_sha256: oldSource?.source_sha256 ?? null, candidate: entry.payload,
+        } });
+        const accepted = acceptCorosSourceRevision(audit, current, input.timestamp);
+        const nextText = serializeRecord(accepted.record);
+        files.push({ path: sameSource.path, text: nextText }, { path: recordPath("coros_sync_conflict", id), text: serializeRecord(accepted.conflict) });
+        existingConflicts.set(id, accepted.conflict);
+        if (prior) result.totalPendingConflicts -= 1;
+        Object.assign(sameSource, corosSyncIndexEntry(accepted.record, await corosCanonicalBlobSha(nextText)));
+        closeOlderProposals(entry.item.sourceId, entry.fingerprint);
+        result.updated = (result.updated ?? 0) + 1;
         continue;
       }
       // Exact FIT intervals are already present; sport labels may differ between parsers.
@@ -174,7 +207,7 @@ export async function writeCorosSyncBatch(adapter: SyncAdapter, input: {
         continue;
       }
       if (duplicate) {
-        const reason = sameSource ? "source_changed" as const : "existing_record" as const;
+        const reason = "existing_record" as const;
         const id = `coros_conflict_${await hash(stableJson({ source: entry.key, fingerprint: entry.fingerprint, existingId: duplicate.id, reason }))}`;
         const conflict = createCorosSyncConflictRecord({ id, ownerId: input.ownerId, detectedAt: input.timestamp, data: {
           source_id: entry.item.sourceId, source_sha256: entry.fingerprint, mapping_version: 1, record_kind: entry.item.kind,

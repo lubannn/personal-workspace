@@ -10,7 +10,7 @@ export type CorosSyncConflictPayload =
 export type CorosSyncConflictData = {
   conflict_version: 1;
   status: "pending" | "resolved";
-  resolution?: { action: "accept_source"; resolved_at: string; previous_record: SleepSessionRecord | WorkoutRecord };
+  resolution?: { action: "accept_source" | "superseded"; resolved_at: string; previous_record?: SleepSessionRecord | WorkoutRecord; accepted_source_sha256?: string };
   source_id: string;
   source_sha256: string;
   mapping_version: 1;
@@ -55,17 +55,21 @@ export function parseCorosSyncConflictRecord(text: string): CorosSyncConflictRec
       if (record.version !== 1 || record.created_at !== record.updated_at) throw new Error();
     } else {
       const resolution = data.resolution;
-      if (record.version !== 2 || !resolution || resolution.action !== "accept_source"
-        || Object.keys(resolution).sort().join(",") !== "action,previous_record,resolved_at"
+      if (record.version !== 2 || !resolution || !["accept_source", "superseded"].includes(resolution.action)
+        || Object.keys(resolution).sort().join(",") !== (resolution.action === "accept_source" ? "action,previous_record,resolved_at" : "accepted_source_sha256,action,resolved_at")
         || resolution.resolved_at !== record.updated_at || !Number.isFinite(Date.parse(resolution.resolved_at))
         || Date.parse(resolution.resolved_at) < Date.parse(data.detected_at) || data.reason !== "source_changed") throw new Error();
-      const previous = data.record_kind === "sleep" ? parseSleepSessionRecord(JSON.stringify(resolution.previous_record))
-        : parseWorkoutRecord(JSON.stringify(resolution.previous_record));
-      const previousSource = "source" in previous.data ? previous.data.source : null;
-      if (previous.id !== data.existing_record_id || previous.owner_id !== record.owner_id || previous.deleted_at !== null
-        || Date.parse(previous.updated_at) > Date.parse(resolution.resolved_at)
-        || previousSource?.source_id !== data.source_id
-        || previousSource?.source_sha256 !== data.existing_source_sha256) throw new Error();
+      if (resolution.action === "superseded") {
+        if (!hash(resolution.accepted_source_sha256)) throw new Error();
+      } else {
+        const previous = data.record_kind === "sleep" ? parseSleepSessionRecord(JSON.stringify(resolution.previous_record))
+          : parseWorkoutRecord(JSON.stringify(resolution.previous_record));
+        const previousSource = "source" in previous.data ? previous.data.source : null;
+        if (previous.id !== data.existing_record_id || previous.owner_id !== record.owner_id || previous.deleted_at !== null
+          || Date.parse(previous.updated_at) > Date.parse(resolution.resolved_at)
+          || previousSource?.source_id !== data.source_id
+          || previousSource?.source_sha256 !== data.existing_source_sha256) throw new Error();
+      }
     }
     const source = { kind: "coros_mcp" as const, source_id: data.source_id, source_sha256: data.source_sha256, mapping_version: 1 as const, retrieved_at: data.detected_at };
     if (data.candidate.kind === "sleep") {
@@ -79,7 +83,7 @@ export function parseCorosSyncConflictRecord(text: string): CorosSyncConflictRec
   return record as CorosSyncConflictRecord;
 }
 
-/** Apply an explicitly accepted source revision and retain the original record as audit evidence. */
+/** Apply an accepted source revision and retain the original record as audit evidence. */
 export function acceptCorosSourceRevision(conflict: CorosSyncConflictRecord, current: SleepSessionRecord | WorkoutRecord, resolvedAt: string) {
   parseCorosSyncConflictRecord(JSON.stringify(conflict));
   const data = conflict.data;
@@ -99,4 +103,12 @@ export function acceptCorosSourceRevision(conflict: CorosSyncConflictRecord, cur
   const resolved = parseCorosSyncConflictRecord(JSON.stringify(updateWorkspaceRecord(conflict, { ...data, status: "resolved",
     resolution: { action: "accept_source", resolved_at: resolvedAt, previous_record: current } }, resolvedAt)));
   return { record, conflict: resolved };
+}
+
+/** Close an outdated proposal without pretending its candidate was applied. */
+export function supersedeCorosSourceRevision(conflict: CorosSyncConflictRecord, sourceSha256: string, resolvedAt: string) {
+  parseCorosSyncConflictRecord(JSON.stringify(conflict));
+  if (conflict.data.status !== "pending" || conflict.data.reason !== "source_changed") throw new Error("COROS_CONFLICT_RECORD_CHANGED");
+  return parseCorosSyncConflictRecord(JSON.stringify(updateWorkspaceRecord(conflict, { ...conflict.data, status: "resolved",
+    resolution: { action: "superseded", resolved_at: resolvedAt, accepted_source_sha256: sourceSha256 } }, resolvedAt)));
 }

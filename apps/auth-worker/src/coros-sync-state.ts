@@ -22,7 +22,7 @@ export type SyncProgress = {
   domains: Record<SyncDomain, DomainProgress>;
   lastAttemptAt: string | null; lastSuccessAt: string | null; lastErrorCode: string | null;
   failureCount: number; conflicts: number;
-  lastBatch: { domain: SyncDomain; from: string; through: string; created: number; unchanged: number; conflicts: number } | null;
+  lastBatch: { domain: SyncDomain; from: string; through: string; created: number; unchanged: number; updated?: number; conflicts: number } | null;
 };
 export type SyncJob = { progress_json: string; lease_token: string | null; lease_until: string | null; next_run_at: string;
   request_seq: number; requested_through: string | null; daily_requested_date: string | null };
