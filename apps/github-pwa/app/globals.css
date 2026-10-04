@@ -943,3 +943,33 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
   .task-subtask-form { grid-template-columns: 1fr; }
   .task-subtask-form > div, .task-subtask-form small { grid-column: 1; }
 }
+
+/* Quick capture: readable metadata, explicit suggestions, and compact touch controls. */
+.visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+.capture-kind-options { display: flex; flex-wrap: wrap; gap: 6px; }
+.capture-composer { margin-top: 20px; }
+.capture-composer textarea { margin-top: 14px; min-height: 110px; }
+.capture-datetime { display: flex; align-items: end; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
+.capture-datetime label, .capture-edit-form > label { display: grid; min-width: 0; gap: 6px; color: var(--muted); font-size: 11px; }
+.capture-datetime input, .capture-datetime select, .capture-search-toolbar input { min-height: 38px; max-width: 100%; border: 1px solid var(--line); border-radius: 9px; padding: 8px 10px; background: rgba(255,255,255,.65); color: var(--ink); font: inherit; }
+.capture-hint { margin: 10px 0 0; color: var(--muted); font-size: 11px; line-height: 1.6; }
+.capture-submit-actions, .capture-edit-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.capture-composer > footer .view-button { background: transparent; border: 1px solid var(--line); color: var(--muted); }
+.capture-search-toolbar { display: grid; gap: 12px; margin-top: 24px; }
+.capture-search-toolbar input { width: 100%; font-size: 14px; }
+.capture-record-content { min-width: 0; }
+.capture-record-meta { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; color: var(--muted); font-size: 10px; }
+.capture-record-meta > span:first-child { border-radius: 5px; padding: 3px 7px; background: var(--accent-soft); color: var(--accent); }
+.capture-record-meta > span { align-self: center; }
+.capture-edit-form { display: grid; gap: 10px; }
+.capture-edit-form textarea { width: 100%; min-height: 120px; resize: vertical; border: 1px solid var(--line); border-radius: 10px; padding: 12px; background: rgba(255,255,255,.75); color: var(--ink); font: 15px/1.65 ui-serif, Georgia, "Songti SC", serif; }
+.capture-list-footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 18px; color: var(--muted); font-size: 11px; }
+.capture-composer button, .capture-row-actions button, .capture-kind-options button { min-height: 38px; }
+.capture-composer :focus-visible, .capture-search-toolbar :focus-visible, .capture-edit-form :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+@media (max-width: 600px) {
+  .capture-datetime label { flex: 1 1 120px; }
+  .capture-datetime input, .capture-datetime select { width: 100%; }
+  .capture-record-content { grid-column: 1 / -1; }
+  .recent-list .capture-row-actions { grid-column: 1 / -1; grid-row: auto; display: flex; justify-content: flex-end; flex-wrap: wrap; }
+  .capture-composer > footer { align-items: start; }
+}

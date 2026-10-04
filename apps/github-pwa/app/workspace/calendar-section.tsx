@@ -16,6 +16,7 @@ import type { Connection, SyncedCalendarEvent, SyncedTask } from "./page-model";
 import { useCalendarReminders } from "./use-calendar-reminders";
 
 export type CalendarEventFields = {
+  allDay?: boolean;
   title: string;
   eventType: CalendarEventType;
   localDate: string;
@@ -56,6 +57,7 @@ export function CalendarSection({ connection, online, todayDate, eventFiles, tas
   const [editTitle, setEditTitle] = useState("");
   const [editEventType, setEditEventType] = useState<CalendarEventType>("time_block");
   const [editDate, setEditDate] = useState(selectedDate);
+  const [editAllDay, setEditAllDay] = useState(false);
   const [editStartTime, setEditStartTime] = useState("09:00");
   const [editEndTime, setEditEndTime] = useState("10:00");
   const [editLinkedTaskId, setEditLinkedTaskId] = useState("");
@@ -74,7 +76,7 @@ export function CalendarSection({ connection, online, todayDate, eventFiles, tas
   const linkableTaskRecords = useMemo(() => taskFiles.map((item) => item.record).filter((record) => record.deleted_at === null), [taskFiles]);
   const taskNames = useMemo(() => new Map(taskFiles.map((item) => [item.record.id, item.record.data.title])), [taskFiles]);
   const invalidRange = startTime >= endTime;
-  const invalidEditRange = editStartTime >= editEndTime;
+  const invalidEditRange = !editDate || (!editAllDay && (!editStartTime || !editEndTime || editStartTime === editEndTime));
   const operationBusy = saving || savingEventId !== null;
   const calendarBusy = operationBusy || editingEventId !== null;
   const periodLabel = !selectedDate ? "正在定位日期"
@@ -102,6 +104,7 @@ export function CalendarSection({ connection, online, todayDate, eventFiles, tas
     setEditTitle(item.record.data.title);
     setEditEventType(item.record.data.event_type);
     setEditDate(item.record.data.local_start_date);
+    setEditAllDay(item.record.data.all_day);
     setEditStartTime(formatEventInputTime(item.record.data.start_at, item.record.data.timezone));
     setEditEndTime(formatEventInputTime(item.record.data.end_at, item.record.data.timezone));
     setEditLinkedTaskId(item.record.data.linked_entity_id ?? "");
@@ -112,6 +115,7 @@ export function CalendarSection({ connection, online, todayDate, eventFiles, tas
     event.preventDefault();
     if (!editTitle.trim() || invalidEditRange || operationBusy || online === false) return;
     const saved = await onEdit(item, {
+      allDay: editAllDay,
       title: editTitle,
       eventType: editEventType,
       localDate: editDate,
@@ -168,7 +172,7 @@ export function CalendarSection({ connection, online, todayDate, eventFiles, tas
             </select>
           </label>
           <div className="calendar-form-actions">
-            <small>{!selectedDate ? "正在定位工作区日期…" : invalidRange ? "结束时间必须晚于开始时间。" : `${selectedDate} · ${connection?.timezone ?? "workspace timezone"}`}</small>
+            <small>{!selectedDate ? "正在定位工作区日期…" : invalidRange ? "请填写有效日期及不同的开始、结束时间。" : `${selectedDate} · ${connection?.timezone ?? "workspace timezone"}`}</small>
             <button className="primary-button" type="submit" disabled={!connection || !selectedDate || !title.trim() || invalidRange || calendarBusy || online === false}>{saving ? "保存中…" : "创建时间块"}</button>
           </div>
         </form>
@@ -189,8 +193,9 @@ export function CalendarSection({ connection, online, todayDate, eventFiles, tas
                         <label className="calendar-edit-title">标题<input value={editTitle} onChange={(event) => setEditTitle(event.target.value)} maxLength={300} disabled={operationBusy} /></label>
                         <label>类型<select value={editEventType} onChange={(event) => setEditEventType(event.target.value as CalendarEventType)} disabled={operationBusy}><option value="time_block">任务时间块</option><option value="event">日程</option></select></label>
                         <label>日期<input type="date" value={editDate} onChange={(event) => setEditDate(event.target.value)} onInput={(event) => setEditDate(event.currentTarget.value)} disabled={operationBusy} /></label>
-                        <label>开始<input type="time" value={editStartTime} onChange={(event) => setEditStartTime(event.target.value)} onInput={(event) => setEditStartTime(event.currentTarget.value)} disabled={operationBusy} /></label>
-                        <label>结束<input type="time" value={editEndTime} onChange={(event) => setEditEndTime(event.target.value)} onInput={(event) => setEditEndTime(event.currentTarget.value)} disabled={operationBusy} /></label>
+                        <label>全天<select value={editAllDay ? "yes" : "no"} onChange={(event) => setEditAllDay(event.target.value === "yes")} disabled={operationBusy}><option value="no">定时</option><option value="yes">全天</option></select></label>
+                        <label>开始<input type="time" value={editStartTime} onChange={(event) => setEditStartTime(event.target.value)} onInput={(event) => setEditStartTime(event.currentTarget.value)} disabled={operationBusy || editAllDay} /></label>
+                        <label>结束<input type="time" value={editEndTime} onChange={(event) => setEditEndTime(event.target.value)} onInput={(event) => setEditEndTime(event.currentTarget.value)} disabled={operationBusy || editAllDay} /></label>
                         <label className="calendar-edit-task">关联 Task（可选）
                           <select value={editLinkedTaskId} onChange={(event) => setEditLinkedTaskId(event.target.value)} disabled={operationBusy}>
                             <option value="">不关联 Task</option>
@@ -203,7 +208,7 @@ export function CalendarSection({ connection, online, todayDate, eventFiles, tas
                           </select>
                         </label>
                         <div className="calendar-edit-actions">
-                          <small>{invalidEditRange ? "结束时间必须晚于开始时间。" : `保存会生成 v${record.version + 1}，并校验旧 blob SHA。`}</small>
+                          <small>{invalidEditRange ? "请填写有效日期及不同的开始、结束时间。" : `保存会生成 v${record.version + 1}，并校验旧 blob SHA。`}</small>
                           <span>
                             <button className="text-button" type="button" onClick={() => setEditingEventId(null)} disabled={operationBusy}>取消编辑</button>
                             <button className="primary-button" type="submit" disabled={!editTitle.trim() || invalidEditRange || operationBusy || online === false}>{isSaving ? "保存中…" : "保存修改"}</button>
@@ -213,7 +218,7 @@ export function CalendarSection({ connection, online, todayDate, eventFiles, tas
                     </li>
                   ) : (
                     <li key={record.id}>
-                      <time>{periodView === "day" ? "" : `${record.data.local_start_date.slice(5)} · `}{formatEventTime(record.data.start_at, record.data.end_at, record.data.timezone)}</time>
+                      <time>{periodView === "day" ? "" : `${record.data.local_start_date.slice(5)} · `}{record.data.all_day ? "全天" : formatEventTime(record.data.start_at, record.data.end_at, record.data.timezone)}</time>
                       <div className="calendar-event-copy"><strong>{record.data.title}</strong><small>{record.data.event_type === "time_block" ? "时间块" : "日程"}{linkedTask ? ` · Task：${linkedTask}` : record.data.linked_entity_id ? " · Task 引用当前不可用" : ""}{record.data.reminder_offsets_minutes[0] === undefined ? "" : ` · ${reminderLabel(record.data.reminder_offsets_minutes[0])}`}</small></div>
                       <div className="calendar-event-actions">
                         <code>v{record.version}</code>

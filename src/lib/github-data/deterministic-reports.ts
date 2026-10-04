@@ -107,7 +107,7 @@ export function buildDeterministicReport(input: {
     timeEntries,
     actualTaskMinutes: completedTasks.reduce((sum, record) => sum + (record.data.actual_duration_minutes ?? 0), 0),
     trackedMinutes: timeEntries.reduce((sum, record) => sum + record.data.duration_minutes, 0),
-    scheduledMinutes: calendarEvents.reduce((sum, record) => sum + Math.round((Date.parse(record.data.end_at) - Date.parse(record.data.start_at)) / 60_000), 0),
+    scheduledMinutes: calendarEvents.filter((record) => !record.data.all_day).reduce((sum, record) => sum + Math.round((Date.parse(record.data.end_at) - Date.parse(record.data.start_at)) / 60_000), 0),
   };
 }
 
@@ -127,7 +127,7 @@ export function serializeDeterministicReportCsv(report: DeterministicReport) {
   for (const record of report.calendarEvents) rows.push([
     ...prefix, "calendar_event", "calendar_event", record.id, recordPath("calendar_event", record.id), "",
     record.data.local_start_date, record.data.title, record.data.event_type,
-    Math.round((Date.parse(record.data.end_at) - Date.parse(record.data.start_at)) / 60_000), record.data.linked_entity_id ? `linked_task_id=${record.data.linked_entity_id}` : "",
+    record.data.all_day ? "" : Math.round((Date.parse(record.data.end_at) - Date.parse(record.data.start_at)) / 60_000), record.data.linked_entity_id ? `linked_task_id=${record.data.linked_entity_id}` : "",
   ]);
   for (const record of report.activityEvents) rows.push([
     ...prefix, "project_activity", "activity_event", record.id, recordPath("activity_event", record.id), record.data.entity_id,
@@ -177,7 +177,7 @@ export function renderDeterministicReportMarkdown(report: DeterministicReport, a
       "## 已完成里程碑", "",
       ...markdownItems(report.completedMilestones.map((record) => `${markdownText(record.data.title)} — ${localDateForInstant(String(record.data.completed_at), report.timezone)} · 权重 ${record.data.weight} · \`milestone:${record.id}\``), "本周期没有完成里程碑。"), "",
       "## 日程与时间块", "",
-      ...markdownItems(report.calendarEvents.map((record) => `${markdownText(record.data.title)} — ${record.data.local_start_date} · ${record.data.event_type === "time_block" ? "时间块" : "日程"} · ${formatDuration(Math.round((Date.parse(record.data.end_at) - Date.parse(record.data.start_at)) / 60_000))} · \`calendar_event:${record.id}\``), "本周期没有已确认日程。"), "",
+      ...markdownItems(report.calendarEvents.map((record) => `${markdownText(record.data.title)} — ${record.data.local_start_date} · ${record.data.event_type === "time_block" ? "时间块" : "日程"} · ${record.data.all_day ? "全天" : formatDuration(Math.round((Date.parse(record.data.end_at) - Date.parse(record.data.start_at)) / 60_000))} · \`calendar_event:${record.id}\``), "本周期没有已确认日程。"), "",
       "## Project Activity", "",
       ...markdownItems(report.activityEvents.map((record) => `${markdownText(record.data.event_type)} — ${localDateForInstant(record.data.occurred_at, report.timezone)} · \`project:${record.data.entity_id}\` · \`activity_event:${record.id}\``), "本周期没有 Project Activity。"), "",
       "## 时间投入", "",

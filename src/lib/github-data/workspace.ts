@@ -1,4 +1,5 @@
 import { parseRecord, type WorkspaceRecord } from "./protocol";
+import { CAPTURE_KINDS, isCaptureDate, isCaptureTime, isCaptureTimezone, type CaptureKind } from "./capture-details";
 
 export type WorkspaceDescriptor = {
   schema_version: 1;
@@ -12,6 +13,10 @@ export type WorkspaceDescriptor = {
 export type CaptureData = {
   raw_text: string;
   status: "inbox" | "archived";
+  kind?: CaptureKind;
+  noted_date?: string | null;
+  noted_time?: string | null;
+  timezone?: string;
 };
 
 export type CaptureRecord = WorkspaceRecord<CaptureData>;
@@ -40,6 +45,11 @@ export function parseCaptureRecord(value: string): CaptureRecord {
     record.entity_type !== "capture"
     || typeof record.data.raw_text !== "string"
     || (record.data.status !== "inbox" && record.data.status !== "archived")
+    || (record.data.kind !== undefined && !CAPTURE_KINDS.includes(record.data.kind as CaptureKind))
+    || (record.data.noted_date !== undefined && record.data.noted_date !== null && !isCaptureDate(record.data.noted_date))
+    || (record.data.noted_time !== undefined && record.data.noted_time !== null && !isCaptureTime(record.data.noted_time))
+    || (record.data.noted_time != null && record.data.noted_date == null)
+    || (record.data.timezone !== undefined && !isCaptureTimezone(record.data.timezone))
   ) throw new Error("INVALID_CAPTURE_RECORD");
   return record as CaptureRecord;
 }
