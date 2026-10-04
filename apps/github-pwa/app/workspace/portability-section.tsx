@@ -61,7 +61,7 @@ export function PortabilitySection(props: Props) {
   return (
     <section className="portability-card" aria-labelledby="portability-title">
       <div className="card-heading">
-        <div><p className="eyebrow">Phase 1C · Data portability</p><h2 id="portability-title">导出与恢复预检</h2></div>
+        <div><p className="eyebrow">Backup & restore</p><h2 id="portability-title">备份与恢复</h2></div>
         <span className={`memory-pill ${connection ? "live" : ""}`}>{connection ? "Private 数据已就绪" : "连接后可导出"}</span>
       </div>
       <div className="portability-grid">

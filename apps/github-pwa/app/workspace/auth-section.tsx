@@ -9,6 +9,7 @@ type Props = {
   online: boolean | null;
   connection: Connection | null;
   todayDate: string;
+  settingsOpen?: boolean;
   connectionMethod: ConnectionMethod | null;
   authAvailability: AuthAvailability;
   owner: string;
@@ -29,13 +30,14 @@ type Props = {
 };
 
 export function AuthSection(props: Props) {
-  const { online, connection, todayDate, connectionMethod, authAvailability, owner, repository, token, connecting, confirmingRevokeAll, revokingAll, errorMessage, statusMessage, onOwnerChange, onRepositoryChange, onTokenChange, onConnect, onDisconnect, onConfirmingRevokeAllChange, onRevokeAll } = props;
+  const { online, connection, todayDate, settingsOpen = false, connectionMethod, authAvailability, owner, repository, token, connecting, confirmingRevokeAll, revokingAll, errorMessage, statusMessage, onOwnerChange, onRepositoryChange, onTokenChange, onConnect, onDisconnect, onConfirmingRevokeAllChange, onRevokeAll } = props;
   const visibleStatusMessage = connection && isConnectionSuccessMessage(statusMessage) ? "" : statusMessage;
   return <>
     <header className="topbar" id="top">
       <a className="brand" href="#top" aria-label="Nexus 工作台首页"><span aria-hidden="true">N</span><h1>Nexus</h1></a>
       <div className="topbar-date"><span>今天</span><time dateTime={todayDate || undefined}>{formatWorkspaceDate(todayDate)}</time></div>
       <div className="topbar-actions">
+        <a className="topbar-settings-link" href="#settings-title" aria-current={settingsOpen ? "page" : undefined}>设置</a>
         <a className="topbar-journal-link" href="#journal-title">写日记 <span aria-hidden="true">↗</span></a>
         <div className={`network ${online === false ? "offline" : ""}`}><i /> {online === null ? "检测网络" : online ? connection ? "Private repo 已连接" : "GitHub 可连接" : "当前离线"}</div>
       </div>
