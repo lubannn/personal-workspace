@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { GitHubContentsAdapter, GitHubDirectoryItem } from "../../../../src/lib/github-data/github-contents";
 import { cachedJournalStatistics, collectJournalStatistics, journalFileStatistics, parseJournalStatisticsCache, type JournalFileStatistics } from "../../../../src/lib/github-data/journal-statistics";
 import { journalStatisticsSummaryText, readSharedJournalStatistics, writeSharedJournalStatistics, type SharedJournalStatistics } from "../../../../src/lib/github-data/journal-statistics-sync";
 import { journalStatisticsView } from "../../../../src/lib/github-data/journal-statistics-view";
 import type { Connection, SyncedJournalEntry } from "./page-model";
 
-type Props = { connection: Connection | null; adapter: GitHubContentsAdapter | null; catalog: GitHubDirectoryItem[]; catalogReady: boolean; loaded: SyncedJournalEntry[]; busy: boolean };
+type Props = { connection: Connection | null; adapter: GitHubContentsAdapter | null; catalog: GitHubDirectoryItem[]; catalogReady: boolean; loaded: SyncedJournalEntry[]; busy: boolean; children?: (controls: ReactNode, statistics: JournalFileStatistics[], complete: boolean) => ReactNode };
 type SharedState = { adapter: GitHubContentsAdapter; value: SharedJournalStatistics | null; error: string };
 
 export function JournalStatistics(props: Props) {
@@ -15,7 +15,7 @@ export function JournalStatistics(props: Props) {
   return <JournalStatisticsSession key={connection ? `${connection.ownerId}:${connection.repository}` : "disconnected"} {...props} />;
 }
 
-function JournalStatisticsSession({ connection, adapter, catalog, catalogReady, loaded, busy }: Props) {
+function JournalStatisticsSession({ connection, adapter, catalog, catalogReady, loaded, busy, children }: Props) {
   const [cache, setCache] = useState<Record<string, JournalFileStatistics>>({});
   const [running, setRunning] = useState(false);
   const [error, setError] = useState("");
@@ -34,7 +34,7 @@ function JournalStatisticsSession({ connection, adapter, catalog, catalogReady, 
     catch { return []; } // An unreadable legacy body must not crash the journal view or produce a guessed total.
   })), [loaded, cache, shared]);
   const loadedStatisticsText = JSON.stringify(loadedStatistics);
-  const { files, missing, phase, totals } = useMemo(() => journalStatisticsView({ catalog, catalogReady: Boolean(connection) && catalogReady, loaded: loadedStatistics, cache, shared: shared?.files ?? null }), [catalog, catalogReady, connection, loadedStatistics, cache, shared]);
+  const { files, missing, phase, statistics, totals } = useMemo(() => journalStatisticsView({ catalog, catalogReady: Boolean(connection) && catalogReady, loaded: loadedStatistics, cache, shared: shared?.files ?? null }), [catalog, catalogReady, connection, loadedStatistics, cache, shared]);
   const complete = phase === "complete";
   const summaryText = journalStatisticsSummaryText(Object.fromEntries(files.flatMap((item) => item.statistics ? [[item.path, item.statistics]] : [])));
   const sharedMatches = catalogReady && Boolean(shared) && files.every((item) => !item.statistics || JSON.stringify(item.statistics) === JSON.stringify(shared?.files[item.path]));
@@ -123,7 +123,7 @@ function JournalStatisticsSession({ connection, adapter, catalog, catalogReady, 
     }
   }
 
-  return <div className="journal-statistics">
+  const controls = <div className="journal-statistics">
     <div className="journal-statistics-counts" aria-label="全部日记统计" aria-live="polite">
       <span className="view-button">日记天数 {totals ? totals.days.toLocaleString() : "—"}{totals && !complete ? "（已统计）" : ""}</span>
       <span className="view-button">日记数量 {totals ? totals.entries.toLocaleString() : "—"}{totals && !complete ? "（已统计）" : ""}</span>
@@ -134,4 +134,5 @@ function JournalStatisticsSession({ connection, adapter, catalog, catalogReady, 
     {shareError ? <div className="journal-statistics-progress"><small role="alert">{shareError}</small><button className="text-button" type="button" disabled={sharing || !adapter} onClick={() => setSharedRetry((value) => value + 1)}>重试同步</button></div> : null}
     {error ? <small role="alert">{error}</small> : null}
   </div>;
+  return children ? children(controls, statistics, complete) : controls;
 }

@@ -25,5 +25,5 @@ export function journalStatisticsView({ catalog, catalogReady, loaded, cache, sh
       .map(([, value]) => value);
   const complete = catalogReady && missing.length === 0;
   const phase = complete ? "complete" : statistics.length === 0 ? "waiting" : catalogReady ? "partial" : "snapshot";
-  return { files, missing, phase, totals: complete || statistics.length > 0 ? sumJournalStatistics(statistics) : null };
+  return { files, missing, phase, statistics, totals: complete || statistics.length > 0 ? sumJournalStatistics(statistics) : null };
 }

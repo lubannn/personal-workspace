@@ -7,6 +7,7 @@ import { journalCatalogDates } from "../../../../src/lib/github-data/journal-arc
 import { searchJournalDisplaySegments } from "../../../../src/lib/github-data/journal-display";
 import { activeJournalEntries, canWriteJournalDate, filterJournalEntries, journalEntrySubmittedTime, journalMonthDays, previousJournalDate, shiftJournalMonth, trashedJournalEntries } from "../../../../src/lib/github-data/journal-entries";
 import { JournalStatistics } from "./journal-statistics";
+import { JournalAchievements } from "./journal-achievements";
 import type { Connection, SyncedJournalEntry } from "./page-model";
 
 type JournalFields = { journalDate: string; bodyMarkdown: string };
@@ -117,11 +118,11 @@ export function JournalSection({ connection, adapter, online, todayDate, journal
     setEditingId(null); setJournalDate(""); setBodyMarkdown("");
   }
 
-  return <section className="journal-card" aria-labelledby="journal-title">
+  return <JournalStatistics key={connection ? `${connection.ownerId}:${connection.repository}` : "disconnected"} connection={connection} adapter={adapter} catalog={journalEntryCatalog} catalogReady={catalogReady} loaded={journalEntryFiles} busy={loading || busy}>{(statisticsControls, statistics, complete) => <section className="journal-card" aria-labelledby="journal-title">
     <div className="card-heading">
       <div><p className="eyebrow">Nexus · Journal</p><h2 id="journal-title">日记</h2></div>
       <div className="journal-view-actions" aria-label="日记视图与同步">
-        <JournalStatistics key={connection ? `${connection.ownerId}:${connection.repository}` : "disconnected"} connection={connection} adapter={adapter} catalog={journalEntryCatalog} catalogReady={catalogReady} loaded={journalEntryFiles} busy={loading || busy} />
+        {statisticsControls}
         <button className="secondary-button" type="button" onClick={() => onRefresh(recentView ? undefined : displayedMonth)} disabled={!connection || loading}>{loading ? "刷新中…" : "从 GitHub 刷新"}</button>
       </div>
     </div>
@@ -154,5 +155,6 @@ export function JournalSection({ connection, adapter, online, todayDate, journal
         <div className="journal-calendar-grid" role="group" aria-label={`${displayedMonth} 日期`}>{["一", "二", "三", "四", "五", "六", "日"].map((day) => <span className="journal-calendar-weekday" key={day}>{day}</span>)}{monthDays.map((date, index) => date ? <button key={date} type="button" className={["journal-calendar-day", daysWithEntries.has(date) ? "has-entry" : "", date === selectedDay ? "selected" : "", date === todayDate ? "today" : ""].filter(Boolean).join(" ")} aria-label={`${date}${daysWithEntries.has(date) ? "，有日记" : "，无日记"}`} aria-pressed={date === selectedDay} onClick={() => { browseMonth(displayedMonth); setSelectedDay(date); }} disabled={!connection}>{Number(date.slice(-2))}</button> : <span key={`blank-${index}`} aria-hidden="true" />)}</div>
       </aside>
     </div>
-  </section>;
+    <JournalAchievements statistics={statistics} complete={complete} todayDate={todayDate} connected={Boolean(connection)} />
+  </section>}</JournalStatistics>;
 }
