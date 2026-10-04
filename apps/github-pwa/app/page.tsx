@@ -7,7 +7,6 @@ import { writeLearningChildWithParents } from "../../../src/lib/github-data/lear
 import {
   DASHBOARD_LAYOUT_PATH,
   createDefaultDashboardLayout,
-  moveDashboardWidget,
   serializeDashboardLayout,
   setDashboardWidgetEnabled,
   setDashboardWidgetSize,
@@ -156,6 +155,7 @@ import type { TaskRecord } from "../../../src/lib/github-data/tasks";
 import type { JournalEntryRecord } from "../../../src/lib/github-data/journal-entries";
 import type { CaptureRecord } from "../../../src/lib/github-data/workspace";
 import { DashboardSection } from "./workspace/dashboard-section";
+import { isTodayDashboardWidget, moveTodayDashboardWidget } from "./workspace/dashboard-presentation";
 import { CaptureComposer } from "./workspace/capture-composer";
 import { AuthSection } from "./workspace/auth-section";
 import { CorosConnectionSection } from "./workspace/coros-connection-section";
@@ -522,11 +522,11 @@ export default function GitHubWorkspacePage() {
     [dashboardLayout],
   );
   const visibleDashboardWidgets = useMemo(
-    () => displayedDashboardLayout.widgets.filter((widget) => widget.enabled),
+    () => displayedDashboardLayout.widgets.filter((widget) => widget.enabled && isTodayDashboardWidget(widget)),
     [displayedDashboardLayout],
   );
   const hiddenDashboardWidgets = useMemo(
-    () => displayedDashboardLayout.widgets.filter((widget) => !widget.enabled),
+    () => displayedDashboardLayout.widgets.filter((widget) => !widget.enabled && isTodayDashboardWidget(widget)),
     [displayedDashboardLayout],
   );
 
@@ -542,7 +542,7 @@ export default function GitHubWorkspacePage() {
   ) {
     if (!dashboardLayout) return;
     if (operation === "up" || operation === "down") {
-      applyDashboardLayout(moveDashboardWidget(dashboardLayout, widget.id, operation));
+      applyDashboardLayout(moveTodayDashboardWidget(dashboardLayout, widget.id, operation));
       return;
     }
     applyDashboardLayout(setDashboardWidgetEnabled(dashboardLayout, widget.id, operation === "show"));
@@ -2868,6 +2868,7 @@ export default function GitHubWorkspacePage() {
 
 
       <WorkspaceTabPanel tab="overview" activeTab={activeWorkspaceTab} mounted={workspaceTabReady && (activeWorkspaceTab === "overview" || visitedWorkspaceTabs.has("overview"))} key={connection ? `overview:${connection.ownerId}:${connection.repository}` : "overview:disconnected"}>
+      <div className="overview-columns">
       <DashboardSection
         connection={connection}
         online={online}
@@ -2880,16 +2881,9 @@ export default function GitHubWorkspacePage() {
         visibleWidgets={visibleDashboardWidgets}
         hiddenWidgets={hiddenDashboardWidgets}
         todayTasks={todayTaskFiles}
-        currentProjects={currentProjectFiles}
-        projectTasks={taskFiles}
-        projectMilestones={milestoneFiles}
         calendarEvents={calendarEventFiles}
-        journalEntries={journalEntryFiles}
         loadingTasks={loadingTasks}
-        loadingProjects={loadingProjects}
-        loadingMilestones={loadingMilestones}
         loadingCalendarEvents={loadingCalendarEvents}
-        loadingJournalEntries={loadingJournalEntries}
         savingTaskId={savingTaskId}
         currentTaskDate={currentTaskDate}
         onToggleEditing={() => setEditingDashboard((current) => !current)}
@@ -2918,6 +2912,7 @@ export default function GitHubWorkspacePage() {
         onRefresh={() => loadRecentCaptures()}
         onLifecycleChange={updateCaptureLifecycle}
       />
+      </div>
       </WorkspaceTabPanel>
 
 

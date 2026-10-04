@@ -1110,3 +1110,46 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
   .capture-bar .capture-destination-select select { width: 100%; }
   .capture-bar .capture-inline-save { min-height: 40px; }
 }
+
+
+/* Overview: two Today columns with the capture inbox alongside them. */
+.overview-columns { display: grid; grid-template-columns: minmax(0, 2fr) minmax(320px, 1fr); gap: 12px; align-items: start; }
+.overview-columns > .dashboard-card, .overview-columns > .capture-inbox { min-width: 0; margin-bottom: 0; }
+.overview-columns .dashboard-widget-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.overview-columns .dashboard-widget { min-height: 92px; padding: 12px; }
+.overview-columns .dashboard-heading .eyebrow, .overview-columns .dashboard-widget .eyebrow { display: none; }
+.overview-columns .today-task-widget { margin-top: 8px; }
+.overview-columns .today-task-widget li { padding: 5px 0; }
+.overview-columns .today-task-widget li button { width: 20px; height: 20px; }
+.overview-columns .dashboard-heading { flex-wrap: wrap; gap: 10px; }
+.capture-inbox { padding: 14px; border-radius: 16px; }
+.capture-inbox .capture-inbox-heading { display: flex; align-items: center; gap: 8px; }
+.capture-inbox .card-heading h2 { font-size: 20px; }
+.capture-inbox .capture-inbox-heading > button { flex: 0 0 auto; min-height: 28px; padding: 4px 8px; font-size: 11px; }
+.capture-inbox .capture-view-actions { justify-content: flex-start; gap: 5px; margin-top: 10px; }
+.capture-inbox .capture-view-actions > button { min-height: 28px; padding: 4px 8px; font-size: 11px; }
+.capture-inbox .capture-search-toolbar { margin-top: 8px; }
+.capture-inbox .capture-search-toolbar input { min-height: 32px; padding: 5px 8px; font-size: 12px; }
+.capture-inbox .recent-list { margin-top: 8px; }
+.capture-inbox .recent-list > li { grid-template-columns: minmax(0, 1fr) auto; gap: 0; padding: 8px 0; }
+.capture-inbox .capture-record-content { grid-column: 1 / -1; grid-row: 1; }
+.capture-inbox .capture-record-meta { min-height: 28px; padding-right: 170px; align-items: center; gap: 4px 7px; margin-bottom: 4px; font-size: 10px; }
+.capture-inbox .capture-record-meta > span:first-of-type { border-radius: 4px; padding: 2px 5px; background: var(--accent-soft); color: var(--accent); }
+.capture-inbox .capture-record-meta time { font-size: 10px; letter-spacing: 0; text-transform: none; }
+.capture-inbox .recent-list p { font-size: 14px; line-height: 1.5; }
+.capture-inbox .recent-list .capture-row-actions { grid-column: 2; grid-row: 1; align-self: start; display: flex; justify-content: flex-end; flex-wrap: wrap; min-width: 0; gap: 4px; }
+.capture-inbox .capture-row-actions button { min-height: 28px; padding: 4px 7px; border-radius: 7px; font-size: 11px; }
+.capture-inbox .capture-list-footer { margin-top: 8px; font-size: 10px; }
+.capture-inbox .empty-note { margin: 12px 0 0; font-size: 12px; line-height: 1.5; }
+.overview-columns > .capture-inbox .recent-list { max-height: clamp(180px, calc(100dvh - 430px), 560px); overflow-y: auto; scrollbar-width: thin; padding-right: 4px; overscroll-behavior: contain; }
+@media (max-width: 959px) {
+  .overview-columns { grid-template-columns: minmax(0, 1fr); }
+  .overview-columns > .capture-inbox .recent-list { max-height: none; overflow: visible; padding-right: 0; }
+}
+@media (max-width: 600px) {
+  .capture-inbox .capture-view-actions > button, .capture-inbox .capture-row-actions button, .capture-inbox .capture-inbox-heading > button { min-height: 36px; }
+  .capture-inbox .capture-record-meta { min-height: 36px; padding-right: 170px; }
+}
+@media (max-width: 519px) {
+  .overview-columns .dashboard-widget-grid { grid-template-columns: minmax(0, 1fr); }
+}

@@ -41,7 +41,7 @@ describe("workspace module data loading", () => {
     expect(WORKSPACE_MODULE_COLLECTIONS.projects).toContain("tasks");
     expect(WORKSPACE_MODULE_COLLECTIONS.tasks).toEqual(expect.arrayContaining(["tasks", "projects", "timeEntries"]));
     expect(WORKSPACE_MODULE_COLLECTIONS.habits).toEqual(["habits", "health"]);
-    expect(WORKSPACE_MODULE_COLLECTIONS.overview).toEqual(expect.arrayContaining(["captures", "dashboard", "journal", "tasks", "projects", "milestones", "calendar"]));
+    expect(WORKSPACE_MODULE_COLLECTIONS.overview).toEqual(["dashboard", "captures", "tasks", "calendar"]);
     expect(WORKSPACE_MODULE_COLLECTIONS.reports).toEqual(["tasks", "timeEntries", "projects", "milestones", "calendar", "activity", "reports"]);
   });
 
@@ -51,9 +51,14 @@ describe("workspace module data loading", () => {
     const adapter = {};
     await coordinator.load(adapter, "data", loaders);
     for (const loader of Object.values(loaders)) expect(loader).not.toHaveBeenCalled();
+    await coordinator.load(adapter, "overview", loaders);
+    expect(loaders.projects).not.toHaveBeenCalled();
+    expect(loaders.milestones).not.toHaveBeenCalled();
+    expect(loaders.journal).not.toHaveBeenCalled();
     await coordinator.load(adapter, "journal", loaders);
+    expect(loaders.journal).toHaveBeenCalledOnce();
     const called = Object.entries(loaders).filter(([, loader]) => vi.mocked(loader).mock.calls.length).map(([name]) => name);
-    expect(called).toEqual(["journal"]);
+    expect(called.sort()).toEqual(["calendar", "captures", "dashboard", "journal", "tasks"]);
   });
 
   it("starts fresh after disconnect or a different repository connection", async () => {

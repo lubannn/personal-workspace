@@ -59,13 +59,13 @@ export function CaptureInboxSection(props: Props) {
   const matches = useMemo(() => visibleCaptures.filter((item) => captureMatches(item.record, query)), [visibleCaptures, query]);
   const titleId = module === "ideas" ? "ideas-title" : "recent-title";
   return (
-    <section className="recent-card" aria-labelledby={titleId}>
-      <div className="card-heading">
-        <div><p className="eyebrow">{module === "ideas" ? "Ideas" : "Quick capture inbox"}</p><h2 id={titleId}>{module === "ideas" ? "想法" : "待整理随手记"}</h2></div>
-        <div className="recent-actions" aria-label={module === "ideas" ? "想法视图与同步" : "随手记视图与同步"}>
-          {([["inbox", "待整理", inboxCaptures.length], ["archived", "已归档", archivedCaptures.length], ["trash", "回收站", trashedCaptures.length]] as const).map(([view, label, count]) => <button key={view} className={`view-button ${captureView === view ? "active" : ""}`} type="button" disabled={editingId !== null} aria-pressed={captureView === view} onClick={() => { onViewChange(view); setLimit(20); setEditingId(null); }}>{label} {count}</button>)}
-          <button className="secondary-button" type="button" onClick={onRefresh} disabled={!connection || online === false || loadingCaptures || Boolean(savingCaptureId) || editingId !== null}>{loadingCaptures ? "刷新中…" : "刷新记录"}</button>
-        </div>
+    <section className="recent-card capture-inbox" aria-labelledby={titleId}>
+      <div className="card-heading capture-inbox-heading">
+        <h2 id={titleId}>{module === "ideas" ? "想法" : "待整理随手记"}</h2>
+        <button className="secondary-button" type="button" aria-label={module === "ideas" ? "刷新想法" : "刷新随手记"} onClick={onRefresh} disabled={!connection || online === false || loadingCaptures || Boolean(savingCaptureId) || editingId !== null}>{loadingCaptures ? "刷新中…" : "刷新"}</button>
+      </div>
+      <div className="recent-actions capture-view-actions" aria-label={module === "ideas" ? "想法视图" : "随手记视图"}>
+        {([["inbox", "待整理", inboxCaptures.length], ["archived", "已归档", archivedCaptures.length], ["trash", "回收站", trashedCaptures.length]] as const).map(([view, label, count]) => <button key={view} className={`view-button ${captureView === view ? "active" : ""}`} type="button" disabled={editingId !== null} aria-pressed={captureView === view} onClick={() => { onViewChange(view); setLimit(20); setEditingId(null); }}>{label} {count}</button>)}
       </div>
       {savingCaptureId ? <p className="capture-hint" role="status">正在同步随手记…完成后会显示保存结果。</p> : null}
       <div className="capture-search-toolbar">
@@ -76,9 +76,8 @@ export function CaptureInboxSection(props: Props) {
         : loadingCaptures && visibleCaptures.length === 0 ? <p className="empty-note" role="status">{module === "ideas" ? "正在读取想法…" : "正在读取随手记…"}</p>
           : matches.length === 0 ? <p className="empty-note">{query ? "没有匹配的记录，试试其他关键词。" : captureView === "trash" ? "回收站是空的。" : captureView === "archived" ? "还没有归档记录。" : module === "ideas" ? "还没有想法，在随手记中写下第一个想法吧。" : "还没有待整理记录。"}</p>
             : <ul className="recent-list">{matches.slice(0, limit).map((item) => <li key={item.record.id}>
-              <time dateTime={item.record.deleted_at ?? item.record.created_at}>{formatCaptureTime(item.record.deleted_at ?? item.record.created_at)}</time>
               <div className="capture-record-content">
-                <div className="capture-record-meta"><span>{item.record.data.routed_to ? `已转入${item.record.data.routed_to.label}` : module === "ideas" ? "想法" : ["todo", "deadline", "schedule", "journal"].includes(item.record.data.kind ?? "note") ? `待转入${CAPTURE_DESTINATIONS[item.record.data.kind!]}` : "待整理"}</span>{item.record.data.noted_date ? <span>{item.record.data.noted_date}{item.record.data.noted_time ? ` ${item.record.data.noted_time}` : ""}</span> : null}</div>
+                <div className="capture-record-meta"><time dateTime={item.record.deleted_at ?? item.record.created_at}>{formatCaptureTime(item.record.deleted_at ?? item.record.created_at)}</time><span>{item.record.data.routed_to ? `已转入${item.record.data.routed_to.label}` : module === "ideas" ? "想法" : ["todo", "deadline", "schedule", "journal"].includes(item.record.data.kind ?? "note") ? `待转入${CAPTURE_DESTINATIONS[item.record.data.kind!]}` : "待整理"}</span>{item.record.data.noted_date ? <span>{item.record.data.noted_date}{item.record.data.noted_time ? ` ${item.record.data.noted_time}` : ""}</span> : null}</div>
                 {editingId === item.record.id ? <CaptureEditor item={item} timezone={connection.timezone} saving={Boolean(savingCaptureId)} online={online} onSave={onEdit} onCancel={() => setEditingId(null)} /> : <p>{item.record.data.raw_text}</p>}
               </div>
               <div className="capture-row-actions">
