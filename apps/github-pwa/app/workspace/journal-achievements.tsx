@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { journalAchievements, type JournalAchievement } from "../../../../src/lib/github-data/journal-achievements";
+import { JournalAchievementNoticeTracker } from "../../../../src/lib/github-data/journal-achievement-notices";
 import type { JournalFileStatistics } from "../../../../src/lib/github-data/journal-statistics";
 
 const number = (value: number) => value.toLocaleString("zh-CN");
@@ -27,16 +28,59 @@ function BadgeCard({ badge }: { badge: JournalAchievement }) {
   </li>;
 }
 
+export function JournalAchievementNotice({ badges, onDismiss }: { badges: JournalAchievement[]; onDismiss: () => void }) {
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  useEffect(() => {
+    if (hovered || focused || badges.length === 0) return;
+    const timer = setTimeout(onDismiss, 8000);
+    return () => clearTimeout(timer);
+  }, [badges, hovered, focused, onDismiss]);
+  if (badges.length === 0) return null;
+  return <aside className="journal-achievement-notice" aria-label="新勋章提醒"
+    onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}
+    onFocusCapture={() => setFocused(true)} onBlurCapture={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setFocused(false); }}
+    onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); onDismiss(); } }}>
+    <Medal badge={badges[0]} />
+    <div className="journal-achievement-notice-content" role="status" aria-live="polite" aria-atomic="true">
+      <strong>获得新勋章{badges.length > 1 ? ` · ${number(badges.length)} 枚` : ""}</strong>
+      <ul>{badges.map((badge) => <li key={badge.id}><span>{badge.name}</span><small>{badge.level} 级</small></li>)}</ul>
+    </div>
+    <button type="button" className="journal-achievement-notice-close" onClick={onDismiss} aria-label="关闭新勋章提示">×</button>
+  </aside>;
+}
+
 export function JournalAchievements({ statistics, complete, todayDate, connected }: { statistics: JournalFileStatistics[]; complete: boolean; todayDate: string; connected: boolean }) {
   // Reuse the already-verified per-file summary. This component performs no
   // I/O and never asks for journal bodies or a separate achievement cache.
   const records = useMemo(() => complete && connected ? journalAchievements(statistics, todayDate) : null, [complete, connected, statistics, todayDate]);
+  const tracker = useRef(new JournalAchievementNoticeTracker());
+  const [notice, setNotice] = useState<JournalAchievement[]>([]);
+  const dismissNotice = useCallback(() => setNotice([]), []);
+  useEffect(() => {
+    let current = true;
+    // Deferring observation as well as publication preserves notifications under
+    // Strict Mode's setup/cleanup replay and cancels superseded snapshots.
+    queueMicrotask(() => {
+      if (!current) return;
+      if (!connected) { tracker.current.reset(); setNotice([]); return; }
+      if (!records) return;
+      const ids = tracker.current.observe(records.earned.map((badge) => badge.id));
+      setNotice((previous) => {
+        const retained = previous.filter((badge) => records.earned.some((earned) => earned.id === badge.id));
+        if (!ids.length && retained.length === previous.length) return previous;
+        return [...retained, ...records.earned.filter((badge) => ids.includes(badge.id))];
+      });
+    });
+    return () => { current = false; };
+  }, [connected, records]);
   const next = records?.series.flatMap((group) => {
     const badge = group.badges.find((item) => !item.earned);
     return badge ? [badge] : [];
   }).sort((a, b) => b.value / b.target - a.value / a.target).slice(0, 3) ?? [];
 
   return <section className="journal-achievements" aria-labelledby="journal-achievements-title">
+    {records && notice.length > 0 ? <JournalAchievementNotice badges={notice.filter((badge) => records.earned.some((earned) => earned.id === badge.id))} onDismiss={dismissNotice} /> : null}
     <div className="journal-achievements-heading"><div><p className="eyebrow">Every page counts</p><h3 id="journal-achievements-title">日记记录与勋章</h3></div><span className="journal-achievements-earned" aria-live="polite">{records ? `已获得 ${records.earned.length} / ${records.count} 枚` : "勋章待核对"}</span></div>
     {!records ? <p className="journal-achievements-pending">{connected ? "统计核对完成后，历史记录会一起计入勋章。" : "连接后查看你的记录与勋章。"}</p> : <>
       <dl className="journal-achievement-metrics">
