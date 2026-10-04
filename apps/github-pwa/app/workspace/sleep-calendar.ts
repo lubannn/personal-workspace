@@ -1,8 +1,9 @@
 import { healthLocalParts, type SleepRecordRow } from "./health-records";
 
 export const SLEEP_GRADES = {
-  excellent: { label: "优秀", range: "80–100" },
-  good: { label: "良好", range: "60–79" },
+  excellent: { label: "优秀", range: "86–100" },
+  good: { label: "良好", range: "75–85" },
+  fair: { label: "一般", range: "60–74" },
   poor: { label: "欠佳", range: "0–59" },
   unscored: { label: "未评分", range: "" },
 } as const;
@@ -23,7 +24,7 @@ export type SleepCalendarDay = {
 
 export function sleepGrade(score: number | null): SleepGrade {
   if (score === null || !Number.isFinite(score) || score < 0 || score > 100) return "unscored";
-  return score >= 80 ? "excellent" : score >= 60 ? "good" : "poor";
+  return score >= 86 ? "excellent" : score >= 75 ? "good" : score >= 60 ? "fair" : "poor";
 }
 
 export function buildSleepCalendarDays(rows: SleepRecordRow[]): SleepCalendarDay[] {
@@ -60,7 +61,7 @@ export function buildSleepCalendarDays(rows: SleepRecordRow[]): SleepCalendarDay
 }
 
 export function summarizeSleepDays(days: SleepCalendarDay[]) {
-  const grades = { excellent: 0, good: 0, poor: 0, unscored: 0 };
+  const grades = { excellent: 0, good: 0, fair: 0, poor: 0, unscored: 0 };
   for (const day of days) grades[day.grade]++;
   const complete = days.filter((day) => !day.hasIncompleteDuration && day.asleepSeconds !== null);
   return { count: days.length, grades, completeDays: complete.length,

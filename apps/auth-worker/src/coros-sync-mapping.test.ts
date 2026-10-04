@@ -296,6 +296,16 @@ describe("strict COROS workout text mapping", () => {
     const input = workout.replace("Distance: 6.25 km", "Sets: 500").replace("SportType: 100", "SportType: 901");
     expect(mapCorosWorkouts(result(input), options).items[0].candidate).toMatchObject({ activity_type: "other", distance: null });
   });
+  it("retains specific sport metadata and only explicit custom exercise names", () => {
+    const badminton = workout.replace("Outdoor Run", "Badminton").replace("SportType: 100", "SportType: 1000");
+    const candidate = mapCorosWorkouts(result(badminton), options).items[0].candidate;
+    expect(candidate.metrics_json).toMatchObject({ coros_sport_type: 1000, coros_sport_name: "Badminton" });
+    expect(validWorkoutCandidate(candidate)).toBe(true);
+    const custom = workout.replace("Outdoor Run", "Custom Indoor Other").replace("SportType: 100", "SportType: 9904").replace("Location: Synthetic location", "Location: 爬坡");
+    expect(mapCorosWorkouts(result(custom), options).items[0].candidate.metrics_json.coros_sport_name).toBe("爬坡");
+    expect(validWorkoutCandidate({ ...candidate, metrics_json: { ...candidate.metrics_json, coros_sport_type: 1.5 } })).toBe(false);
+    expect(validWorkoutCandidate({ ...candidate, metrics_json: { ...candidate.metrics_json, coros_sport_name: "Badminton\nInjected" } })).toBe(false);
+  });
   it.each([true, false])("accepts a no-pace strength metric row with the exact leading separator (encoded=%s)", encoded => {
     const mapped = mapCorosWorkouts(result(strength, encoded), options);
     expect(mapped.reportedCount).toBe(1);
