@@ -2,8 +2,10 @@
 
 import { useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight, Moon } from "lucide-react";
-import { healthLocalParts, type SleepRecordRow } from "./health-records";
-import { buildSleepCalendarDays, formatSleepTime, sleepCalendarMonths, sleepMonthCells, SLEEP_GRADES, summarizeSleepDays, type SleepCalendarDay } from "./sleep-calendar";
+import { healthLocalParts, type WorkoutRecordRow, type SleepRecordRow } from "./health-records";
+import { buildSleepCalendarDays, formatSleepTime, sleepMonthCells, SLEEP_GRADES, summarizeSleepDays, type SleepCalendarDay } from "./sleep-calendar";
+import { buildWorkoutCalendarDays, healthCalendarMonths } from "./workout-calendar";
+import { WorkoutCalendarMonth } from "./workout-calendar-month";
 import "./sleep-calendar.css";
 
 function monthLabel(month: string) { return `${Number(month.slice(0, 4))}年${Number(month.slice(5))}月`; }
@@ -12,32 +14,34 @@ function dayDescription(day: SleepCalendarDay) {
   return `${day.date}，${SLEEP_GRADES[day.grade].label}${day.score === null ? "" : `，${day.score}分`}，${duration}${day.napCount ? `，包含${day.napCount}次小睡` : ""}${day.hasIncompleteDuration ? "，部分分段实睡时长缺失" : ""}${day.hasDateCorrection ? "，小睡日期已修正" : ""}`;
 }
 
-export function SleepCalendarSection({ rows, timezone }: { rows: SleepRecordRow[]; timezone: string }) {
+export function SleepCalendarSection({ rows, workouts = [], timezone }: { rows: SleepRecordRow[]; workouts?: WorkoutRecordRow[]; timezone: string }) {
   const days = useMemo(() => buildSleepCalendarDays(rows), [rows]);
-  const months = useMemo(() => sleepCalendarMonths(days), [days]);
+  const workoutDays = useMemo(() => buildWorkoutCalendarDays(workouts, timezone), [workouts, timezone]);
+  const months = useMemo(() => healthCalendarMonths(days, workoutDays), [days, workoutDays]);
   const [requestedMonth, setRequestedMonth] = useState("");
   const [selectedDate, setSelectedDate] = useState("");
   const month = months.includes(requestedMonth) ? requestedMonth : months.at(-1) ?? "";
   const index = months.indexOf(month);
-  const visibleMonths = months.slice(Math.max(0, index - 1), index + 1);
+  const visibleMonths = month ? [month] : [];
+  const monthDays = days.filter(day => day.date.startsWith(`${month}-`));
+  const monthWorkouts = workoutDays.filter(day => day.date.startsWith(`${month}-`));
   const byDate = useMemo(() => new Map(days.map((day) => [day.date, day])), [days]);
-  const summary = useMemo(() => summarizeSleepDays(days), [days]);
+  const summary = summarizeSleepDays(monthDays);
   const selected = selectedDate.slice(0, 7) && visibleMonths.includes(selectedDate.slice(0, 7)) ? byDate.get(selectedDate) : undefined;
   const today = healthLocalParts(new Date().toISOString(), timezone).date;
 
   return <section className="sleep-calendar" aria-labelledby="sleep-calendar-title">
     <div className="sleep-calendar-heading">
-      <div><p className="eyebrow">Sleep · Calendar</p><h3 id="sleep-calendar-title"><Moon size={19} aria-hidden="true" />睡眠质量月历</h3><p>按醒来日期汇总夜间睡眠与小睡，时长以小时:分钟显示；† 表示历史记录时段（含清醒）。</p></div>
-      {months.length ? <div className="sleep-calendar-controls"><button className="secondary-button" type="button" aria-label="查看更早的睡眠月份" disabled={index < 1} onClick={() => setRequestedMonth(months[Math.max(0, index - 2)])}><ChevronLeft size={16} aria-hidden="true" /></button><label><span>查看月份</span><select value={month} onChange={(event) => setRequestedMonth(event.target.value)}>{[...months].reverse().map((value) => <option key={value} value={value}>{monthLabel(value)}</option>)}</select></label><button className="secondary-button" type="button" aria-label="查看更晚的睡眠月份" disabled={index === months.length - 1} onClick={() => setRequestedMonth(months[Math.min(months.length - 1, index + 2)])}><ChevronRight size={16} aria-hidden="true" /></button></div> : null}
+      <div><p className="eyebrow">Health · Calendar</p><h3 id="sleep-calendar-title"><Moon size={19} aria-hidden="true" />睡眠与运动月历</h3><p>同月对照睡眠和运动，通过月份选择查看历史记录。</p></div>
+      {months.length ? <div className="sleep-calendar-controls"><button className="secondary-button" type="button" aria-label="查看上一个月份" disabled={index < 1} onClick={() => setRequestedMonth(months[Math.max(0, index - 1)])}><ChevronLeft size={16} aria-hidden="true" /></button><label><span>查看月份</span><select value={month} onChange={(event) => setRequestedMonth(event.target.value)}>{[...months].reverse().map((value) => <option key={value} value={value}>{monthLabel(value)}</option>)}</select></label><button className="secondary-button" type="button" aria-label="查看下一个月份" disabled={index === months.length - 1} onClick={() => setRequestedMonth(months[Math.min(months.length - 1, index + 1)])}><ChevronRight size={16} aria-hidden="true" /></button></div> : null}
     </div>
-    {days.length ? <>
-      <p className="sleep-calendar-summary">共 {summary.count} 天 · {days[0].date} 至 {days.at(-1)!.date}{summary.averageSeconds !== null ? <> · 平均睡眠 <strong>{formatSleepTime(summary.averageSeconds)}</strong><span>（{summary.completeDays} 天时长完整）</span></> : null}</p>
-      <ul className="sleep-calendar-legend" aria-label="睡眠评分颜色说明">{Object.entries(SLEEP_GRADES).map(([grade, value]) => <li key={grade}><i className={`sleep-grade-${grade}`} aria-hidden="true" /><span>{value.label} {summary.grades[grade as keyof typeof SLEEP_GRADES]} 天{value.range ? <small>{value.range} 分</small> : null}</span></li>)}<li><i className="sleep-grade-empty" aria-hidden="true" /><span>无记录</span></li></ul>
+    {months.length ? <>
+      <p className="sleep-calendar-summary">{monthLabel(month)} · 睡眠 {summary.count} 天{summary.averageSeconds !== null ? <> · 平均睡眠 <strong>{formatSleepTime(summary.averageSeconds)}</strong><span>（{summary.completeDays} 天时长完整）</span></> : null}</p>
       <div className="sleep-calendar-months">{visibleMonths.map((value) => {
         const monthDays = days.filter((day) => day.date.startsWith(value));
         const stats = summarizeSleepDays(monthDays);
-        return <article className="sleep-calendar-month" key={value} aria-label={monthLabel(value)}>
-          <header><h4>{monthLabel(value)}</h4><span>{stats.count} 天有记录{stats.averageSeconds !== null ? ` · 平均 ${formatSleepTime(stats.averageSeconds)}` : ""}</span></header>
+        return <article className="sleep-calendar-month" key={value} aria-label={`${monthLabel(value)}睡眠月历`}>
+          <header><h4><Moon size={17} aria-hidden="true" />睡眠质量月历</h4><span>{stats.count} 天有记录{stats.averageSeconds !== null ? ` · 平均 ${formatSleepTime(stats.averageSeconds)}` : ""}</span></header>
           <p className="sleep-calendar-month-counts">优秀 {stats.grades.excellent} · 良好 {stats.grades.good} · 欠佳 {stats.grades.poor}{stats.grades.unscored ? ` · 未评分 ${stats.grades.unscored}` : ""}</p>
           <div className="sleep-calendar-weekdays" aria-hidden="true">{["一", "二", "三", "四", "五", "六", "日"].map((day) => <span key={day}>{day}</span>)}</div>
           <div className="sleep-calendar-grid">{sleepMonthCells(value).map((date, cellIndex) => {
@@ -47,9 +51,11 @@ export function SleepCalendarSection({ rows, timezone }: { rows: SleepRecordRow[
             return <button type="button" key={date} className={`sleep-calendar-day sleep-grade-${day.grade}${date === today ? " sleep-calendar-today" : ""}`} aria-label={dayDescription(day)} aria-pressed={selectedDate === date} title={dayDescription(day)} onClick={() => setSelectedDate(selectedDate === date ? "" : date)}><time dateTime={date}>{Number(date.slice(8))}{day.hasDateCorrection ? <sup aria-hidden="true">*</sup> : null}</time><strong>{SLEEP_GRADES[day.grade].label}</strong><span className="sleep-calendar-duration">{day.asleepSeconds === null ? `${formatSleepTime(day.recordedPeriodSeconds, false, true)}†` : formatSleepTime(day.asleepSeconds, day.hasIncompleteDuration, true)}</span></button>;
           })}</div>
         </article>;
-      })}</div>
+      })}<WorkoutCalendarMonth month={month} days={monthWorkouts} today={today} timezone={timezone} /></div>
+      <ul className="sleep-calendar-legend" aria-label="睡眠评分颜色说明">{Object.entries(SLEEP_GRADES).map(([grade, value]) => <li key={grade}><i className={`sleep-grade-${grade}`} aria-hidden="true" /><span>{value.label} {summary.grades[grade as keyof typeof SLEEP_GRADES]} 天{value.range ? <small>{value.range} 分</small> : null}</span></li>)}<li><i className="sleep-grade-empty" aria-hidden="true" /><span>无记录</span></li></ul>
+
       {selected ? <div className="sleep-calendar-day-summary" role="status"><strong>{selected.date} · {SLEEP_GRADES[selected.grade].label}{selected.score !== null ? ` · ${selected.score} 分` : ""}</strong><span>{selected.asleepSeconds === null ? `记录时段 ${formatSleepTime(selected.recordedPeriodSeconds)}（含清醒）` : `合计 ${formatSleepTime(selected.asleepSeconds, selected.hasIncompleteDuration)}`}{selected.usesCorosDailyTotal ? "（COROS 每日总睡眠）" : ""} · 夜间 {formatSleepTime(selected.mainSeconds)}{selected.napCount ? ` · 小睡 ${formatSleepTime(selected.napSeconds)}（${selected.napCount} 次）` : ""}</span>{selected.asleepSeconds === null ? <small>† COROS 仅提供起止时段，实际睡着时长未提供；此时段不计入实睡平均值。</small> : selected.hasIncompleteDuration ? <small>部分记录未提供实际睡着时长，合计仅包含已知时长。</small> : selected.usesCorosDailyTotal && (selected.mainSeconds === null || (selected.napCount > 0 && selected.napSeconds === null)) ? <small>COROS 已提供每日总时长，部分夜间或小睡分段的实际时长未单独提供。</small> : null}{selected.hasDateCorrection ? <small>* 小睡日期已按所属睡眠日修正，原始时间及修正记录仍保留。</small> : null}</div> : null}
       <p className="sleep-calendar-note">颜色按 <a href="https://support.coros.com/hc/en-us/articles/51716381180948-Understand-Your-COROS-Sleep-Score" target="_blank" rel="noreferrer">COROS 睡眠评分</a>分档，使用最新已入库评分。优先展示 COROS 每日总睡眠（含小睡），否则汇总分段实睡时长。「≥」表示仅有部分实睡时长；「†」为旧记录起止时段合计（含清醒），不计入实睡平均值。平均值仅统计总时长完整的日期；* 表示含日期修正。</p>
-    </> : <p className="health-records-empty">尚无已入库的睡眠记录，COROS 同步完成后会显示月历。</p>}
+    </> : <p className="health-records-empty">尚无已入库的睡眠或运动记录，COROS 同步完成后会显示月历。</p>}
   </section>;
 }
