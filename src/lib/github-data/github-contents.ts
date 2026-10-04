@@ -654,7 +654,7 @@ export class GitHubContentsAdapter {
   }
 
   async listHealthArchive(): Promise<GitHubDirectoryItem[]> {
-    return this.listDataArchiveDirectories(["sleep-sessions", "workouts", "health-staging-records", "coros-sync-index"]);
+    return this.listDataArchiveDirectories(["sleep-sessions", "workouts", "health-staging-records", "coros-sync-index", "health-metrics"]);
   }
 
   async listJournalDirectory(): Promise<GitHubDirectoryItem[]> {

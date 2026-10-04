@@ -6,7 +6,7 @@ type Options = {
   signal: AbortSignal;
   onUpdate: (result: CorosSyncRunResult, processed: number) => void;
   fetcher?: typeof fetch;
-  /** Extra update reads recent sleep/workouts only; never drains the history backlog. */
+  /** Extra update reads recent records and health metrics only; never drains the history backlog. */
   recentOnly?: boolean;
 };
 
@@ -73,7 +73,8 @@ export async function drainCorosHistory({ csrf, signal, onUpdate, fetcher = fetc
     if (update.status === "processed") processed += 1;
     onUpdate(update, processed);
     if (recentOnly && update.status === "processed" && update.progress?.request && (["sleep", "workout"] as const).every(domain =>
-      update.progress!.domains[domain].recentRequestSequence === update.progress!.request!.sequence)) {
+      update.progress!.domains[domain].recentRequestSequence === update.progress!.request!.sequence)
+      && (!update.progress.health || update.progress.health.recentRequestSequence === update.progress.request.sequence)) {
       return { status: "complete", retryAt: null, progress: update.progress };
     }
     if (update.status === "processed") {

@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { SleepRecordRow } from "./health-records";
 import { SleepCalendarSection } from "./sleep-calendar-section";
-import { buildSleepCalendarDays, formatSleepTime, shiftSleepMonth, sleepCalendarMonths, sleepGrade, sleepMonthCells, summarizeSleepDays } from "./sleep-calendar";
+import { buildSleepCalendarDays, formatMainSleepStart, formatSleepTime, shiftSleepMonth, sleepCalendarMonths, sleepGrade, sleepMonthCells, summarizeSleepDays } from "./sleep-calendar";
 
 function episode(id: string, patch: Partial<SleepRecordRow> = {}): SleepRecordRow {
   return { id, startAt: "2024-02-01T15:00:00Z", endAt: "2024-02-01T23:00:00Z", recordDate: "2024-02-02",
@@ -47,6 +47,20 @@ describe("monthly sleep calendar", () => {
     expect(buildSleepCalendarDays([main, main, manual])[0]).toMatchObject({ asleepSeconds: 25200, hasIncompleteDuration: false });
     expect(buildSleepCalendarDays([main, manual, separate])[0]).toMatchObject({ asleepSeconds: 25200, hasIncompleteDuration: true, napCount: 1 });
   });
+  it("does not add overlapping actual episodes or conflicting daily totals, while an explicit daily total remains usable", () => {
+    const main = episode("main");
+    const overlapping = episode("overlap", { startAt: "2024-02-01T22:00:00Z", endAt: "2024-02-01T23:00:00Z", category: "小睡", asleepSeconds: 3600, durationSeconds: 3600, score: null });
+    const [unknown] = buildSleepCalendarDays([main, overlapping]);
+    expect(unknown).toMatchObject({ asleepSeconds: null, hasOverlappingEpisodes: true, hasIncompleteDuration: true });
+    expect(summarizeSleepDays([unknown]).averageSeconds).toBeNull();
+    const [daily] = buildSleepCalendarDays([{ ...main, dailySleepSeconds: 450 * 60 }, overlapping]);
+    expect(daily).toMatchObject({ asleepSeconds: 450 * 60, hasIncompleteDuration: false, usesCorosDailyTotal: true });
+    const [conflict] = buildSleepCalendarDays([{ ...main, dailySleepSeconds: 450 * 60 }, { ...overlapping, dailySleepSeconds: 460 * 60 }]);
+    expect(conflict).toMatchObject({ asleepSeconds: null, hasConflictingDailyTotals: true, hasIncompleteDuration: true });
+    const html = renderToStaticMarkup(createElement(SleepCalendarSection, { rows: [main, overlapping], timezone: "Asia/Shanghai" }));
+    expect(html).toContain("睡眠分段重叠，无法确认总时长");
+    expect(html).not.toContain("9:00†");
+  });
 
   it("marks unknown actual duration as partial instead of adding elapsed time or corrupting averages", () => {
     const main = episode("main");
@@ -72,6 +86,24 @@ describe("monthly sleep calendar", () => {
     expect(buildSleepCalendarDays([])).toEqual([]);
   });
 
+  it("shows the primary main-sleep onset in its original timezone and marks overnight dates", () => {
+    const previous = buildSleepCalendarDays([episode("main")])[0];
+    expect(formatMainSleepStart(previous, true)).toBe("入睡前日23:00");
+    expect(formatMainSleepStart(previous)).toBe("主睡眠入睡 2024-02-01 23:00（Asia/Shanghai）");
+    const same = buildSleepCalendarDays([episode("same", { startAt: "2024-02-01T16:30:00Z" })])[0];
+    expect(formatMainSleepStart(same, true)).toBe("入睡00:30");
+    const nap = buildSleepCalendarDays([episode("nap", { category: "小睡" })])[0];
+    expect(formatMainSleepStart(nap, true)).toBe("入睡—");
+    const older = episode("older", { startAt: "2024-01-31T15:00:00Z", endAt: "2024-01-31T23:00:00Z" });
+    expect(buildSleepCalendarDays([older, episode("main")])[0].mainStartAt).toBe(previous.mainStartAt);
+    const html = renderToStaticMarkup(createElement(SleepCalendarSection, { rows: [episode("main")], timezone: "UTC" }));
+    expect(html).toContain("入睡前日23:00");
+    expect(html).toContain("Asia/Shanghai");
+    expect(html).toContain("总计7:00");
+    expect(html.indexOf("待补指标</strong>")).toBeLessThan(html.indexOf("入睡前日23:00</span>"));
+    expect(html.indexOf("入睡前日23:00</span>")).toBeLessThan(html.indexOf("总计7:00</span>"));
+  });
+
   it("aligns Monday-first calendar cells across leap years and year boundaries, independent of host timezone", () => {
     const cells = sleepMonthCells("2024-02");
     expect(cells.slice(0, 4)).toEqual([null, null, null, "2024-02-01"]);
@@ -91,19 +123,20 @@ describe("monthly sleep calendar", () => {
     const rows = [episode("older", { recordDate: "2024-01-31", score: 59 }), episode("recent")];
     const html = renderToStaticMarkup(createElement(SleepCalendarSection, { rows, timezone: "Asia/Shanghai" }));
     expect(html).toContain("2024年1月"); // Older months remain selectable.
-    expect(html).not.toContain("2024年1月睡眠月历");
-    expect(html).toContain("2024年2月睡眠月历");
+    expect(html).not.toContain("2024年1月综合健康月历");
+    expect(html).toContain("2024年2月综合健康月历");
     expect(html).toContain("2024年2月");
-    expect(html).toContain("2024-02-02，良好，84分，实际睡眠7时00分");
+    expect(html).toContain("2024-02-02，待补指标，总睡眠7时00分，主睡眠入睡 2024-02-01 23:00（Asia/Shanghai），COROS 睡眠84分");
     expect(html).toContain("2024-02-03，无记录");
-    expect(html).toContain("sleep-grade-poor");
-    expect(html).toContain("sleep-grade-excellent");
+    expect(html).toContain("health-status-rest");
+    expect(html).toContain("health-status-good");
     expect(html).toContain("aria-label=\"查看下一个月份\" disabled");
     expect(html).not.toContain("完整列表");
   });
   it("shows available legacy periods with an explicit marker instead of a blank or invented actual duration", () => {
     const html = renderToStaticMarkup(createElement(SleepCalendarSection, { rows: [episode("legacy", { asleepSeconds: null })], timezone: "Asia/Shanghai" }));
-    expect(html).toContain("8:00†");
+    expect(html).toContain("总计—");
+    expect(html).not.toContain("8:00†");
     expect(html).toContain("记录时段8时00分（含清醒）");
     expect(html).not.toContain("平均睡眠");
   });

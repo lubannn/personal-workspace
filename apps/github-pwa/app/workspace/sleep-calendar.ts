@@ -20,6 +20,10 @@ export type SleepCalendarDay = {
   napCount: number;
   usesCorosDailyTotal: boolean;
   recordedPeriodSeconds: number;
+  hasOverlappingEpisodes: boolean;
+  hasConflictingDailyTotals: boolean;
+  mainStartAt: string | null;
+  mainTimezone: string | null;
 };
 
 export function sleepGrade(score: number | null): SleepGrade {
@@ -39,8 +43,13 @@ export function buildSleepCalendarDays(rows: SleepRecordRow[]): SleepCalendarDay
     groups.set(date, [...(groups.get(date) ?? []), row]);
   }
   const sum = (items: SleepRecordRow[]) => {
+    if (overlaps(items)) return null;
     const values = items.flatMap((row) => row.asleepSeconds !== null && Number.isFinite(row.asleepSeconds) && row.asleepSeconds >= 0 ? [row.asleepSeconds] : []);
     return values.length ? values.reduce((total, value) => total + value, 0) : null;
+  };
+  const overlaps = (items: SleepRecordRow[]) => {
+    const ordered = [...items].sort((a, b) => Date.parse(a.startAt) - Date.parse(b.startAt));
+    return ordered.some((row, index) => index > 0 && Date.parse(row.startAt) < Math.max(...ordered.slice(0, index).map(item => Date.parse(item.endAt))));
   };
   return [...groups].map(([date, items]) => {
     const main = items.filter((row) => row.category === "夜间睡眠");
@@ -49,15 +58,33 @@ export function buildSleepCalendarDays(rows: SleepRecordRow[]): SleepCalendarDay
     const scored = main.filter((row) => row.source.kind === "coros_mcp" && sleepGrade(row.score) !== "unscored")
       .sort((a, b) => Date.parse(b.endAt) - Date.parse(a.endAt) || a.id.localeCompare(b.id));
     const score = scored[0]?.score ?? null;
+    const primaryMain = scored[0] ?? [...main].sort((a, b) =>
+      Number(b.source.kind === "coros_mcp") - Number(a.source.kind === "coros_mcp")
+      || Date.parse(b.endAt) - Date.parse(a.endAt) || a.id.localeCompare(b.id))[0];
     const dailyTotals = items.filter(row => row.source.kind === "coros_mcp" && row.dailySleepSeconds !== null && row.dailySleepSeconds !== undefined)
       .map(row => row.dailySleepSeconds!).filter(value => Number.isFinite(value) && value >= 0);
     const dailyTotal = dailyTotals.length && new Set(dailyTotals).size === 1 ? dailyTotals[0] : null;
-    return { date, score, grade: sleepGrade(score), asleepSeconds: dailyTotal ?? sum(items), mainSeconds: sum(main), napSeconds: sum(naps),
+    const hasConflictingDailyTotals = new Set(dailyTotals).size > 1;
+    const hasOverlappingEpisodes = overlaps(items);
+    return { date, score, grade: sleepGrade(score), asleepSeconds: hasConflictingDailyTotals ? null : dailyTotal ?? sum(items), mainSeconds: sum(main), napSeconds: sum(naps),
       usesCorosDailyTotal: dailyTotal !== null,
       recordedPeriodSeconds: items.reduce((total, row) => total + row.durationSeconds, 0),
-      hasIncompleteDuration: dailyTotal === null && items.some((row) => row.asleepSeconds === null || !Number.isFinite(row.asleepSeconds) || row.asleepSeconds < 0),
+      hasIncompleteDuration: hasConflictingDailyTotals || (dailyTotal === null && (hasOverlappingEpisodes || items.some((row) => row.asleepSeconds === null || !Number.isFinite(row.asleepSeconds) || row.asleepSeconds < 0))),
+      hasOverlappingEpisodes, hasConflictingDailyTotals,
+      mainStartAt: primaryMain?.startAt ?? null, mainTimezone: primaryMain?.timezone ?? null,
       hasDateCorrection: items.some((row) => Boolean(row.dateCorrection)), napCount: naps.length };
   }).sort((a, b) => a.date.localeCompare(b.date));
+}
+
+/** Keep the stored sleep day and source timezone; show the onset's actual local date. */
+export function formatMainSleepStart(day?: SleepCalendarDay, compact = false): string {
+  if (!day?.mainStartAt || !day.mainTimezone) return compact ? "入睡—" : "主睡眠入睡时间缺失";
+  const local = healthLocalParts(day.mainStartAt, day.mainTimezone);
+  if (!compact) return `主睡眠入睡 ${local.date} ${local.time}（${day.mainTimezone}）`;
+  const previousDate = new Date(`${day.date}T00:00:00Z`);
+  previousDate.setUTCDate(previousDate.getUTCDate() - 1);
+  const prefix = local.date === day.date ? "" : local.date === previousDate.toISOString().slice(0, 10) ? "前日" : `${local.date.slice(5)} `;
+  return `入睡${prefix}${local.time}`;
 }
 
 export function summarizeSleepDays(days: SleepCalendarDay[]) {
