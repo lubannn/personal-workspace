@@ -83,7 +83,7 @@ describe("canonical destination creation", () => {
   });
   it("keeps ideas in the idea collection and honors manual classification", () => {
     const submission = prepareCaptureSubmission({ ...fields("明天十点开会"), kind: "idea" }, context);
-    expect(submission.tab).toBe("overview");
+    expect(submission.tab).toBe("ideas");
     expect(parseCaptureRecord(serializeRecord(submission.record)).data.kind).toBe("idea");
   });
   it("blocks empty bodies and missing schedule dates before a write can occur", () => {

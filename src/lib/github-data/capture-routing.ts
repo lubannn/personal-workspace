@@ -7,8 +7,8 @@ import type { CaptureRecord } from "./workspace";
 import type { GitHubContentsAdapter } from "./github-contents";
 import { GitHubConflictError, GitHubDataError } from "./github-contents";
 
-export const CAPTURE_DESTINATIONS: Record<CaptureKind, string> = { note: "随手记", idea: "想法", todo: "待办", deadline: "待办（含截止时间）", schedule: "日程", journal: "日记" };
-export type CaptureSubmission = { record: CaptureRecord | TaskRecord | CalendarEventRecord | JournalEntryRecord; path: string; label: string; tab: "overview" | "tasks" | "calendar" | "journal" };
+export const CAPTURE_DESTINATIONS: Record<CaptureKind, string> = { note: "概览", idea: "想法", todo: "待办", deadline: "待办", schedule: "日程", journal: "日记" };
+export type CaptureSubmission = { record: CaptureRecord | TaskRecord | CalendarEventRecord | JournalEntryRecord; path: string; label: string; tab: "overview" | "tasks" | "calendar" | "journal" | "ideas" };
 
 function nextDate(date: string) {
   const value = new Date(`${date}T12:00:00Z`);
@@ -60,7 +60,10 @@ export function prepareCaptureSubmission(fields: CaptureFields, input: { ownerId
     if (!canWriteJournalDate(journalDate, input.today)) throw new Error("JOURNAL_DATE_NOT_WRITABLE");
     record = createWorkspaceRecord({ ...common, entityType: "journal_entry", id: `journal_entry_${journalDate.replaceAll("-", "")}_${input.suffix}`, data: createJournalEntryData({ journalDate, timezone: fields.timezone, bodyMarkdown: body, timestamp: input.timestamp }) });
     tab = "journal";
-  } else record = createWorkspaceRecord({ ...common, entityType: "capture", id: `capture_${input.suffix}`, data: captureData });
+  } else {
+    record = createWorkspaceRecord({ ...common, entityType: "capture", id: `capture_${input.suffix}`, data: captureData });
+    if (fields.kind === "idea") tab = "ideas";
+  }
   return { record, path: recordPath(record.entity_type, record.id), label: CAPTURE_DESTINATIONS[fields.kind], tab };
 }
 

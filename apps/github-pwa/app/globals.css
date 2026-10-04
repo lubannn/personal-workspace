@@ -974,3 +974,58 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
   .recent-list .capture-row-actions { grid-column: 1 / -1; grid-row: auto; display: flex; justify-content: flex-end; flex-wrap: wrap; }
   .capture-composer > footer { align-items: start; }
 }
+
+/* Dense overview: reduce empty space while keeping body text and touch targets readable. */
+.preview-shell { width: min(1360px, calc(100% - 32px)); }
+.topbar { min-height: 60px; margin-bottom: 10px; }
+.connection-card.connected { padding: 10px 14px; margin-bottom: 10px; }
+.message-bar { margin-bottom: 10px; padding: 8px 12px; }
+.workspace-tab-navigation { margin-bottom: 8px; padding: 4px 0; }
+.workspace-tab { min-height: 36px; padding: 7px 13px; }
+#workspace-panel-overview .dashboard-card { padding: 16px; border-radius: 16px; margin-bottom: 12px; }
+.dashboard-heading h2 { font-size: 24px; }
+.dashboard-subtitle { margin-top: 5px; }
+.dashboard-layout-meta { margin: 10px 0; padding-top: 8px; }
+.dashboard-widget-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; align-items: start; }
+.dashboard-widget { min-height: 108px; padding: 14px; border-radius: 12px; }
+.dashboard-widget.size-compact, .dashboard-widget.size-standard { grid-column: span 1; }
+.dashboard-widget.size-wide { grid-column: span 2; }
+.dashboard-widget h3 { font-size: 18px; }
+.dashboard-widget .eyebrow { margin-bottom: 5px; font-size: 9px; }
+.dashboard-widget .widget-empty, .today-task-widget .widget-empty, .dashboard-project-widget .widget-empty { margin-top: 10px; font-size: 12px; line-height: 1.5; }
+.today-task-widget, .dashboard-project-widget { margin-top: 10px; }
+.today-task-widget li { padding: 7px 0; }
+.capture-composer { margin-top: 10px; }
+.capture-destination-select { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 11px; }
+.capture-destination-select select { min-height: 32px; border: 1px solid var(--line); border-radius: 7px; padding: 4px 8px; color: var(--ink); background: var(--surface); }
+.capture-composer textarea { min-height: 68px; margin-top: 8px; padding: 10px 12px; font-size: 15px; line-height: 1.5; }
+.capture-composer .capture-datetime { gap: 8px; margin-top: 8px; }
+.capture-composer .capture-datetime input { min-height: 32px; padding: 5px 7px; }
+.capture-composer .capture-datetime label { gap: 3px; }
+.capture-composer .capture-hint { margin-top: 5px; font-size: 11px; line-height: 1.45; }
+.capture-composer button { min-height: 32px; padding: 6px 10px; font-size: 11px; }
+.capture-composer > footer { margin-top: 8px; }
+#workspace-panel-overview .recent-card { padding: 16px; border-radius: 16px; }
+#workspace-panel-overview .recent-card .card-heading h2 { font-size: 21px; }
+.capture-search-toolbar { margin-top: 12px; gap: 6px; }
+.recent-list { margin-top: 12px; }
+.recent-list li { gap: 12px; padding: 10px 0; }
+@media (min-width: 520px) and (max-width: 959px) {
+  .dashboard-widget-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dashboard-heading { display: flex; flex-wrap: wrap; gap: 10px; }
+  .dashboard-layout-meta { flex-direction: row; }
+}
+@media (max-width: 519px) {
+  .preview-shell { width: calc(100% - 24px); }
+  .dashboard-widget-grid { grid-template-columns: minmax(0, 1fr); }
+  .dashboard-widget.size-compact, .dashboard-widget.size-standard, .dashboard-widget.size-wide { grid-column: span 1; }
+  #workspace-panel-overview .dashboard-card, #workspace-panel-overview .recent-card { padding: 12px; }
+  .workspace-tab, .capture-composer button, .capture-destination-select select { min-height: 42px; }
+  .capture-composer .capture-datetime input { min-height: 38px; }
+  .dashboard-actions { gap: 6px; }
+}
+
+.dashboard-widget-grid { margin-top: 12px; }
+@media (min-width: 960px) {
+  .dashboard-widget.widget-quick_capture.size-wide { grid-row: span 2; }
+}
