@@ -404,6 +404,62 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .journal-statistics-progress { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .journal-statistics small { color: var(--muted); font-size: 10px; max-width: 320px; }
 .journal-statistics-progress .text-button { border: 0; background: transparent; color: var(--soft); font-size: 11px; cursor: pointer; }
+.journal-achievements { margin-top: 28px; padding-top: 26px; border-top: 1px solid #e7e3da; font-variant-numeric: tabular-nums; }
+.journal-achievements-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 18px; }
+.journal-achievements-heading h3 { margin: 4px 0 0; font: 500 21px/1.35 ui-serif, Georgia, "Songti SC", serif; }
+.journal-achievements-earned { padding: 6px 10px; border-radius: 999px; background: #eaf0e5; color: #50664b; font-size: 11px; }
+.journal-achievement-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 0; }
+.journal-achievement-metrics > div { min-width: 0; padding: 16px; border: 1px solid #e7e3da; border-radius: 14px; background: #fdfcf9; }
+.journal-achievement-metrics dt { color: var(--soft); font-size: 11px; }
+.journal-achievement-metrics dd { margin: 10px 0 0; color: #4b5646; font-size: clamp(19px, 2.5vw, 27px); font-weight: 550; overflow-wrap: anywhere; }
+.journal-achievement-metrics dd > span { margin-left: 5px; color: var(--soft); font-size: 11px; font-weight: 400; }
+.journal-achievement-streaks { display: flex; flex-wrap: wrap; gap: 8px 20px; margin: 14px 0; color: var(--soft); font-size: 11px; line-height: 1.7; }
+.journal-achievement-streaks strong { color: #53664d; font-weight: 600; }
+.journal-achievements-pending { margin: 12px 0; color: var(--soft); font-size: 12px; line-height: 1.7; }
+.journal-earned-medals { display: flex; flex-wrap: wrap; gap: 10px 20px; margin: 18px 0; padding: 0; list-style: none; }
+.journal-earned-medals > li { display: flex; flex-direction: column; align-items: center; gap: 4px; width: 88px; color: #53664d; font-size: 10px; text-align: center; }
+.journal-earned-medals .journal-medal { width: 64px; height: 72px; }
+.journal-earned-medals > .journal-more-medals { justify-content: center; color: var(--soft); line-height: 1.7; }
+.journal-next-goals { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 18px 0; }
+.journal-next-goals > div { display: grid; gap: 8px; padding: 13px 15px; border-radius: 12px; background: #f0f2eb; color: #596451; font-size: 10px; }
+.journal-next-goals strong { color: #46533e; font-size: 12px; font-weight: 500; }
+.journal-achievements progress { appearance: none; display: block; width: 100%; height: 4px; border: 0; border-radius: 999px; overflow: hidden; background: #e8e7df; color: #8b9d7e; }
+.journal-achievements progress::-webkit-progress-bar { background: #e8e7df; border-radius: 999px; }
+.journal-achievements progress::-webkit-progress-value { background: #8b9d7e; border-radius: 999px; }
+.journal-achievements progress::-moz-progress-bar { background: #8b9d7e; border-radius: 999px; }
+.journal-badge-collection { margin-top: 18px; }
+.journal-badge-collection > summary { width: fit-content; padding: 8px 0; color: #4b5646; font-size: 12px; font-weight: 550; cursor: pointer; }
+.journal-badge-collection > summary > span { margin-left: 8px; color: var(--soft); font-size: 10px; font-weight: 400; }
+.journal-badge-collection > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 5px; border-radius: 4px; }
+.journal-badge-series { display: grid; gap: 24px; margin-top: 16px; }
+.journal-badge-series-heading { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 14px; margin-bottom: 12px; }
+.journal-badge-series-heading h4 { margin: 0; color: #4b5646; font-size: 13px; font-weight: 600; }
+.journal-badge-series-heading > span { color: var(--soft); font-size: 10px; }
+.journal-badge-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; padding: 0; margin: 0; list-style: none; }
+.journal-badge-card { display: flex; flex-direction: column; align-items: center; min-width: 0; padding: 18px 12px; border: 1px solid #e7e3da; border-radius: 16px; background: #fdfcf9; text-align: center; }
+.journal-badge-card.earned { border-color: #d6dfce; background: linear-gradient(160deg, #fbfcf7, #f0f3e9); }
+.journal-medal { width: 80px; height: 90px; flex-shrink: 0; color: #a2aaa0; }
+.medal-face { fill: #f0f1ed; stroke: #cdd2c9; stroke-width: 1.2; }
+.medal-ring { fill: none; stroke: #d3d7cf; stroke-width: 1; }
+.medal-ribbon { fill: #e8ece5; stroke: #cdd2c9; stroke-width: 1.2; }
+.medal-symbol { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.medal-sprig { stroke-width: 1.2; }
+.journal-medal text { fill: currentColor; font: 500 12px ui-serif, Georgia, serif; }
+.journal-medal.earned { color: #64734b; }
+.journal-medal.earned .medal-face { fill: #eee8d2; stroke: #bbb38b; }
+.journal-medal.earned .medal-ring { stroke: #d0c49b; }
+.journal-medal.earned .medal-ribbon { fill: #e1e9d3; stroke: #abb995; }
+.journal-badge-level { margin-top: 6px; color: var(--soft); font-size: 10px; }
+.journal-badge-card h5 { margin: 9px 0 6px; color: #4b5646; font-size: 13px; font-weight: 600; }
+.journal-badge-card p { flex: 1; margin: 0 0 15px; color: var(--soft); font-size: 11px; line-height: 1.7; }
+.journal-badge-progress { width: 100%; color: var(--soft); font-size: 10px; }
+.journal-badge-progress progress { margin-top: 9px; }
+@media (max-width: 600px) {
+  .journal-achievement-metrics, .journal-badge-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .journal-next-goals { grid-template-columns: 1fr; gap: 8px; }
+  .journal-achievement-metrics > div { padding: 13px; }
+  .journal-badge-collection > summary > span { display: block; margin: 5px 0 0 14px; }
+}
 .journal-list > li { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: start; column-gap: 18px; row-gap: 12px; padding: 13px 0; }
 .journal-list > li.journal-day-start:not(:first-child) { margin-top: 16px; padding-top: 20px; border-top: 1px solid #e7e3da; }
 .journal-day-heading { grid-column: 1 / -1; color: var(--soft); font: 600 12px/1.65 ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif; font-variant-numeric: tabular-nums; letter-spacing: .01em; }
