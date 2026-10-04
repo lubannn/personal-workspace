@@ -106,11 +106,7 @@ import { createLearningResourceData, setLearningResourceStatus, updateLearningRe
 import { createHabitData, setHabitStatus, type HabitFields, type HabitStatus } from "../../../src/lib/github-data/habits";
 import { correctHabitCheckIn, createAutomaticHabitCheckInData, createManualHabitCheckInData, type HabitCheckInStatus } from "../../../src/lib/github-data/habit-check-ins";
 import { createSleepHabitRuleData, evaluateSleepHabitRule, type SleepHabitRuleFields } from "../../../src/lib/github-data/sleep-habit-rules";
-import { confirmHealthStaging, correctPendingHealthStaging, correctPendingSleepHealthStaging, createHealthStagingData, createSleepHealthStagingData, rejectHealthStaging, type HealthStagingFields, type SleepStagingFields } from "../../../src/lib/github-data/health-staging-records";
-import { createConfirmedHealthMetricData } from "../../../src/lib/github-data/health-metrics";
-import { createConfirmedSleepSessionData } from "../../../src/lib/github-data/sleep-sessions";
 import { listCompleteHealthDirectory } from "./workspace/health-collection-loading";
-import { commitWorkoutConfirmationTransaction, prepareWorkoutConfirmationTransaction } from "../../../src/lib/github-data/workout-confirmation-transaction";
 import { canWriteJournalDate } from "../../../src/lib/github-data/journal-entries";
 import { createJournalEntrySingleFile, updateJournalEntrySingleFile } from "../../../src/lib/github-data/journal-single-file-writes";
 import {
@@ -132,7 +128,6 @@ import {
   type SyncedJournalEntry,
   type SyncedHabit,
   type SyncedHabitRule,
-  type SyncedHealthStagingRecord,
   type SyncedLearningArea,
   type SyncedLearningActivity,
   type SyncedLearningGoal,
@@ -164,7 +159,6 @@ import { TimeEntriesSection } from "./workspace/time-entries-section";
 import { JournalSection } from "./workspace/journal-section";
 import { LearningSection } from "./workspace/learning-section";
 import { HabitsSection } from "./workspace/habits-section";
-import { HealthStagingSection } from "./workspace/health-staging-section";
 import { HealthRecordsSection } from "./workspace/health-records-section";
 import { WorkspaceTabNavigation, WorkspaceTabPanel, workspaceTabFromHash, type WorkspaceTabId } from "./workspace/workspace-tab-navigation";
 
@@ -229,8 +223,6 @@ export default function GitHubWorkspacePage() {
   const [savingLearningResourceId, setSavingLearningResourceId] = useState<string | null>(null);
   const [savingHabit, setSavingHabit] = useState(false);
   const [savingHabitId, setSavingHabitId] = useState<string | null>(null);
-  const [savingHealth, setSavingHealth] = useState(false);
-  const [savingHealthId, setSavingHealthId] = useState<string | null>(null);
   const [dashboardDirty, setDashboardDirty] = useState(false);
   const [editingDashboard, setEditingDashboard] = useState(false);
   const [savingDashboard, setSavingDashboard] = useState(false);
@@ -322,13 +314,8 @@ export default function GitHubWorkspacePage() {
     habitCheckInFiles,
     setHabitCheckInFiles,
     healthStagingFiles,
-    setHealthStagingFiles,
-    healthMetricFiles,
-    setHealthMetricFiles,
     sleepSessionFiles,
-    setSleepSessionFiles,
     workoutFiles,
-    setWorkoutFiles,
     dashboardLayout,
     setDashboardLayout,
     dashboardBlobSha,
@@ -1984,128 +1971,6 @@ export default function GitHubWorkspacePage() {
     finally { setSavingHabitId(null); }
   }
 
-  async function saveHealthStaging(fields: HealthStagingFields) {
-    const adapter = adapterRef.current;
-    if (!adapter || !connection || savingHealth || online === false) return false;
-    setSavingHealth(true); setErrorMessage(""); setStatusMessage("");
-    const timestamp = new Date().toISOString();
-    const id = `health_staging_${timestamp.replaceAll(/\D/g, "").slice(0, 17)}_${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`;
-    try {
-      const record = createWorkspaceRecord({ entityType: "health_staging_record", id, ownerId: connection.ownerId, timestamp, data: createHealthStagingData(fields, timestamp) });
-      const result = await adapter.writeText({ path: recordPath("health_staging_record", id), text: serializeRecord(record), message: `health staging: create ${id}` });
-      setHealthStagingFiles((current) => [{ record, path: result.path, blobSha: result.blobSha }, ...current]);
-      setStatusMessage("健康指标已加入待确认区；尚未进入正式健康记录。");
-      return true;
-    } catch (error) { setErrorMessage(friendlyError(error)); return false; }
-    finally { setSavingHealth(false); }
-  }
-
-  async function correctHealthStaging(item: SyncedHealthStagingRecord, fields: HealthStagingFields) {
-    const adapter = adapterRef.current;
-    if (!adapter || !connection || savingHealthId || online === false) return false;
-    setSavingHealthId(item.record.id); setErrorMessage(""); setStatusMessage("");
-    try {
-      const updated = correctPendingHealthStaging(item.record, fields);
-      const result = await adapter.writeText({ path: item.path, text: serializeRecord(updated), message: `health staging: correct ${item.record.id}`, expectedBlobSha: item.blobSha });
-      setHealthStagingFiles((current) => current.map((candidate) => candidate.record.id === item.record.id ? { record: updated, path: result.path, blobSha: result.blobSha } : candidate));
-      setStatusMessage("暂存记录已更正并保留版本历史；仍需确认才会入库。");
-      return true;
-    } catch (error) { setErrorMessage(friendlyError(error)); return false; }
-    finally { setSavingHealthId(null); }
-  }
-
-  async function saveSleepHealthStaging(fields: SleepStagingFields) {
-    const adapter = adapterRef.current;
-    if (!adapter || !connection || savingHealth || online === false) return false;
-    setSavingHealth(true); setErrorMessage(""); setStatusMessage("");
-    const timestamp = new Date().toISOString();
-    const id = `health_staging_${timestamp.replaceAll(/\D/g, "").slice(0, 17)}_${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`;
-    try {
-      const record = createWorkspaceRecord({ entityType: "health_staging_record", id, ownerId: connection.ownerId, timestamp, data: createSleepHealthStagingData(fields, timestamp) });
-      const result = await adapter.writeText({ path: recordPath("health_staging_record", id), text: serializeRecord(record), message: `health staging: create sleep ${id}` });
-      setHealthStagingFiles((current) => [{ record, path: result.path, blobSha: result.blobSha }, ...current]);
-      setStatusMessage("睡眠记录已加入待确认区；尚未进入正式健康记录。");
-      return true;
-    } catch (error) { setErrorMessage(friendlyError(error)); return false; }
-    finally { setSavingHealth(false); }
-  }
-
-  async function correctSleepHealthStaging(item: SyncedHealthStagingRecord, fields: SleepStagingFields) {
-    const adapter = adapterRef.current;
-    if (!adapter || !connection || savingHealthId || online === false) return false;
-    setSavingHealthId(item.record.id); setErrorMessage(""); setStatusMessage("");
-    try {
-      const updated = correctPendingSleepHealthStaging(item.record, fields);
-      const result = await adapter.writeText({ path: item.path, text: serializeRecord(updated), message: `health staging: correct sleep ${item.record.id}`, expectedBlobSha: item.blobSha });
-      setHealthStagingFiles((current) => current.map((candidate) => candidate.record.id === item.record.id ? { record: updated, path: result.path, blobSha: result.blobSha } : candidate));
-      setStatusMessage("睡眠暂存记录已更正；仍需确认才会入库。");
-      return true;
-    } catch (error) { setErrorMessage(friendlyError(error)); return false; }
-    finally { setSavingHealthId(null); }
-  }
-
-  async function rejectHealthStagingItem(item: SyncedHealthStagingRecord, reason: string) {
-    const adapter = adapterRef.current;
-    if (!adapter || !connection || savingHealthId || online === false) return;
-    setSavingHealthId(item.record.id); setErrorMessage(""); setStatusMessage("");
-    try {
-      const updated = rejectHealthStaging(item.record, reason);
-      const result = await adapter.writeText({ path: item.path, text: serializeRecord(updated), message: `health staging: reject ${item.record.id}`, expectedBlobSha: item.blobSha });
-      setHealthStagingFiles((current) => current.map((candidate) => candidate.record.id === item.record.id ? { record: updated, path: result.path, blobSha: result.blobSha } : candidate));
-      setStatusMessage("暂存记录已拒绝；没有创建正式健康记录。");
-    } catch (error) { setErrorMessage(friendlyError(error)); }
-    finally { setSavingHealthId(null); }
-  }
-
-  async function confirmHealthStagingItem(item: SyncedHealthStagingRecord) {
-    const adapter = adapterRef.current;
-    if (!adapter || !connection || savingHealthId || online === false) return;
-    if (item.record.data.health_type === "workout") {
-      setSavingHealthId(item.record.id); setErrorMessage(""); setStatusMessage("");
-      try {
-        const prepared = await prepareWorkoutConfirmationTransaction({ adapter, staging: item, ownerId: connection.ownerId });
-        if (!window.confirm(prepared.confirmationText)) { setStatusMessage("已取消 Workout 确认；没有写入数据。"); return; }
-        const result = await commitWorkoutConfirmationTransaction(adapter, prepared);
-        setHealthStagingFiles((current) => current.map((candidate) => candidate.record.id === item.record.id ? result.staging : candidate));
-        setWorkoutFiles((current) => [result.workout, ...current.filter((candidate) => candidate.record.id !== result.workout.record.id)]);
-        setStatusMessage("Workout 已由你确认，暂存审核与正式记录通过同一个 Git 提交写入。");
-      } catch (error) { setErrorMessage(friendlyError(error)); }
-      finally { setSavingHealthId(null); }
-      return;
-    }
-    setSavingHealthId(item.record.id); setErrorMessage(""); setStatusMessage("");
-    const timestamp = new Date().toISOString();
-    try {
-      const snapshot = await adapter.readBranchSnapshot();
-      const latest = await adapter.readText(item.path, snapshot.headCommitSha);
-      if (latest.blobSha !== item.blobSha) throw new GitHubDataError("Health staging changed on another device.", 409, "GITHUB_SYNC_CONFLICT");
-      const canonicalType = item.record.data.health_type === "metric" ? "health_metric" : "sleep_session";
-      const canonicalId = `${canonicalType}_${timestamp.replaceAll(/\D/g, "").slice(0, 17)}_${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`;
-      const reviewed = confirmHealthStaging(item.record, canonicalId, timestamp);
-      const stagingPath = recordPath("health_staging_record", item.record.id);
-      const canonicalPath = recordPath(canonicalType, canonicalId);
-      if (reviewed.data.health_type === "metric") {
-        const metric = createWorkspaceRecord({ entityType: "health_metric", id: canonicalId, ownerId: connection.ownerId, timestamp, data: createConfirmedHealthMetricData(reviewed.data.normalized_json, item.record.id) });
-        const result = await adapter.writeAtomicFiles({ files: [{ path: stagingPath, text: serializeRecord(reviewed) }, { path: canonicalPath, text: serializeRecord(metric) }], message: `health: confirm ${item.record.id}`, expectedHeadCommitSha: snapshot.headCommitSha, baseTreeSha: snapshot.rootTreeSha });
-        const stagingBlob = result.files.find((file) => file.path === stagingPath)!.blobSha;
-        const canonicalBlob = result.files.find((file) => file.path === canonicalPath)!.blobSha;
-        setHealthStagingFiles((current) => current.map((candidate) => candidate.record.id === item.record.id ? { record: reviewed, path: stagingPath, blobSha: stagingBlob } : candidate));
-        setHealthMetricFiles((current) => [{ record: metric, path: canonicalPath, blobSha: canonicalBlob }, ...current]);
-      } else if (reviewed.data.health_type === "sleep_session") {
-        const session = createWorkspaceRecord({ entityType: "sleep_session", id: canonicalId, ownerId: connection.ownerId, timestamp, data: createConfirmedSleepSessionData(reviewed.data.normalized_json, item.record.id) });
-        const result = await adapter.writeAtomicFiles({ files: [{ path: stagingPath, text: serializeRecord(reviewed) }, { path: canonicalPath, text: serializeRecord(session) }], message: `health: confirm ${item.record.id}`, expectedHeadCommitSha: snapshot.headCommitSha, baseTreeSha: snapshot.rootTreeSha });
-        const stagingBlob = result.files.find((file) => file.path === stagingPath)!.blobSha;
-        const canonicalBlob = result.files.find((file) => file.path === canonicalPath)!.blobSha;
-        setHealthStagingFiles((current) => current.map((candidate) => candidate.record.id === item.record.id ? { record: reviewed, path: stagingPath, blobSha: stagingBlob } : candidate));
-        setSleepSessionFiles((current) => [{ record: session, path: canonicalPath, blobSha: canonicalBlob }, ...current]);
-      } else {
-        throw new Error("HEALTH_STAGING_CANONICAL_NOT_REGISTERED");
-      }
-      setStatusMessage(`${reviewed.data.health_type === "metric" ? "健康指标" : "睡眠记录"}已由你确认，并与审核决定通过同一个 Git 提交写入正式记录。`);
-    } catch (error) { setErrorMessage(friendlyError(error)); }
-    finally { setSavingHealthId(null); }
-  }
-
   async function listCaptureFiles(adapter: GitHubContentsAdapter) {
     try {
       return (await adapter.listDirectory("data/captures"))
@@ -3190,38 +3055,6 @@ export default function GitHubWorkspacePage() {
         workouts={workoutFiles}
         staging={healthStagingFiles}
         onRefresh={() => void loadHealthDomain()}
-      />
-      <HealthStagingSection
-        connection={connection}
-        adapter={adapterRef.current}
-        online={online}
-        todayDate={currentTaskDate}
-        staging={healthStagingFiles}
-        metrics={healthMetricFiles}
-        loading={loadingHealth}
-        saving={savingHealth}
-        savingId={savingHealthId}
-        onCreate={saveHealthStaging}
-        onCorrect={correctHealthStaging}
-        onCreateSleep={saveSleepHealthStaging}
-        onCorrectSleep={correctSleepHealthStaging}
-        onConfirm={confirmHealthStagingItem}
-        onReject={rejectHealthStagingItem}
-        onRefresh={() => loadHealthDomain()}
-        onStaged={(created) => setHealthStagingFiles((current) => {
-          const createdIds = new Set(created.map((item) => item.record.id));
-          return [...created, ...current.filter((item) => !createdIds.has(item.record.id))];
-        })}
-        onBatchConfirmed={(updated, created) => {
-          setHealthStagingFiles((current) => {
-            const updatedIds = new Set(updated.map((item) => item.record.id));
-            return [...updated, ...current.filter((item) => !updatedIds.has(item.record.id))];
-          });
-          setWorkoutFiles((current) => {
-            const createdIds = new Set(created.map((item) => item.record.id));
-            return [...created, ...current.filter((item) => !createdIds.has(item.record.id))];
-          });
-        }}
       />
       <CorosConnectionSection connectionMethod={connectionMethod} />
       </WorkspaceTabPanel>
