@@ -1087,14 +1087,19 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .capture-extra-options footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 6px; }
 .capture-bar .capture-submit-actions button { min-height: 30px; font-size: 10px; }
 @media (max-width: 1100px) {
-  .capture-inline-row { flex-wrap: wrap; }
-  .capture-inline-row > h2 { flex-basis: 100%; }
+  .capture-inline-row { display: grid; grid-template-columns: minmax(110px, 1fr) auto 104px auto; gap: 8px; }
+  .capture-inline-row > h2 { grid-column: 1 / -1; }
+  .capture-inline-input { min-width: 0; }
+  .capture-bar input[type="date"] { width: 108px; }
+  .capture-bar input[type="time"] { width: 78px; }
+  .capture-bar .capture-destination-select { flex-basis: 104px; }
+  .capture-bar .capture-destination-select select { width: 104px; }
 }
 @media (max-width: 900px) {
   .header-connection { flex-basis: 100%; }
   .header-connection > summary { justify-content: flex-end; min-height: 22px; font-size: 10px; }
 }
-@media (max-width: 720px) {
+@media (max-width: 680px) {
   .capture-bar { padding: 10px; }
   .capture-inline-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
   .capture-inline-row > h2, .capture-inline-input, .capture-bar .capture-datetime { grid-column: 1 / -1; }
