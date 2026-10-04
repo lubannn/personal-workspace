@@ -40,6 +40,8 @@ export type CorosWorkoutProposal = {
     average_cadence_rpm: number | null;
     average_power_watts: number | null;
     trackpoints: number;
+    coros_sport_type?: number;
+    coros_sport_name?: string;
   };
   confirmation_status: "pending";
   staging_record_id: null;

@@ -246,7 +246,9 @@ export function validWorkoutCandidate(value: CorosWorkoutCandidate) {
     || !(value.distance === null || (Number.isFinite(value.distance) && value.distance >= 0)) || value.distance_unit !== "m" || value.training_load !== null) return false;
   try { new Intl.DateTimeFormat("en", { timeZone: value.timezone }).format(); } catch { return false; }
   const metrics = value.metrics_json;
-  if (!metrics || Object.keys(metrics).sort().join(",") !== "average_cadence_rpm,average_heart_rate_bpm,average_power_watts,calories,elapsed_seconds,maximum_heart_rate_bpm,moving_seconds,trackpoints") return false;
+  if (!metrics || Object.keys(metrics).filter(key => !["coros_sport_type", "coros_sport_name"].includes(key)).sort().join(",") !== "average_cadence_rpm,average_heart_rate_bpm,average_power_watts,calories,elapsed_seconds,maximum_heart_rate_bpm,moving_seconds,trackpoints") return false;
+  if (metrics.coros_sport_type !== undefined && (!Number.isInteger(metrics.coros_sport_type) || metrics.coros_sport_type < 0 || metrics.coros_sport_type > 65535)) return false;
+  if (metrics.coros_sport_name !== undefined && (metrics.coros_sport_type === undefined || typeof metrics.coros_sport_name !== "string" || !metrics.coros_sport_name.trim() || metrics.coros_sport_name.length > 80 || /[\u0000-\u001f\u007f]/u.test(metrics.coros_sport_name))) return false;
   const optionalNonNegative = [metrics.moving_seconds, metrics.calories, metrics.average_heart_rate_bpm, metrics.maximum_heart_rate_bpm, metrics.average_cadence_rpm, metrics.average_power_watts];
   return metrics.elapsed_seconds === value.duration_seconds && Number.isInteger(metrics.trackpoints) && metrics.trackpoints >= 0
     && optionalNonNegative.every((metric) => metric === null || (Number.isFinite(metric) && metric >= 0));

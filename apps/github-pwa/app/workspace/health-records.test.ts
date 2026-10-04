@@ -68,6 +68,8 @@ describe("health record browsing", () => {
     expect(buildHealthRecordRows([], [workout], []).workoutRows[0].source.kind).toBe("unknown");
     const automatic = createWorkspaceRecord({ entityType: "workout", id: "workout_auto", ownerId: "test-owner", timestamp, data: createAutomaticWorkoutData(plan.items[0].proposedData.normalized_json, { kind: "coros_mcp", source_id: "synthetic-workout", source_sha256: "c".repeat(64), mapping_version: 1, retrieved_at: timestamp }) });
     expect(buildHealthRecordRows([], [{ ...workout, record: automatic }], []).workoutRows[0]).toMatchObject({ activity: "跑步", distanceMetres: 4000, source: { kind: "coros_mcp", label: "COROS · 自动同步" } });
+    const badminton = { ...automatic, data: { ...automatic.data, activity_type: "other" as const, metrics_json: { ...automatic.data.metrics_json, coros_sport_type: 1000, coros_sport_name: "Badminton" } } };
+    expect(buildHealthRecordRows([], [{ ...workout, record: badminton }], []).workoutRows[0].activity).toBe("羽毛球");
   });
 
   it("sorts by actual start time and excludes deleted records without inventing provenance", () => {

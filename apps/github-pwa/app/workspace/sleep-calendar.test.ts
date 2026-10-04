@@ -13,8 +13,8 @@ function episode(id: string, patch: Partial<SleepRecordRow> = {}): SleepRecordRo
 
 describe("monthly sleep calendar", () => {
   it("uses the official COROS score bands, including zero, without inferring missing scores", () => {
-    expect([0, 59, 60, 79, 80, 100, null, -1, 101, NaN].map(sleepGrade))
-      .toEqual(["poor", "poor", "good", "good", "excellent", "excellent", "unscored", "unscored", "unscored", "unscored"]);
+    expect([0, 59, 60, 74, 75, 85, 86, 100, null, -1, 101, NaN].map(sleepGrade))
+      .toEqual(["poor", "poor", "fair", "fair", "good", "good", "excellent", "excellent", "unscored", "unscored", "unscored", "unscored"]);
   });
 
   it("adds actual main sleep and naps to the wake day and retains the updated main-sleep score", () => {
@@ -23,7 +23,7 @@ describe("monthly sleep calendar", () => {
       durationSeconds: 160 * 60, asleepSeconds: 145 * 60, score: null });
     const [day] = buildSleepCalendarDays([nap, main]);
     expect(day).toMatchObject({ date: "2024-02-02", asleepSeconds: 427 * 60, mainSeconds: 282 * 60,
-      napSeconds: 145 * 60, score: 84, grade: "excellent", napCount: 1, hasIncompleteDuration: false });
+      napSeconds: 145 * 60, score: 84, grade: "good", napCount: 1, hasIncompleteDuration: false });
     expect(formatSleepTime(day.asleepSeconds)).toBe("7时07分");
     expect(formatSleepTime(day.asleepSeconds, false, true)).toBe("7:07");
     expect(summarizeSleepDays([day]).count).toBe(1);
@@ -94,7 +94,7 @@ describe("monthly sleep calendar", () => {
     expect(html).not.toContain("2024年1月睡眠月历");
     expect(html).toContain("2024年2月睡眠月历");
     expect(html).toContain("2024年2月");
-    expect(html).toContain("2024-02-02，优秀，84分，实际睡眠7时00分");
+    expect(html).toContain("2024-02-02，良好，84分，实际睡眠7时00分");
     expect(html).toContain("2024-02-03，无记录");
     expect(html).toContain("sleep-grade-poor");
     expect(html).toContain("sleep-grade-excellent");

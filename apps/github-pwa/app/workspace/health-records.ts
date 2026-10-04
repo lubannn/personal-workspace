@@ -1,4 +1,5 @@
 import { isWorkoutLinkedToStaging } from "../../../../src/lib/github-data/workouts";
+import { corosSportLabel } from "../../../../src/lib/github-data/coros-sport-labels";
 import type { CorosSleepMetrics } from "../../../../src/lib/github-data/sleep-sessions";
 import type { SyncedHealthStagingRecord, SyncedSleepSession, SyncedWorkout } from "./page-model";
 
@@ -64,7 +65,7 @@ export function buildHealthRecordRows(sleepSessions: SyncedSleepSession[], worko
       const linked = source?.data.health_type === "workout" && isWorkoutLinkedToStaging(record, source);
       return {
         id: record.id, startAt: data.start_at, endAt: data.end_at, timezone: data.timezone,
-        activity: ({ run: "跑步", ride: "骑行", swim: "游泳", walk: "步行", hike: "徒步", strength: "力量训练", other: "其他活动" } as Record<string, string>)[data.activity_type] ?? data.activity_type,
+        activity: corosSportLabel(data.metrics_json.coros_sport_type, data.metrics_json.coros_sport_name) ?? ({ run: "跑步", ride: "骑行", swim: "游泳", walk: "步行", hike: "徒步", strength: "力量训练", other: "类型未提供" } as Record<string, string>)[data.activity_type] ?? data.activity_type,
         durationSeconds: data.duration_seconds, distanceMetres: data.distance,
         source: data.workout_version === 2 ? { kind: "coros_mcp" as const, label: "COROS · 自动同步" } : linked && source.data.source.kind === "coros_file" ? { kind: "coros_file" as const, label: `COROS · ${source.data.source.format.toUpperCase()}` } : unknownSource,
       };

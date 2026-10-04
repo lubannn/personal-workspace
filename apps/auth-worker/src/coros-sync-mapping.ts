@@ -1,3 +1,4 @@
+import { customCorosSportName } from "../../../src/lib/github-data/coros-sport-labels";
 import type { CorosWorkoutCandidate, SleepSessionCandidate } from "../../../src/lib/github-data/health-staging-records";
 import type { CorosReadResult } from "./coros-read-client";
 import type { CorosSleepDateCorrection, CorosSleepMetrics } from "../../../src/lib/github-data/sleep-sessions";
@@ -270,17 +271,21 @@ export function mapCorosWorkouts(result: CorosReadResult, options: CorosSyncDate
   if (reportedCount !== sections.length) return fail();
   const items: WorkoutItem[] = sections.map((section, index) => {
     const [title, ...rawLines] = section.split("\n");
-    const heading = /^(\d+)\. [^\n]+ — (\d{4}-\d{2}-\d{2})$/u.exec(title);
-    if (!heading || integer(heading[1]) !== index + 1) return fail(); inRange(heading[2], bounds);
+    const heading = /^(\d+)\. ([^\n]+) — (\d{4}-\d{2}-\d{2})$/u.exec(title);
+    if (!heading || integer(heading[1]) !== index + 1) return fail(); inRange(heading[3], bounds);
     const fields = new Map<string, string>();
+    let customName: string | undefined;
     for (const raw of rawLines) {
       // Without pace/speed, COROS can leave the metric row's leading separator.
       // Accept that exact prefix only for the optional heart-rate/calorie fields.
       const detachedMetrics = raw.startsWith(" | ");
       if (!detachedMetrics && !raw.startsWith("   ")) return fail();
       const line = raw.slice(3);
-      // Location and coordinates are deliberately not retained or used to infer anything.
-      if (!detachedMetrics && /^(?:Location|Start Coordinates): .+$/u.test(line)) continue;
+      // Discard places and coordinates. Only allowlisted custom exercise labels survive below.
+      if (!detachedMetrics && /^(?:Location|Start Coordinates): .+$/u.test(line)) {
+        if (line.startsWith("Location: ")) customName = line.slice(10);
+        continue;
+      }
       if (!detachedMetrics && line.startsWith("Time Window: ")) {
         if (fields.has("Time Window")) return fail();
         fields.set("Time Window", line.slice(13));
@@ -303,7 +308,7 @@ export function mapCorosWorkouts(result: CorosReadResult, options: CorosSyncDate
     // Some COROS headings are one date off their epoch timestamps. Preserve the exact
     // instants, but reject unrelated timestamps instead of trusting a plausible heading.
     const localStartDate = new Date((start + 8 * 3600) * 1000).toISOString().slice(0, 10);
-    if (Math.abs(Date.parse(localStartDate) - Date.parse(heading[2])) > 86400000) return fail();
+    if (Math.abs(Date.parse(localStartDate) - Date.parse(heading[3])) > 86400000) return fail();
     const reportedMoving = durationSeconds(fields.get("Duration") ?? "");
     if (reportedMoving > elapsed + 1) return fail();
     // COROS display duration can round one second above its integer epoch span.
@@ -327,7 +332,8 @@ export function mapCorosWorkouts(result: CorosReadResult, options: CorosSyncDate
       activity_type: activityType(code), start_at: new Date(start * 1000).toISOString(), end_at: new Date(end * 1000).toISOString(), timezone: options.timezone,
       duration_seconds: elapsed, distance, distance_unit: "m", training_load: null,
       metrics_json: { elapsed_seconds: elapsed, moving_seconds: moving, calories: metric("Calories", "kcal"), average_heart_rate_bpm: metric("Avg HR", "bpm"),
-        maximum_heart_rate_bpm: null, average_cadence_rpm: null, average_power_watts: null, trackpoints: 0 },
+        maximum_heart_rate_bpm: null, average_cadence_rpm: null, average_power_watts: null, trackpoints: 0,
+        coros_sport_type: code, coros_sport_name: customCorosSportName(code, customName) ?? heading[2] },
     } };
   });
   if (new Set(items.map(item => item.sourceId)).size !== items.length) return fail();

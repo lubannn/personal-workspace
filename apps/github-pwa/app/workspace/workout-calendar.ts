@@ -2,7 +2,7 @@ import { healthLocalParts, type WorkoutRecordRow } from "./health-records";
 import { shiftSleepMonth } from "./sleep-calendar";
 
 export const WORKOUT_COLORS = {
-  跑步: "run", 骑行: "ride", 游泳: "swim", 步行: "walk", 徒步: "walk", 力量训练: "strength",
+  跑步: "run", 户外跑步: "run", 室内跑步: "run", 越野跑: "run", 操场跑步: "run", 骑行: "ride", 户外骑行: "ride", 室内骑行: "ride", 游泳: "swim", 泳池游泳: "swim", 公开水域游泳: "swim", 步行: "walk", 徒步: "walk", 力量训练: "strength",
 } as const;
 export type WorkoutCalendarDay = { date: string; workouts: WorkoutRecordRow[]; totalSeconds: number; tone: string };
 
