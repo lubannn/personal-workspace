@@ -77,6 +77,33 @@ describe("atomic COROS synchronization writer", () => {
     expect(fake.adapter.writeAtomicFiles).toHaveBeenCalledTimes(2);
     expect(() => parseCorosSyncConflictRecord(JSON.stringify({ ...parseRecord(conflict[1]), data: { ...parseRecord(conflict[1]).data, raw_text: "unexpected" } }))).toThrow("INVALID_COROS_SYNC_CONFLICT_RECORD");
   });
+  it("enriches only an omitted daily total atomically and idempotently, preserving episode facts and index consistency", async () => {
+    const fake = fakeAdapter();
+    await writeCorosSyncBatch(fake.adapter, { ownerId, items: [sleep], timestamp });
+    const path = [...fake.files.keys()].find(path => path.startsWith("data/sleep-sessions/"))!;
+    const before = parseSleepSessionRecord(fake.files.get(path)!);
+    const enriched = { ...sleep, metrics: { ...sleep.metrics, daily_sleep_minutes: 495 } };
+    expect(await writeCorosSyncBatch(fake.adapter, { ownerId, items: [enriched], timestamp })).toMatchObject({ created: 0, conflicts: 0, unchanged: 1 });
+    const after = parseSleepSessionRecord(fake.files.get(path)!);
+    expect(after.id).toBe(before.id);
+    expect(after.created_at).toBe(before.created_at);
+    expect(after.version).toBe(before.version + 1);
+    expect(after.data.sleep_metrics_json).toEqual(enriched.metrics);
+    expect(after.data.start_at).toBe(before.data.start_at);
+    expect(after.data.end_at).toBe(before.data.end_at);
+    const index = parseCorosSyncIndexRecord(fake.files.get(COROS_SYNC_INDEX_PATH)!);
+    expect(index.data.records[0]).toMatchObject({ source: { source_sha256: after.data.sleep_session_version === 2 ? after.data.source.source_sha256 : "" } });
+    expect([...fake.files.keys()].some(path => path.includes("coros-sync-conflicts"))).toBe(false);
+    const commits = fake.adapter.writeAtomicFiles.mock.calls.length;
+    await writeCorosSyncBatch(fake.adapter, { ownerId, items: [enriched], timestamp });
+    expect(fake.adapter.writeAtomicFiles).toHaveBeenCalledTimes(commits);
+    expect(await writeCorosSyncBatch(fake.adapter, { ownerId, items: [{ ...enriched, metrics: { ...enriched.metrics, daily_sleep_minutes: 500 } }], timestamp })).toMatchObject({ conflicts: 1 });
+  });
+  it("does not treat a score revision accompanying a daily total as harmless enrichment", async () => {
+    const fake = fakeAdapter();
+    await writeCorosSyncBatch(fake.adapter, { ownerId, items: [sleep], timestamp });
+    expect(await writeCorosSyncBatch(fake.adapter, { ownerId, items: [{ ...sleep, metrics: { ...sleep.metrics, score: 90, daily_sleep_minutes: 500 } }], timestamp })).toMatchObject({ conflicts: 1 });
+  });
 
   it("retains correction evidence in canonical data and fingerprints without duplicating a later corrected source", async () => {
     const corrected: Extract<CorosSyncCandidate, { kind: "sleep" }> = {

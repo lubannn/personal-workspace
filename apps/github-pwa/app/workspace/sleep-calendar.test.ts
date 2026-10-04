@@ -28,6 +28,17 @@ describe("monthly sleep calendar", () => {
     expect(formatSleepTime(day.asleepSeconds, false, true)).toBe("7:07");
     expect(summarizeSleepDays([day]).count).toBe(1);
   });
+  it("uses COROS's daily total for legacy and multiple-nap days without double-counting or inventing breakdowns", () => {
+    const main = episode("legacy", { asleepSeconds: null, dailySleepSeconds: 475 * 60 });
+    const nap = episode("nap", { category: "小睡", asleepSeconds: null, score: null });
+    const [day] = buildSleepCalendarDays([main, nap]);
+    expect(day).toMatchObject({ asleepSeconds: 475 * 60, mainSeconds: null, napSeconds: null,
+      usesCorosDailyTotal: true, hasIncompleteDuration: false });
+    expect(summarizeSleepDays([day])).toMatchObject({ averageSeconds: 475 * 60, completeDays: 1 });
+    const napOnly = buildSleepCalendarDays([{ ...nap, dailySleepSeconds: 50 * 60 }, { ...nap, id: "second" }])[0];
+    expect(napOnly).toMatchObject({ asleepSeconds: 50 * 60, grade: "unscored", napCount: 2, hasIncompleteDuration: false });
+    expect(buildSleepCalendarDays([main, { ...nap, dailySleepSeconds: 475 * 60 }])[0].asleepSeconds).toBe(475 * 60);
+  });
 
   it("does not count a repeated ID or an overlapping manual copy, but preserves separate manual episodes", () => {
     const main = episode("main");
@@ -87,5 +98,11 @@ describe("monthly sleep calendar", () => {
     expect(html).toContain("sleep-grade-excellent");
     expect(html).toContain("aria-label=\"查看更晚的睡眠月份\" disabled");
     expect(html).not.toContain("完整列表");
+  });
+  it("shows available legacy periods with an explicit marker instead of a blank or invented actual duration", () => {
+    const html = renderToStaticMarkup(createElement(SleepCalendarSection, { rows: [episode("legacy", { asleepSeconds: null })], timezone: "Asia/Shanghai" }));
+    expect(html).toContain("8:00†");
+    expect(html).toContain("记录时段8时00分（含清醒）");
+    expect(html).not.toContain("平均睡眠");
   });
 });

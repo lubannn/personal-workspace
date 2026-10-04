@@ -8,7 +8,8 @@ import "./sleep-calendar.css";
 
 function monthLabel(month: string) { return `${Number(month.slice(0, 4))}年${Number(month.slice(5))}月`; }
 function dayDescription(day: SleepCalendarDay) {
-  return `${day.date}，${SLEEP_GRADES[day.grade].label}${day.score === null ? "" : `，${day.score}分`}，实际睡眠${formatSleepTime(day.asleepSeconds, day.hasIncompleteDuration)}${day.napCount ? `，包含${day.napCount}次小睡` : ""}${day.hasIncompleteDuration ? "，部分时长缺失" : ""}${day.hasDateCorrection ? "，小睡日期已修正" : ""}`;
+  const duration = day.asleepSeconds === null ? `记录时段${formatSleepTime(day.recordedPeriodSeconds)}（含清醒）` : `实际睡眠${formatSleepTime(day.asleepSeconds, day.hasIncompleteDuration)}`;
+  return `${day.date}，${SLEEP_GRADES[day.grade].label}${day.score === null ? "" : `，${day.score}分`}，${duration}${day.napCount ? `，包含${day.napCount}次小睡` : ""}${day.hasIncompleteDuration ? "，部分分段实睡时长缺失" : ""}${day.hasDateCorrection ? "，小睡日期已修正" : ""}`;
 }
 
 export function SleepCalendarSection({ rows, timezone }: { rows: SleepRecordRow[]; timezone: string }) {
@@ -26,7 +27,7 @@ export function SleepCalendarSection({ rows, timezone }: { rows: SleepRecordRow[
 
   return <section className="sleep-calendar" aria-labelledby="sleep-calendar-title">
     <div className="sleep-calendar-heading">
-      <div><p className="eyebrow">Sleep · Calendar</p><h3 id="sleep-calendar-title"><Moon size={19} aria-hidden="true" />睡眠质量月历</h3><p>按醒来日期汇总夜间睡眠与小睡，每格显示实际睡眠时长（小时:分钟）。</p></div>
+      <div><p className="eyebrow">Sleep · Calendar</p><h3 id="sleep-calendar-title"><Moon size={19} aria-hidden="true" />睡眠质量月历</h3><p>按醒来日期汇总夜间睡眠与小睡，时长以小时:分钟显示；† 表示历史记录时段（含清醒）。</p></div>
       {months.length ? <div className="sleep-calendar-controls"><button className="secondary-button" type="button" aria-label="查看更早的睡眠月份" disabled={index < 1} onClick={() => setRequestedMonth(months[Math.max(0, index - 2)])}><ChevronLeft size={16} aria-hidden="true" /></button><label><span>查看月份</span><select value={month} onChange={(event) => setRequestedMonth(event.target.value)}>{[...months].reverse().map((value) => <option key={value} value={value}>{monthLabel(value)}</option>)}</select></label><button className="secondary-button" type="button" aria-label="查看更晚的睡眠月份" disabled={index === months.length - 1} onClick={() => setRequestedMonth(months[Math.min(months.length - 1, index + 2)])}><ChevronRight size={16} aria-hidden="true" /></button></div> : null}
     </div>
     {days.length ? <>
@@ -43,12 +44,12 @@ export function SleepCalendarSection({ rows, timezone }: { rows: SleepRecordRow[
             if (!date) return <span className="sleep-calendar-spacer" key={`empty-${cellIndex}`} aria-hidden="true" />;
             const day = byDate.get(date);
             if (!day) return <div key={date} className={`sleep-calendar-day sleep-grade-empty${date > today ? " sleep-calendar-future" : ""}`} aria-label={`${date}，${date > today ? "尚未到来" : "无记录"}`}><time dateTime={date}>{Number(date.slice(8))}</time><span>{date > today ? "" : "无记录"}</span></div>;
-            return <button type="button" key={date} className={`sleep-calendar-day sleep-grade-${day.grade}${date === today ? " sleep-calendar-today" : ""}`} aria-label={dayDescription(day)} aria-pressed={selectedDate === date} title={dayDescription(day)} onClick={() => setSelectedDate(selectedDate === date ? "" : date)}><time dateTime={date}>{Number(date.slice(8))}{day.hasDateCorrection ? <sup aria-hidden="true">*</sup> : null}</time><strong>{SLEEP_GRADES[day.grade].label}</strong><span className="sleep-calendar-duration">{formatSleepTime(day.asleepSeconds, day.hasIncompleteDuration, true)}</span></button>;
+            return <button type="button" key={date} className={`sleep-calendar-day sleep-grade-${day.grade}${date === today ? " sleep-calendar-today" : ""}`} aria-label={dayDescription(day)} aria-pressed={selectedDate === date} title={dayDescription(day)} onClick={() => setSelectedDate(selectedDate === date ? "" : date)}><time dateTime={date}>{Number(date.slice(8))}{day.hasDateCorrection ? <sup aria-hidden="true">*</sup> : null}</time><strong>{SLEEP_GRADES[day.grade].label}</strong><span className="sleep-calendar-duration">{day.asleepSeconds === null ? `${formatSleepTime(day.recordedPeriodSeconds, false, true)}†` : formatSleepTime(day.asleepSeconds, day.hasIncompleteDuration, true)}</span></button>;
           })}</div>
         </article>;
       })}</div>
-      {selected ? <div className="sleep-calendar-day-summary" role="status"><strong>{selected.date} · {SLEEP_GRADES[selected.grade].label}{selected.score !== null ? ` · ${selected.score} 分` : ""}</strong><span>合计 {formatSleepTime(selected.asleepSeconds, selected.hasIncompleteDuration)} · 夜间 {formatSleepTime(selected.mainSeconds)}{selected.napCount ? ` · 小睡 ${formatSleepTime(selected.napSeconds)}（${selected.napCount} 次）` : ""}</span>{selected.hasIncompleteDuration ? <small>部分记录未提供实际睡着时长，合计仅包含已知时长。</small> : null}{selected.hasDateCorrection ? <small>* 小睡日期已按所属睡眠日修正，原始时间及修正记录仍保留。</small> : null}</div> : null}
-      <p className="sleep-calendar-note">颜色按 <a href="https://support.coros.com/hc/en-us/articles/51716381180948-Understand-Your-COROS-Sleep-Score" target="_blank" rel="noreferrer">COROS 睡眠评分</a>分档，使用最新已入库评分。时长含小睡，不含清醒时间；「≥」表示部分时长缺失，平均值仅统计时长完整的日期。点击日期可查看简要汇总，* 表示含日期修正。</p>
+      {selected ? <div className="sleep-calendar-day-summary" role="status"><strong>{selected.date} · {SLEEP_GRADES[selected.grade].label}{selected.score !== null ? ` · ${selected.score} 分` : ""}</strong><span>{selected.asleepSeconds === null ? `记录时段 ${formatSleepTime(selected.recordedPeriodSeconds)}（含清醒）` : `合计 ${formatSleepTime(selected.asleepSeconds, selected.hasIncompleteDuration)}`}{selected.usesCorosDailyTotal ? "（COROS 每日总睡眠）" : ""} · 夜间 {formatSleepTime(selected.mainSeconds)}{selected.napCount ? ` · 小睡 ${formatSleepTime(selected.napSeconds)}（${selected.napCount} 次）` : ""}</span>{selected.asleepSeconds === null ? <small>† COROS 仅提供起止时段，实际睡着时长未提供；此时段不计入实睡平均值。</small> : selected.hasIncompleteDuration ? <small>部分记录未提供实际睡着时长，合计仅包含已知时长。</small> : selected.usesCorosDailyTotal && (selected.mainSeconds === null || (selected.napCount > 0 && selected.napSeconds === null)) ? <small>COROS 已提供每日总时长，部分夜间或小睡分段的实际时长未单独提供。</small> : null}{selected.hasDateCorrection ? <small>* 小睡日期已按所属睡眠日修正，原始时间及修正记录仍保留。</small> : null}</div> : null}
+      <p className="sleep-calendar-note">颜色按 <a href="https://support.coros.com/hc/en-us/articles/51716381180948-Understand-Your-COROS-Sleep-Score" target="_blank" rel="noreferrer">COROS 睡眠评分</a>分档，使用最新已入库评分。优先展示 COROS 每日总睡眠（含小睡），否则汇总分段实睡时长。「≥」表示仅有部分实睡时长；「†」为旧记录起止时段合计（含清醒），不计入实睡平均值。平均值仅统计总时长完整的日期；* 表示含日期修正。</p>
     </> : <p className="health-records-empty">尚无已入库的睡眠记录，COROS 同步完成后会显示月历。</p>}
   </section>;
 }
