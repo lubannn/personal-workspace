@@ -2808,6 +2808,7 @@ export default function GitHubWorkspacePage() {
         online={online}
         connection={connection}
         todayDate={currentTaskDate}
+        settingsOpen={activeWorkspaceTab === "data"}
         connectionMethod={connectionMethod}
         authAvailability={authAvailability}
         owner={owner}
@@ -3152,7 +3153,10 @@ export default function GitHubWorkspacePage() {
 
 
       <WorkspaceTabPanel tab="data" activeTab={activeWorkspaceTab} mounted={workspaceTabReady && (activeWorkspaceTab === "data" || visitedWorkspaceTabs.has("data"))} key={connection ? `data:${connection.ownerId}:${connection.repository}` : "data:disconnected"}>
-      <ReadinessSection readiness={readiness} connectionMethod={connectionMethod} />
+      <div className="settings-heading">
+        <div><h2 id="settings-title">设置</h2><p>备份与恢复、运行状态。</p></div>
+        <button className="secondary-button" type="button" onClick={() => selectWorkspaceTab("overview")}>返回概览</button>
+      </div>
       <PortabilitySection
         connection={connection}
         online={online}
@@ -3178,6 +3182,7 @@ export default function GitHubWorkspacePage() {
         onConfirmationChange={setRestoreConfirmation}
         onRestore={executePortableRestore}
       />
+      <ReadinessSection readiness={readiness} connectionMethod={connectionMethod} />
       </WorkspaceTabPanel>
 
 

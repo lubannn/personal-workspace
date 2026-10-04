@@ -1029,3 +1029,22 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 @media (min-width: 960px) {
   .dashboard-widget.widget-quick_capture.size-wide { grid-row: span 2; }
 }
+
+
+/* Settings stays outside the daily module tab list. */
+.topbar-settings-link { display: inline-flex; align-items: center; justify-content: center; min-height: 36px; padding: 7px 12px; border: 1px solid var(--line); border-radius: 9px; color: var(--soft); background: var(--surface); font-size: 12px; font-weight: 650; text-decoration: none; white-space: nowrap; }
+.topbar-settings-link:hover, .topbar-settings-link[aria-current="page"] { border-color: var(--accent); color: var(--ink); background: var(--accent-soft); }
+.settings-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 8px 0 16px; }
+.settings-heading h2 { margin: 0; font-size: 24px; }
+.settings-heading p { margin: 6px 0 0; color: var(--muted); font-size: 12px; }
+@media (max-width: 900px) {
+  .topbar-actions { display: flex; grid-column: 2; grid-row: 1 / 3; align-self: center; flex-wrap: wrap; gap: 8px 12px; max-width: 220px; }
+  .topbar-actions .network { flex-basis: 100%; justify-content: flex-end; }
+}
+@media (max-width: 519px) {
+  .topbar .brand { grid-column: 1; grid-row: 1; }
+  .topbar-date { grid-column: 1 / -1; grid-row: 2; }
+  .topbar-actions { grid-row: 1; max-width: 155px; }
+  .topbar-settings-link { min-height: 42px; }
+  .settings-heading { align-items: flex-start; }
+}

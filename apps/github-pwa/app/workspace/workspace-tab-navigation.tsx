@@ -13,10 +13,9 @@ export const WORKSPACE_TABS = [
   { id: "habits", label: "习惯" },
   { id: "health", label: "健康" },
   { id: "reports", label: "报告" },
-  { id: "data", label: "数据" },
 ] as const;
 
-export type WorkspaceTabId = (typeof WORKSPACE_TABS)[number]["id"];
+export type WorkspaceTabId = (typeof WORKSPACE_TABS)[number]["id"] | "data";
 
 const SECTION_HASHES: Record<string, WorkspaceTabId> = {
   "dashboard-title": "overview",
@@ -41,6 +40,7 @@ const SECTION_HASHES: Record<string, WorkspaceTabId> = {
   "coros-file-preflight-title": "health",
   "reports-title": "reports",
   "portability-title": "data",
+  "settings-title": "data",
 };
 
 export function workspaceTabFromHash(hash: string): WorkspaceTabId | null {
@@ -48,6 +48,7 @@ export function workspaceTabFromHash(hash: string): WorkspaceTabId | null {
   try { anchor = decodeURIComponent(hash.replace(/^#/, "")); }
   catch { return null; }
   const panel = anchor.startsWith("workspace-panel-") ? anchor.slice("workspace-panel-".length) : "";
+  if (panel === "data") return "data"; // Keep existing data-page bookmarks working.
   if (WORKSPACE_TABS.some((tab) => tab.id === panel)) return panel as WorkspaceTabId;
   return SECTION_HASHES[anchor] ?? null;
 }
@@ -75,7 +76,7 @@ export function WorkspaceTabNavigation({ activeTab, onSelect }: { activeTab: Wor
         role="tab"
         aria-selected={activeTab === tab.id}
         aria-controls={`workspace-panel-${tab.id}`}
-        tabIndex={activeTab === tab.id ? 0 : -1}
+        tabIndex={(activeTab === "data" ? "overview" : activeTab) === tab.id ? 0 : -1}
         onClick={() => onSelect(tab.id)}
         onKeyDown={(event) => handleKeyDown(event, tab.id)}
       >{tab.label}</button>)}
@@ -84,5 +85,5 @@ export function WorkspaceTabNavigation({ activeTab, onSelect }: { activeTab: Wor
 }
 
 export function WorkspaceTabPanel({ tab, activeTab, mounted = true, children }: { tab: WorkspaceTabId; activeTab: WorkspaceTabId; mounted?: boolean; children?: ReactNode }) {
-  return <div id={`workspace-panel-${tab}`} className="workspace-tab-panel" role="tabpanel" aria-labelledby={`workspace-tab-${tab}`} tabIndex={0} hidden={activeTab !== tab}>{mounted ? children : null}</div>;
+  return <div id={`workspace-panel-${tab}`} className="workspace-tab-panel" role={tab === "data" ? "region" : "tabpanel"} aria-labelledby={tab === "data" ? "settings-title" : `workspace-tab-${tab}`} tabIndex={0} hidden={activeTab !== tab}>{mounted ? children : null}</div>;
 }
