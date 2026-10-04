@@ -349,6 +349,7 @@ export default function GitHubWorkspacePage() {
     loadingHabits,
     loadingHealth,
     healthLoaded,
+    healthArchive,
     healthLoadError,
     healthUnverifiedWorkoutCount,
     loadingDashboard,
@@ -369,9 +370,10 @@ export default function GitHubWorkspacePage() {
     loadLearningAreas,
     loadHabitDomain,
     loadHealthDomain,
+    loadHealthMonth,
     loadDashboardLayout,
     clearCollections,
-  } = useWorkspaceCollections({ adapterRef, setErrorMessage, setDashboardClean });
+  } = useWorkspaceCollections({ adapterRef, setErrorMessage, setDashboardClean, timezone: connection?.timezone });
 
   useGitHubAppBootstrap({
     adapterRef,
@@ -3125,6 +3127,8 @@ export default function GitHubWorkspacePage() {
         unverifiedWorkoutCount={healthUnverifiedWorkoutCount}
         sleepSessions={sleepSessionFiles}
         workouts={workoutFiles}
+        archive={healthArchive}
+        onMonthChange={(month) => void loadHealthMonth(month)}
         staging={healthStagingFiles}
         onRefresh={() => void loadHealthDomain()}
       />

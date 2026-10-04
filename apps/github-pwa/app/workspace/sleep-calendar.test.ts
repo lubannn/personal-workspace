@@ -107,4 +107,17 @@ describe("monthly sleep calendar", () => {
     expect(html).toContain("记录时段8时00分（含清醒）");
     expect(html).not.toContain("平均睡眠");
   });
+  it("keeps all archive months selectable and does not label an unread month as having no records", () => {
+    const html = renderToStaticMarkup(createElement(SleepCalendarSection, { rows: [episode("recent")], timezone: "Asia/Shanghai",
+      months: ["2024-01", "2024-02"], selectedMonth: "2024-01", monthReady: false }));
+    expect(html).toContain("2024年1月记录读取中…");
+    expect(html).toContain('value="2024-02"');
+    expect(html).not.toContain("2024-01-01，无记录");
+    expect(html).not.toContain("本月暂无");
+    const failed = renderToStaticMarkup(createElement(SleepCalendarSection, { rows: [], timezone: "Asia/Shanghai",
+      months: ["2024-01"], selectedMonth: "2024-01", monthReady: false, monthError: true }));
+    expect(failed).toContain("2024年1月读取未完成，请重试。");
+    expect(failed).not.toContain("无记录");
+  });
+
 });
