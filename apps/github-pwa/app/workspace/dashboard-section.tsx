@@ -24,7 +24,7 @@ const WIDGETS: Record<string, WidgetDefinition> = {
   habit_heatmap: { eyebrow: "Habits", title: "习惯月度打卡", empty: "Habit 模块接入后，这里显示当月 Heatmap。" },
 };
 
-const SIZE_LABELS: Record<DashboardWidgetSize, string> = { compact: "紧凑", standard: "标准", wide: "通栏" };
+const SIZE_LABELS: Record<DashboardWidgetSize, string> = { compact: "紧凑", standard: "标准", wide: "宽卡片" };
 
 type Props = {
   connection: Connection | null;
@@ -82,24 +82,24 @@ export function DashboardSection(props: Props) {
         <div>
           <p className="eyebrow">Today · Modular dashboard</p>
           <h2 id="dashboard-title">我的今天</h2>
-          <p className="dashboard-subtitle">布局来自 Private 数据仓库；移动端自动变为单列。</p>
+          <p className="dashboard-subtitle">日程、待办与近期记录。</p>
         </div>
         <div className="dashboard-actions" aria-label="Dashboard 布局操作">
           <button className="secondary-button" type="button" onClick={onToggleEditing} disabled={!dashboardLayout}>{editingDashboard ? "完成编辑" : "编辑布局"}</button>
-          <button className="secondary-button" type="button" onClick={onRefresh} disabled={!connection || loadingDashboard || dashboardDirty}>{loadingDashboard ? "读取中…" : "从 GitHub 刷新"}</button>
-          <button className="primary-button" type="button" onClick={onSaveLayout} disabled={!connection || !dashboardLayout || savingDashboard || online === false || (!dashboardDirty && dashboardBlobSha !== null)}>{savingDashboard ? "保存中…" : dashboardBlobSha ? "保存布局" : "保存默认布局"}</button>
+          <button className="secondary-button" type="button" onClick={onRefresh} disabled={!connection || loadingDashboard || dashboardDirty}>{loadingDashboard ? "读取中…" : "刷新"}</button>
+          {editingDashboard || dashboardDirty ? <button className="primary-button" type="button" onClick={onSaveLayout} disabled={!connection || !dashboardLayout || savingDashboard || online === false || (!dashboardDirty && dashboardBlobSha !== null)}>{savingDashboard ? "保存中…" : dashboardBlobSha ? "保存布局" : "保存默认布局"}</button> : null}
         </div>
       </div>
 
-      <div className="dashboard-layout-meta">
+      {editingDashboard ? <div className="dashboard-layout-meta">
         <span>{!connection ? "连接后从 Private GitHub 读取布局" : dashboardBlobSha && dashboardLayout ? `Private layout v${dashboardLayout.version}` : "尚未保存的默认布局"}</span>
         <span>{visibleWidgets.length} 个显示 · {hiddenWidgets.length} 个隐藏{dashboardDirty ? " · 有未保存修改" : ""}</span>
-      </div>
+      </div> : null}
       <div className="dashboard-widget-grid">
-        {visibleWidgets.map((widget, index) => {
+        {(editingDashboard ? visibleWidgets : [...visibleWidgets].sort((left, right) => Number(right.widget_type === "quick_capture") - Number(left.widget_type === "quick_capture"))).map((widget, index) => {
           const definition = WIDGETS[widget.widget_type] ?? { eyebrow: "Extension", title: `未知模块 · ${widget.widget_type}`, empty: "当前版本未安装这个模块，但配置会被完整保留。" };
           return (
-            <article className={`dashboard-widget size-${widget.size}`} key={widget.id}>
+            <article className={`dashboard-widget widget-${widget.widget_type} size-${widget.size}`} key={widget.id}>
               <header><div><p className="eyebrow">{definition.eyebrow}</p><h3>{definition.title}</h3></div><span className="privacy-label">{widget.privacy_mode}</span></header>
               {editingDashboard ? (
                 <div className="widget-controls" aria-label={`${definition.title} 布局操作`}>

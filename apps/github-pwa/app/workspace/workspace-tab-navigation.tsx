@@ -8,6 +8,7 @@ export const WORKSPACE_TABS = [
   { id: "tasks", label: "待办" },
   { id: "calendar", label: "日程" },
   { id: "projects", label: "项目" },
+  { id: "ideas", label: "想法" },
   { id: "learning", label: "学习" },
   { id: "habits", label: "习惯" },
   { id: "health", label: "健康" },
@@ -20,6 +21,7 @@ export type WorkspaceTabId = (typeof WORKSPACE_TABS)[number]["id"];
 const SECTION_HASHES: Record<string, WorkspaceTabId> = {
   "dashboard-title": "overview",
   "recent-title": "overview",
+  "ideas-title": "ideas",
   "journal-title": "journal",
   "legacy-import-title": "journal",
   "legacy-commit-title": "journal",
