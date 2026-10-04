@@ -13,8 +13,8 @@ function episode(id: string, patch: Partial<SleepRecordRow> = {}): SleepRecordRo
 
 describe("monthly sleep calendar", () => {
   it("uses the official COROS score bands, including zero, without inferring missing scores", () => {
-    expect([0, 59, 60, 74, 75, 85, 86, 100, null, -1, 101, NaN].map(sleepGrade))
-      .toEqual(["poor", "poor", "fair", "fair", "good", "good", "excellent", "excellent", "unscored", "unscored", "unscored", "unscored"]);
+    expect([0, 59, 60, 64, 65, 74, 75, 85, 86, 100, null, -1, 101, NaN].map(sleepGrade))
+      .toEqual(["poor", "poor", "poor", "poor", "fair", "fair", "good", "good", "excellent", "excellent", "unscored", "unscored", "unscored", "unscored"]);
   });
 
   it("adds actual main sleep and naps to the wake day and retains the updated main-sleep score", () => {

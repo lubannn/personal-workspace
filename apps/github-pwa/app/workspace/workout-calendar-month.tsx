@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Activity } from "lucide-react";
 import { formatHealthDistance, formatHealthDuration, healthLocalParts } from "./health-records";
 import { sleepMonthCells } from "./sleep-calendar";
-import { formatWorkoutCalendarTime, type WorkoutCalendarDay } from "./workout-calendar";
+import { formatWorkoutCalendarTime, workoutActivityColor, type WorkoutCalendarDay } from "./workout-calendar";
 
 function describe(day: WorkoutCalendarDay, timezone: string) {
   return `${day.date}，${day.workouts.length}次运动，合计${formatHealthDuration(day.totalSeconds)}：${day.workouts.map(row => `${row.activity}，${healthLocalParts(row.startAt, timezone).time}开始，${formatHealthDuration(row.durationSeconds)}`).join("；")}`;
@@ -25,16 +25,16 @@ export function WorkoutCalendarMonth({ month, days, today, timezone }: { month: 
       if (!date) return <span className="sleep-calendar-spacer" key={`empty-${index}`} aria-hidden="true" />;
       const day = byDate.get(date);
       if (!day) return <div key={date} className={`sleep-calendar-day sleep-grade-empty${date > today ? " sleep-calendar-future" : ""}`} aria-label={`${date}，${date > today ? "尚未到来" : "无运动记录"}`}><time dateTime={date}>{Number(date.slice(8))}</time><span>{date > today ? "" : "无记录"}</span></div>;
-      return <button type="button" key={date} className={`sleep-calendar-day workout-calendar-day workout-tone-${day.tone}${date === today ? " sleep-calendar-today" : ""}`} aria-label={describe(day, timezone)} title={describe(day, timezone)} aria-pressed={selectedDate === date} onClick={() => setSelectedDate(selectedDate === date ? "" : date)}>
+      return <button type="button" key={date} className={`sleep-calendar-day workout-calendar-day${date === today ? " sleep-calendar-today" : ""}`} style={day.tone === "mixed" ? undefined : workoutActivityColor(day.workouts[0].activity)} aria-label={describe(day, timezone)} title={describe(day, timezone)} aria-pressed={selectedDate === date} onClick={() => setSelectedDate(selectedDate === date ? "" : date)}>
         <time dateTime={date}>{Number(date.slice(8))}</time>
-        {day.workouts.slice(0, 2).map(row => <span className="workout-calendar-entry" key={row.id}><strong>{row.activity}</strong><small>{formatWorkoutCalendarTime(row.durationSeconds)}</small></span>)}
+        {day.workouts.slice(0, 2).map(row => <span className="workout-calendar-entry" style={workoutActivityColor(row.activity)} key={row.id}><strong>{row.activity}</strong><small>{formatWorkoutCalendarTime(row.durationSeconds)}</small></span>)}
         {day.workouts.length > 2 ? <span className="workout-calendar-more">+{day.workouts.length - 2}次</span> : null}
         {day.workouts.length > 1 ? <span className="sleep-calendar-duration">共{formatWorkoutCalendarTime(day.totalSeconds)}</span> : null}
       </button>;
     })}</div>
-    {!days.length ? <p className="sleep-calendar-note">本月暂无已入库的运动记录。</p> : <p className="sleep-calendar-note">本月项目：{activities.join("、")}。颜色区分运动类型，紫色表示当天包含多种运动。点击日期查看开始时间。</p>}
+    {!days.length ? <p className="sleep-calendar-note">本月暂无已入库的运动记录。</p> : <ul className="workout-calendar-legend" aria-label="运动项目颜色说明">{activities.map(activity => <li key={activity}><i style={workoutActivityColor(activity)} aria-hidden="true" /><span>{activity}</span></li>)}</ul>}
     {selected ? <div className="sleep-calendar-day-summary workout-calendar-selection" role="status"><strong>{selected.date} · {selected.workouts.length} 次 · 合计 {formatHealthDuration(selected.totalSeconds)}</strong>
-      {selected.workouts.map(row => <span key={row.id} className="workout-calendar-detail"><b>{row.activity}</b><span>{healthLocalParts(row.startAt, timezone).time}开始 · {formatHealthDuration(row.durationSeconds)}{row.distanceMetres !== null ? ` · ${formatHealthDistance(row.distanceMetres)}` : ""}</span></span>)}
+      {selected.workouts.map(row => <span key={row.id} className="workout-calendar-detail"><b className="workout-calendar-detail-name" style={workoutActivityColor(row.activity)}>{row.activity}</b><span>{healthLocalParts(row.startAt, timezone).time}开始 · {formatHealthDuration(row.durationSeconds)}{row.distanceMetres !== null ? ` · ${formatHealthDistance(row.distanceMetres)}` : ""}</span></span>)}
     </div> : null}
   </article>;
 }
