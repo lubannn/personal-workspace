@@ -3,6 +3,7 @@ import { GitHubContentsAdapter, GitHubDataError, type GitHubDirectoryItem, type 
 import { JournalArchiveReader, type JournalArchiveEntry } from "./journal-archive-reader";
 import { createJournalEntryData } from "./journal-entries";
 import { createWorkspaceRecord, recordPath } from "./protocol";
+import { recentJournalFileCandidates } from "./journal-archive-catalog";
 
 function fixture(date: string, index = 1, sizeBytes = 700) {
   const timestamp = `${date}T12:00:00.000Z`;
@@ -17,6 +18,9 @@ function fixture(date: string, index = 1, sizeBytes = 700) {
 }
 
 type Fixture = ReturnType<typeof fixture>;
+function newest(fixtures: Fixture[]) {
+  return recentJournalFileCandidates(fixtures.map((file) => file.item), fixtures.length).map((item) => fixtures.find((file) => file.item.path === item.path)!);
+}
 
 function monthFiles(month: string, count: number, sizeBytes = 700) {
   return Array.from({ length: count }, (_, index) => fixture(`${month}-${String(index % 30 + 1).padStart(2, "0")}`, index + 1, sizeBytes));
@@ -59,15 +63,15 @@ describe("session journal archive reader", () => {
     const result = await reader.load("2026-09");
     expect(adapter.listDirectory).toHaveBeenCalledExactlyOnceWith("data/journal-entries");
     expect(adapter.readBlobTexts).toHaveBeenCalledExactlyOnceWith(
-      september.map(({ item }) => ({ path: item.path, blobSha: item.blobSha, sizeBytes: item.sizeBytes })),
-      expect.any(Function), undefined,
+      newest(september).map(({ item }) => ({ path: item.path, blobSha: item.blobSha, sizeBytes: item.sizeBytes })),
+      expect.any(Function), undefined, { maxBatchFiles: 40, onBatch: expect.any(Function) },
     );
     expect(result.entries).toHaveLength(30);
     expect(result.loadedMonths).toEqual(["2026-09"]);
     expect(reader.isMonthLoaded("2026-09")).toBe(true);
   });
 
-  it("integrates with the shared adapter using two cold-month HTTP queries and none on a warm revisit", async () => {
+  it("integrates with the shared adapter using one cold-month HTTP query and none on a warm revisit", async () => {
     const september = monthFiles("2026-09", 30);
     const fixtures = [...september, fixture("2026-10-01", 101), fixture("2026-10-02", 102)];
     const catalog = fixtures.map(({ item, stored }) => ({ ...item, sizeBytes: new TextEncoder().encode(stored.text).byteLength }));
@@ -85,29 +89,27 @@ describe("session journal archive reader", () => {
       return new Response(JSON.stringify({ data: { repository } }), { status: 200, headers: { "Content-Type": "application/json" } });
     });
     const adapter = new GitHubContentsAdapter({ owner: "fake-owner", repository: "fake-journals", token: "fake-token" }, fetcher);
-    const listing = vi.spyOn(adapter, "listDirectory").mockResolvedValue(catalog);
+    const listing = vi.spyOn(adapter, "listJournalDirectory").mockResolvedValue(catalog);
     const reader = new JournalArchiveReader(adapter);
     expect((await reader.load("2026-09")).entries).toHaveLength(30);
-    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(fetcher).toHaveBeenCalledTimes(1);
     expect(requestedShas.sort()).toEqual([...targetBlobs.keys()].sort());
     await reader.load("2026-08");
     expect((await reader.load("2026-09")).entries).toHaveLength(30);
-    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(fetcher).toHaveBeenCalledTimes(1);
     expect(listing).toHaveBeenCalledTimes(1);
   });
 
-  it("loads a large fresh catalog through three REST trees before one recent-body query", async () => {
+  it("loads a large fresh catalog through two metadata reads before one recent-body query", async () => {
     const recent = [fixture("2026-10-01", 10_001), fixture("2026-10-02", 10_002), fixture("2026-10-03", 10_003)];
     const fixtures = [...monthFiles("2026-09", 2313), ...recent];
     const catalog = fixtures.map(({ item, stored }) => ({ ...item, sizeBytes: new TextEncoder().encode(stored.text).byteLength }));
     const recentBlobs = new Map(recent.map(({ stored }) => [stored.blobSha, stored.text]));
     const requestedShas: string[] = [];
     const treeRoot = "https://api.github.com/repos/fake-owner/fake-journals/git/trees/";
-    const dataSha = "a".repeat(40);
     const journalSha = "b".repeat(40);
-    const treeResponses = new Map([
-      [`${treeRoot}main`, { truncated: false, tree: [{ path: "data", type: "tree", sha: dataSha, size: 0 }] }],
-      [`${treeRoot}${dataSha}`, { truncated: false, tree: [{ path: "journal-entries", type: "tree", sha: journalSha, size: 0 }] }],
+    const treeResponses = new Map<string, unknown>([
+      ["https://api.github.com/repos/fake-owner/fake-journals/contents/data?ref=main", [{ path: "data/journal-entries", name: "journal-entries", type: "dir", sha: journalSha, size: 0 }]],
       [`${treeRoot}${journalSha}`, { truncated: false, tree: catalog.map((file) => ({ path: file.name, type: "blob", sha: file.blobSha, size: file.sizeBytes })) }],
     ]);
     const fetcher = vi.fn<typeof fetch>(async (url, init) => {
@@ -127,7 +129,7 @@ describe("session journal archive reader", () => {
       return new Response(JSON.stringify({ data: { repository } }), { status: 200, headers: { "Content-Type": "application/json" } });
     });
     const adapter = new GitHubContentsAdapter({ owner: "fake-owner", repository: "fake-journals", branch: "main", token: "fake-token" }, fetcher);
-    const onCatalog = vi.fn(() => expect(fetcher).toHaveBeenCalledTimes(3));
+    const onCatalog = vi.fn(() => expect(fetcher).toHaveBeenCalledTimes(2));
     const reader = new JournalArchiveReader(adapter);
     const snapshot = await reader.load(undefined, { onCatalog });
     expect(onCatalog).toHaveBeenCalledExactlyOnceWith({ catalog, catalogReady: true, entries: [], loadedMonths: [] });
@@ -136,7 +138,7 @@ describe("session journal archive reader", () => {
     expect(requestedShas.sort()).toEqual([...recentBlobs.keys()].sort());
     expect(fetcher.mock.calls.map(([url]) => url)).toEqual([...treeResponses.keys(), "https://api.github.com/graphql"]);
     expect(await reader.load()).toEqual(snapshot);
-    expect(fetcher).toHaveBeenCalledTimes(4);
+    expect(fetcher).toHaveBeenCalledTimes(3);
   });
 
   it("reuses a warm month and retains entries from every visited month", async () => {
@@ -194,6 +196,46 @@ describe("session journal archive reader", () => {
     await expect(load).rejects.toThrow("Fake body unavailable");
     expect(reader.snapshot()).toEqual(ready);
     expect(onCatalog).toHaveBeenCalledTimes(1);
+  });
+
+  it("publishes verified rows before the month's remaining bodies and retains them if a later chunk fails", async () => {
+    const fixtures = monthFiles("2026-09", 8);
+    const adapter = fakeAdapter(fixtures);
+    const body = deferred<GitHubStoredFile[]>();
+    const pending = vi.fn<GitHubContentsAdapter["readBlobTexts"]>().mockReturnValueOnce(body.promise).mockImplementation(adapter.readBlobTexts);
+    const reader = new JournalArchiveReader({ ...adapter, readBlobTexts: pending });
+    const onProgress = vi.fn();
+    const load = reader.load("2026-09", { onProgress });
+    const failed = expect(load).rejects.toThrow("Later chunk unavailable");
+    await vi.waitFor(() => expect(pending).toHaveBeenCalledTimes(1));
+    pending.mock.calls[0][3]?.onBatch?.(fixtures.slice(4).map((file) => file.stored));
+    expect(onProgress).toHaveBeenCalledTimes(1);
+    expect(onProgress.mock.lastCall?.[0].entries).toHaveLength(4);
+    expect(reader.isMonthLoaded("2026-09")).toBe(false);
+    body.reject(new Error("Later chunk unavailable"));
+    await failed;
+    expect(reader.snapshot().entries).toHaveLength(4);
+    await reader.load("2026-09");
+    expect(pending.mock.calls[1][0]).toHaveLength(4);
+  });
+
+  it("rejects obsolete progress after navigation cancellation instead of publishing old rows", async () => {
+    const fixtures = monthFiles("2026-09", 1);
+    const pending = vi.fn<GitHubContentsAdapter["readBlobTexts"]>();
+    const body = deferred<GitHubStoredFile[]>();
+    pending.mockReturnValue(body.promise);
+    const reader = new JournalArchiveReader({ ...fakeAdapter(fixtures), readBlobTexts: pending });
+    const controller = new AbortController();
+    const onProgress = vi.fn();
+    const load = reader.load("2026-09", { signal: controller.signal, onProgress });
+    const rejected = expect(load).rejects.toMatchObject({ name: "AbortError" });
+    await vi.waitFor(() => expect(pending).toHaveBeenCalledTimes(1));
+    controller.abort();
+    expect(() => pending.mock.calls[0][3]?.onBatch?.([fixtures[0].stored])).toThrow();
+    body.resolve([fixtures[0].stored]);
+    await rejected;
+    expect(onProgress).not.toHaveBeenCalled();
+    expect(reader.snapshot().entries).toEqual([]);
   });
 
   it("does not publish or mark a failed directory read ready", async () => {
@@ -276,7 +318,7 @@ describe("session journal archive reader", () => {
   });
 
   it("keeps completed batches after a later failure and retries only missing bodies", async () => {
-    const fixtures = monthFiles("2026-09", 81);
+    const fixtures = newest(monthFiles("2026-09", 81));
     const adapter = fakeAdapter(fixtures);
     adapter.readBlobTexts.mockResolvedValueOnce(fixtures.slice(0, 40).map((file) => file.stored)).mockRejectedValueOnce(new Error("Fake network failure"));
     const reader = new JournalArchiveReader(adapter);
@@ -320,7 +362,7 @@ describe("session journal archive reader", () => {
   });
 
   it("retains completed batches but never publishes bodies received after cancellation", async () => {
-    const fixtures = monthFiles("2026-09", 41);
+    const fixtures = newest(monthFiles("2026-09", 41));
     const adapter = fakeAdapter(fixtures);
     const pending = deferred<GitHubStoredFile[]>();
     adapter.readBlobTexts.mockResolvedValueOnce(fixtures.slice(0, 40).map((file) => file.stored)).mockReturnValueOnce(pending.promise);

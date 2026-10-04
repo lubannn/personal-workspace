@@ -16,11 +16,12 @@ export function journalStatisticsView({ catalog, catalogReady, loaded, cache, sh
     .map(({ path, blobSha }) => ({ path, blobSha, statistics: cachedJournalStatistics(loaded, path, blobSha)
       ?? cachedJournalStatistics(cache, path, blobSha) ?? cachedJournalStatistics(shared ?? {}, path, blobSha) })) : [];
   const missing = files.filter((file) => !file.statistics);
-  // Before the directory arrives, a shared summary is only the last saved
-  // snapshot. Do not promote unverified browser-cache paths into that snapshot.
+  // Show the last repository-scoped snapshot while the network is pending.
+  // Once the shared summary arrives it replaces the local snapshot (including
+  // removed paths), and only the ready directory can verify current totals.
   const statistics = catalogReady
     ? files.flatMap((file) => file.statistics ? [file.statistics] : [])
-    : Object.entries({ ...shared, ...loaded })
+    : Object.entries({ ...(shared ?? cache), ...loaded })
       .filter(([path]) => /^data\/journal-entries\/[^/]+\.json$/u.test(path))
       .map(([, value]) => value);
   const complete = catalogReady && missing.length === 0;

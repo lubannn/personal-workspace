@@ -24,7 +24,7 @@ export class JournalArchiveReader {
   private catalogId = 0;
   private directoryRequest?: DirectoryRequest;
 
-  constructor(private readonly adapter: Pick<GitHubContentsAdapter, "listDirectory" | "readBlobTexts">) {}
+  constructor(private readonly adapter: Pick<GitHubContentsAdapter, "listDirectory" | "readBlobTexts"> & Partial<Pick<GitHubContentsAdapter, "listJournalDirectory">>) {}
 
   snapshot(): JournalArchiveSnapshot {
     return {
@@ -54,6 +54,7 @@ export class JournalArchiveReader {
     refresh?: boolean;
     signal?: AbortSignal;
     onCatalog?: (snapshot: JournalArchiveSnapshot) => void;
+    onProgress?: (snapshot: JournalArchiveSnapshot) => void;
   } = {}): Promise<JournalArchiveSnapshot> {
     const { signal } = options;
     signal?.throwIfAborted();
@@ -68,29 +69,41 @@ export class JournalArchiveReader {
 
     const candidates = month ? journalMonthFileCandidates([...this.catalog.values()], month)
       : recentJournalFileCandidates([...this.catalog.values()]);
-    const missing = candidates.filter((file) => this.entries.get(file.path)?.blobSha !== file.blobSha);
+    // Start with the newest visible rows when a long month requires several batches.
+    const missing = recentJournalFileCandidates(candidates, candidates.length).filter((file) => this.entries.get(file.path)?.blobSha !== file.blobSha);
     for (const batch of batches(missing)) {
       this.assertCurrent(catalogId, signal);
       // A successful save may have supplied a newer version since this load began.
       const needed = batch.filter((file) => this.catalog.get(file.path)?.blobSha === file.blobSha
         && this.entries.get(file.path)?.blobSha !== file.blobSha);
       if (needed.length === 0) continue;
+      const commit = (files: Awaited<ReturnType<GitHubContentsAdapter["readBlobTexts"]>>) => {
+        this.assertCurrent(catalogId, signal);
+        const parsed: JournalArchiveEntry[] = [];
+        for (const file of files) {
+          const requested = needed.find((item) => item.path === file.path);
+          if (!requested || file.blobSha !== requested.blobSha) throw new Error("JOURNAL_ARCHIVE_INCOMPLETE_BATCH");
+          if (this.catalog.get(file.path)?.blobSha !== file.blobSha || this.entries.get(file.path)?.blobSha === file.blobSha) continue;
+          parsed.push({ record: parseJournalEntryRecord(file.text), path: file.path, blobSha: file.blobSha });
+        }
+        for (const entry of parsed) this.entries.set(entry.path, entry);
+        if (parsed.length) options.onProgress?.(this.snapshot());
+      };
       const files = await this.adapter.readBlobTexts(
         needed.map(({ path, blobSha, sizeBytes }) => ({ path, blobSha, sizeBytes })),
         () => !signal?.aborted,
         signal,
+        { maxBatchFiles: MAX_BATCH_FILES, onBatch: commit },
       );
       this.assertCurrent(catalogId, signal);
       const byPath = new Map(files.map((file) => [file.path, file]));
-      const parsed: JournalArchiveEntry[] = [];
       for (const requested of needed) {
         if (this.catalog.get(requested.path)?.blobSha !== requested.blobSha) continue;
         const file = byPath.get(requested.path);
         if (!file || file.blobSha !== requested.blobSha) throw new Error("JOURNAL_ARCHIVE_INCOMPLETE_BATCH");
-        parsed.push({ record: parseJournalEntryRecord(file.text), path: file.path, blobSha: file.blobSha });
       }
       // Commit each completed batch so retries only fetch the remaining files.
-      for (const entry of parsed) this.entries.set(entry.path, entry);
+      commit(files);
     }
     this.assertCurrent(catalogId, signal);
     if (month) this.loadedMonths.add(month);
@@ -140,7 +153,7 @@ export class JournalArchiveReader {
 
   private async readDirectory() {
     try {
-      return await this.adapter.listDirectory("data/journal-entries");
+      return await (this.adapter.listJournalDirectory ? this.adapter.listJournalDirectory() : this.adapter.listDirectory("data/journal-entries"));
     } catch (error) {
       if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") return [];
       throw error;

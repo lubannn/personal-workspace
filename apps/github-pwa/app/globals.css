@@ -482,6 +482,7 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .journal-results-header h3 { margin: 4px 0 0; font: 500 21px/1.35 ui-serif, Georgia, "Songti SC", serif; }
 .journal-results-tools { display: flex; align-items: center; gap: 14px; margin-left: auto; }
 .journal-result-count { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.journal-load-progress { margin: 10px 0; color: var(--soft); font-size: 11px; line-height: 1.7; }
 .journal-browser-search { width: 172px; max-width: 100%; }
 .journal-browser-search input { width: 100%; min-height: 35px; padding: 7px 11px; border: 1px solid #e3dfd6; border-radius: 11px; background: #fdfcf9; color: var(--ink); font: 400 11px/1.5 ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif; outline: none; transition: border-color .15s ease, box-shadow .15s ease; }
 .journal-browser-search input::placeholder { color: var(--muted); }

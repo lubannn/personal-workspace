@@ -53,7 +53,8 @@ export function JournalSection({ connection, adapter, online, todayDate, journal
   const displayedMonth = month || currentMonth;
   const recentView = !month && !selectedDay;
   const monthLoaded = loadedMonths.includes(displayedMonth);
-  const resultsLoaded = recentView ? source.length > 0 || (!loading && !loadError) : monthLoaded;
+  const hasVisibleMonthEntries = source.some((item) => item.record.data.journal_date.startsWith(`${displayedMonth}-`) && (!selectedDay || item.record.data.journal_date === selectedDay));
+  const resultsLoaded = recentView ? source.length > 0 || (!loading && !loadError) : monthLoaded || hasVisibleMonthEntries;
   const visible = useMemo(() => {
     const filtered = filterJournalEntries(records, { view, month: recentView ? undefined : displayedMonth }).filter((record) => !selectedDay || record.data.journal_date === selectedDay);
     const matches = filtered.map((record) => ({ ...byId.get(record.id)!, segments: searchJournalDisplaySegments(record.data.body_markdown, searchQuery, journalEntrySubmittedTime(record).slice(0, 5)) })).filter((item) => item.segments.length > 0);
@@ -137,8 +138,9 @@ export function JournalSection({ connection, adapter, online, todayDate, journal
     <div className="journal-explorer">
       <div className="journal-results">
         <div className="journal-results-header"><div><p className="eyebrow">Journal archive</p><h3>{recentView ? "最近日记" : selectedDay ? `${selectedDay} 的日记` : `${displayedMonth.replace("-", "年")}月的日记`}</h3></div><div className="journal-results-tools"><span className="journal-result-count" aria-live="polite">{visible.length} 篇</span><label className="journal-browser-search"><input type="search" aria-label={recentView ? "搜索已加载日记" : selectedDay ? "搜索当天日记" : "搜索本月日记"} aria-describedby="journal-search-scope" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} maxLength={200} placeholder="搜索内容" disabled={!connection} /><span id="journal-search-scope">{recentView ? "搜索已加载日记" : selectedDay ? "搜索当天日记" : "搜索本月日记"}</span></label></div></div>
-        {loadError && resultsLoaded ? <p className="empty-note" role="alert">刷新失败，已保留上次读取的日记：{loadError}</p> : null}
-        {!connection ? <p className="empty-note">连接后显示 Private 仓库中的日记。</p> : loadError && !resultsLoaded ? <p className="empty-note" role="alert">日记读取失败：{loadError}。请重试。</p> : !resultsLoaded ? <p className="empty-note">{recentView ? "正在读取最近日记…" : loading ? "正在读取该月日记…" : "正在准备该月日记…"}</p> : source.length === 0 ? <p className="empty-note">{view === "active" ? "还没有日记。" : "日记回收站是空的。"}</p> : visible.length === 0 ? <p className="empty-note">这段时间没有符合条件的日记。</p> : <ol className="journal-list">{visible.map((item, itemIndex) => {
+        {loadError && resultsLoaded ? <p className="empty-note" role="alert">读取未完成，已保留读取到的日记：{loadError}</p> : null}
+        {!recentView && !monthLoaded && resultsLoaded && !loadError ? <p className="journal-load-progress" role="status">已显示读取到的日记，正在补全该月…</p> : null}
+        {!connection ? <p className="empty-note">连接后显示 Private 仓库中的日记。</p> : loadError && !resultsLoaded ? <p className="empty-note" role="alert">日记读取失败：{loadError}。请重试。</p> : !resultsLoaded ? <p className="empty-note">{recentView ? "正在读取最近日记…" : loading ? "正在读取该月日记…" : "正在准备该月日记…"}</p> : source.length === 0 ? <p className="empty-note">{view === "active" ? "还没有日记。" : "日记回收站是空的。"}</p> : visible.length === 0 ? <p className="empty-note">{!recentView && !monthLoaded && !loadError ? "暂未找到匹配日记，正在继续读取该月…" : "这段时间没有符合条件的日记。"}</p> : <ol className="journal-list">{visible.map((item, itemIndex) => {
       const canManage = canWriteJournalDate(item.record.data.journal_date, todayDate);
       const startsDay = itemIndex === 0 || visible[itemIndex - 1].record.data.journal_date !== item.record.data.journal_date;
       return <li key={item.record.id} className={startsDay ? "journal-day-start" : undefined}>
