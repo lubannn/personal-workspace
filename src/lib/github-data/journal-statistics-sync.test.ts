@@ -7,6 +7,37 @@ const counts: JournalFileStatistics = { date: "2026-10-02", blobSha: "entry-sha"
 const files = { "data/journal-entries/one.json": counts };
 
 describe("cross-browser journal statistics", () => {
+  it("coalesces pending reads and briefly reuses a summary only within the same authenticated adapter", async () => {
+    let resolve!: (value: { text: string; blobSha: string }) => void;
+    const adapter = { readText: vi.fn().mockReturnValueOnce(new Promise((done) => { resolve = done; })).mockResolvedValue({ text: journalStatisticsSummaryText(files), blobSha: "latest-sha" }) };
+    const first = readSharedJournalStatistics(adapter);
+    const second = readSharedJournalStatistics(adapter);
+    expect(first).toBe(second);
+    resolve({ text: journalStatisticsSummaryText(files), blobSha: "first-sha" });
+    await first;
+    expect((await readSharedJournalStatistics(adapter)).blobSha).toBe("first-sha");
+    expect(adapter.readText).toHaveBeenCalledTimes(1);
+    expect((await readSharedJournalStatistics(adapter, { refresh: true })).blobSha).toBe("latest-sha");
+    expect(adapter.readText).toHaveBeenCalledTimes(2);
+    const other = { readText: vi.fn().mockResolvedValue({ text: journalStatisticsSummaryText({}), blobSha: "other-sha" }) };
+    expect((await readSharedJournalStatistics(other)).files).toEqual({});
+    expect(other.readText).toHaveBeenCalledTimes(1);
+  });
+
+  it("expires successful summaries and evicts failures so a retry reaches GitHub", async () => {
+    const clock = vi.spyOn(Date, "now").mockReturnValue(0);
+    try {
+      const adapter = { readText: vi.fn().mockResolvedValue({ text: journalStatisticsSummaryText(files), blobSha: "first" }) };
+      await readSharedJournalStatistics(adapter);
+      clock.mockReturnValue(15_001);
+      await readSharedJournalStatistics(adapter);
+      expect(adapter.readText).toHaveBeenCalledTimes(2);
+      const failed = { readText: vi.fn().mockRejectedValueOnce(new Error("Offline")).mockResolvedValue({ text: journalStatisticsSummaryText(files), blobSha: "retry" }) };
+      await expect(readSharedJournalStatistics(failed)).rejects.toThrow("Offline");
+      expect((await readSharedJournalStatistics(failed)).blobSha).toBe("retry");
+      expect(failed.readText).toHaveBeenCalledTimes(2);
+    } finally { clock.mockRestore(); }
+  });
   it("loads reusable counts with one summary request and no diary reads", async () => {
     const adapter = { readText: vi.fn().mockResolvedValue({ text: journalStatisticsSummaryText(files), blobSha: "summary-sha" }) };
     const result = await readSharedJournalStatistics(adapter);

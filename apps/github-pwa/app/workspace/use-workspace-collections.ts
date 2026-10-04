@@ -509,6 +509,10 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
           setJournalEntryFiles(catalogSnapshot.entries);
           setJournalLoadedMonths(catalogSnapshot.loadedMonths);
         },
+        onProgress: (progress) => {
+          if (signal.aborted || adapterRef.current !== adapter || journalRequestRef.current !== request) return;
+          setJournalEntryFiles(progress.entries);
+        },
       });
       if (signal.aborted || adapterRef.current !== adapter || journalRequestRef.current !== request) return;
       setJournalEntryCatalog(snapshot.catalog);

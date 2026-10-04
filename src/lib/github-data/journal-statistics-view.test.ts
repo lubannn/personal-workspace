@@ -18,12 +18,14 @@ describe("journal statistics before and after directory verification", () => {
     expect(result.missing).toEqual([]);
   });
 
-  it("does not present zero or unverified browser-cache totals when no summary is available", () => {
-    for (const shared of [null, {}]) {
-      const result = journalStatisticsView({ ...initial, cache: { [path]: counts }, shared });
-      expect(result.phase).toBe("waiting");
-      expect(result.totals).toBeNull();
-    }
+  it("shows local counts as a provisional snapshot, then drops them when the shared summary is empty", () => {
+    const result = journalStatisticsView({ ...initial, cache: { [path]: counts }, shared: null });
+    expect(result.phase).toBe("snapshot");
+    expect(result.totals).toEqual({ days: 1, entries: 3, words: 20 });
+    expect(result.files).toEqual([]);
+    const empty = journalStatisticsView({ ...initial, cache: { [path]: counts }, shared: {} });
+    expect(empty.phase).toBe("waiting");
+    expect(empty.totals).toBeNull();
   });
 
   it("excludes deleted and unrelated records from the provisional snapshot", () => {

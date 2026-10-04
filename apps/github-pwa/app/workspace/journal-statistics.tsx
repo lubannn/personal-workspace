@@ -29,20 +29,21 @@ function JournalStatisticsSession({ connection, adapter, catalog, catalogReady, 
   const sharingRef = useRef<GitHubContentsAdapter | null>(null);
   // v1 excluded punctuation and cannot be reused under the new counting rule.
   const storageKey = connection ? `nexus-journal-counts-v2:${connection.ownerId}:${connection.repository}` : null;
-  const loadedStatistics = useMemo(() => Object.fromEntries(loaded.flatMap((item) => {
+  const loadedStatistics = useMemo(() => Object.fromEntries((connection ? loaded : []).flatMap((item) => {
     try { return [[item.path, cachedJournalStatistics(cache, item.path, item.blobSha) ?? cachedJournalStatistics(shared?.files ?? {}, item.path, item.blobSha) ?? journalFileStatistics(item.record, item.blobSha)] as const]; }
     catch { return []; } // An unreadable legacy body must not crash the journal view or produce a guessed total.
-  })), [loaded, cache, shared]);
+  })), [connection, loaded, cache, shared]);
   const loadedStatisticsText = JSON.stringify(loadedStatistics);
   const { files, missing, phase, statistics, totals } = useMemo(() => journalStatisticsView({ catalog, catalogReady: Boolean(connection) && catalogReady, loaded: loadedStatistics, cache, shared: shared?.files ?? null }), [catalog, catalogReady, connection, loadedStatistics, cache, shared]);
   const complete = phase === "complete";
-  const summaryText = journalStatisticsSummaryText(Object.fromEntries(files.flatMap((item) => item.statistics ? [[item.path, item.statistics]] : [])));
-  const sharedMatches = catalogReady && Boolean(shared) && files.every((item) => !item.statistics || JSON.stringify(item.statistics) === JSON.stringify(shared?.files[item.path]));
+  const summaryText = useMemo(() => journalStatisticsSummaryText(Object.fromEntries(files.flatMap((item) => item.statistics ? [[item.path, item.statistics]] : []))), [files]);
+  const sharedText = useMemo(() => shared ? journalStatisticsSummaryText(shared.files) : null, [shared]);
+  const sharedMatches = useMemo(() => catalogReady && Boolean(shared) && files.every((item) => !item.statistics || JSON.stringify(item.statistics) === JSON.stringify(shared?.files[item.path])), [catalogReady, files, shared]);
 
   useEffect(() => {
     if (!adapter) return;
     let mounted = true;
-    void readSharedJournalStatistics(adapter).then((value) => {
+    void readSharedJournalStatistics(adapter, { refresh: sharedRetry > 0 }).then((value) => {
       if (mounted) setSharedState({ adapter, value, error: "" });
     }).catch(() => {
       if (mounted) setSharedState((current) => ({ adapter, value: current?.adapter === adapter ? current.value : null, error: "共享统计读取失败；重试仅读取摘要，不会重算历史日记。" }));
@@ -51,10 +52,10 @@ function JournalStatisticsSession({ connection, adapter, catalog, catalogReady, 
   }, [adapter, sharedRetry]);
 
   useEffect(() => {
-    if (!adapter || !catalogReady || !shared || shareError || running || busy || sharingRef.current === adapter || files.length === 0 || summaryText === journalStatisticsSummaryText({}) || summaryText === journalStatisticsSummaryText(shared.files)) return;
+    if (!adapter || !catalogReady || !shared || shareError || running || busy || sharingRef.current === adapter || files.length === 0 || summaryText === journalStatisticsSummaryText({}) || summaryText === sharedText) return;
     const summary = JSON.parse(summaryText);
     const next = { ...shared.files, ...parseJournalStatisticsCache(JSON.stringify(summary.files)) };
-    if (journalStatisticsSummaryText(next) === journalStatisticsSummaryText(shared.files)) return;
+    if (journalStatisticsSummaryText(next) === sharedText) return;
     const timer = setTimeout(() => {
       sharingRef.current = adapter; setSharingAdapter(adapter);
       // Retain cached records unknown to this browser's catalog. Version checks
@@ -68,7 +69,7 @@ function JournalStatisticsSession({ connection, adapter, catalog, catalogReady, 
         });
     }, 1000);
     return () => clearTimeout(timer);
-  }, [adapter, catalogReady, shared, shareError, running, busy, files.length, summaryText]);
+  }, [adapter, catalogReady, shared, sharedText, shareError, running, busy, files.length, summaryText]);
 
   useEffect(() => {
     generation.current += 1;
@@ -87,6 +88,13 @@ function JournalStatisticsSession({ connection, adapter, catalog, catalogReady, 
       localStorage.setItem(storageKey, JSON.stringify({ ...stored, ...parseJournalStatisticsCache(loadedStatisticsText) }));
     } catch { /* Storage is optional; saving diaries never depends on it. */ }
   }, [storageKey, loadedStatisticsText]);
+
+  useEffect(() => {
+    if (!storageKey || !complete) return;
+    // Save counts, never private bodies. The next visit can display the full
+    // last-known summary before requests finish instead of just three entries.
+    try { localStorage.setItem(storageKey, JSON.stringify(JSON.parse(summaryText).files)); } catch { /* Optional display cache. */ }
+  }, [storageKey, complete, summaryText]);
 
   useEffect(() => {
     if (busy || !catalogReady) { generation.current += 1; queueMicrotask(() => setRunning(false)); }

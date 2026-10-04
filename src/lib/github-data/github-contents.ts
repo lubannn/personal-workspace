@@ -88,6 +88,7 @@ export type GitHubDirectoryItem = {
 };
 
 type ListedBlob = Pick<GitHubDirectoryItem, "path" | "blobSha" | "sizeBytes">;
+export type BlobReadOptions = { maxBatchFiles?: number; onBatch?: (files: GitHubStoredFile[]) => void };
 
 export type GitHubRepositoryStatus = {
   fullName: string;
@@ -176,6 +177,7 @@ export class GitHubContentsAdapter {
   // Private bodies live only for this authenticated adapter's lifetime. The SHA,
   // rather than the mutable path, determines whether a refresh can reuse a body.
   private readonly blobTextCache = new Map<string, Omit<GitHubStoredFile, "path">>();
+  private readonly journalTreeCache = new Map<string, GitHubRecursiveTreeResponse>();
   private graphQLAvailable: boolean | undefined;
   private graphQLFirstRead: Promise<GitHubStoredFile[] | null> | null = null;
   private graphQLFirstReadSignal: AbortSignal | undefined;
@@ -371,16 +373,19 @@ export class GitHubContentsAdapter {
     }
   }
 
-  private async readRestBlobBatch(files: readonly ListedBlob[], assertCurrent: () => void, signal?: AbortSignal) {
+  private async readRestBlobBatch(files: readonly ListedBlob[], assertCurrent: () => void, signal?: AbortSignal, onBatch?: BlobReadOptions["onBatch"]) {
     const records: GitHubStoredFile[] = [];
     for (let index = 0; index < files.length; index += BLOB_READ_CONCURRENCY) {
       assertCurrent();
-      records.push(...await Promise.all(files.slice(index, index + BLOB_READ_CONCURRENCY).map((file) => this.withBlobReadSlot(async () => {
+      const batch = await Promise.all(files.slice(index, index + BLOB_READ_CONCURRENCY).map((file) => this.withBlobReadSlot(async () => {
         assertCurrent();
         const stored = await this.readBlobText(file.path, file.blobSha, signal);
         if (stored.sizeBytes !== file.sizeBytes) throw new GitHubDataError("Unexpected GitHub blob size.", 500, "GITHUB_UNSUPPORTED_CONTENT");
         return stored;
-      }, signal))));
+      }, signal)));
+      assertCurrent();
+      records.push(...batch);
+      onBatch?.(batch);
     }
     return records;
   }
@@ -440,7 +445,10 @@ export class GitHubContentsAdapter {
     return records;
   }
 
-  async readBlobTexts(files: readonly ListedBlob[], isCurrent: () => boolean = () => true, signal?: AbortSignal): Promise<GitHubStoredFile[]> {
+  async readBlobTexts(files: readonly ListedBlob[], isCurrent: () => boolean = () => true, signal?: AbortSignal, options: BlobReadOptions = {}): Promise<GitHubStoredFile[]> {
+    const batchSize = options.maxBatchFiles ?? BLOB_QUERY_BATCH_SIZE;
+    if (!Number.isInteger(batchSize) || batchSize < 1 || batchSize > 40) throw new Error("INVALID_GITHUB_BLOB_BATCH_SIZE");
+    if (batchSize > BLOB_QUERY_BATCH_SIZE && files.length > BLOB_QUERY_BATCH_SIZE && files.reduce((sum, file) => sum + file.sizeBytes, 0) > 1024 * 1024) throw new Error("GITHUB_BLOB_BATCH_TOO_LARGE");
     let failed = false;
     const assertCurrent = () => {
       signal?.throwIfAborted();
@@ -457,8 +465,8 @@ export class GitHubContentsAdapter {
     const readNextBatches = async () => {
       while (nextIndex < missing.length) {
         assertCurrent();
-        const batch = missing.slice(nextIndex, nextIndex + BLOB_QUERY_BATCH_SIZE);
-        nextIndex += BLOB_QUERY_BATCH_SIZE;
+        const batch = missing.slice(nextIndex, nextIndex + batchSize);
+        nextIndex += batchSize;
         let records: GitHubStoredFile[] | null = null;
         while (this.graphQLAvailable === undefined && this.graphQLFirstRead) {
           const firstRead = this.graphQLFirstRead;
@@ -483,15 +491,17 @@ export class GitHubContentsAdapter {
           records = await this.readGraphQLBlobBatch(batch, assertCurrent, signal);
           if (records === null) this.graphQLAvailable = false;
         }
-        records ??= await this.readRestBlobBatch(batch, assertCurrent, signal);
+        const usedRest = records === null;
+        records ??= await this.readRestBlobBatch(batch, assertCurrent, signal, options.onBatch);
         assertCurrent();
         for (const record of records) this.blobTextCache.set(record.blobSha, { blobSha: record.blobSha, sizeBytes: record.sizeBytes, text: record.text });
+        if (!usedRest) options.onBatch?.(records);
       }
     };
     try {
       // Workers share the adapter's network slots with every other collection.
       // They all await the single capability probe before scheduling more work.
-      await Promise.all(Array.from({ length: Math.min(BLOB_READ_CONCURRENCY, Math.ceil(missing.length / BLOB_QUERY_BATCH_SIZE)) }, readNextBatches));
+      await Promise.all(Array.from({ length: Math.min(BLOB_READ_CONCURRENCY, Math.ceil(missing.length / batchSize)) }, readNextBatches));
     } catch (error) {
       failed = true;
       throw error;
@@ -536,6 +546,10 @@ export class GitHubContentsAdapter {
       }
       throw error;
     }
+    return this.validateJournalDirectoryTree(tree);
+  }
+
+  private validateJournalDirectoryTree(tree: GitHubRecursiveTreeResponse): GitHubRecursiveTreeResponse {
     if (tree?.truncated === true) throw new GitHubDataError("The GitHub repository tree is incomplete.", 500, "GITHUB_TREE_TRUNCATED");
     if (!tree || tree.truncated !== false || !Array.isArray(tree.tree)) {
       throw new GitHubDataError("Invalid GitHub directory tree.", 500, "GITHUB_INVALID_RESPONSE");
@@ -552,6 +566,63 @@ export class GitHubContentsAdapter {
       paths.add(item.path);
     }
     return tree;
+  }
+
+  private async readCachedJournalTree(treeSha: string): Promise<GitHubRecursiveTreeResponse> {
+    const memory = this.journalTreeCache.get(treeSha);
+    if (memory) return memory;
+    const key = `nexus-journal-directory-v1:${this.config.owner}/${this.config.repository}:${this.config.branch ?? "main"}`;
+    try {
+      const cached = JSON.parse(localStorage.getItem(key) ?? "null");
+      if (cached?.sha === treeSha && Number.isSafeInteger(cached.count) && cached.count === cached.tree?.tree?.length) {
+        const tree = this.validateJournalDirectoryTree(cached.tree);
+        this.journalTreeCache.set(treeSha, tree);
+        return tree;
+      }
+    } catch { /* An unavailable or corrupt optional metadata cache is fetched again. */ }
+    const tree = await this.readJournalDirectoryTree(treeSha);
+    this.journalTreeCache.clear();
+    this.journalTreeCache.set(treeSha, tree);
+    // Store filenames/SHAs/sizes only. Bodies and credentials remain in memory.
+    // A fresh authenticated parent read must match this immutable tree SHA on
+    // every visit; a changed, removed or inaccessible directory cannot reuse it.
+    try { localStorage.setItem(key, JSON.stringify({ sha: treeSha, count: tree.tree.length, tree })); } catch { /* Storage is optional. */ }
+    return tree;
+  }
+
+  /** UI inventory: read the small parent, then the complete immutable journal tree. */
+  async listJournalDirectory(): Promise<GitHubDirectoryItem[]> {
+    const ref = this.config.branch ?? "main";
+    let parent: GitHubDirectoryResponse;
+    try {
+      parent = await this.request<GitHubDirectoryResponse>(
+        `/repos/${encodeURIComponent(this.config.owner)}/${encodeURIComponent(this.config.repository)}/contents/data?ref=${encodeURIComponent(ref)}`,
+        { signal: blobReadSignal() }, false,
+      );
+    } catch (error) {
+      // A Contents 404 alone cannot distinguish a missing folder from a missing
+      // branch. Use the existing complete-tree checks to establish absence.
+      if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") return this.listDirectory("data/journal-entries");
+      throw error;
+    }
+    if (!Array.isArray(parent)) throw new GitHubDataError("Invalid GitHub parent directory.", 500, "GITHUB_INVALID_RESPONSE");
+    // Contents caps directory results at 1,000. Never infer absence from a list
+    // that may have reached that limit; the journal files themselves use Trees.
+    if (parent.length >= 1000) return this.listDirectory("data/journal-entries");
+    const names = new Set<string>();
+    for (const item of parent) {
+      if (!item || typeof item.name !== "string" || !item.name || [".", ".."].includes(item.name) || /[/\\]/u.test(item.name)
+        || /[\u0000-\u001f\u007f]/u.test(item.name) || names.has(item.name) || item.path !== `data/${item.name}`
+        || !["file", "dir", "symlink", "submodule"].includes(item.type) || typeof item.sha !== "string" || !/^[a-f0-9]{40}$/u.test(item.sha)
+        || !Number.isSafeInteger(item.size) || item.size < 0) throw new GitHubDataError("Invalid GitHub parent entry.", 500, "GITHUB_INVALID_RESPONSE");
+      names.add(item.name);
+    }
+    const directory = parent.find((item) => item.name === "journal-entries");
+    if (!directory) throw new GitHubDataError("GitHub directory not found.", 404, "GITHUB_NOT_FOUND");
+    if (directory.type !== "dir") throw new GitHubDataError("Expected a GitHub directory.", 500, "GITHUB_INVALID_RESPONSE");
+    const tree = await this.readCachedJournalTree(directory.sha);
+    return tree.tree.filter((item) => item.type === "blob" || item.type === "tree")
+      .map((item) => ({ type: item.type === "tree" ? "directory" as const : "file" as const, name: item.path, path: `data/journal-entries/${item.path}`, blobSha: item.sha, sizeBytes: item.size ?? 0 }));
   }
 
   async listDirectory(pathname: string, refOverride?: string): Promise<GitHubDirectoryItem[]> {
