@@ -45,7 +45,7 @@ export function HealthRecordsSection({ connected, timezone, loading, loaded, err
       <div><p className="eyebrow">Health · Records</p><h2 id="health-records-title">睡眠与运动</h2><p className="learning-subtitle">查看工作台已入库的记录。以下日期范围不代表 COROS 中的最新数据。</p></div>
       <button className="secondary-button health-records-refresh" type="button" onClick={onRefresh} disabled={!connected || loading}><RefreshCw size={13} aria-hidden="true" />{loading ? "读取中…" : error ? "重试读取" : "刷新已入库记录"}</button>
     </div>
-    <div className="health-records-sync-note"><span className="health-records-status-dot" aria-hidden="true" /><p>此处展示后台同步或手工录入后已保存的记录。刷新用于读取最新入库结果；COROS 同步进度和最近成功时间见下方连接状态。</p></div>
+    <div className="health-records-sync-note"><span className="health-records-status-dot" aria-hidden="true" /><p>此处展示 COROS 后台同步及已有的历史记录。刷新用于读取最新入库结果；COROS 同步进度和最近成功时间见下方连接状态。</p></div>
     {!connected ? <p className="health-records-empty">连接私人数据仓库后，即可查看记录数量、最早日期和完整列表。</p> : <>
       {error ? <p className="health-records-load-message health-records-load-error" role="alert">{loaded ? "本次刷新未完成，以下保留上次成功读取的记录；数量与日期可能不是最新。" : "健康记录读取未完成，暂时无法确认数量与最早日期。"}<span>{error}</span></p> : loading ? <p className="health-records-load-message" role="status">{loaded ? "正在刷新，以下为上次成功读取的记录。" : "正在读取全部健康记录，完成后显示数量与最早日期…"}</p> : !loaded ? <p className="health-records-empty" role="status">健康记录尚未读取，点击「刷新记录」查看。</p> : null}
       {canShowRecords ? <>
@@ -63,7 +63,7 @@ export function HealthRecordsSection({ connected, timezone, loading, loaded, err
           <div className="health-records-panels">
             <section className="health-records-panel health-records-sleep" aria-labelledby="health-records-sleep-title">
               <header><h3 id="health-records-sleep-title"><Moon size={16} aria-hidden="true" />睡眠记录</h3><span>{hasRange ? "筛选结果" : "全部"} {sleep.count} 段</span></header>
-              {sleep.count === 0 ? <div className="health-records-panel-empty"><Moon size={24} aria-hidden="true" /><strong>{hasRange ? "这段时间暂无睡眠记录" : "尚无已入库的睡眠记录"}</strong><p>{hasRange ? "调整日期范围，或查看全部日期。" : "COROS 睡眠同步入库后会显示在这里，也可在下方补充手工记录。"}</p></div> : <ol className="health-records-sleep-list">{sleep.rows.map((row) => {
+              {sleep.count === 0 ? <div className="health-records-panel-empty"><Moon size={24} aria-hidden="true" /><strong>{hasRange ? "这段时间暂无睡眠记录" : "尚无已入库的睡眠记录"}</strong><p>{hasRange ? "调整日期范围，或查看全部日期。" : "COROS 睡眠同步入库后会显示在这里。"}</p></div> : <ol className="health-records-sleep-list">{sleep.rows.map((row) => {
                 const start = healthLocalParts(row.startAt, row.timezone); const end = healthLocalParts(row.endAt, row.timezone);
                 const originalStart = row.dateCorrection ? healthLocalParts(row.dateCorrection.original_start_at, row.timezone) : null;
                 const originalEnd = row.dateCorrection ? healthLocalParts(row.dateCorrection.original_end_at, row.timezone) : null;
@@ -75,7 +75,7 @@ export function HealthRecordsSection({ connected, timezone, loading, loaded, err
             </section>
             <section className="health-records-panel health-records-workouts" aria-labelledby="health-records-workouts-title">
               <header><h3 id="health-records-workouts-title"><Activity size={16} aria-hidden="true" />运动记录</h3><span>{hasRange ? "筛选结果" : "全部"} {workout.count} 次</span></header>
-              {workout.count === 0 ? <div className="health-records-panel-empty"><Activity size={24} aria-hidden="true" /><strong>{hasRange ? "这段时间暂无运动记录" : "尚无已入库的运动记录"}</strong><p>{hasRange ? "调整日期范围，或查看全部日期。" : "COROS 运动同步或文件导入完成后，记录会显示在这里。"}</p></div> : <div className="health-records-table-scroll" role="region" aria-label="运动记录明细，可横向滚动" tabIndex={0}><table><thead><tr><th scope="col">开始时间 / 时区</th><th scope="col">运动</th><th scope="col">时长</th><th scope="col">距离</th><th scope="col">来源</th></tr></thead><tbody>{workout.rows.map((row) => {
+              {workout.count === 0 ? <div className="health-records-panel-empty"><Activity size={24} aria-hidden="true" /><strong>{hasRange ? "这段时间暂无运动记录" : "尚无已入库的运动记录"}</strong><p>{hasRange ? "调整日期范围，或查看全部日期。" : "COROS 运动同步入库后，记录会显示在这里。"}</p></div> : <div className="health-records-table-scroll" role="region" aria-label="运动记录明细，可横向滚动" tabIndex={0}><table><thead><tr><th scope="col">开始时间 / 时区</th><th scope="col">运动</th><th scope="col">时长</th><th scope="col">距离</th><th scope="col">来源</th></tr></thead><tbody>{workout.rows.map((row) => {
                 const start = healthLocalParts(row.startAt, row.timezone);
                 return <tr key={row.id}><td><time dateTime={row.startAt}>{start.date}<span>{start.time} · {safeHealthTimezone(row.timezone)}</span></time></td><td>{row.activity}</td><td>{formatHealthDuration(row.durationSeconds)}</td><td className={row.distanceMetres === null ? "health-records-missing" : undefined}>{formatHealthDistance(row.distanceMetres)}</td><td><span className="health-records-source">{row.source.label}</span></td></tr>;
               })}</tbody></table></div>}
