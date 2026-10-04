@@ -3121,6 +3121,7 @@ export default function GitHubWorkspacePage() {
 
       <WorkspaceTabPanel tab="health" activeTab={activeWorkspaceTab} mounted={workspaceTabReady && (activeWorkspaceTab === "health" || visitedWorkspaceTabs.has("health"))} key={connection ? `health:${connection.ownerId}:${connection.repository}` : "health:disconnected"}>
       <HealthRecordsSection
+        connectionMethod={connectionMethod}
         connected={connection !== null}
         timezone={connection?.timezone ?? "Asia/Shanghai"}
         loading={loadingHealth}

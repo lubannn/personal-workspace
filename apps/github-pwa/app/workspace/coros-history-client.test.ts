@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { initialSyncProgress } from "../../../auth-worker/src/coros-sync-state";
 import { drainCorosHistory } from "./coros-history-client";
 
 beforeEach(() => vi.useFakeTimers());
@@ -158,5 +159,47 @@ describe("explicit COROS history continuation", () => {
     await expect(drainCorosHistory(options(fetcher))).rejects.toThrow("Network unavailable");
     expect(fetcher).toHaveBeenCalledTimes(1);
     expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
+
+describe("immediate recent COROS update", () => {
+  it("drains recent sleep and workouts immediately and stops before historical backlog", async () => {
+    const progress = initialSyncProgress("2024-01-01", "Asia/Shanghai");
+    progress.request = { sequence: 2, through: "2024-02-01" };
+    progress.domains.sleep.recentRequestSequence = 2;
+    progress.domains.workout.recentRequestSequence = 1;
+    const complete = structuredClone(progress); complete.domains.workout.recentRequestSequence = 2;
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(response("requested"))
+      .mockResolvedValueOnce(Response.json({ status: "processed", progress }))
+      .mockResolvedValueOnce(Response.json({ status: "processed", progress: complete }));
+    const run = drainCorosHistory({ ...options(fetcher), recentOnly: true });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetcher.mock.calls.map(call => call[0])).toEqual(["/coros/sync", "/coros/drain"]);
+    await vi.advanceTimersByTimeAsync(250);
+    await expect(run).resolves.toMatchObject({ status: "complete" });
+    expect(fetcher).toHaveBeenCalledTimes(3);
+    expect(complete.domains.sleep.backfillNext).toBe("2024-01-01");
+  });
+  it("rechecks a busy task promptly rather than sleeping until the ten-minute lease ends", async () => {
+    vi.setSystemTime("2030-01-01T00:00:00Z");
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(response("requested"))
+      .mockResolvedValueOnce(Response.json({ status: "busy", retryAt: "2030-01-01T00:10:00Z" }))
+      .mockResolvedValueOnce(response("complete"));
+    const run = drainCorosHistory({ ...options(fetcher), recentOnly: true });
+    await vi.advanceTimersByTimeAsync(5000);
+    await expect(run).resolves.toMatchObject({ status: "complete" });
+    expect(fetcher).toHaveBeenCalledTimes(3);
+  });
+  it("limits immediate batch requests and stops on rate-limit errors", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(response("requested")).mockImplementation(async () => response("processed"));
+    const run = drainCorosHistory({ ...options(fetcher), recentOnly: true });
+    await vi.advanceTimersByTimeAsync(5000);
+    await expect(run).resolves.toMatchObject({ status: "limit" });
+    expect(fetcher).toHaveBeenCalledTimes(13);
+    const limited = vi.fn<typeof fetch>().mockResolvedValueOnce(response("requested"))
+      .mockResolvedValueOnce(Response.json({ status: "error", errorCode: "COROS_READ_RATE_LIMIT" }));
+    await expect(drainCorosHistory({ ...options(limited), recentOnly: true })).resolves.toMatchObject({ status: "error" });
+    expect(limited).toHaveBeenCalledTimes(2);
   });
 });

@@ -23,7 +23,7 @@ type CorosStatus = {
 };
 type CorosPreview = { machineReadable: boolean; format: "structured" | "content"; fields: string[]; blockTypes: string[] };
 type ViewState = "loading" | "unavailable" | "login-required" | "ready" | "error";
-type Mutation = "/coros/start" | "/coros/disconnect" | "/coros/enable" | "/coros/pause" | "/coros/sync";
+type Mutation = "/coros/start" | "/coros/disconnect" | "/coros/enable" | "/coros/pause";
 const COROS_AUTH_ORIGINS = new Set(["https://mcpcn.coros.com", "https://mcpeu.coros.com", "https://mcpus.coros.com"]);
 
 function corosAuthorizationUrl(value: unknown): string {
@@ -127,6 +127,12 @@ export function CorosConnectionSection({ connectionMethod }: { connectionMethod:
     return () => { window.clearInterval(timer); document.removeEventListener("visibilitychange", poll); };
   }, [refresh, status?.connected, status?.state]);
 
+  useEffect(() => {
+    const updated = () => { lastSyncAt.current = undefined; void refresh(true); };
+    window.addEventListener("coros-sync-updated", updated);
+    return () => window.removeEventListener("coros-sync-updated", updated);
+  }, [refresh]);
+
   async function backfillHistory() {
     if (busyRef.current || connectionMethod !== "github-app") return;
     const csrf = readCookie("__Host-pw_csrf");
@@ -191,7 +197,6 @@ export function CorosConnectionSection({ connectionMethod }: { connectionMethod:
         setMessage("已断开工作台与 COROS 的连接，停止后续同步。已入库的记录仍保留。");
       } else if (path === "/coros/enable") setMessage("已开启每日自动同步。每天首次登录或打开工作台时更新；首次会先读取最近记录，再分批补齐所选历史范围。");
       else if (path === "/coros/pause") setMessage("已暂停自动同步；正在处理的批次可能仍会完成。恢复后会接着已有进度继续。");
-      else setMessage("已请求额外更新，将在下一次后台处理时读取近期记录，通常在 10 分钟内开始。");
       await refresh();
     } catch { setMessage("操作结果暂时无法确认，请刷新状态后查看。已有记录仍保留。"); }
     finally { busyRef.current = false; setBusy(false); }
@@ -224,8 +229,7 @@ export function CorosConnectionSection({ connectionMethod }: { connectionMethod:
       </div>
       <div className="learning-view-actions">
         {view === "ready" && status ? !status.connected ? <button className="secondary-button" type="button" disabled={busy} onClick={() => void mutate("/coros/start")}>连接 COROS</button>
-          : enabled ? <button className="secondary-button" type="button" disabled={busy || !ready || status.sync?.running} onClick={() => void mutate("/coros/sync")}>额外更新</button>
-          : <button className="secondary-button" type="button" disabled={busy || !ready || (!progress && !validStartDate(startDate))} onClick={() => void mutate("/coros/enable")}>{progress ? "恢复自动更新" : "开启自动更新"}</button> : null}
+          : !enabled ? <button className="secondary-button" type="button" disabled={busy || !ready || (!progress && !validStartDate(startDate))} onClick={() => void mutate("/coros/enable")}>{progress ? "恢复自动更新" : "开启自动更新"}</button> : null : null}
       </div>
     </div>
     {view === "ready" && status?.connected ? <p className="coros-compact-meta">最近同步：{displayTime(status.lastSyncAt)} · 每天首次登录更新，以 COROS 最新数据为准</p> : null}
