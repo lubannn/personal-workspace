@@ -86,12 +86,19 @@ export class HealthArchiveReader {
     const sleepSessions = entries.filter((item): item is SyncedSleepSession => item.record.entity_type === "sleep_session");
     const candidates = entries.filter((item): item is SyncedWorkout => item.record.entity_type === "workout");
     const workouts = candidates.filter(item => item.record.data.workout_version === 2 || Boolean(sourceById.get(item.record.data.staging_record_id) && isWorkoutLinkedToStaging(item.record, sourceById.get(item.record.data.staging_record_id)!)));
+    // A body may arrive before its evidence during prefetch or a cancelled read.
+    // Only report a failed check once evidence was loaded, or is absent remotely.
+    const unverifiedWorkoutCount = candidates.filter(item => {
+      const data = item.record.data;
+      if (item.record.deleted_at !== null || workouts.includes(item) || data.workout_version !== 1) return false;
+      return sourceById.has(data.staging_record_id) || !this.catalog.has(recordPath("health_staging_record", data.staging_record_id));
+    }).length;
     const latest = (items: Canonical[]) => items.filter(item => item.record.deleted_at === null)
       .map(item => this.date(this.dates.get(item.path)!)).sort().at(-1) ?? null;
     return {
       months: this.months(), loadedMonths: [...this.completedMonths], month: this.month,
       sleepSessions, workouts, staging, latestSleep: latest(sleepSessions), latestWorkout: latest(workouts), latestReady: this.latestReady,
-      unverifiedWorkoutCount: candidates.filter(item => item.record.deleted_at === null && !workouts.includes(item)).length,
+      unverifiedWorkoutCount,
     };
   }
 
