@@ -148,6 +148,7 @@ import { WorkspaceModuleLoader, type WorkspaceCollectionLoaders } from "./worksp
 import { CaptureInboxSection, type CaptureOperation, type CaptureView } from "./workspace/capture-inbox-section";
 import { useCaptureDraft } from "./workspace/use-capture-draft";
 import { suggestCapture, updateCaptureDetails, type CaptureFields } from "../../../src/lib/github-data/capture-details";
+import { writeCaptureChange } from "../../../src/lib/github-data/capture-write";
 import { transferCapture } from "../../../src/lib/github-data/capture-transfer";
 import { prepareCaptureSubmission, writeCaptureSubmission, captureScheduleWindow, type CaptureSubmission } from "../../../src/lib/github-data/capture-routing";
 import type { CalendarEventRecord } from "../../../src/lib/github-data/calendar-events";
@@ -447,7 +448,11 @@ export default function GitHubWorkspacePage() {
   }, [captureFiles]);
 
   const archivedCaptures = useMemo(() => captureFiles.filter((item) => item.record.deleted_at === null && item.record.data.status === "archived").sort((left, right) => right.record.created_at.localeCompare(left.record.created_at)), [captureFiles]);
-  const visibleCaptures = captureView === "inbox" ? inboxCaptures : captureView === "archived" ? archivedCaptures : trashedCaptures;
+  const captureModules = useMemo(() => {
+    const split = (items: SyncedCapture[]) => ({ overview: items.filter((item) => item.record.data.kind !== "idea"), ideas: items.filter((item) => item.record.data.kind === "idea") });
+    return { inbox: split(inboxCaptures), archived: split(archivedCaptures), trash: split(trashedCaptures) };
+  }, [inboxCaptures, archivedCaptures, trashedCaptures]);
+  const visibleCaptureModule = captureView === "inbox" ? captureModules.inbox : captureView === "archived" ? captureModules.archived : captureModules.trash;
   const captureSuggestion = suggestCapture(capture, new Date(), workspaceTimezone);
   const captureKind = captureDraft.kind === "auto" ? captureSuggestion.kind : captureDraft.kind;
   const captureFields: CaptureFields = { rawText: capture, kind: captureKind, date: (captureDraft.date ?? (captureKind === "journal" ? currentTaskDate || localDateInTimezone(workspaceTimezone) : captureSuggestion.date)) || null, time: captureKind === "journal" ? null : (captureDraft.time ?? captureSuggestion.time) || null, endTime: (captureDraft.endTime ?? captureSuggestion.endTime) || null, timezone: workspaceTimezone };
@@ -729,9 +734,11 @@ export default function GitHubWorkspacePage() {
     setStatusMessage("");
     try {
       const updated = build();
-      const result = await adapter.writeText({ path: item.path, text: serializeRecord(updated), message: `capture: ${operation} ${item.record.id}`, expectedBlobSha: item.blobSha });
-      if (adapter !== adapterRef.current) return false;
-      setCaptureFiles((current) => current.map((candidate) => candidate.record.id === item.record.id ? { record: updated, path: result.path, blobSha: result.blobSha } : candidate));
+      const saved = await writeCaptureChange({
+        adapter, source: item, updated, operation, optimistic: operation !== "edit",
+        isCurrent: () => adapter === adapterRef.current, onChange: setCaptureFiles,
+      });
+      if (!saved) return false;
       setStatusMessage("随手记修改已保存，其他设备刷新后即可查看。");
       return true;
     } catch (error) {
@@ -2899,10 +2906,10 @@ export default function GitHubWorkspacePage() {
         connection={connection}
         online={online}
         captureView={captureView}
-        inboxCaptures={inboxCaptures.filter((item) => item.record.data.kind !== "idea")}
-        archivedCaptures={archivedCaptures.filter((item) => item.record.data.kind !== "idea")}
-        trashedCaptures={trashedCaptures.filter((item) => item.record.data.kind !== "idea")}
-        visibleCaptures={visibleCaptures.filter((item) => item.record.data.kind !== "idea")}
+        inboxCaptures={captureModules.inbox.overview}
+        archivedCaptures={captureModules.archived.overview}
+        trashedCaptures={captureModules.trash.overview}
+        visibleCaptures={visibleCaptureModule.overview}
         loadingCaptures={loadingCaptures}
         savingCaptureId={savingCaptureId}
         onEdit={editCapture}
@@ -2916,10 +2923,10 @@ export default function GitHubWorkspacePage() {
 
       <WorkspaceTabPanel tab="ideas" activeTab={activeWorkspaceTab} mounted={workspaceTabReady && (activeWorkspaceTab === "ideas" || visitedWorkspaceTabs.has("ideas"))} key={connection ? `ideas:${connection.ownerId}:${connection.repository}` : "ideas:disconnected"}>
         <CaptureInboxSection module="ideas" connection={connection} online={online} captureView={captureView}
-          inboxCaptures={inboxCaptures.filter((item) => item.record.data.kind === "idea")}
-          archivedCaptures={archivedCaptures.filter((item) => item.record.data.kind === "idea")}
-          trashedCaptures={trashedCaptures.filter((item) => item.record.data.kind === "idea")}
-          visibleCaptures={visibleCaptures.filter((item) => item.record.data.kind === "idea")}
+          inboxCaptures={captureModules.inbox.ideas}
+          archivedCaptures={captureModules.archived.ideas}
+          trashedCaptures={captureModules.trash.ideas}
+          visibleCaptures={visibleCaptureModule.ideas}
           loadingCaptures={loadingCaptures} savingCaptureId={savingCaptureId} onEdit={editCapture}
           onOpenDestination={selectWorkspaceTab} onViewChange={setCaptureView} onRefresh={() => loadRecentCaptures()} onLifecycleChange={updateCaptureLifecycle} />
       </WorkspaceTabPanel>

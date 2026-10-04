@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { CAPTURE_KINDS, captureMatches, suggestCapture, type CaptureFields } from "../../../../src/lib/github-data/capture-details";
 import { CAPTURE_DESTINATIONS } from "../../../../src/lib/github-data/capture-routing";
 import type { WorkspaceTabId } from "./workspace-tab-navigation";
@@ -56,17 +56,18 @@ export function CaptureInboxSection(props: Props) {
   const [query, setQuery] = useState("");
   const [limit, setLimit] = useState(20);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const matches = visibleCaptures.filter((item) => captureMatches(item.record, query));
+  const matches = useMemo(() => visibleCaptures.filter((item) => captureMatches(item.record, query)), [visibleCaptures, query]);
   const titleId = module === "ideas" ? "ideas-title" : "recent-title";
   return (
     <section className="recent-card" aria-labelledby={titleId}>
       <div className="card-heading">
         <div><p className="eyebrow">{module === "ideas" ? "Ideas" : "Quick capture inbox"}</p><h2 id={titleId}>{module === "ideas" ? "想法" : "待整理随手记"}</h2></div>
         <div className="recent-actions" aria-label={module === "ideas" ? "想法视图与同步" : "随手记视图与同步"}>
-          {([["inbox", "待整理", inboxCaptures.length], ["archived", "已归档", archivedCaptures.length], ["trash", "回收站", trashedCaptures.length]] as const).map(([view, label, count]) => <button key={view} className={`view-button ${captureView === view ? "active" : ""}`} type="button" disabled={Boolean(savingCaptureId) || editingId !== null} aria-pressed={captureView === view} onClick={() => { onViewChange(view); setLimit(20); setEditingId(null); }}>{label} {count}</button>)}
+          {([["inbox", "待整理", inboxCaptures.length], ["archived", "已归档", archivedCaptures.length], ["trash", "回收站", trashedCaptures.length]] as const).map(([view, label, count]) => <button key={view} className={`view-button ${captureView === view ? "active" : ""}`} type="button" disabled={editingId !== null} aria-pressed={captureView === view} onClick={() => { onViewChange(view); setLimit(20); setEditingId(null); }}>{label} {count}</button>)}
           <button className="secondary-button" type="button" onClick={onRefresh} disabled={!connection || online === false || loadingCaptures || Boolean(savingCaptureId) || editingId !== null}>{loadingCaptures ? "刷新中…" : "刷新记录"}</button>
         </div>
       </div>
+      {savingCaptureId ? <p className="capture-hint" role="status">正在同步随手记…完成后会显示保存结果。</p> : null}
       <div className="capture-search-toolbar">
         <label><span className="visually-hidden">{module === "ideas" ? "搜索想法内容或日期" : "搜索随手记内容、日期或星期"}</span><input type="search" disabled={editingId !== null} value={query} placeholder="搜索内容或日期…" onChange={(event) => { setQuery(event.target.value); setLimit(20); }} /></label>
 
@@ -83,9 +84,9 @@ export function CaptureInboxSection(props: Props) {
               <div className="capture-row-actions">
                 {item.record.data.routed_to ? <button className="view-button" type="button" onClick={() => onOpenDestination(item.record.data.routed_to!.tab)}>打开{item.record.data.routed_to.label}</button> : captureView !== "trash" ? <>
                   <button className="view-button" type="button" disabled={Boolean(savingCaptureId) || editingId !== null} onClick={() => setEditingId(item.record.id)}>编辑</button>
-                  <button className="view-button" type="button" disabled={Boolean(savingCaptureId) || online === false || editingId !== null} onClick={() => onLifecycleChange(item, captureView === "archived" ? "unarchive" : "archive")}>{captureView === "archived" ? "放回待整理" : "归档"}</button>
+                  <button className="view-button" type="button" disabled={Boolean(savingCaptureId) || loadingCaptures || online === false || editingId !== null} onClick={() => onLifecycleChange(item, captureView === "archived" ? "unarchive" : "archive")}>{captureView === "archived" ? "放回待整理" : "归档"}</button>
                 </> : null}
-                {!item.record.data.routed_to ? <button className={captureView === "trash" ? "restore-button" : "trash-button"} type="button" onClick={() => onLifecycleChange(item, captureView === "trash" ? "restore" : "trash")} disabled={Boolean(savingCaptureId) || online === false || editingId !== null}>{savingCaptureId === item.record.id ? "保存中…" : captureView === "trash" ? "恢复" : "移到回收站"}</button> : null}
+                {!item.record.data.routed_to ? <button className={captureView === "trash" ? "restore-button" : "trash-button"} type="button" onClick={() => onLifecycleChange(item, captureView === "trash" ? "restore" : "trash")} disabled={Boolean(savingCaptureId) || loadingCaptures || online === false || editingId !== null}>{savingCaptureId === item.record.id ? "同步中…" : captureView === "trash" ? "恢复" : "移到回收站"}</button> : null}
               </div>
             </li>)}</ul>}
       {connection && matches.length > 0 ? <div className="capture-list-footer"><span role="status">显示 {Math.min(limit, matches.length)} / {matches.length} 条</span>{limit < matches.length ? <button className="view-button" type="button" onClick={() => setLimit(limit + 20)}>加载更多</button> : null}</div> : null}
