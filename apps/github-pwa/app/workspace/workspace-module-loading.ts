@@ -5,6 +5,7 @@ import type { WorkspaceTabId } from "./workspace-tab-navigation";
 export const WORKSPACE_MODULE_COLLECTIONS = {
   overview: ["dashboard", "captures", "tasks", "projects", "milestones", "calendar", "journal"],
   journal: ["journal"],
+  ideas: ["captures"],
   tasks: ["tasks", "projects", "timeEntries"],
   calendar: ["calendar", "tasks"],
   projects: ["projects", "projectPhases", "milestones", "projectNotes", "projectFiles", "activity", "tasks"],

@@ -17,6 +17,7 @@ export type CaptureData = {
   noted_date?: string | null;
   noted_time?: string | null;
   timezone?: string;
+  routed_to?: { path: string; tab: "tasks" | "calendar" | "journal"; label: string; end_time?: string | null };
 };
 
 export type CaptureRecord = WorkspaceRecord<CaptureData>;
@@ -50,8 +51,18 @@ export function parseCaptureRecord(value: string): CaptureRecord {
     || (record.data.noted_time !== undefined && record.data.noted_time !== null && !isCaptureTime(record.data.noted_time))
     || (record.data.noted_time != null && record.data.noted_date == null)
     || (record.data.timezone !== undefined && !isCaptureTimezone(record.data.timezone))
+    || (record.data.routed_to !== undefined && !isCaptureRoute(record.data.routed_to))
   ) throw new Error("INVALID_CAPTURE_RECORD");
   return record as CaptureRecord;
+}
+
+function isCaptureRoute(value: unknown): value is NonNullable<CaptureData["routed_to"]> {
+  if (!value || typeof value !== "object") return false;
+  const link = value as Record<string, unknown>;
+  const folder = ({ tasks: "tasks", calendar: "calendar-events", journal: "journal-entries" } as Record<string, string>)[String(link.tab)];
+  return Boolean(folder) && typeof link.path === "string" && new RegExp(`^data/${folder}/[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}\\.json$`).test(link.path)
+    && typeof link.label === "string" && link.label.length > 0 && link.label.length <= 50
+    && (link.end_time == null || isCaptureTime(link.end_time));
 }
 
 export function newestCaptures(records: CaptureRecord[], limit = 6) {

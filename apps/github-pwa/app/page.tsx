@@ -148,6 +148,7 @@ import { WorkspaceModuleLoader, type WorkspaceCollectionLoaders } from "./worksp
 import { CaptureInboxSection, type CaptureOperation, type CaptureView } from "./workspace/capture-inbox-section";
 import { useCaptureDraft } from "./workspace/use-capture-draft";
 import { suggestCapture, updateCaptureDetails, type CaptureFields } from "../../../src/lib/github-data/capture-details";
+import { transferCapture } from "../../../src/lib/github-data/capture-transfer";
 import { prepareCaptureSubmission, writeCaptureSubmission, captureScheduleWindow, type CaptureSubmission } from "../../../src/lib/github-data/capture-routing";
 import type { CalendarEventRecord } from "../../../src/lib/github-data/calendar-events";
 import type { TaskRecord } from "../../../src/lib/github-data/tasks";
@@ -742,6 +743,7 @@ export default function GitHubWorkspacePage() {
   }
 
   async function updateCaptureLifecycle(item: SyncedCapture, operation: CaptureOperation) {
+    if (item.record.data.routed_to) return;
     await persistCaptureChange(item, () => {
       const timestamp = new Date().toISOString();
       return operation === "archive" || operation === "unarchive"
@@ -751,7 +753,32 @@ export default function GitHubWorkspacePage() {
   }
 
   async function editCapture(item: SyncedCapture, fields: CaptureFields) {
-    return persistCaptureChange(item, () => updateCaptureDetails(item.record, fields), "edit");
+    if (item.record.data.routed_to) return false;
+    if (fields.kind === "note" || fields.kind === "idea") {
+      const saved = await persistCaptureChange(item, () => updateCaptureDetails(item.record, fields), "edit");
+      if (saved && fields.kind === "idea") { setStatusMessage("已保存到顶部“想法”模块。"); selectWorkspaceTab("ideas"); }
+      return saved;
+    }
+    const adapter = adapterRef.current;
+    if (!adapter || !connection || captureWriteRef.current || online === false) return false;
+    captureWriteRef.current = true; setSavingCaptureId(item.record.id); setErrorMessage(""); setStatusMessage("");
+    try {
+      const result = await transferCapture(adapter, item, fields, { ownerId: connection.ownerId, timestamp: new Date().toISOString(), today: localDateInTimezone(connection.timezone) });
+      if (adapter !== adapterRef.current) return false;
+      setCaptureFiles((current) => current.map((candidate) => candidate.record.id === item.record.id ? result.source : candidate));
+      const synced = { record: result.destination.record, path: result.destination.path, blobSha: result.destinationBlobSha };
+      if (synced.record.entity_type === "task") {
+        setTaskFiles((current) => [{ ...synced, record: synced.record as TaskRecord }, ...current.filter((candidate) => candidate.record.id !== synced.record.id)]);
+        setTaskView("open");
+      } else if (synced.record.entity_type === "calendar_event") setCalendarEventFiles((current) => [{ ...synced, record: synced.record as CalendarEventRecord }, ...current.filter((candidate) => candidate.record.id !== synced.record.id)]);
+      else if (synced.record.entity_type === "journal_entry") rememberJournalEntry({ ...synced, record: synced.record as JournalEntryRecord }, adapter);
+      setStatusMessage(`已转入${result.destination.label}模块，原随手记已归档。`);
+      selectWorkspaceTab(result.destination.tab);
+      return true;
+    } catch (error) {
+      if (adapter === adapterRef.current) setErrorMessage(error instanceof Error && error.message === "JOURNAL_DATE_NOT_WRITABLE" ? "日记只能写今天或昨天，请调整日期；编辑内容已保留。" : error instanceof Error && error.message.startsWith("CAPTURE_") ? "请检查内容、日期和时间后重试；编辑内容已保留。" : friendlyError(error));
+      return false;
+    } finally { captureWriteRef.current = false; setSavingCaptureId(null); }
   }
 
   async function saveTask(event: FormEvent<HTMLFormElement>) {
@@ -2875,19 +2902,30 @@ export default function GitHubWorkspacePage() {
         connection={connection}
         online={online}
         captureView={captureView}
-        inboxCaptures={inboxCaptures}
-        archivedCaptures={archivedCaptures}
-        trashedCaptures={trashedCaptures}
-        visibleCaptures={visibleCaptures}
+        inboxCaptures={inboxCaptures.filter((item) => item.record.data.kind !== "idea")}
+        archivedCaptures={archivedCaptures.filter((item) => item.record.data.kind !== "idea")}
+        trashedCaptures={trashedCaptures.filter((item) => item.record.data.kind !== "idea")}
+        visibleCaptures={visibleCaptures.filter((item) => item.record.data.kind !== "idea")}
         loadingCaptures={loadingCaptures}
         savingCaptureId={savingCaptureId}
         onEdit={editCapture}
+        onOpenDestination={selectWorkspaceTab}
         onViewChange={setCaptureView}
         onRefresh={() => loadRecentCaptures()}
         onLifecycleChange={updateCaptureLifecycle}
       />
       </WorkspaceTabPanel>
 
+
+      <WorkspaceTabPanel tab="ideas" activeTab={activeWorkspaceTab} mounted={workspaceTabReady && (activeWorkspaceTab === "ideas" || visitedWorkspaceTabs.has("ideas"))} key={connection ? `ideas:${connection.ownerId}:${connection.repository}` : "ideas:disconnected"}>
+        <CaptureInboxSection module="ideas" connection={connection} online={online} captureView={captureView}
+          inboxCaptures={inboxCaptures.filter((item) => item.record.data.kind === "idea")}
+          archivedCaptures={archivedCaptures.filter((item) => item.record.data.kind === "idea")}
+          trashedCaptures={trashedCaptures.filter((item) => item.record.data.kind === "idea")}
+          visibleCaptures={visibleCaptures.filter((item) => item.record.data.kind === "idea")}
+          loadingCaptures={loadingCaptures} savingCaptureId={savingCaptureId} onEdit={editCapture}
+          onOpenDestination={selectWorkspaceTab} onViewChange={setCaptureView} onRefresh={() => loadRecentCaptures()} onLifecycleChange={updateCaptureLifecycle} />
+      </WorkspaceTabPanel>
 
       <WorkspaceTabPanel tab="calendar" activeTab={activeWorkspaceTab} mounted={workspaceTabReady && (activeWorkspaceTab === "calendar" || visitedWorkspaceTabs.has("calendar"))} key={connection ? `calendar:${connection.ownerId}:${connection.repository}` : "calendar:disconnected"}>
       <CalendarSection

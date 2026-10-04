@@ -43,7 +43,7 @@ export function targetRepositoryName(connection: Pick<Connection, "repository"> 
 
 export type SavedCapture = {
   label?: string;
-  tab?: "overview" | "tasks" | "calendar" | "journal";
+  tab?: "overview" | "tasks" | "calendar" | "journal" | "ideas";
   path: string;
   commitSha: string;
   text: string;
