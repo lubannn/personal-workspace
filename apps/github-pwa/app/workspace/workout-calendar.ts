@@ -1,9 +1,20 @@
 import { healthLocalParts, type WorkoutRecordRow } from "./health-records";
 import { shiftSleepMonth } from "./sleep-calendar";
 
-export const WORKOUT_COLORS = {
-  跑步: "run", 户外跑步: "run", 室内跑步: "run", 越野跑: "run", 操场跑步: "run", 骑行: "ride", 户外骑行: "ride", 室内骑行: "ride", 游泳: "swim", 泳池游泳: "swim", 公开水域游泳: "swim", 步行: "walk", 徒步: "walk", 力量训练: "strength",
-} as const;
+// Assign colors by the exact displayed name, independent of month, order or frequency.
+const ACTIVITY_HUES: Record<string, number> = {
+  "徒步": 145, "室内跑步": 190, "爬坡": 30, "步行": 85, "跳绳": 275,
+  "室内有氧": 355, "羽毛球": 220, "户外跑步": 120, "户外骑行": 55,
+  "超慢跑": 315, "室内骑行": 175, "力量训练": 15, "爬楼": 250,
+  "跑步": 105, "骑行": 65, "游泳": 200,
+};
+export function workoutActivityColor(activity: string) {
+  let hash = 2166136261;
+  for (const char of activity) hash = Math.imul(hash ^ char.codePointAt(0)!, 16777619) >>> 0;
+  const hue = ACTIVITY_HUES[activity] ?? hash % 360;
+  const saturation = ACTIVITY_HUES[activity] !== undefined ? 46 : 36 + (hash >>> 9) % 20;
+  return { backgroundColor: `hsl(${hue} ${saturation}% 91%)`, borderColor: `hsl(${hue} ${saturation}% 75%)`, color: `hsl(${hue} 40% 27%)` };
+}
 export type WorkoutCalendarDay = { date: string; workouts: WorkoutRecordRow[]; totalSeconds: number; tone: string };
 
 export function buildWorkoutCalendarDays(rows: WorkoutRecordRow[], timezone: string): WorkoutCalendarDay[] {
@@ -17,7 +28,7 @@ export function buildWorkoutCalendarDays(rows: WorkoutRecordRow[], timezone: str
     workouts.sort((a, b) => Date.parse(a.startAt) - Date.parse(b.startAt) || a.id.localeCompare(b.id));
     const activities = new Set(workouts.map(row => row.activity));
     return { date, workouts, totalSeconds: workouts.reduce((total, row) => total + row.durationSeconds, 0),
-      tone: activities.size > 1 ? "mixed" : WORKOUT_COLORS[workouts[0].activity as keyof typeof WORKOUT_COLORS] ?? "other" };
+      tone: activities.size > 1 ? "mixed" : "single" };
   }).sort((a, b) => a.date.localeCompare(b.date));
 }
 

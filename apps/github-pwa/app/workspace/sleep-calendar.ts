@@ -3,8 +3,8 @@ import { healthLocalParts, type SleepRecordRow } from "./health-records";
 export const SLEEP_GRADES = {
   excellent: { label: "优秀", range: "86–100" },
   good: { label: "良好", range: "75–85" },
-  fair: { label: "一般", range: "60–74" },
-  poor: { label: "欠佳", range: "0–59" },
+  fair: { label: "一般", range: "65–74" },
+  poor: { label: "欠佳", range: "0–64" },
   unscored: { label: "未评分", range: "" },
 } as const;
 export type SleepGrade = keyof typeof SLEEP_GRADES;
@@ -24,7 +24,7 @@ export type SleepCalendarDay = {
 
 export function sleepGrade(score: number | null): SleepGrade {
   if (score === null || !Number.isFinite(score) || score < 0 || score > 100) return "unscored";
-  return score >= 86 ? "excellent" : score >= 75 ? "good" : score >= 60 ? "fair" : "poor";
+  return score >= 86 ? "excellent" : score >= 75 ? "good" : score >= 65 ? "fair" : "poor";
 }
 
 export function buildSleepCalendarDays(rows: SleepRecordRow[]): SleepCalendarDay[] {
