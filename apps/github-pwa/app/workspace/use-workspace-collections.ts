@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState, type MutableRefObject } from "react";
+import { useCallback, useEffect, useRef, useState, type MutableRefObject } from "react";
 
 import { GitHubContentsAdapter, GitHubDataError, type GitHubDirectoryItem } from "../../../../src/lib/github-data/github-contents";
 import {
@@ -41,9 +41,10 @@ type Options = {
   setErrorMessage: (message: string) => void;
   setDashboardClean: () => void;
   timezone?: string;
+  healthVisible?: boolean;
 };
 
-export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashboardClean, timezone = "Asia/Shanghai" }: Options) {
+export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashboardClean, timezone = "Asia/Shanghai", healthVisible = true }: Options) {
   const [captureFiles, setCaptureFiles] = useState<SyncedCapture[]>([]);
   const [taskFiles, setTaskFiles] = useState<SyncedTask[]>([]);
   const [timeEntryFiles, setTimeEntryFiles] = useState<SyncedTimeEntry[]>([]);
@@ -86,6 +87,23 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
   const healthRequestRef = useRef<{ controller: AbortController; promise: Promise<boolean>; month?: string; refresh: boolean } | null>(null);
   const healthMonthRef = useRef("");
   const healthRefreshQueuedRef = useRef<Promise<boolean> | null>(null);
+  const healthPrefetchRef = useRef<{ controller: AbortController; timer: ReturnType<typeof setTimeout> } | null>(null);
+  const healthVisibleRef = useRef(healthVisible);
+  useEffect(() => {
+    healthVisibleRef.current = healthVisible;
+    if (!healthVisible && healthPrefetchRef.current) {
+      clearTimeout(healthPrefetchRef.current.timer);
+      healthPrefetchRef.current.controller.abort();
+      healthPrefetchRef.current = null;
+    }
+    return () => {
+      if (healthPrefetchRef.current) {
+        clearTimeout(healthPrefetchRef.current.timer);
+        healthPrefetchRef.current.controller.abort();
+        healthPrefetchRef.current = null;
+      }
+    };
+  }, [healthVisible]);
   const [healthArchive, setHealthArchive] = useState<HealthArchiveSnapshot | null>(null);
   const [dashboardLayout, setDashboardLayout] = useState<DashboardLayout | null>(null);
   const [dashboardBlobSha, setDashboardBlobSha] = useState<string | null>(null);
@@ -739,6 +757,7 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
 
   const loadHealthView = useCallback((adapter: GitHubContentsAdapter | null, month?: string, refresh = false): Promise<boolean> => {
     if (!adapter || adapter !== adapterRef.current) return Promise.resolve(false);
+    if (healthPrefetchRef.current) { clearTimeout(healthPrefetchRef.current.timer); healthPrefetchRef.current.controller.abort(); healthPrefetchRef.current = null; }
     if (healthReaderRef.current?.adapter !== adapter || healthReaderRef.current?.timezone !== timezone) {
       healthRequestRef.current?.controller.abort();
       healthReaderRef.current?.reader.dispose();
@@ -766,7 +785,17 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     setLoadingHealth(true); setHealthLoadError(""); setErrorMessage("");
     const promise = (async () => {
       try {
-        publish(await reader.load(month, { refresh, signal: controller.signal, onCatalog: publish, onProgress: publish }));
+        const snapshot = await reader.load(month, { refresh, signal: controller.signal, onCatalog: publish, onProgress: publish });
+        publish(snapshot);
+        if (current() && snapshot.month && healthVisibleRef.current) {
+          const prefetchController = new AbortController();
+          const timer = setTimeout(() => {
+            if (healthVisibleRef.current && document.visibilityState !== "hidden") {
+              void reader.prefetchNeighbors(snapshot.month, prefetchController.signal).catch(() => { /* Optional prefetch never blocks the visible month. */ });
+            }
+          }, 1000);
+          healthPrefetchRef.current = { controller: prefetchController, timer };
+        }
         return current();
       } catch (error) {
         if (!current()) return false;
@@ -796,6 +825,10 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     }
     return healthRefreshQueuedRef.current;
   }, [adapterRef, loadHealthView, timezone]);
+  const clearHealthCache = useCallback(async () => {
+    if (healthPrefetchRef.current) { clearTimeout(healthPrefetchRef.current.timer); healthPrefetchRef.current.controller.abort(); healthPrefetchRef.current = null; }
+    await healthReaderRef.current?.reader.clearLocalCache();
+  }, []);
   const loadHealthMonth = useCallback((month: string) => loadHealthView(adapterRef.current, month), [adapterRef, loadHealthView]);
 
   const loadProjectFileReferences = useCallback(async (adapter = adapterRef.current) => {
@@ -865,6 +898,7 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
 
   function clearCollections() {
     healthLoadRequestRef.current += 1;
+    if (healthPrefetchRef.current) { clearTimeout(healthPrefetchRef.current.timer); healthPrefetchRef.current.controller.abort(); healthPrefetchRef.current = null; }
     healthRequestRef.current?.controller.abort();
     healthRequestRef.current = null;
     healthReaderRef.current?.reader.dispose();
@@ -1025,6 +1059,7 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     loadHabitDomain,
     loadHealthDomain,
     loadHealthMonth,
+    clearHealthCache,
     loadDashboardLayout,
     clearCollections,
   };

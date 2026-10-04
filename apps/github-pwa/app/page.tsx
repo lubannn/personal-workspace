@@ -371,9 +371,10 @@ export default function GitHubWorkspacePage() {
     loadHabitDomain,
     loadHealthDomain,
     loadHealthMonth,
+    clearHealthCache,
     loadDashboardLayout,
     clearCollections,
-  } = useWorkspaceCollections({ adapterRef, setErrorMessage, setDashboardClean, timezone: connection?.timezone });
+  } = useWorkspaceCollections({ adapterRef, setErrorMessage, setDashboardClean, timezone: connection?.timezone, healthVisible: activeWorkspaceTab === "health" });
 
   useGitHubAppBootstrap({
     adapterRef,
@@ -3132,7 +3133,7 @@ export default function GitHubWorkspacePage() {
         staging={healthStagingFiles}
         onRefresh={() => void loadHealthDomain()}
       />
-      <CorosConnectionSection connectionMethod={connectionMethod} />
+      <CorosConnectionSection connectionMethod={connectionMethod} onClearHealthCache={clearHealthCache} cacheBusy={loadingHealth} />
       </WorkspaceTabPanel>
 
 

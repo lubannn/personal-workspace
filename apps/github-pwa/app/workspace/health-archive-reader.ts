@@ -1,9 +1,10 @@
-import { type GitHubContentsAdapter, type GitHubDirectoryItem } from "../../../../src/lib/github-data/github-contents";
+import { type GitHubContentsAdapter, type GitHubDirectoryItem, type GitHubStoredFile } from "../../../../src/lib/github-data/github-contents";
 import { COROS_SYNC_INDEX_PATH, corosSyncIndexEntry, parseCorosSyncIndexRecord, type CorosSyncIndexEntry } from "../../../../src/lib/github-data/coros-sync-index";
 import { parseSleepSessionRecord } from "../../../../src/lib/github-data/sleep-sessions";
 import { isWorkoutLinkedToStaging, parseWorkoutRecord } from "../../../../src/lib/github-data/workouts";
 import { parseHealthStagingRecord } from "../../../../src/lib/github-data/health-staging-records";
 import { recordPath } from "../../../../src/lib/github-data/protocol";
+import { EncryptedHealthBlobCache, type HealthBlobCache } from "../../../../src/lib/github-data/health-blob-cache";
 import { healthLocalParts } from "./health-records";
 import type { SyncedHealthStagingRecord, SyncedSleepSession, SyncedWorkout } from "./page-model";
 
@@ -16,7 +17,7 @@ type Canonical = SyncedSleepSession | SyncedWorkout;
 type DateHint = { path: string; blob_sha: string; kind: "sleep" | "workout"; date: string; deleted: boolean };
 type Reader = Pick<GitHubContentsAdapter, "listHealthArchive" | "readBlobTexts"> & Partial<Pick<GitHubContentsAdapter, "healthArchiveMetadataCacheKey">>;
 
-/** Like the journal reader: keep private bodies in the authenticated session, read months on demand. */
+/** Authenticate fresh metadata first; reuse encrypted local bodies by SHA and read months on demand. */
 export class HealthArchiveReader {
   private catalog = new Map<string, GitHubDirectoryItem>();
   private dates = new Map<string, DateHint>();
@@ -29,8 +30,52 @@ export class HealthArchiveReader {
   private month = "";
   private latestReady = false;
   private readonly lifetime = new AbortController();
+  private catalogVersion = 0;
+  private readonly bodyCache?: HealthBlobCache;
 
-  constructor(private readonly adapter: Reader, private readonly timezone = "Asia/Shanghai") {}
+  constructor(private readonly adapter: Reader, private readonly timezone = "Asia/Shanghai", cache?: HealthBlobCache) {
+    const scope = adapter.healthArchiveMetadataCacheKey?.("records");
+    this.bodyCache = cache ?? (scope ? new EncryptedHealthBlobCache(scope) : undefined);
+  }
+
+  async clearLocalCache() { await this.bodyCache?.clear(); }
+
+  async prefetchNeighbors(month: string, signal?: AbortSignal) {
+    const months = this.months();
+    const index = months.indexOf(month);
+    if (index < 0) return;
+    const version = this.catalogVersion;
+    for (const neighbor of [months[index - 1], months[index + 1]]) {
+      signal?.throwIfAborted(); this.lifetime.signal.throwIfAborted();
+      if (version !== this.catalogVersion) return;
+      if (!neighbor || this.completedMonths.has(neighbor)) continue;
+      const entries = [...this.dates.values()].filter(entry => !entry.deleted && this.date(entry).startsWith(`${neighbor}-`));
+      await this.loadEntries(entries, signal);
+      if (version !== this.catalogVersion) return;
+      this.completedMonths.add(neighbor);
+    }
+  }
+
+  private async readFiles(files: readonly GitHubDirectoryItem[], signal = this.lifetime.signal): Promise<GitHubStoredFile[]> {
+    const activeSignal = AbortSignal.any([signal, this.lifetime.signal]);
+    activeSignal.throwIfAborted();
+    const cached = await this.bodyCache?.read(files) ?? [];
+    activeSignal.throwIfAborted();
+    const byPath = new Map(cached.filter(file => files.some(item => item.path === file.path && item.blobSha === file.blobSha && item.sizeBytes === file.sizeBytes)).map(file => [file.path, file]));
+    const missing = files.filter(file => !byPath.has(file.path));
+    if (missing.length) {
+      const fresh = await this.adapter.readBlobTexts(missing, () => !activeSignal.aborted, activeSignal, { maxBatchFiles: 40 });
+      activeSignal.throwIfAborted();
+      if (fresh.length !== missing.length) throw new Error("HEALTH_ARCHIVE_INCOMPLETE_BATCH");
+      for (const file of fresh) {
+        if (!missing.some(item => item.path === file.path && item.blobSha === file.blobSha)) throw new Error("HEALTH_ARCHIVE_INCOMPLETE_BATCH");
+        byPath.set(file.path, file);
+      }
+      await this.bodyCache?.remember(fresh);
+      activeSignal.throwIfAborted();
+    }
+    return files.map(file => byPath.get(file.path)!);
+  }
 
   dispose() { this.lifetime.abort(); }
 
@@ -153,7 +198,7 @@ export class HealthArchiveReader {
     const unknown = canonical.filter(file => !dates.has(file.path));
     for (let offset = 0; offset < unknown.length; offset += 40) {
       const batch = unknown.slice(offset, offset + 40);
-      const read = await this.adapter.readBlobTexts(batch, () => !this.lifetime.signal.aborted, this.lifetime.signal, { maxBatchFiles: 40 });
+      const read = await this.readFiles(batch);
       for (const file of read) {
         if (!batch.some(item => item.path === file.path && item.blobSha === file.blobSha)) throw new Error("HEALTH_ARCHIVE_INCOMPLETE_BATCH");
         const entry = this.parseCanonical(file);
@@ -174,7 +219,7 @@ export class HealthArchiveReader {
     if (sourceChanged) this.completedMonths.clear();
     else for (const month of changedMonths) this.completedMonths.delete(month);
     this.latestReady = this.catalogReady && !sourceChanged && changedMonths.size === 0;
-    this.catalog = catalog; this.dates = dates; this.index = index; this.catalogReady = true;
+    this.catalog = catalog; this.dates = dates; this.index = index; this.catalogReady = true; this.catalogVersion += 1;
     const cacheKey = this.adapter.healthArchiveMetadataCacheKey?.(this.timezone);
     if (cacheKey) try { localStorage.setItem(cacheKey, JSON.stringify({ version: 1, count: dates.size, records: [...dates.values()] })); } catch { /* Metadata caching is optional. */ }
     for (const [path, entry] of this.entries) if (catalog.get(path)?.blobSha !== entry.blobSha) this.entries.delete(path);
@@ -194,11 +239,12 @@ export class HealthArchiveReader {
     const missing = entries.filter(entry => this.entries.get(entry.path)?.blobSha !== entry.blob_sha).map(entry => this.catalog.get(entry.path)!);
     for (let offset = 0; offset < missing.length; offset += 40) {
       const batch = missing.slice(offset, offset + 40);
-      const files = await this.adapter.readBlobTexts(batch, () => !signal?.aborted, signal, { maxBatchFiles: 40 });
+      const files = await this.readFiles(batch, signal);
       signal?.throwIfAborted();
       if (files.length !== batch.length) throw new Error("HEALTH_ARCHIVE_INCOMPLETE_BATCH");
       for (const file of files) {
         if (!batch.some(item => item.path === file.path && item.blobSha === file.blobSha)) throw new Error("HEALTH_ARCHIVE_INCOMPLETE_BATCH");
+        if (this.catalog.get(file.path)?.blobSha !== file.blobSha) throw new DOMException("Health catalog changed.", "AbortError");
         this.entries.set(file.path, this.parseCanonical(file));
       }
     }
@@ -212,7 +258,7 @@ export class HealthArchiveReader {
     });
     const unique = [...new Map(sources.map(file => [file.path, file])).values()];
     if (unique.length) {
-      const files = await this.adapter.readBlobTexts(unique, () => !signal?.aborted, signal, { maxBatchFiles: 40 });
+      const files = await this.readFiles(unique, signal);
       signal?.throwIfAborted();
       if (files.length !== unique.length) throw new Error("HEALTH_ARCHIVE_INCOMPLETE_BATCH");
       for (const file of files) {
@@ -220,6 +266,7 @@ export class HealthArchiveReader {
         try {
           const record = parseHealthStagingRecord(file.text);
           if (recordPath(record.entity_type, record.id) !== file.path) throw new Error();
+          if (this.catalog.get(file.path)?.blobSha !== file.blobSha) throw new DOMException("Health catalog changed.", "AbortError");
           this.sources.set(file.path, { record, path: file.path, blobSha: file.blobSha });
         } catch { throw new Error("HEALTH_RECORD_INVALID"); }
       }

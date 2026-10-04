@@ -55,10 +55,11 @@ function validStartDate(value: string) {
   return value <= today;
 }
 
-export function CorosConnectionSection({ connectionMethod }: { connectionMethod: ConnectionMethod | null }) {
+export function CorosConnectionSection({ connectionMethod, onClearHealthCache, cacheBusy = false }: { connectionMethod: ConnectionMethod | null; onClearHealthCache?: () => Promise<void>; cacheBusy?: boolean }) {
   const [view, setView] = useState<ViewState>("loading");
   const [status, setStatus] = useState<CorosStatus | null>(null);
   const [busy, setBusy] = useState(false);
+  const [clearingCache, setClearingCache] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
   const [message, setMessage] = useState("");
@@ -260,6 +261,10 @@ export function CorosConnectionSection({ connectionMethod }: { connectionMethod:
           {status?.connected ? <>
             {enabled ? <><button className="secondary-button" type="button" disabled={busy || !ready} onClick={() => void backfillHistory()}>补齐历史</button><button className="secondary-button" type="button" disabled={busy} onClick={() => void mutate("/coros/pause")}>暂停自动更新</button></> : <button className="secondary-button" type="button" disabled={busy} onClick={() => void previewOneDay()}>检查读取连接</button>}
             {lastError?.includes("重新连接") ? <button className="secondary-button" type="button" disabled={busy} onClick={() => void mutate("/coros/start")}>重新连接</button> : null}
+            {onClearHealthCache ? <button className="secondary-button" type="button" disabled={busy || clearingCache || cacheBusy} onClick={() => {
+              setClearingCache(true);
+              void onClearHealthCache().then(() => setMessage("已清除本机月历缓存，GitHub 中的记录仍保留。")).catch(() => setMessage("本机缓存暂未清除，请稍后重试。")).finally(() => setClearingCache(false));
+            }}>{clearingCache ? "清除中…" : "清除本机月历缓存"}</button> : null}
             {confirmDisconnect ? <><button className="danger-button" type="button" disabled={busy} onClick={() => void mutate("/coros/disconnect")}>确认断开</button><button className="secondary-button" type="button" disabled={busy} onClick={() => setConfirmDisconnect(false)}>取消</button></>
               : <button className="danger-outline-button" type="button" disabled={busy} onClick={() => setConfirmDisconnect(true)}>断开连接</button>}
           </> : null}
