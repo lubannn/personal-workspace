@@ -145,7 +145,14 @@ import { useOnlineStatus } from "./workspace/use-online-status";
 import { useWorkspaceCollections } from "./workspace/use-workspace-collections";
 import { useGitHubAppBootstrap } from "./workspace/use-github-app-bootstrap";
 import { WorkspaceModuleLoader, type WorkspaceCollectionLoaders } from "./workspace/workspace-module-loading";
-import { CaptureInboxSection } from "./workspace/capture-inbox-section";
+import { CaptureInboxSection, type CaptureOperation, type CaptureView } from "./workspace/capture-inbox-section";
+import { useCaptureDraft } from "./workspace/use-capture-draft";
+import { suggestCapture, updateCaptureDetails, type CaptureFields } from "../../../src/lib/github-data/capture-details";
+import { prepareCaptureSubmission, writeCaptureSubmission, captureScheduleWindow, type CaptureSubmission } from "../../../src/lib/github-data/capture-routing";
+import type { CalendarEventRecord } from "../../../src/lib/github-data/calendar-events";
+import type { TaskRecord } from "../../../src/lib/github-data/tasks";
+import type { JournalEntryRecord } from "../../../src/lib/github-data/journal-entries";
+import type { CaptureRecord } from "../../../src/lib/github-data/workspace";
 import { DashboardSection } from "./workspace/dashboard-section";
 import { AuthSection } from "./workspace/auth-section";
 import { CorosConnectionSection } from "./workspace/coros-connection-section";
@@ -185,8 +192,11 @@ export default function GitHubWorkspacePage() {
   const [restoring, setRestoring] = useState(false);
   const [confirmingRevokeAll, setConfirmingRevokeAll] = useState(false);
   const [revokingAll, setRevokingAll] = useState(false);
-  const [capture, setCapture] = useState("");
-  const [captureView, setCaptureView] = useState<"inbox" | "trash">("inbox");
+  const { draft: captureDraft, updateDraft: updateCaptureDraft, clearDraft: clearCaptureDraft, storageFailed: captureStorageFailed } = useCaptureDraft(connection?.repository ?? `${owner}/${repository}`);
+  const capture = captureDraft.text;
+  const captureWriteRef = useRef(false);
+  const captureSubmissionRef = useRef<{ fingerprint: string; submission: CaptureSubmission } | null>(null);
+  const [captureView, setCaptureView] = useState<CaptureView>("inbox");
   const [taskTitle, setTaskTitle] = useState("");
   const [taskCategory, setTaskCategory] = useState<TaskCategory>("work");
   const [taskPriority, setTaskPriority] = useState<TaskPriority>("medium");
@@ -422,19 +432,23 @@ export default function GitHubWorkspacePage() {
 
   const inboxCaptures = useMemo(() => {
     const byId = new Map(captureFiles.map((item) => [item.record.id, item]));
-    return newestCaptures(captureFiles.map((item) => item.record), 20)
+    return newestCaptures(captureFiles.map((item) => item.record).filter((record) => record.data.status === "inbox"), captureFiles.length)
       .map((record) => byId.get(record.id))
       .filter((item): item is SyncedCapture => Boolean(item));
   }, [captureFiles]);
 
   const trashedCaptures = useMemo(() => {
     const byId = new Map(captureFiles.map((item) => [item.record.id, item]));
-    return newestTrashedCaptures(captureFiles.map((item) => item.record), 20)
+    return newestTrashedCaptures(captureFiles.map((item) => item.record), captureFiles.length)
       .map((record) => byId.get(record.id))
       .filter((item): item is SyncedCapture => Boolean(item));
   }, [captureFiles]);
 
-  const visibleCaptures = captureView === "inbox" ? inboxCaptures : trashedCaptures;
+  const archivedCaptures = useMemo(() => captureFiles.filter((item) => item.record.deleted_at === null && item.record.data.status === "archived").sort((left, right) => right.record.created_at.localeCompare(left.record.created_at)), [captureFiles]);
+  const visibleCaptures = captureView === "inbox" ? inboxCaptures : captureView === "archived" ? archivedCaptures : trashedCaptures;
+  const captureSuggestion = suggestCapture(capture, new Date(), workspaceTimezone);
+  const captureKind = captureDraft.kind === "auto" ? captureSuggestion.kind : captureDraft.kind;
+  const captureFields: CaptureFields = { rawText: capture, kind: captureKind, date: (captureDraft.date ?? (captureKind === "journal" ? currentTaskDate || localDateInTimezone(workspaceTimezone) : captureSuggestion.date)) || null, time: captureKind === "journal" ? null : (captureDraft.time ?? captureSuggestion.time) || null, endTime: (captureDraft.endTime ?? captureSuggestion.endTime) || null, timezone: workspaceTimezone };
   const openTaskFiles = useMemo(() => {
     const byId = new Map(taskFiles.map((item) => [item.record.id, item]));
     return openTasks(taskFiles.map((item) => item.record))
@@ -593,7 +607,8 @@ export default function GitHubWorkspacePage() {
     setConnection(null);
     setConnectionMethod(null);
     setToken("");
-    setCapture("");
+    clearCaptureDraft();
+    captureSubmissionRef.current = null;
     clearCollections();
     setTaskTitle("");
     setTaskProjectId("");
@@ -666,68 +681,77 @@ export default function GitHubWorkspacePage() {
   async function saveCapture() {
     const adapter = adapterRef.current;
     const text = capture.trim();
-    if (!adapter || !connection || !text || saving || online === false) return;
+    if (!adapter || !connection || !text || captureWriteRef.current || online === false) return;
+    captureWriteRef.current = true;
     setSaving(true);
     setErrorMessage("");
     setStatusMessage("");
-    const timestamp = new Date().toISOString();
-    const timePart = timestamp.replaceAll(/\D/g, "").slice(0, 17);
-    const id = `capture_${timePart}_${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`;
-    const record = createWorkspaceRecord({
-      entityType: "capture",
-      id,
-      ownerId: connection.ownerId,
-      timestamp,
-      data: { raw_text: text, status: "inbox" as const },
-    });
-    const path = recordPath("capture", id);
     try {
-      const result = await adapter.writeText({
-        path,
-        text: serializeRecord(record),
-        message: `capture: save ${id}`,
-      });
-      setCapture("");
-      setSavedCapture({ path: result.path, commitSha: result.commitSha, text });
-      setCaptureFiles((current) => [{ record, path: result.path, blobSha: result.blobSha }, ...current]);
-      setStatusMessage("已保存到 Private 数据仓库，可在其他设备刷新后读取。");
+      const fingerprint = JSON.stringify({ repository: connection.repository, ownerId: connection.ownerId, fields: captureFields });
+      const retry = captureSubmissionRef.current?.fingerprint === fingerprint;
+      if (!retry) {
+        const timestamp = new Date().toISOString();
+        const suffix = `${timestamp.replaceAll(/\D/g, "").slice(0, 17)}_${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`;
+        captureSubmissionRef.current = { fingerprint, submission: prepareCaptureSubmission(captureFields, { ownerId: connection.ownerId, suffix, timestamp, today: localDateInTimezone(connection.timezone) }) };
+      }
+      const submission = captureSubmissionRef.current!.submission;
+      const result = await writeCaptureSubmission(adapter, submission, retry);
+      if (adapter !== adapterRef.current) return;
+      const synced = { record: submission.record, path: result.path, blobSha: result.blobSha };
+      if (synced.record.entity_type === "task") {
+        setTaskFiles((current) => [{ ...synced, record: synced.record as TaskRecord }, ...current.filter((item) => item.record.id !== synced.record.id)]);
+        setTaskView("open");
+      }
+      else if (synced.record.entity_type === "calendar_event") setCalendarEventFiles((current) => [{ ...synced, record: synced.record as CalendarEventRecord }, ...current.filter((item) => item.record.id !== synced.record.id)]);
+      else if (synced.record.entity_type === "journal_entry") rememberJournalEntry({ ...synced, record: synced.record as JournalEntryRecord }, adapter);
+      else setCaptureFiles((current) => [{ ...synced, record: synced.record as CaptureRecord }, ...current.filter((item) => item.record.id !== synced.record.id)]);
+      clearCaptureDraft(captureDraft);
+      captureSubmissionRef.current = null;
+      setSavedCapture({ path: result.path, commitSha: result.commitSha, text, label: submission.label, tab: submission.tab });
+      setCaptureView("inbox");
+      setStatusMessage(`已保存到${submission.label}，其他设备刷新后可读取。`);
     } catch (error) {
-      setErrorMessage(friendlyError(error));
+      if (adapter === adapterRef.current) setErrorMessage(error instanceof Error && error.message === "JOURNAL_DATE_NOT_WRITABLE" ? "日记只能写今天或昨天，请调整日记日期。草稿已保留。" : error instanceof Error && error.message.startsWith("CAPTURE_") ? "请检查内容、日期和时间后重试。草稿已保留。" : friendlyError(error));
     } finally {
+      captureWriteRef.current = false;
       setSaving(false);
     }
   }
 
-  async function updateCaptureLifecycle(item: SyncedCapture, operation: "trash" | "restore") {
+  async function persistCaptureChange(item: SyncedCapture, build: () => CaptureRecord, operation: string) {
     const adapter = adapterRef.current;
-    if (!adapter || !connection || savingCaptureId || online === false) return;
+    if (!adapter || !connection || captureWriteRef.current || online === false) return false;
+    captureWriteRef.current = true;
     setSavingCaptureId(item.record.id);
     setErrorMessage("");
     setStatusMessage("");
-    const timestamp = new Date().toISOString();
-    const updated = setWorkspaceRecordDeleted(
-      item.record,
-      operation === "trash" ? timestamp : null,
-      timestamp,
-    );
     try {
-      const result = await adapter.writeText({
-        path: item.path,
-        text: serializeRecord(updated),
-        message: `capture: ${operation} ${item.record.id}`,
-        expectedBlobSha: item.blobSha,
-      });
-      setCaptureFiles((current) => current.map((candidate) => candidate.record.id === item.record.id
-        ? { record: updated, path: result.path, blobSha: result.blobSha }
-        : candidate));
-      setStatusMessage(operation === "trash"
-        ? "Capture 已移到回收站；可随时恢复，Git 历史仍保留原版本。"
-        : "Capture 已恢复到 Inbox。请在其他设备刷新后查看最新状态。");
+      const updated = build();
+      const result = await adapter.writeText({ path: item.path, text: serializeRecord(updated), message: `capture: ${operation} ${item.record.id}`, expectedBlobSha: item.blobSha });
+      if (adapter !== adapterRef.current) return false;
+      setCaptureFiles((current) => current.map((candidate) => candidate.record.id === item.record.id ? { record: updated, path: result.path, blobSha: result.blobSha } : candidate));
+      setStatusMessage("随手记修改已保存，其他设备刷新后即可查看。");
+      return true;
     } catch (error) {
-      setErrorMessage(friendlyError(error));
+      if (adapter === adapterRef.current) setErrorMessage(friendlyError(error));
+      return false;
     } finally {
+      captureWriteRef.current = false;
       setSavingCaptureId(null);
     }
+  }
+
+  async function updateCaptureLifecycle(item: SyncedCapture, operation: CaptureOperation) {
+    await persistCaptureChange(item, () => {
+      const timestamp = new Date().toISOString();
+      return operation === "archive" || operation === "unarchive"
+        ? updateWorkspaceRecord(item.record, { ...item.record.data, status: operation === "archive" ? "archived" : "inbox" }, timestamp)
+        : setWorkspaceRecordDeleted(item.record, operation === "trash" ? timestamp : null, timestamp);
+    }, operation);
+  }
+
+  async function editCapture(item: SyncedCapture, fields: CaptureFields) {
+    return persistCaptureChange(item, () => updateCaptureDetails(item.record, fields), "edit");
   }
 
   async function saveTask(event: FormEvent<HTMLFormElement>) {
@@ -848,16 +872,18 @@ export default function GitHubWorkspacePage() {
     setErrorMessage("");
     setStatusMessage("");
     try {
-      const updated = updateCalendarEventDetails(item.record, {
+      const window = captureScheduleWindow(fields.localDate, fields.allDay ? null : fields.startTime, fields.allDay ? null : fields.endTime, connection.timezone);
+      const modified = updateCalendarEventDetails(item.record, {
         title: fields.title,
         eventType: fields.eventType,
-        startAt: localDateTimeToIso(fields.localDate, fields.startTime, connection.timezone),
-        endAt: localDateTimeToIso(fields.localDate, fields.endTime, connection.timezone),
+        startAt: window.startAt,
+        endAt: window.endAt,
         timezone: connection.timezone,
         localDate: fields.localDate,
         linkedTaskId: fields.linkedTaskId,
         reminderOffsetsMinutes: fields.reminderOffsetsMinutes,
       });
+      const updated = { ...modified, data: { ...modified.data, all_day: window.allDay, local_end_date: window.localEndDate } };
       const result = await adapter.writeText({
         path: item.path,
         text: serializeRecord(updated),
@@ -2812,8 +2838,11 @@ export default function GitHubWorkspacePage() {
         savingDashboard={savingDashboard}
         visibleWidgets={visibleDashboardWidgets}
         hiddenWidgets={hiddenDashboardWidgets}
-        capture={capture}
-        savingCapture={saving}
+        captureDraft={captureDraft}
+        captureFields={captureFields}
+        captureSuggestion={captureSuggestion}
+        captureStorageFailed={captureStorageFailed}
+        savingCapture={saving || Boolean(savingCaptureId)}
         savedCapture={savedCapture}
         todayTasks={todayTaskFiles}
         currentProjects={currentProjectFiles}
@@ -2834,20 +2863,25 @@ export default function GitHubWorkspacePage() {
         onWidgetChange={changeDashboardWidget}
         onWidgetResize={resizeDashboardWidget}
         onReset={resetDashboardToDefault}
-        onCaptureChange={setCapture}
+        onCaptureChange={updateCaptureDraft}
+        onClearCapture={clearCaptureDraft}
         onSaveCapture={saveCapture}
+        onOpenSavedCapture={() => selectWorkspaceTab(savedCapture?.tab ?? "overview")}
         onCompleteTask={(item) => updateTaskLifecycle(item, "complete")}
       />
 
       <CaptureInboxSection
+        key={connection?.repository ?? "disconnected"}
         connection={connection}
         online={online}
         captureView={captureView}
         inboxCaptures={inboxCaptures}
+        archivedCaptures={archivedCaptures}
         trashedCaptures={trashedCaptures}
         visibleCaptures={visibleCaptures}
         loadingCaptures={loadingCaptures}
         savingCaptureId={savingCaptureId}
+        onEdit={editCapture}
         onViewChange={setCaptureView}
         onRefresh={() => loadRecentCaptures()}
         onLifecycleChange={updateCaptureLifecycle}

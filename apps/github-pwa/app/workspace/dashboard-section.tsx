@@ -7,6 +7,10 @@ import { recentJournalEntries } from "../../../../src/lib/github-data/journal-en
 import { journalDisplayPreview } from "../../../../src/lib/github-data/journal-display";
 import { formatTaskDue, type Connection, type SavedCapture, type SyncedCalendarEvent, type SyncedJournalEntry, type SyncedMilestone, type SyncedProject, type SyncedTask } from "./page-model";
 
+import { CaptureComposer } from "./capture-composer";
+import type { CaptureDraft } from "./use-capture-draft";
+import type { CaptureFields, CaptureSuggestion } from "../../../../src/lib/github-data/capture-details";
+
 type WidgetDefinition = { eyebrow: string; title: string; empty: string };
 
 const WIDGETS: Record<string, WidgetDefinition> = {
@@ -33,7 +37,10 @@ type Props = {
   savingDashboard: boolean;
   visibleWidgets: DashboardWidgetConfig[];
   hiddenWidgets: DashboardWidgetConfig[];
-  capture: string;
+  captureDraft: CaptureDraft;
+  captureFields: CaptureFields;
+  captureSuggestion: CaptureSuggestion;
+  captureStorageFailed: boolean;
   savingCapture: boolean;
   savedCapture: SavedCapture | null;
   todayTasks: SyncedTask[];
@@ -55,13 +62,15 @@ type Props = {
   onWidgetChange: (widget: DashboardWidgetConfig, operation: "up" | "down" | "hide" | "show") => void;
   onWidgetResize: (widget: DashboardWidgetConfig, size: DashboardWidgetSize) => void;
   onReset: () => void;
-  onCaptureChange: (value: string) => void;
+  onCaptureChange: (patch: Partial<CaptureDraft>) => void;
+  onClearCapture: () => void;
   onSaveCapture: () => void;
+  onOpenSavedCapture: () => void;
   onCompleteTask: (item: SyncedTask) => void;
 };
 
 export function DashboardSection(props: Props) {
-  const { connection, online, dashboardLayout, dashboardBlobSha, dashboardDirty, editingDashboard, loadingDashboard, savingDashboard, visibleWidgets, hiddenWidgets, capture, savingCapture, savedCapture, todayTasks, currentProjects, projectTasks, projectMilestones, calendarEvents, journalEntries, loadingTasks, loadingProjects, loadingMilestones, loadingCalendarEvents, loadingJournalEntries, savingTaskId, currentTaskDate, onToggleEditing, onRefresh, onSaveLayout, onWidgetChange, onWidgetResize, onReset, onCaptureChange, onSaveCapture, onCompleteTask } = props;
+  const { connection, online, dashboardLayout, dashboardBlobSha, dashboardDirty, editingDashboard, loadingDashboard, savingDashboard, visibleWidgets, hiddenWidgets, captureDraft, captureFields, captureSuggestion, captureStorageFailed, savingCapture, savedCapture, todayTasks, currentProjects, projectTasks, projectMilestones, calendarEvents, journalEntries, loadingTasks, loadingProjects, loadingMilestones, loadingCalendarEvents, loadingJournalEntries, savingTaskId, currentTaskDate, onToggleEditing, onRefresh, onSaveLayout, onWidgetChange, onWidgetResize, onReset, onCaptureChange, onClearCapture, onSaveCapture, onOpenSavedCapture, onCompleteTask } = props;
   const todayCalendarEvents = currentTaskDate
     ? calendarEventsForDate(calendarEvents.map((item) => item.record), currentTaskDate)
     : [];
@@ -105,17 +114,16 @@ export function DashboardSection(props: Props) {
                 </div>
               ) : null}
               {widget.widget_type === "quick_capture" ? (
-                <div className="widget-capture">
-                  <textarea value={capture} onChange={(event) => onCaptureChange(event.target.value)} placeholder={connection ? "任务、想法、提醒，先记下来再整理…" : "连接 Private 数据仓库后即可保存…"} maxLength={10_000} disabled={!connection || savingCapture} />
-                  <footer><span>{capture.length} / 10,000</span><button type="button" onClick={onSaveCapture} disabled={!connection || !capture.trim() || savingCapture || online === false}>{savingCapture ? "正在保存…" : "保存 Capture"}</button></footer>
-                  {savedCapture ? <div className="file-preview"><code>{savedCapture.path}</code><p>{savedCapture.text}</p><span className="commit-note">Commit {savedCapture.commitSha.slice(0, 8)} · Private repository</span></div> : <p className="widget-empty">每次保存生成开放 JSON 文件和一条 Git 历史记录。</p>}
+                <div>
+                  <CaptureComposer draft={captureDraft} fields={captureFields} suggestion={captureSuggestion} saving={savingCapture} connected={Boolean(connection)} online={online} storageFailed={captureStorageFailed} onChange={onCaptureChange} onSave={onSaveCapture} onClear={onClearCapture} />
+                  {savedCapture ? <p className="capture-hint" role="status">已保存到{savedCapture.label ?? "随手记"}。<button className="view-button" type="button" onClick={onOpenSavedCapture}>打开{savedCapture.label ?? "随手记"}</button></p> : null}
                 </div>
               ) : widget.widget_type === "today_schedule" ? (
                 <div className="today-task-widget today-schedule-widget">
                   {!connection ? <p className="widget-empty">连接 Private 数据仓库后显示今日日程。</p>
                     : loadingCalendarEvents ? <p className="widget-empty">正在读取今日日程…</p>
                       : todayCalendarEvents.length === 0 ? <p className="widget-empty">今天还没有日程或时间块。</p>
-                        : <ul>{todayCalendarEvents.slice(0, 4).map((event) => <li key={event.id}><span>{event.data.title}</span><small>{formatScheduleTime(event.data.start_at, event.data.end_at, event.data.timezone)}</small></li>)}</ul>}
+                        : <ul>{todayCalendarEvents.slice(0, 4).map((event) => <li key={event.id}><span>{event.data.title}</span><small>{(event.data.all_day ? "全天" : formatScheduleTime(event.data.start_at, event.data.end_at, event.data.timezone))}</small></li>)}</ul>}
                   {todayCalendarEvents.length > 4 ? <p className="task-overflow-note">另有 {todayCalendarEvents.length - 4} 项，请在 Calendar 查看。</p> : null}
                 </div>
               ) : widget.widget_type === "today_tasks" ? (
