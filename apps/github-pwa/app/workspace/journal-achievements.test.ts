@@ -28,4 +28,9 @@ describe("journal achievement display", () => {
     expect(html).toContain("连接后查看你的记录与勋章。");
     expect(html).not.toContain("百万字笺");
   });
+  it("displays the new year/day requirements, medal names and matching progress targets", () => {
+    const html = render();
+    for (const text of ["四年不辍", "连续 4 年（1,460 天）", "五年同行", "十年如约", "连续 10 年（520 周）", "十年留痕", "连续 10 年（120 个月）", "万日长藏", "累计记录 10,000 天", "四季相逢", "十年长藏", "至少 10 个不同年份", 'max="1460"', 'max="520"', 'max="120"', 'max="10000"']) expect(html).toContain(text);
+    for (const removed of ["两百日长续", "千五日记", "两千五百日", "四季重逢"]) expect(html).not.toContain(removed);
+  });
 });
