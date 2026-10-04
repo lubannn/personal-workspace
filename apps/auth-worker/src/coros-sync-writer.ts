@@ -127,7 +127,7 @@ export async function writeCorosSyncBatch(adapter: SyncAdapter, input: {
     }
     const files: Array<{ path: string; text: string }> = [];
     const paths = new Set(inventory.map((file) => file.path));
-    const result: CorosSyncWriteResult = { created: 0, unchanged: repeated, conflicts: 0, totalPendingConflicts: existingConflicts.size, conflictDetails: [], latestSleepDate: null, latestWorkoutDate: null };
+    const result: CorosSyncWriteResult = { created: 0, unchanged: repeated, conflicts: 0, totalPendingConflicts: [...existingConflicts.values()].filter(conflict => conflict.data.status === "pending").length, conflictDetails: [], latestSleepDate: null, latestWorkoutDate: null };
     for (const entry of unique.values()) {
       const sameSource = sourceIndex.get(entry.key);
       const duplicate = sameSource ?? records.find((record) => sameInterval(record, entry.item));

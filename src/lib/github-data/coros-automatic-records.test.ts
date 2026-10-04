@@ -7,7 +7,7 @@ import { createAutomaticHealthMetricData, parseHealthMetricRecord } from "./heal
 import { createWorkspaceRecord, recordPath, serializeRecord } from "./protocol";
 import { buildPortableWorkspaceExport, inspectPortableWorkspaceExport } from "./portable-export";
 import { createPortableRestorePlan } from "./portable-restore";
-import { createCorosSyncConflictRecord } from "./coros-sync-conflicts";
+import { acceptCorosSourceRevision, createCorosSyncConflictRecord } from "./coros-sync-conflicts";
 import { dryRunPortableWorkspaceMigrations } from "./schema-migrations";
 
 const timestamp = "2024-02-02T01:00:00.000Z";
@@ -87,16 +87,17 @@ describe("automatic COROS canonical records", () => {
     }
   });
 
-  it.each([false, true])("exports/restores automatic records and conflict candidates, retaining date corrections (%s)", async corrected => {
+  it.each([[false, false], [true, false], [false, true]])("exports/restores automatic records and conflict candidates, retaining date corrections (%s, resolved %s)", async (corrected, resolved) => {
     const records = automaticRecords();
     const candidate = corrected ? correctedNap : sleep; const metrics = corrected ? correctedMetrics : sleepMetrics;
     if (corrected) records.sleep = { ...records.sleep, data: createAutomaticSleepSessionData(candidate, provenance, metrics) };
     const stored = (path: string, text: string) => ({ path, text, blobSha: "fixture", sizeBytes: new TextEncoder().encode(text).byteLength });
     const recordFile = (record: (typeof records)[keyof typeof records]) => stored(recordPath(record.entity_type, record.id), serializeRecord(record));
-    const conflict = createCorosSyncConflictRecord({ id: "coros_conflict_fixture", ownerId: "github_fixture", detectedAt: timestamp, data: {
-      source_id: provenance.source_id, source_sha256: provenance.source_sha256, mapping_version: 1, record_kind: "sleep", reason: "source_changed", existing_record_id: records.sleep.id,
-      existing_source_sha256: "b".repeat(64), candidate: { kind: "sleep", candidate, metrics },
+    let conflict = createCorosSyncConflictRecord({ id: "coros_conflict_fixture", ownerId: "github_fixture", detectedAt: timestamp, data: {
+      source_id: provenance.source_id, source_sha256: "b".repeat(64), mapping_version: 1, record_kind: "sleep", reason: "source_changed", existing_record_id: records.sleep.id,
+      existing_source_sha256: provenance.source_sha256, candidate: { kind: "sleep", candidate, metrics },
     } });
+    if (resolved) conflict = acceptCorosSourceRevision(conflict, parseSleepSessionRecord(serializeRecord(records.sleep)), "2024-02-03T00:00:00.000Z").conflict;
     const exported = await buildPortableWorkspaceExport({
       repository: "fixture/personal-workspace-data", branch: "main", captureFiles: [],
       workspaceFile: stored("workspace.json", JSON.stringify({ schema_version: 1, workspace_id: "personal-workspace", owner_id: "github_fixture", owner_login: "fixture", locale: "zh-CN", timezone: "Asia/Shanghai" })),

@@ -250,7 +250,7 @@ export function CorosConnectionSection({ connectionMethod }: { connectionMethod:
             <p className="health-records-summary-note">{domain === "sleep" ? "按醒来日期归属，包含夜间睡眠与小睡" : "新增数量不包含已存在的记录"}</p>
           </article>;
         })}</div>
-        {progress.conflicts > 0 ? <CorosConflicts count={progress.conflicts} /> : null}
+        <CorosConflicts count={progress.conflicts} />
       </> : null}
       {status.connected && status.state === "paused" && !progress ? <div className="health-records-date-inputs"><label>历史开始日期<input type="date" value={startDate} disabled={busy} onChange={event => setStartDate(event.target.value)} aria-describedby="coros-backfill-note" /></label><p id="coros-backfill-note" className="learning-subtitle">从这个日期分批查询可取得的记录。开启后会保存进度。</p></div> : null}
       {!status.connected ? <button className="secondary-button" type="button" disabled={busy} onClick={() => void mutate("/coros/start")}>{busy ? "正在准备…" : "连接 COROS"}</button> :
