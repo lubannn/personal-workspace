@@ -1,9 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { Activity, Moon, RefreshCw } from "lucide-react";
 import type { SyncedHealthStagingRecord, SyncedSleepSession, SyncedWorkout } from "./page-model";
-import { buildHealthRecordRows, filterHealthRecords, formatHealthDistance, formatHealthDuration, healthLocalParts, healthRangeError, paginateHealthRecords, safeHealthTimezone, summarizeHealthRecords } from "./health-records";
+import { buildHealthRecordRows, safeHealthTimezone, summarizeHealthRecords } from "./health-records";
 import { SleepCalendarSection } from "./sleep-calendar-section";
 import "./health-records.css";
 
@@ -21,22 +21,12 @@ type Props = {
 };
 
 export function HealthRecordsSection({ connected, timezone, loading, loaded, error, unverifiedWorkoutCount, sleepSessions, workouts, staging, onRefresh }: Props) {
-  const [range, setRange] = useState({ from: "", to: "" });
-  const [workoutPage, setWorkoutPage] = useState(1);
   const displayTimezone = safeHealthTimezone(timezone);
   const { sleepRows, workoutRows } = useMemo(() => buildHealthRecordRows(sleepSessions, workouts, staging), [sleepSessions, workouts, staging]);
   const sleepSummary = useMemo(() => summarizeHealthRecords(sleepRows, displayTimezone), [sleepRows, displayTimezone]);
   const workoutSummary = useMemo(() => summarizeHealthRecords(workoutRows, displayTimezone), [workoutRows, displayTimezone]);
   const corosSummary = useMemo(() => summarizeHealthRecords(workoutRows.filter((row) => (row.source.kind === "coros_file" || row.source.kind === "coros_mcp")), displayTimezone), [workoutRows, displayTimezone]);
-  const filteredWorkouts = useMemo(() => filterHealthRecords(workoutRows, range, displayTimezone), [workoutRows, range, displayTimezone]);
-  const workout = paginateHealthRecords(filteredWorkouts, workoutPage);
-  const rangeError = healthRangeError(range);
-  const hasRange = Boolean(range.from || range.to);
   const canShowRecords = connected && loaded;
-
-  function changeRange(next: typeof range) {
-    setRange(next); setWorkoutPage(1);
-  }
 
   return <section className="learning-card health-records" aria-labelledby="health-records-title" aria-busy={loading}>
     <div className="card-heading health-records-heading">
@@ -52,24 +42,7 @@ export function HealthRecordsSection({ connected, timezone, loading, loaded, err
           <article><div className="health-records-summary-label"><Moon size={15} aria-hidden="true" /><span>已入库睡眠</span></div><p className="health-records-count">{sleepSummary.count}<span>段</span></p><RecordRange earliest={sleepSummary.earliest} latest={sleepSummary.latest} /><p className="health-records-summary-note">{sleepRows.some((row) => row.source.kind === "coros_mcp") ? "COROS 睡眠按醒来日期归属，包含夜间睡眠与小睡" : "暂无已入库的 COROS 自动同步睡眠"}</p></article>
           <article><div className="health-records-summary-label"><Activity size={15} aria-hidden="true" /><span>已入库运动</span></div><p className="health-records-count">{workoutSummary.count}<span>次</span></p><RecordRange earliest={workoutSummary.earliest} latest={workoutSummary.latest} /><p className="health-records-summary-note">{corosSummary.count > 0 ? <>其中 COROS 来源 {corosSummary.count} 次，最早 <time dateTime={corosSummary.earliest ?? undefined}>{corosSummary.earliest}</time></> : "暂无已核验的 COROS 运动记录"}</p></article>
         </div>
-        <SleepCalendarSection rows={sleepRows} timezone={displayTimezone} />
-        <div className="health-records-filter">
-          <div><strong>运动按日期回看</strong><p>按运动开始日期筛选，包含首尾两日 · {displayTimezone}</p></div>
-          <div className="health-records-date-inputs"><label>开始日期<input type="date" value={range.from} onChange={(event) => changeRange({ ...range, from: event.target.value })} aria-invalid={Boolean(rangeError)} aria-describedby={rangeError ? "health-records-range-error" : undefined} /></label><span aria-hidden="true">—</span><label>结束日期<input type="date" value={range.to} onChange={(event) => changeRange({ ...range, to: event.target.value })} aria-invalid={Boolean(rangeError)} aria-describedby={rangeError ? "health-records-range-error" : undefined} /></label><button type="button" className="text-button" onClick={() => changeRange({ from: "", to: "" })} disabled={!hasRange}>全部日期</button></div>
-        </div>
-        {rangeError ? <p id="health-records-range-error" className="health-records-load-message health-records-load-error" role="alert">{rangeError}</p> : <>
-          <p className="health-records-date-note">上方数量与最早 / 最近日期始终统计全部已读取的入库记录（{displayTimezone}）。运动按开始时间从新到旧排列，时间使用每条记录的时区。</p>
-          <div className="health-records-panels">
-            <section className="health-records-panel health-records-workouts" aria-labelledby="health-records-workouts-title">
-              <header><h3 id="health-records-workouts-title"><Activity size={16} aria-hidden="true" />运动记录</h3><span>{hasRange ? "筛选结果" : "全部"} {workout.count} 次</span></header>
-              {workout.count === 0 ? <div className="health-records-panel-empty"><Activity size={24} aria-hidden="true" /><strong>{hasRange ? "这段时间暂无运动记录" : "尚无已入库的运动记录"}</strong><p>{hasRange ? "调整日期范围，或查看全部日期。" : "COROS 运动同步入库后，记录会显示在这里。"}</p></div> : <div className="health-records-table-scroll" role="region" aria-label="运动记录明细，可横向滚动" tabIndex={0}><table><thead><tr><th scope="col">开始时间 / 时区</th><th scope="col">运动</th><th scope="col">时长</th><th scope="col">距离</th><th scope="col">来源</th></tr></thead><tbody>{workout.rows.map((row) => {
-                const start = healthLocalParts(row.startAt, row.timezone);
-                return <tr key={row.id}><td><time dateTime={row.startAt}>{start.date}<span>{start.time} · {safeHealthTimezone(row.timezone)}</span></time></td><td>{row.activity}</td><td>{formatHealthDuration(row.durationSeconds)}</td><td className={row.distanceMetres === null ? "health-records-missing" : undefined}>{formatHealthDistance(row.distanceMetres)}</td><td><span className="health-records-source">{row.source.label}</span></td></tr>;
-              })}</tbody></table></div>}
-              <RecordPagination label="运动记录" page={workout.page} pages={workout.pages} count={workout.count} onChange={setWorkoutPage} />
-            </section>
-          </div>
-        </>}
+        <SleepCalendarSection rows={sleepRows} workouts={workoutRows} timezone={displayTimezone} />
       </> : null}
     </>}
   </section>;
@@ -77,9 +50,4 @@ export function HealthRecordsSection({ connected, timezone, loading, loaded, err
 
 function RecordRange({ earliest, latest }: { earliest: string | null; latest: string | null }) {
   return <dl className="health-records-range"><div><dt>最早记录</dt><dd>{earliest ? <time dateTime={earliest}>{earliest}</time> : "暂无记录"}</dd></div><div><dt>最近记录</dt><dd>{latest ? <time dateTime={latest}>{latest}</time> : "暂无记录"}</dd></div></dl>;
-}
-
-function RecordPagination({ label, page, pages, count, onChange }: { label: string; page: number; pages: number; count: number; onChange: (page: number) => void }) {
-  if (count === 0) return null;
-  return <nav className="health-records-pagination" aria-label={`${label}分页`}><span>第 {page} / {pages} 页 · 共 {count} 条</span>{pages > 1 ? <div><button className="secondary-button" type="button" disabled={page === 1} onClick={() => onChange(page - 1)} aria-label={`${label}上一页`}>上一页</button><button className="secondary-button" type="button" disabled={page === pages} onClick={() => onChange(page + 1)} aria-label={`${label}下一页`}>下一页</button></div> : null}</nav>;
 }

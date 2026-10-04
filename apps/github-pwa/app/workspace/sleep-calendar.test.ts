@@ -87,16 +87,18 @@ describe("monthly sleep calendar", () => {
     expect(sleepCalendarMonths([])).toEqual([]);
   });
 
-  it("renders the newest two months with daily labels and totals, and distinguishes absent days from poor sleep", () => {
+  it("renders only the selected latest month with daily labels and totals, and distinguishes absent days from poor sleep", () => {
     const rows = [episode("older", { recordDate: "2024-01-31", score: 59 }), episode("recent")];
     const html = renderToStaticMarkup(createElement(SleepCalendarSection, { rows, timezone: "Asia/Shanghai" }));
-    expect(html).toContain("2024年1月");
+    expect(html).toContain("2024年1月"); // Older months remain selectable.
+    expect(html).not.toContain("2024年1月睡眠月历");
+    expect(html).toContain("2024年2月睡眠月历");
     expect(html).toContain("2024年2月");
     expect(html).toContain("2024-02-02，优秀，84分，实际睡眠7时00分");
     expect(html).toContain("2024-02-03，无记录");
     expect(html).toContain("sleep-grade-poor");
     expect(html).toContain("sleep-grade-excellent");
-    expect(html).toContain("aria-label=\"查看更晚的睡眠月份\" disabled");
+    expect(html).toContain("aria-label=\"查看下一个月份\" disabled");
     expect(html).not.toContain("完整列表");
   });
   it("shows available legacy periods with an explicit marker instead of a blank or invented actual duration", () => {
