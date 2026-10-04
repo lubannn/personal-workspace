@@ -30,10 +30,16 @@ export function mapCorosDailyHealth(result: CorosReadResult, options: Context): 
   for (let i = 1; i < sections.length; i += 2) {
     const local = date(sections[i], options); if (seen.has(local)) fail(); seen.add(local);
     const line = sections[i + 1].split("\n")[0];
-    const fields = /^Steps: ([\d,]+) \| Calories: ([\d,.]+) kcal \| Exercise: ([\d.]+) min$/u.exec(line); if (!fields) fail();
-    items.push(item(local, "steps", numeric(fields[1]), "steps", options), item(local, "exercise_minutes", numeric(fields[3]), "min", options),
-      // COROS's label does not establish active-vs-total calories; descriptive only.
-      item(local, "calories_unspecified", numeric(fields[2]), "kcal", options));
+    const fields = /^Steps: ([\d,]+) \| Calories: ([\d,.]+) kcal \| Exercise: ((?:[\d.]+ min)|(?:\d+h \d+min))$/u.exec(line); if (!fields) fail();
+    const hours = /^(\d+)h (\d+)min$/u.exec(fields[3]);
+    if (hours && Number(hours[2]) >= 60) fail();
+    const exercise = hours ? numeric(hours[1]) * 60 + numeric(hours[2]) : numeric(fields[3].slice(0, -4));
+    if (exercise > 1440) fail();
+    items.push(item(local, "steps", numeric(fields[1]), "steps", options), item(local, "exercise_minutes", exercise, "min", options),
+      // COROS Daily Features / Updating Your Calorie Goal: daily calories are
+      // active calories from movement and exercise, excluding resting metabolism.
+      // https://support.coros.com/hc/en-us/articles/8155758635028-Updating-Your-Calorie-Goal
+      item(local, "active_calories", numeric(fields[2]), "kcal", options));
   }
   return items;
 }
@@ -42,10 +48,10 @@ export function mapCorosRestingHeartRate(result: CorosReadResult, options: Conte
   context(options); const text = corosResultText(result);
   if (!/^Resting Heart Rate — Last \d+ days\n=+\n/u.test(text)) fail();
   const body = text.replace(/^Resting Heart Rate — Last \d+ days\n=+\n+/u, ""); const seen = new Set<string>();
-  return body.split("\n").map(line => {
-    const match = /^(\d{4}-\d{2}-\d{2}): ([\d.]+) bpm$/u.exec(line); if (!match) fail();
+  return body.split("\n").flatMap(line => {
+    const match = /^(\d{4}-\d{2}-\d{2}): (([\d.]+) bpm|No data)$/u.exec(line); if (!match) fail();
     const local = date(match[1], options); if (seen.has(local)) fail(); seen.add(local);
-    return item(local, "resting_heart_rate", numeric(match[2]), "bpm", options);
+    return match[2] === "No data" ? [] : [item(local, "resting_heart_rate", numeric(match[3]), "bpm", options)];
   });
 }
 

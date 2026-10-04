@@ -42,7 +42,8 @@ function errorMessage(code: string | null | undefined) {
   if (code === "COROS_SYNC_INVALID_DATE") return "历史开始日期无效，请选择不晚于今天的日期。";
   if (/TIMEOUT/iu.test(code)) return "连接响应超时，本批未完成；已有记录仍保留，可稍后重试。";
   if (/TOKEN|AUTHORIZATION|UNAUTHORIZED|CREDENTIAL|AUTH_REQUIRED/iu.test(code)) return "COROS 授权暂时不可用。请重新连接后恢复同步。";
-  if (/FORMAT|MAPPING|READ_RESULT|READ_TOOL_UNAVAILABLE|TRUNCATED/iu.test(code)) return "COROS 返回的数据格式需要核对，本批没有继续入库。已有记录仍保留。";
+  if (/FORMAT|MAPPING|READ_RESULT|READ_TOOL_UNAVAILABLE|TRUNCATED/iu.test(code)) return "部分 COROS 来源仍需核对；已验证记录保留，未完成来源的覆盖进度不前移。";
+  if (code === "COROS_SYNC_ACTIVITY_DETAILS_PENDING") return "活动详情正在分批读取；已验证指标保留，完成全部活动详情后才确认该日汇总。";
   if (/RATE|LIMIT|429/iu.test(code)) return "COROS 暂时限制了读取频率，本批更新需要稍后再尝试。";
   if (/CONFLICT/iu.test(code)) return "部分记录与已保存内容不一致，已保留原记录并标记待核对。";
   return "最近一次同步没有完成，已有记录仍保留。";
@@ -245,7 +246,7 @@ export function CorosConnectionSection({ connectionMethod, onClearHealthCache, c
     </p> : null}
     <details className="coros-compact-settings"><summary>同步设置与记录</summary>
       <div className="coros-compact-settings-body">
-        <p>手表数据需先同步到 COROS App。睡眠、运动及可读取的健康指标会自动更新到 GitHub，保留变更记录。恢复记录仅表示同步时的观测值，无法补历史恢复；未确认的热量口径与完整日不会用于评级。</p>
+        <p>手表数据需先同步到 COROS App。睡眠、运动及可读取的健康指标会自动更新到 GitHub，保留变更记录。恢复记录仅表示同步时的观测值，无法补历史恢复；日热量按 COROS 活动热量口径记录；今天尚未结束的总量不进入个人基线。</p>
         {progress ? <>
           <dl className="health-records-range">{(["sleep", "workout"] as const).map(domain => {
             const p = progress.domains[domain];
@@ -253,7 +254,7 @@ export function CorosConnectionSection({ connectionMethod, onClearHealthCache, c
           })}<div><dt>历史检查范围</dt><dd>{progress.startDate} 至 {progress.backfillEnd ?? "等待请求"}</dd></div></dl>
           <p>已连续检查：睡眠 {progress.domains.sleep.backfillThrough ?? "尚未开始"}，运动 {progress.domains.workout.backfillThrough ?? "尚未开始"}。范围内无记录的日期不会生成数据。</p>
           {historyBatch ? <p>最近一批：{historyBatch.domain === "sleep" ? "睡眠" : historyBatch.domain === "health" ? "健康指标" : "运动"} {historyBatch.from} 至 {historyBatch.through}，新增 {historyBatch.created} 条、更新 {historyBatch.updated ?? 0} 条。</p> : null}
-          {progress.health ? <p>健康指标最近读取：{progress.health.recentDataThrough ?? "尚未读取"}；HRV 历史已检查至 {progress.health.backfillThrough ?? "尚未开始"}。日健康及静息心率仅支持近期读取，更早空档未确认。{progress.health.lastErrorCode ? "健康指标本批读取未完成，可重试。" : ""}</p> : null}
+          {progress.health ? <><p>健康指标最近读取：{progress.health.recentDataThrough ?? "尚未读取"}；健康历史覆盖至 {progress.health.backfillThrough ?? "尚未开始"}。首次日健康及静息心率批量读取最近 90 日，其后读取变化重叠区间；更早空档保持未确认。{progress.health.lastErrorCode ? "活动汇总或本批读取尚未完成，可重试；其他已验证指标保留。" : ""}</p>{progress.health.limitations?.map(value => <p key={value}>{value}</p>)}</> : null}
           <CorosConflicts count={progress.conflicts} />
         </> : null}
         {status?.connected && status.state === "paused" && !progress ? <div className="health-records-date-inputs"><label>历史开始日期<input type="date" value={startDate} disabled={busy} onChange={event => setStartDate(event.target.value)} /></label></div> : null}

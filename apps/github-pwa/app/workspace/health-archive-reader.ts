@@ -7,6 +7,7 @@ import { parseHealthMetricRecord } from "../../../../src/lib/github-data/health-
 import { recordPath } from "../../../../src/lib/github-data/protocol";
 import { EncryptedHealthBlobCache, type HealthBlobCache } from "../../../../src/lib/github-data/health-blob-cache";
 import { healthLocalParts } from "./health-records";
+import { healthBaselineRange } from "./health-status";
 import type { SyncedHealthMetric, SyncedHealthStagingRecord, SyncedSleepSession, SyncedWorkout } from "./page-model";
 
 export type HealthArchiveSnapshot = {
@@ -129,6 +130,13 @@ export class HealthArchiveReader {
     const months = this.months();
     this.month = requestedMonth && months.includes(requestedMonth) ? requestedMonth : months.at(-1) ?? "";
     options.onCatalog?.(this.snapshot());
+    // Reuse the encrypted SHA cache and bounded month batches for the shared
+    // 90-day baseline. No cell performs its own read.
+    const today = healthLocalParts(new Date().toISOString(), "Asia/Shanghai").date;
+    const baselineRange = healthBaselineRange(this.month, today);
+    for (const baselineMonth of months.filter(month => month >= baselineRange.start.slice(0, 7) && month <= baselineRange.end.slice(0, 7))) {
+      await this.loadMetricMonth(baselineMonth, signal);
+    }
     await this.loadMetricMonth(this.month, signal);
     const needed = [...this.dates.values()].filter(entry => !entry.deleted && this.date(entry).startsWith(`${this.month}-`));
     await this.loadEntries(needed, signal);

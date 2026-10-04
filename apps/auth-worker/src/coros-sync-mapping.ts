@@ -336,6 +336,13 @@ export function mapCorosWorkouts(result: CorosReadResult, options: CorosSyncDate
         coros_sport_type: code, coros_sport_name: customCorosSportName(code, customName) ?? heading[2] },
     } };
   });
-  if (new Set(items.map(item => item.sourceId)).size !== items.length) return fail();
-  return { items, reportedCount };
+  const unique = new Map<string, WorkoutItem>();
+  for (const item of items) {
+    const previous = unique.get(item.sourceId);
+    if (previous && JSON.stringify(previous.candidate) !== JSON.stringify(item.candidate)) return fail();
+    unique.set(item.sourceId, item);
+  }
+  // Keep the raw count for truncation checks. Duplicate rows cannot make a
+  // capped upstream response appear complete merely by reducing unique IDs.
+  return { items: [...unique.values()], reportedCount };
 }

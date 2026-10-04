@@ -84,25 +84,30 @@ export async function runCorosSync(env: CorosSyncEnv, now = new Date(), deps: Co
     if (!ready) throw new Error("COROS_SYNC_CANCELLED");
     await assertActive();
     if (window.domain === "health") {
-      const collected = await deps.health!((name, args) => deps.read(ready.resourceUrl, ready.accessToken, name, args), window, progress, assertActive, now);
+      const collected = await deps.health!((name, args) => deps.read(ready.resourceUrl, ready.accessToken, name, args), window, progress, assertActive, now, env.TOKEN_ENCRYPTION_KEY);
       await assertActive();
       const adapter = await deps.adapter({ appId: env.GITHUB_APP_ID!, installationId: env.GITHUB_APP_INSTALLATION_ID!, privateKeyPem: env.GITHUB_APP_PRIVATE_KEY!, owner: env.ALLOWED_REPO_OWNER!, repository: env.ALLOWED_REPO_NAME! });
       const descriptor = parseWorkspaceDescriptor((await adapter.readText("workspace.json")).text);
       if (descriptor.owner_login !== env.ALLOWED_GITHUB_LOGIN || descriptor.owner_id !== env.COROS_WORKSPACE_OWNER_ID || descriptor.timezone !== progress.timezone) throw new Error("COROS_SYNC_WORKSPACE_MISMATCH");
       const outcome = collected.items.length ? await deps.writeMetrics!(adapter, { ownerId: descriptor.owner_id, items: collected.items, timestamp: collected.observedAt, beforeCommit: assertActive }) : { created: 0, updated: 0, unchanged: 0 };
       await assertActive(); const domain = progress.health!;
-      if (window.recent) {
+      if (collected.activityError) {
+        // A pending activity source never discards verified bulk/HRV facts or
+        // advances the common coverage checkpoint. Encrypted details resume later.
+        if (window.recent) { domain.recentDataThrough = todayInTimezone(new Date(collected.observedAt), progress.timezone); domain.recentNext = window.from; }
+      } else if (window.recent) {
         domain.recentDataThrough = todayInTimezone(new Date(collected.observedAt), progress.timezone);
         domain.recentThrough = collected.through;
         domain.recentNext = collected.through < progress.request!.through ? shiftDate(collected.through, 1) : null;
         if (!domain.recentNext) { domain.recentRequestSequence = progress.request!.sequence; domain.lastRecentAt = collected.observedAt; }
         if (domain.backfillNext >= window.from && domain.backfillNext <= collected.through) { domain.backfillThrough = collected.through; domain.backfillNext = shiftDate(collected.through, 1); }
       } else { domain.backfillThrough = collected.through; domain.backfillNext = shiftDate(collected.through, 1); }
-      domain.created += outcome.created; domain.limitations = collected.limitations; domain.retryAfter = null; domain.lastErrorCode = null;
+      domain.created += outcome.created; domain.limitations = collected.limitations;
+      domain.retryAfter = collected.activityError ? isoAfter(now, 10 * 60000) : null; domain.lastErrorCode = collected.activityError ?? null;
       domain.latestRecordDate = [domain.latestRecordDate, ...collected.items.map(item => item.candidate.local_date)].filter((value): value is string => value !== null).sort().at(-1) ?? null;
-      progress.lastSuccessAt = collected.observedAt; progress.lastErrorCode = null; progress.failureCount = 0;
+      progress.lastSuccessAt = collected.observedAt; progress.lastErrorCode = collected.activityError ?? null; progress.failureCount = 0;
       progress.lastBatch = { domain: "health", from: window.from, through: collected.through, ...outcome, conflicts: 0 };
-      await db.prepare("UPDATE coros_connections SET last_sync_at = ?1, last_error_code = NULL WHERE github_user_id = ?2 AND state = 'enabled'").bind(collected.observedAt, userId).run();
+      await db.prepare("UPDATE coros_connections SET last_sync_at = ?1, last_error_code = ?2 WHERE github_user_id = ?3 AND state = 'enabled'").bind(collected.observedAt, collected.activityError ?? null, userId).run();
       return { status: "processed", batch: progress.lastBatch, progress };
     }
     const range = { startDate: window.from, endDate: window.through, timezone: progress.timezone };

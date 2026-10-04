@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { createAutomaticHealthMetricData, parseHealthMetricRecord } from "../../../../src/lib/github-data/health-metrics";
 import { createWorkspaceRecord, recordPath, serializeRecord } from "../../../../src/lib/github-data/protocol";
 import type { SyncedHealthMetric } from "./page-model";
-import { buildHealthBaseline, buildHealthStatusDays, classifyHealthDay, healthQuantile, type HealthStatusDay } from "./health-status";
+import { buildHealthBaseline, buildHealthStatusDays, classifyHealthDay, healthBaselineRange, healthQuantile, type HealthStatusDay } from "./health-status";
 import { buildSleepCalendarDays } from "./sleep-calendar";
 import { SleepCalendarSection } from "./sleep-calendar-section";
 import type { SleepRecordRow } from "./health-records";
@@ -23,6 +23,20 @@ const baseline = buildHealthBaseline(baseDays);
 const grade = (patch: Partial<HealthStatusDay> = {}) => classifyHealthDay(day(patch), baseline);
 
 describe("reviewed COROS health status rules", () => {
+  it("uses 90 local dates across a month boundary and an explicit historical cutoff", () => {
+    expect(healthBaselineRange("2024-03", "2024-03-01")).toEqual({ start: "2023-12-03", end: "2024-03-01" });
+    expect(healthBaselineRange("2024-01", "2024-03-01")).toEqual({ start: "2023-11-03", end: "2024-01-31" });
+    const crossMonth = baseDays.map((item, index) => ({ ...item, date: new Date(Date.parse("2024-02-09") + index * 86400_000).toISOString().slice(0, 10) }));
+    expect(buildHealthBaseline(crossMonth, healthBaselineRange("2024-03", "2024-03-01")).restingBpm.count).toBe(21);
+  });
+  it("uses official HRV assessment without 21 HRV samples and preserves other metric samples", () => {
+    const reference = buildHealthBaseline(baseDays.map(item => ({ ...item, hrvMs: undefined, trainingLoad: undefined, partialSignals: ["steps"] })));
+    expect(reference.hrvMs.count).toBe(0); expect(reference.steps.count).toBe(0);
+    expect(reference.restingBpm.count).toBe(21); expect(reference.exerciseMinutes.count).toBe(21);
+    expect(classifyHealthDay(day({ hrvMs: 29 }), reference).status).toBe("rest");
+    expect(classifyHealthDay(day(), reference).status).toBe("good");
+    expect(classifyHealthDay(day({ hrvBaselineMs: undefined, hrvMs: 35 }), reference).status).toBe("steady");
+  });
   it("ports strict sleep/recovery boundaries, including zero, and positive rating requires both", () => {
     expect([0, 69, 69.99, 70, 89.99, 90, 100].map(sleepScore => grade({ sleepScore }).status)).toEqual(["rest", "rest", "rest", "steady", "steady", "good", "good"]);
     expect([0, 69, 70, 89, 90, 100].map(recoveryPct => grade({ recoveryPct }).status)).toEqual(["rest", "rest", "steady", "steady", "good", "good"]);
@@ -59,11 +73,11 @@ describe("reviewed COROS health status rules", () => {
     const constant = buildHealthBaseline(baseDays.map(item => ({ ...item, steps: 0 })));
     expect(classifyHealthDay(day({ steps: 0 }), constant).status).toBe("good");
   });
-  it("does not hide absent activity or insufficient activity baselines under steady/good", () => {
-    expect(grade({ sleepScore: 80, steps: undefined })).toMatchObject({ status: "insufficient", missing: expect.arrayContaining(["步数"]) });
-    expect(grade({ trainingLoad: undefined }).status).toBe("insufficient");
+  it("keeps independent activity branches from imposing unrelated positive-rating gates", () => {
+    expect(grade({ sleepScore: 80, steps: undefined })).toMatchObject({ status: "steady", unavailable: expect.arrayContaining(["步数"]) });
+    expect(grade({ trainingLoad: undefined }).status).toBe("good");
     const sparse = buildHealthBaseline(baseDays.map((item, i) => ({ ...item, steps: i === 0 ? undefined : item.steps })));
-    expect(classifyHealthDay(day(), sparse)).toMatchObject({ status: "insufficient", missing: expect.arrayContaining(["步数基线"]) });
+    expect(classifyHealthDay(day(), sparse)).toMatchObject({ status: "good", unavailable: expect.arrayContaining(["步数基线（20/21）"]) });
     expect(grade({ sleepScore: 69, steps: undefined }).status).toBe("rest");
     expect(grade({ steps: 2800, trainingLoad: undefined, hrvMs: 20 }).status).toBe("active");
   });
@@ -82,13 +96,27 @@ describe("reviewed COROS health status rules", () => {
   });
   it("does not turn sleep-only, nap-only, or entirely absent signals into a combined positive label", () => {
     const empty = buildHealthBaseline([]);
-    expect(classifyHealthDay({ date: "2024-02-02", dayComplete: false, sleepScore: 95 }, empty)).toMatchObject({ status: "insufficient", missing: expect.arrayContaining(["恢复", "HRV", "静息心率", "步数", "训练负荷", "完整日活动证据"]) });
+    expect(classifyHealthDay({ date: "2024-02-02", dayComplete: false, partialReason: "today", sleepScore: 95 }, empty)).toMatchObject({ status: "insufficient", missing: expect.arrayContaining(["恢复", "HRV", "静息心率", "当天尚未结束"]) });
     expect(classifyHealthDay({ date: "2024-02-02", dayComplete: false, sleepScore: 60 }, empty).status).toBe("rest");
     expect(classifyHealthDay({ date: "2024-02-02", dayComplete: false }, empty).status).toBe("insufficient");
   });
 });
 
 describe("health metric adaptation and calendar", () => {
+  it("does not demand a true flag for historical data or let an instant observation exclude daily samples", () => {
+    const metrics = baseDays.flatMap((item, index) => [syntheticMetric(`rhr_${index}`, "resting_heart_rate", 50, "bpm", item.date),
+      ...(index === 0 ? [] : [syntheticMetric(`steps_${index}`, "steps", 1000, "steps", item.date)])]);
+    const observed = syntheticMetric("recovery_observation", "recovery_percentage", 80, "%", "2024-01-01");
+    observed.record.data.aggregation_period = "instant"; observed.record.data.measured_at = "2024-01-01T04:00:00Z";
+    if (observed.record.data.health_metric_version === 2) observed.record.data.measurement_time_kind = "observed_at";
+    const days = buildHealthStatusDays([], [...metrics, observed], "2024-02-02");
+    expect(days.every(item => item.dayComplete)).toBe(true);
+    expect(buildHealthBaseline(days).restingBpm.count).toBe(21); expect(buildHealthBaseline(days).steps.count).toBe(20);
+    expect(days[0].recoveryObservedAt).toBe("2024-01-01T04:00:00Z");
+    const explicitPartial = buildHealthStatusDays([], [...metrics, syntheticMetric("partial", "steps", 100, "steps", "2024-01-01", false)], "2024-02-02");
+    expect(explicitPartial[0]).toMatchObject({ dayComplete: false, partialReason: "source" });
+    expect(buildHealthBaseline(explicitPartial).restingBpm.count).toBe(20);
+  });
   const episode = (patch: Partial<SleepRecordRow> = {}): SleepRecordRow => ({ id: "synthetic_sleep", startAt: "2024-02-01T15:00:00Z", endAt: "2024-02-01T23:00:00Z", recordDate: "2024-02-02",
     timezone: "Asia/Shanghai", source: { kind: "coros_mcp", label: "COROS" }, category: "夜间睡眠", durationSeconds: 28800, asleepSeconds: 25200, awakeSeconds: 3600, score: 95, dateCorrection: null, ...patch });
   it("deduplicates daily totals, rejects wrong units/manual/instant/deleted/future values and retains zero", () => {
@@ -100,12 +128,13 @@ describe("health metric adaptation and calendar", () => {
     const manual = { ...steps, record: { ...steps.record, data: { ...steps.record.data, health_metric_version: 1 } } } as unknown as SyncedHealthMetric;
     const result = buildHealthStatusDays([], [steps, steps, older, bad, removed, instant, manual, syntheticMetric("future", "steps", 999, "steps", "2025-01-01")], "2024-03-03");
     expect(result).toEqual([{ date: "2024-02-02", dayComplete: true, steps: 0 }]);
-    expect(buildHealthStatusDays([], [syntheticMetric("unknown", "steps", 1, "steps")], "2024-03-03")[0].dayComplete).toBe(false);
-    expect(buildHealthStatusDays([], [steps], "2024-02-02")[0].dayComplete).toBe(false);
+    expect(buildHealthStatusDays([], [syntheticMetric("unknown", "steps", 1, "steps")], "2024-03-03")[0].dayComplete).toBe(true);
+    expect(buildHealthStatusDays([], [steps], "2024-02-02")[0].dayComplete).toBe(true); // explicit upstream completeness exception
+    expect(buildHealthStatusDays([], [syntheticMetric("today_unknown", "steps", 10, "steps")], "2024-02-02")[0]).toMatchObject({ dayComplete: false, partialReason: "today" });
     const conflict = syntheticMetric("conflict", "steps", 100, "steps", "2024-02-02", true);
-    expect(buildHealthStatusDays([], [steps, conflict], "2024-03-03")[0]).toEqual({ date: "2024-02-02", dayComplete: false });
+    expect(buildHealthStatusDays([], [steps, conflict], "2024-03-03")[0]).toEqual({ date: "2024-02-02", dayComplete: true });
     conflict.record.data.measured_at = "2024-03-03T08:00:00+08:00";
-    expect(buildHealthStatusDays([], [steps, conflict], "2024-03-03")[0]).toEqual({ date: "2024-02-02", dayComplete: false });
+    expect(buildHealthStatusDays([], [steps, conflict], "2024-03-03")[0]).toEqual({ date: "2024-02-02", dayComplete: true });
   });
   it("preserves recovery observation risk with its true date and excludes archived metric revisions", () => {
     const recovery = syntheticMetric("point", "recovery_percentage", 60, "%", "2024-03-03");

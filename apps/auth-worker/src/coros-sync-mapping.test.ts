@@ -346,6 +346,14 @@ describe("strict COROS workout text mapping", () => {
     expect(mapCorosWorkouts(result("No sport records found from 2024-01-02 to 2024-01-02."), options)).toEqual({ items: [], reportedCount: 0 });
     expect(() => mapCorosWorkouts(result("No sport records found from 2024-01-01 to 2024-01-02."), options)).toThrow();
   });
+  it("deduplicates identical activity IDs, keeps raw limit counts, and rejects conflicting duplicates", () => {
+    const body = workout.split("\n\n")[1];
+    const duplicate = workout.replace("(1 records)", "(2 records)") + "\n\n" + body.replace(/^1\./, "2.");
+    expect(mapCorosWorkouts(result(duplicate), options)).toMatchObject({ reportedCount: 2, items: [expect.objectContaining({ sourceId: "workout:123456789012345678" })] });
+    const many = workout.split("\n\n")[0].replace("(1 records)", "(20 records)") + "\n\n" + Array.from({ length: 20 }, (_, i) => body.replace(/^1\./, `${i + 1}.`)).join("\n\n");
+    expect(mapCorosWorkouts(result(many), options)).toMatchObject({ reportedCount: 20, items: [expect.anything()] });
+    expect(() => mapCorosWorkouts(result(duplicate.replace("2. Outdoor Run", "2. Indoor Run")), options)).toThrow("FORMAT_UNSUPPORTED");
+  });
   it.each([
     workout.replace("(1 records)", "(2 records)"),
     workout.replace("   LabelId: 123456789012345678 | SportType: 100", ""),

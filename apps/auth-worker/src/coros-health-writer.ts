@@ -13,7 +13,8 @@ export function corosMetricId(item: CorosHealthMetricItem) {
 
 /** Read only incoming canonical metric paths; prior revisions and current facts share one guarded atomic commit. */
 export async function writeCorosHealthMetrics(adapter: Adapter, input: { ownerId: string; items: readonly CorosHealthMetricItem[]; timestamp: string; beforeCommit?: () => Promise<void> }) {
-  if (input.items.length > 200 || !Number.isFinite(Date.parse(input.timestamp))) throw new Error("COROS_SYNC_HEALTH_BATCH_INVALID");
+  // 90 bulk daily/RHR dates plus one bounded HRV/activity window fit this cap.
+  if (input.items.length > 500 || !Number.isFinite(Date.parse(input.timestamp))) throw new Error("COROS_SYNC_HEALTH_BATCH_INVALID");
   const prepared = await Promise.all(input.items.map(async item => {
     // Poll time alone must not cause a daily-total rewrite. The retained observation time remains truthful.
     const { measured_at: _observed, ...facts } = item.candidate;

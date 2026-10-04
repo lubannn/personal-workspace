@@ -23,6 +23,14 @@ function fake() {
   return { adapter, files, advance: () => version++ };
 }
 describe("atomic metric persistence and revisions", () => {
+  it("persists a 90-day bulk baseline in one atomic commit without a 200-item ceiling", async () => {
+    const f = fake();
+    const items = Array.from({ length: 90 }, (_, index) => new Date(Date.parse("2024-02-01") - index * 86400_000).toISOString().slice(0, 10))
+      .flatMap(date => ["steps", "exercise_minutes", "active_calories", "resting_heart_rate"].map(metric => ({ ...item, sourceId: `health:${date}:${metric}:daily`,
+        candidate: { ...item.candidate, local_date: date, metric_type: metric } })));
+    expect(await writeCorosHealthMetrics(f.adapter, { ownerId: "synthetic_owner", items, timestamp })).toMatchObject({ created: 360 });
+    expect(f.adapter.writeAtomicFiles).toHaveBeenCalledTimes(1); expect(f.files.size).toBe(360);
+  });
   it("stores normalized facts only, is idempotent across poll times, and reads only incoming paths", async () => {
     const f = fake(); const input = { ownerId: "synthetic_owner", items: [item, item], timestamp };
     expect(await writeCorosHealthMetrics(f.adapter, input)).toEqual({ created: 1, updated: 0, unchanged: 1 });

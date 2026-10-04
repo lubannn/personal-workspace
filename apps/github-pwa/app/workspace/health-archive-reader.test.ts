@@ -72,7 +72,7 @@ describe("incremental health month reads", () => {
     await expect(f.reader.load("2026-09", { refresh: true })).rejects.toThrow("HEALTH_RECORD_INVALID");
   });
 
-  it("loads only selected-month metric bodies, avoids historical revisions, and fetches changed SHAs only when needed", async () => {
+  it("loads bounded cross-month baseline bodies, avoids historical revisions, and fetches changed SHAs only when needed", async () => {
     const f = fake([]);
     const metric = (date: string, value = 50) => {
       const id = `coros_metric_${date.replaceAll("-", "")}_resting_heart_rate_daily`;
@@ -84,13 +84,14 @@ describe("incremental health month reads", () => {
       const record = metric(date); f.files.set(recordPath("health_metric", record.id), serializeRecord(record));
     }
     f.files.set("data/health-metrics/coros_metric_revision_synthetic.json", "must not be read");
-    const september = await f.reader.load("2026-09"); expect(september.healthMetrics).toHaveLength(30);
-    expect(f.calls.flat()).toHaveLength(30); expect(f.calls.flat().every(path => path.includes("coros_metric_202609"))).toBe(true);
+    const september = await f.reader.load("2026-09"); expect(september.healthMetrics).toHaveLength(92);
+    expect(f.calls.flat()).toHaveLength(92); expect(f.calls.flat().every(path => /coros_metric_2026(?:07|08|09)/.test(path))).toBe(true);
     f.calls.length = 0; await f.reader.load("2026-09"); expect(f.calls.flat()).toHaveLength(0);
     await f.reader.load("2026-08"); f.calls.length = 0;
     const revised = metric("2026-08-15", 60); const path = recordPath("health_metric", revised.id); f.files.set(path, serializeRecord(revised));
-    await f.reader.load("2026-09", { refresh: true }); expect(f.calls.flat()).toHaveLength(0);
-    await f.reader.load("2026-08"); expect(f.calls.flat()).toEqual([path]);
+    await f.reader.load("2026-09", { refresh: true }); expect(f.calls.flat()).toEqual([path]);
+    f.calls.length = 0;
+    await f.reader.load("2026-08"); expect(f.calls.flat()).toEqual([]);
     expect(f.reader.snapshot().healthMetrics!.find(item => item.path === path)?.record.data.value).toBe(60);
   });
 
