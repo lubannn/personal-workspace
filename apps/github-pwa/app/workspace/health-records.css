@@ -87,3 +87,17 @@
   .coros-compact-heading h2 { font-size: 19px; }
   .coros-compact-heading .learning-view-actions { flex-shrink: 0; }
 }
+.health-records-actions { display: flex; align-items: flex-start; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.coros-refresh-action { position: relative; }
+.coros-refresh-message { display: block; max-width: 230px; margin-top: 7px; color: var(--soft); font-size: 11px; line-height: 1.6; }
+.health-records-latest { display: flex; flex-wrap: wrap; gap: 12px 36px; margin-top: 18px; padding: 12px 16px; background: #f7f6f0; border: 1px solid var(--line); border-radius: 10px; }
+.health-records-latest > div { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; font-size: 12px; }
+.health-records-latest svg { color: var(--accent); }
+.health-records-latest span { color: var(--soft); }
+.health-records-latest strong { font-weight: 550; font-variant-numeric: tabular-nums; }
+@media (max-width: 600px) {
+  .health-records-heading { flex-wrap: wrap; }
+  .health-records-actions { justify-content: flex-start; }
+  .health-records-latest { gap: 10px; padding: 11px 12px; }
+  .health-records-latest > div { flex-basis: 100%; }
+}
