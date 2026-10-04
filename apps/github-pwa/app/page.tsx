@@ -155,6 +155,7 @@ import type { TaskRecord } from "../../../src/lib/github-data/tasks";
 import type { JournalEntryRecord } from "../../../src/lib/github-data/journal-entries";
 import type { CaptureRecord } from "../../../src/lib/github-data/workspace";
 import { DashboardSection } from "./workspace/dashboard-section";
+import { CaptureComposer } from "./workspace/capture-composer";
 import { AuthSection } from "./workspace/auth-section";
 import { CorosConnectionSection } from "./workspace/coros-connection-section";
 import { PortabilitySection } from "./workspace/portability-section";
@@ -2828,6 +2829,11 @@ export default function GitHubWorkspacePage() {
         onRevokeAll={revokeAllSessions}
       />
 
+      <section className="capture-bar" aria-labelledby="quick-capture-title">
+        <CaptureComposer draft={captureDraft} fields={captureFields} suggestion={captureSuggestion} saving={saving || Boolean(savingCaptureId)} connected={Boolean(connection)} online={online} storageFailed={captureStorageFailed} onChange={updateCaptureDraft} onSave={saveCapture} onClear={clearCaptureDraft} />
+        {savedCapture ? <p className="capture-hint" role="status">已保存到{savedCapture.label ?? "随手记"}。<button className="view-button" type="button" onClick={() => selectWorkspaceTab(savedCapture.tab ?? "overview")}>打开{savedCapture.label ?? "随手记"}</button></p> : null}
+      </section>
+
       <div id="workspace-navigation-anchor" />
       <WorkspaceTabNavigation activeTab={activeWorkspaceTab} onSelect={selectWorkspaceTab} />
 
@@ -2866,12 +2872,6 @@ export default function GitHubWorkspacePage() {
         savingDashboard={savingDashboard}
         visibleWidgets={visibleDashboardWidgets}
         hiddenWidgets={hiddenDashboardWidgets}
-        captureDraft={captureDraft}
-        captureFields={captureFields}
-        captureSuggestion={captureSuggestion}
-        captureStorageFailed={captureStorageFailed}
-        savingCapture={saving || Boolean(savingCaptureId)}
-        savedCapture={savedCapture}
         todayTasks={todayTaskFiles}
         currentProjects={currentProjectFiles}
         projectTasks={taskFiles}
@@ -2891,10 +2891,6 @@ export default function GitHubWorkspacePage() {
         onWidgetChange={changeDashboardWidget}
         onWidgetResize={resizeDashboardWidget}
         onReset={resetDashboardToDefault}
-        onCaptureChange={updateCaptureDraft}
-        onClearCapture={clearCaptureDraft}
-        onSaveCapture={saveCapture}
-        onOpenSavedCapture={() => selectWorkspaceTab(savedCapture?.tab ?? "overview")}
         onCompleteTask={(item) => updateTaskLifecycle(item, "complete")}
       />
 

@@ -39,10 +39,13 @@ describe("compact connected account", () => {
     "已通过 GitHub App 登录（octo-cat），访问令牌仅保留在当前页面内存中。",
   ])("shows App connection once without a second success message: %s", (statusMessage) => {
     const html = renderAuth({ statusMessage });
-    expect(html.match(/class="connection-card connected"/g)).toHaveLength(1);
-    expect(html).toContain('id="connection-title">私人数据已连接');
+    expect(html.match(/class="header-connection"/g)).toHaveLength(1);
+    expect(html).not.toContain("connection-card connected");
+    expect(html).toContain('id="connection-title"');
+    expect(html).toContain('私人数据已连接');
     expect(html).toContain('class="connection-method">GitHub App</span>');
-    expect(html).toContain("owner/private-data · Private · Asia/Shanghai");
+    expect(html).toContain("owner/private-data");
+    expect(html).toContain(" · Private · Asia/Shanghai");
     expect(html).toContain("退出当前设备");
     expect(html).toContain("撤销全部设备");
     expect(html).not.toContain("message-bar");
