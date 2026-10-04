@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { HealthBlobCache } from "../../../../src/lib/github-data/health-blob-cache";
+import type { GitHubStoredFile } from "../../../../src/lib/github-data/github-contents";
 import { HealthArchiveReader } from "./health-archive-reader";
 import { createWorkspaceRecord, recordPath, serializeRecord } from "../../../../src/lib/github-data/protocol";
 import { createAutomaticSleepSessionData, createConfirmedSleepSessionData, type SleepSessionRecord } from "../../../../src/lib/github-data/sleep-sessions";
@@ -183,6 +185,51 @@ describe("incremental health month reads", () => {
     await f.reader.load("2026-10");
     release(); await rejected;
     expect(f.reader.snapshot()).toMatchObject({ month: "2026-10", loadedMonths: ["2026-10"] });
+  });
+
+  it("restores previously viewed months after a new login without body requests, while changed and removed records use fresh metadata", async () => {
+    const values = new Map<string, string>();
+    vi.stubGlobal("localStorage", { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => values.set(key, value) });
+    const bodies = new Map<string, GitHubStoredFile>();
+    const cache: HealthBlobCache = {
+      async read(files) { return files.flatMap(file => { const stored = bodies.get(file.blobSha); return stored ? [{ ...stored, path: file.path }] : []; }); },
+      async remember(files) { files.forEach(file => bodies.set(file.blobSha, file)); },
+      async clear() { bodies.clear(); },
+    };
+    const f = fake([sleep("2026-10-04"), sleep("2026-09-30"), workout("2026-09-27")]);
+    const adapter = { ...f.adapter, healthArchiveMetadataCacheKey: () => "persistent-health-test" };
+    const first = new HealthArchiveReader(adapter, "Asia/Shanghai", cache);
+    await first.load(); await first.load("2026-09"); f.calls.length = 0;
+    const second = new HealthArchiveReader(adapter, "Asia/Shanghai", cache);
+    await second.load(); await second.load("2026-09");
+    expect(f.calls).toHaveLength(0);
+    expect(f.adapter.listHealthArchive).toHaveBeenCalledTimes(2); // one authenticated check per login
+    const revised = sleep("2026-09-30", 95); const path = recordPath(revised.entity_type, revised.id);
+    f.files.set(path, serializeRecord(revised)); f.reindex();
+    const updated = await second.load("2026-09", { refresh: true });
+    expect(f.calls.flat()).toEqual([path]);
+    expect(updated.sleepSessions.find(item => item.path === path)?.record.data.sleep_metrics_json.score).toBe(95);
+    f.files.delete(path);
+    expect((await second.load("2026-09", { refresh: true })).sleepSessions.some(item => item.path === path)).toBe(false);
+    const readCache = vi.spyOn(cache, "read"); readCache.mockClear();
+    f.adapter.listHealthArchive.mockRejectedValueOnce(new Error("GITHUB_FORBIDDEN"));
+    await expect(new HealthArchiveReader(adapter, "Asia/Shanghai", cache).load()).rejects.toThrow("GITHUB_FORBIDDEN");
+    expect(readCache).not.toHaveBeenCalled();
+    await first.clearLocalCache(); expect(bodies.size).toBe(0);
+  });
+
+  it("prefetches only immediate neighbor months without changing the selected month or scanning history", async () => {
+    const f = fake([sleep("2026-10-04"), sleep("2026-09-30"), sleep("2026-08-31"), sleep("2025-01-01")]);
+    await f.reader.load(); f.calls.length = 0;
+    await f.reader.prefetchNeighbors("2026-10");
+    expect(f.reader.snapshot().month).toBe("2026-10");
+    expect(f.calls.flat()).toEqual([recordPath("sleep_session", "sleep_20260930")]);
+    f.calls.length = 0;
+    expect((await f.reader.load("2026-09")).loadedMonths).toContain("2026-09");
+    expect(f.calls).toHaveLength(0);
+    const controller = new AbortController(); controller.abort();
+    await expect(f.reader.prefetchNeighbors("2026-09", controller.signal)).rejects.toMatchObject({ name: "AbortError" });
+    expect(f.calls).toHaveLength(0);
   });
 
 });
