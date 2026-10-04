@@ -232,4 +232,47 @@ describe("incremental health month reads", () => {
     expect(f.calls).toHaveLength(0);
   });
 
+  it("does not mistake seven pending source reads for failed verification when prefetch is cancelled", async () => {
+    const mapping = await mapCorosActivities({ sourceSha256: "a".repeat(64), parserVersion: "1", timezone: "Asia/Shanghai",
+      activities: Array.from({ length: 7 }, (_, index) => {
+        const date = `2026-08-0${index + 1}`;
+        return { sourceIdentity: `synthetic-${index}`, sport: "Biking", startAt: `${date}T00:00:00Z`, endAt: `${date}T00:30:00Z`, elapsedSeconds: 1800,
+          movingSeconds: null, distanceMeters: 1000, calories: null, averageHeartRate: null, maximumHeartRate: null, averageCadence: null, averagePower: null, trackpoints: 0 };
+      }) });
+    const plan = await planCorosWorkoutStaging({ format: "tcx", sourceSha256: "a".repeat(64), parserVersion: "1", mapping });
+    const pending = plan.items.map(item => createWorkspaceRecord({ entityType: "health_staging_record", id: item.stagingRecordId, ownerId: "owner_test", timestamp, data: item.proposedData }));
+    const canonical = pending.map(item => {
+      const data = createConfirmedWorkoutData(item, timestamp);
+      return createWorkspaceRecord({ entityType: "workout", id: `workout_${data.import_key}`, ownerId: "owner_test", timestamp, data });
+    });
+    const f = fake([sleep("2026-10-04"), sleep("2026-09-30"), workout("2026-09-27"), ...canonical]);
+    for (const item of pending) f.files.set(recordPath(item.entity_type, item.id), serializeRecord(confirmWorkoutHealthStaging(item, timestamp)));
+    await f.reader.load("2026-09");
+    const read = f.adapter.readBlobTexts.getMockImplementation()!;
+    let release!: () => void; let started!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const sourceRequested = new Promise<void>(resolve => { started = resolve; });
+    f.adapter.readBlobTexts.mockImplementation(async items => {
+      if (items.some(item => item.path.startsWith("data/health-staging-records/"))) { started(); await gate; }
+      return read(items);
+    });
+    const controller = new AbortController();
+    const prefetch = f.reader.prefetchNeighbors("2026-09", controller.signal);
+    const cancelled = expect(prefetch).rejects.toMatchObject({ name: "AbortError" });
+    await sourceRequested;
+    expect(f.reader.snapshot()).toMatchObject({ unverifiedWorkoutCount: 0 });
+    expect(f.reader.snapshot().workouts).toHaveLength(1); // Pending evidence never makes a workout visible either.
+    controller.abort();
+    expect((await f.reader.load("2026-10")).unverifiedWorkoutCount).toBe(0);
+    release(); await cancelled;
+    const finished = await f.reader.load("2026-08");
+    expect(finished.workouts).toHaveLength(8);
+    expect(finished.unverifiedWorkoutCount).toBe(0);
+    // Actual missing or mismatched evidence still fails the check.
+    f.files.delete(recordPath("health_staging_record", pending[0].id));
+    const invalid = await f.reader.load("2026-08", { refresh: true });
+    expect(invalid.unverifiedWorkoutCount).toBe(1);
+    expect(invalid.workouts).toHaveLength(7);
+  });
+
 });
