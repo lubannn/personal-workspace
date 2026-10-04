@@ -4,15 +4,15 @@ import { type KeyboardEvent, type ReactNode } from "react";
 
 export const WORKSPACE_TABS = [
   { id: "overview", label: "概览" },
-  { id: "journal", label: "日记" },
   { id: "tasks", label: "待办" },
   { id: "calendar", label: "日程" },
-  { id: "projects", label: "项目" },
   { id: "ideas", label: "想法" },
-  { id: "learning", label: "学习" },
-  { id: "habits", label: "习惯" },
-  { id: "health", label: "健康" },
+  { id: "projects", label: "项目" },
   { id: "reports", label: "报告" },
+  { id: "health", label: "健康" },
+  { id: "habits", label: "习惯" },
+  { id: "learning", label: "学习" },
+  { id: "journal", label: "日记" },
 ] as const;
 
 export type WorkspaceTabId = (typeof WORKSPACE_TABS)[number]["id"] | "data";
