@@ -3,18 +3,27 @@ import { COROS_SYNC_INDEX_PATH, corosSyncIndexEntry, parseCorosSyncIndexRecord, 
 import { parseSleepSessionRecord } from "../../../../src/lib/github-data/sleep-sessions";
 import { isWorkoutLinkedToStaging, parseWorkoutRecord } from "../../../../src/lib/github-data/workouts";
 import { parseHealthStagingRecord } from "../../../../src/lib/github-data/health-staging-records";
+import { parseHealthMetricRecord } from "../../../../src/lib/github-data/health-metrics";
 import { recordPath } from "../../../../src/lib/github-data/protocol";
 import { EncryptedHealthBlobCache, type HealthBlobCache } from "../../../../src/lib/github-data/health-blob-cache";
 import { healthLocalParts } from "./health-records";
-import type { SyncedHealthStagingRecord, SyncedSleepSession, SyncedWorkout } from "./page-model";
+import type { SyncedHealthMetric, SyncedHealthStagingRecord, SyncedSleepSession, SyncedWorkout } from "./page-model";
 
 export type HealthArchiveSnapshot = {
   months: string[]; loadedMonths: string[]; month: string;
   sleepSessions: SyncedSleepSession[]; workouts: SyncedWorkout[]; staging: SyncedHealthStagingRecord[];
   latestSleep: string | null; latestWorkout: string | null; latestReady: boolean; unverifiedWorkoutCount: number;
+  healthMetrics?: SyncedHealthMetric[];
 };
 type Canonical = SyncedSleepSession | SyncedWorkout;
 type DateHint = { path: string; blob_sha: string; kind: "sleep" | "workout"; date: string; deleted: boolean };
+function metricDate(path: string): string | null {
+  const match = /^data\/health-metrics\/coros_metric_(\d{4})(\d{2})(\d{2})_[a-z0-9_-]+_(?:daily|instant)\.json$/u.exec(path);
+  if (!match) return null;
+  const value = `${match[1]}-${match[2]}-${match[3]}`;
+  const date = new Date(`${value}T00:00:00Z`);
+  return Number.isFinite(date.valueOf()) && date.toISOString().slice(0, 10) === value ? value : null;
+}
 type Reader = Pick<GitHubContentsAdapter, "listHealthArchive" | "readBlobTexts"> & Partial<Pick<GitHubContentsAdapter, "healthArchiveMetadataCacheKey">>;
 
 /** Authenticate fresh metadata first; reuse encrypted local bodies by SHA and read months on demand. */
@@ -23,6 +32,8 @@ export class HealthArchiveReader {
   private dates = new Map<string, DateHint>();
   private entries = new Map<string, Canonical>();
   private sources = new Map<string, SyncedHealthStagingRecord>();
+  private metrics = new Map<string, SyncedHealthMetric>();
+  private metricDates = new Map<string, string>();
   private index?: { sha: string; entries: CorosSyncIndexEntry[] };
   private catalogReady = false;
   private catalogRequest?: Promise<void>;
@@ -50,6 +61,7 @@ export class HealthArchiveReader {
       if (version !== this.catalogVersion) return;
       if (!neighbor || this.completedMonths.has(neighbor)) continue;
       const entries = [...this.dates.values()].filter(entry => !entry.deleted && this.date(entry).startsWith(`${neighbor}-`));
+      await this.loadMetricMonth(neighbor, signal);
       await this.loadEntries(entries, signal);
       if (version !== this.catalogVersion) return;
       this.completedMonths.add(neighbor);
@@ -98,6 +110,8 @@ export class HealthArchiveReader {
     return {
       months: this.months(), loadedMonths: [...this.completedMonths], month: this.month,
       sleepSessions, workouts, staging, latestSleep: latest(sleepSessions), latestWorkout: latest(workouts), latestReady: this.latestReady,
+      healthMetrics: [...this.metrics.values()].filter(item => this.catalog.get(item.path)?.blobSha === item.blobSha && item.record.deleted_at === null
+        && !(item.record.data.health_metric_version === 2 && item.record.data.revision_of)),
       unverifiedWorkoutCount,
     };
   }
@@ -115,6 +129,7 @@ export class HealthArchiveReader {
     const months = this.months();
     this.month = requestedMonth && months.includes(requestedMonth) ? requestedMonth : months.at(-1) ?? "";
     options.onCatalog?.(this.snapshot());
+    await this.loadMetricMonth(this.month, signal);
     const needed = [...this.dates.values()].filter(entry => !entry.deleted && this.date(entry).startsWith(`${this.month}-`));
     await this.loadEntries(needed, signal);
     if (this.month) this.completedMonths.add(this.month);
@@ -166,7 +181,9 @@ export class HealthArchiveReader {
   }
 
   private months() {
-    const dates = [...this.dates.values()].filter(entry => !entry.deleted).map(entry => this.date(entry).slice(0, 7)).sort();
+    const dates = [...this.dates.values()].filter(entry => !entry.deleted).map(entry => this.date(entry).slice(0, 7));
+    dates.push(...[...this.metricDates.values()].map(date => date.slice(0, 7)));
+    dates.sort();
     if (!dates.length) return [];
     const result: string[] = [];
     const cursor = new Date(`${dates[0]}-01T00:00:00Z`);
@@ -180,6 +197,23 @@ export class HealthArchiveReader {
     const files = await this.adapter.listHealthArchive();
     this.lifetime.signal.throwIfAborted();
     const catalog = new Map(files.filter(file => file.type === "file" && file.name.endsWith(".json")).map(file => [file.path, file]));
+    // New metric filenames carry date-only hints, so cold month views never need all historical bodies.
+    // Legacy names have no trustworthy date hint; parse those once, then reuse authenticated SHAs.
+    const metricDates = new Map(files.flatMap(file => { const date = metricDate(file.path); return date ? [[file.path, date] as const] : []; }));
+    const metricFiles = files.filter(file => file.type === "file" && /^data\/health-metrics\/[^/]+\.json$/.test(file.path)
+      && !file.name.startsWith("coros_metric_revision_") && !metricDates.has(file.path)
+      && this.metrics.get(file.path)?.blobSha !== file.blobSha);
+    for (let offset = 0; offset < metricFiles.length; offset += 40) {
+      const batch = metricFiles.slice(offset, offset + 40);
+      const read = await this.readFiles(batch);
+      for (const file of read) {
+        try {
+          const record = parseHealthMetricRecord(file.text);
+          if (recordPath(record.entity_type, record.id) !== file.path) throw new Error();
+          this.metrics.set(file.path, { record, path: file.path, blobSha: file.blobSha });
+        } catch { throw new Error("HEALTH_RECORD_INVALID"); }
+      }
+    }
     const canonical = files.filter(file => file.type === "file" && /^data\/(sleep-sessions|workouts)\/[^/]+\.json$/.test(file.path));
     // Persist date/SHA metadata only, like journal filenames. Fresh authenticated
     // directory SHAs must match before reuse; no scores, durations, bodies or tokens are stored.
@@ -231,6 +265,28 @@ export class HealthArchiveReader {
     if (cacheKey) try { localStorage.setItem(cacheKey, JSON.stringify({ version: 1, count: dates.size, records: [...dates.values()] })); } catch { /* Metadata caching is optional. */ }
     for (const [path, entry] of this.entries) if (catalog.get(path)?.blobSha !== entry.blobSha) this.entries.delete(path);
     for (const [path, entry] of this.sources) if (catalog.get(path)?.blobSha !== entry.blobSha) this.sources.delete(path);
+    for (const [path, entry] of this.metrics) if (catalog.get(path)?.blobSha !== entry.blobSha) this.metrics.delete(path);
+    for (const [path, entry] of this.metrics) {
+      if (entry.record.deleted_at === null && !(entry.record.data.health_metric_version === 2 && entry.record.data.revision_of)) metricDates.set(path, entry.record.data.local_date);
+      else metricDates.delete(path);
+    }
+    this.metricDates = metricDates;
+    for (const [path, date] of metricDates) if (catalog.get(path)?.blobSha !== this.metrics.get(path)?.blobSha) this.completedMonths.delete(date.slice(0, 7));
+  }
+
+  private async loadMetricMonth(month: string, signal?: AbortSignal) {
+    const files = [...this.catalog.values()].filter(file => this.metricDates.get(file.path)?.startsWith(`${month}-`)
+      && this.metrics.get(file.path)?.blobSha !== file.blobSha);
+    for (let offset = 0; offset < files.length; offset += 40) {
+      for (const file of await this.readFiles(files.slice(offset, offset + 40), signal)) {
+        try {
+          const record = parseHealthMetricRecord(file.text);
+          if (recordPath(record.entity_type, record.id) !== file.path || record.data.local_date !== this.metricDates.get(file.path)) throw new Error();
+          this.metrics.set(file.path, { record, path: file.path, blobSha: file.blobSha });
+          if (record.deleted_at !== null) this.metricDates.delete(file.path);
+        } catch { throw new Error("HEALTH_RECORD_INVALID"); }
+      }
+    }
   }
 
   private parseCanonical(file: { text: string; path: string; blobSha: string }): Canonical {

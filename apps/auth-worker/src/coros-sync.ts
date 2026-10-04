@@ -4,11 +4,13 @@ import { callCorosReadTool } from "./coros-read-client";
 import { mapCorosSleep, mapCorosWorkouts } from "./coros-sync-mapping";
 import { createPrivateDataInstallationAdapter } from "./github-installation";
 import { writeCorosSyncBatch } from "./coros-sync-writer";
-import { acceptSyncRequest, nextSyncWindow, parseSyncProgress, readSyncJob, recentWindowStart, shiftDate, syncReadiness, type CorosSyncEnv, type SyncProgress } from "./coros-sync-state";
+import { collectCorosHealth, nextHealthSyncWindow } from "./coros-health-sync";
+import { writeCorosHealthMetrics } from "./coros-health-writer";
+import { acceptSyncRequest, nextSyncWindow, parseSyncProgress, readSyncJob, recentWindowStart, shiftDate, todayInTimezone, syncReadiness, type CorosSyncEnv, type SyncProgress } from "./coros-sync-state";
 
 const dependencies = { refresh: refreshEnabledCorosConnection, read: callCorosReadTool,
-  adapter: createPrivateDataInstallationAdapter, write: writeCorosSyncBatch };
-export type CorosSyncDependencies = typeof dependencies;
+  adapter: createPrivateDataInstallationAdapter, write: writeCorosSyncBatch, health: collectCorosHealth, writeMetrics: writeCorosHealthMetrics };
+export type CorosSyncDependencies = Omit<typeof dependencies, "health" | "writeMetrics"> & Partial<Pick<typeof dependencies, "health" | "writeMetrics">>;
 const isoAfter = (now: Date, milliseconds: number) => new Date(now.getTime() + milliseconds).toISOString();
 export type CorosSyncRunResult = {
   status: "processed" | "busy" | "complete" | "deferred" | "error";
@@ -21,11 +23,13 @@ export type CorosDrainResult = CorosSyncRunResult;
 
 function pendingRetry(progress: SyncProgress): string | null {
   if (!progress.request) return null;
-  return (["sleep", "workout"] as const).filter(domain =>
+  const retries = (["sleep", "workout"] as const).filter(domain =>
     progress.domains[domain].recentRequestSequence !== progress.request!.sequence
     || progress.domains[domain].backfillNext <= progress.request!.through)
     .map(domain => progress.domains[domain].retryAfter ?? null)
-    .filter((time): time is string => time !== null).sort()[0] ?? null;
+    .filter((time): time is string => time !== null);
+  if (progress.health?.retryAfter) retries.push(progress.health.retryAfter);
+  return retries.sort()[0] ?? null;
 }
 
 /** One bounded window per invocation; authenticated drain skips queue delay, never leases or backoff. */
@@ -58,7 +62,9 @@ export async function runCorosSync(env: CorosSyncEnv, now = new Date(), deps: Co
     await db.prepare("UPDATE coros_sync_jobs SET lease_token = NULL, lease_until = NULL WHERE github_user_id = ?1 AND lease_token = ?2").bind(userId, token).run();
     return { status: "error", errorCode: "COROS_SYNC_STATE_INVALID" };
   }
-  const window = nextSyncWindow(progress, now);
+  const recordWindow = nextSyncWindow(progress, now);
+  const healthWindow = deps.health && deps.writeMetrics ? nextHealthSyncWindow(progress, now) : null;
+  const window = recordWindow?.recent ? recordWindow : healthWindow ?? recordWindow;
   let nextRunAt = isoAfter(now, 10 * 60000);
   async function assertActive() {
     const row = await db.prepare(`SELECT j.lease_token FROM coros_sync_jobs j JOIN coros_connections c
@@ -77,6 +83,28 @@ export async function runCorosSync(env: CorosSyncEnv, now = new Date(), deps: Co
     const ready = await deps.refresh(db, userId, env.TOKEN_ENCRYPTION_KEY);
     if (!ready) throw new Error("COROS_SYNC_CANCELLED");
     await assertActive();
+    if (window.domain === "health") {
+      const collected = await deps.health!((name, args) => deps.read(ready.resourceUrl, ready.accessToken, name, args), window, progress, assertActive, now);
+      await assertActive();
+      const adapter = await deps.adapter({ appId: env.GITHUB_APP_ID!, installationId: env.GITHUB_APP_INSTALLATION_ID!, privateKeyPem: env.GITHUB_APP_PRIVATE_KEY!, owner: env.ALLOWED_REPO_OWNER!, repository: env.ALLOWED_REPO_NAME! });
+      const descriptor = parseWorkspaceDescriptor((await adapter.readText("workspace.json")).text);
+      if (descriptor.owner_login !== env.ALLOWED_GITHUB_LOGIN || descriptor.owner_id !== env.COROS_WORKSPACE_OWNER_ID || descriptor.timezone !== progress.timezone) throw new Error("COROS_SYNC_WORKSPACE_MISMATCH");
+      const outcome = collected.items.length ? await deps.writeMetrics!(adapter, { ownerId: descriptor.owner_id, items: collected.items, timestamp: collected.observedAt, beforeCommit: assertActive }) : { created: 0, updated: 0, unchanged: 0 };
+      await assertActive(); const domain = progress.health!;
+      if (window.recent) {
+        domain.recentDataThrough = todayInTimezone(new Date(collected.observedAt), progress.timezone);
+        domain.recentThrough = collected.through;
+        domain.recentNext = collected.through < progress.request!.through ? shiftDate(collected.through, 1) : null;
+        if (!domain.recentNext) { domain.recentRequestSequence = progress.request!.sequence; domain.lastRecentAt = collected.observedAt; }
+        if (domain.backfillNext >= window.from && domain.backfillNext <= collected.through) { domain.backfillThrough = collected.through; domain.backfillNext = shiftDate(collected.through, 1); }
+      } else { domain.backfillThrough = collected.through; domain.backfillNext = shiftDate(collected.through, 1); }
+      domain.created += outcome.created; domain.limitations = collected.limitations; domain.retryAfter = null; domain.lastErrorCode = null;
+      domain.latestRecordDate = [domain.latestRecordDate, ...collected.items.map(item => item.candidate.local_date)].filter((value): value is string => value !== null).sort().at(-1) ?? null;
+      progress.lastSuccessAt = collected.observedAt; progress.lastErrorCode = null; progress.failureCount = 0;
+      progress.lastBatch = { domain: "health", from: window.from, through: collected.through, ...outcome, conflicts: 0 };
+      await db.prepare("UPDATE coros_connections SET last_sync_at = ?1, last_error_code = NULL WHERE github_user_id = ?2 AND state = 'enabled'").bind(collected.observedAt, userId).run();
+      return { status: "processed", batch: progress.lastBatch, progress };
+    }
     const range = { startDate: window.from, endDate: window.through, timezone: progress.timezone };
     const args = { startDate: window.from.replaceAll("-", ""), endDate: window.through.replaceAll("-", "") };
     let mapped;
@@ -163,12 +191,13 @@ export async function runCorosSync(env: CorosSyncEnv, now = new Date(), deps: Co
     const code = /^(?:COROS|GITHUB)_[A-Z_]{1,80}$/u.test(message) ? message : "COROS_SYNC_FAILED";
     progress.lastErrorCode = code; progress.failureCount += 1;
     if (window) {
-      progress.domains[window.domain].retryAfter = isoAfter(now, Math.min(120, 10 * 2 ** Math.min(progress.failureCount, 4)) * 60000);
-      progress.domains[window.domain].lastErrorCode = code;
+      const domain = window.domain === "health" ? progress.health! : progress.domains[window.domain];
+      domain.retryAfter = isoAfter(now, Math.min(120, 10 * 2 ** Math.min(progress.failureCount, 4)) * 60000);
+      domain.lastErrorCode = code;
     }
     await db.prepare("UPDATE coros_connections SET last_error_code = ?1 WHERE github_user_id = ?2 AND state = 'enabled'")
       .bind(code, userId).run();
-    return { status: "error", errorCode: code, retryAt: window ? progress.domains[window.domain].retryAfter : null, progress };
+    return { status: "error", errorCode: code, retryAt: window ? (window.domain === "health" ? progress.health! : progress.domains[window.domain]).retryAfter : null, progress };
   } finally {
     await db.prepare(`UPDATE coros_sync_jobs SET progress_json = ?1, next_run_at = CASE WHEN request_seq > ?6 THEN ?3 ELSE ?2 END,
       lease_token = NULL, lease_until = NULL, updated_at = ?3 WHERE github_user_id = ?4 AND lease_token = ?5`)

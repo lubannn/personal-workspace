@@ -245,14 +245,15 @@ export function CorosConnectionSection({ connectionMethod, onClearHealthCache, c
     </p> : null}
     <details className="coros-compact-settings"><summary>同步设置与记录</summary>
       <div className="coros-compact-settings-body">
-        <p>手表数据需先同步到 COROS App。睡眠和运动的后续变化会自动更新到 GitHub，保留变更记录。</p>
+        <p>手表数据需先同步到 COROS App。睡眠、运动及可读取的健康指标会自动更新到 GitHub，保留变更记录。恢复记录仅表示同步时的观测值，无法补历史恢复；未确认的热量口径与完整日不会用于评级。</p>
         {progress ? <>
           <dl className="health-records-range">{(["sleep", "workout"] as const).map(domain => {
             const p = progress.domains[domain];
             return <div key={domain}><dt>{domain === "sleep" ? "睡眠" : "运动"}最新记录</dt><dd>{p.latestRecordDate ?? "暂无"}</dd></div>;
           })}<div><dt>历史检查范围</dt><dd>{progress.startDate} 至 {progress.backfillEnd ?? "等待请求"}</dd></div></dl>
           <p>已连续检查：睡眠 {progress.domains.sleep.backfillThrough ?? "尚未开始"}，运动 {progress.domains.workout.backfillThrough ?? "尚未开始"}。范围内无记录的日期不会生成数据。</p>
-          {historyBatch ? <p>最近一批：{historyBatch.domain === "sleep" ? "睡眠" : "运动"} {historyBatch.from} 至 {historyBatch.through}，新增 {historyBatch.created} 条、更新 {historyBatch.updated ?? 0} 条。</p> : null}
+          {historyBatch ? <p>最近一批：{historyBatch.domain === "sleep" ? "睡眠" : historyBatch.domain === "health" ? "健康指标" : "运动"} {historyBatch.from} 至 {historyBatch.through}，新增 {historyBatch.created} 条、更新 {historyBatch.updated ?? 0} 条。</p> : null}
+          {progress.health ? <p>健康指标最近读取：{progress.health.recentDataThrough ?? "尚未读取"}；HRV 历史已检查至 {progress.health.backfillThrough ?? "尚未开始"}。日健康及静息心率仅支持近期读取，更早空档未确认。{progress.health.lastErrorCode ? "健康指标本批读取未完成，可重试。" : ""}</p> : null}
           <CorosConflicts count={progress.conflicts} />
         </> : null}
         {status?.connected && status.state === "paused" && !progress ? <div className="health-records-date-inputs"><label>历史开始日期<input type="date" value={startDate} disabled={busy} onChange={event => setStartDate(event.target.value)} /></label></div> : null}

@@ -1,4 +1,5 @@
 import type { AuthEnv, D1DatabaseLike } from "./auth";
+import type { HealthSyncProgress } from "./coros-health-sync";
 
 export type CorosSyncEnv = AuthEnv & {
   GITHUB_APP_ID?: string;
@@ -20,9 +21,10 @@ export type SyncProgress = {
   backfillEnd?: string;
   request?: { sequence: number; through: string };
   domains: Record<SyncDomain, DomainProgress>;
+  health?: HealthSyncProgress;
   lastAttemptAt: string | null; lastSuccessAt: string | null; lastErrorCode: string | null;
   failureCount: number; conflicts: number;
-  lastBatch: { domain: SyncDomain; from: string; through: string; created: number; unchanged: number; updated?: number; conflicts: number } | null;
+  lastBatch: { domain: SyncDomain | "health"; from: string; through: string; created: number; unchanged: number; updated?: number; conflicts: number } | null;
 };
 export type SyncJob = { progress_json: string; lease_token: string | null; lease_until: string | null; next_run_at: string;
   request_seq: number; requested_through: string | null; daily_requested_date: string | null };
@@ -66,6 +68,7 @@ export function parseSyncProgress(text: string): SyncProgress {
   for (const domain of ["sleep", "workout"] as const) {
     if (!p.domains[domain] || !dateOnly(p.domains[domain].backfillNext)) throw new Error("COROS_SYNC_STATE_INVALID");
   }
+  if (p.health && (!dateOnly(p.health.backfillNext) || (p.health.recentDataThrough && !dateOnly(p.health.recentDataThrough)))) throw new Error("COROS_SYNC_STATE_INVALID");
   return p;
 }
 export async function readSyncJob(db: D1DatabaseLike, userId: string) {
@@ -84,6 +87,7 @@ export function acceptSyncRequest(p: SyncProgress, job: Pick<SyncJob, "request_s
     p.domains[domain].recentNext = null;
     p.domains[domain].retryAfter = null;
   }
+  if (p.health) { p.health.recentNext = null; p.health.retryAfter = null; }
 }
 
 export function recentWindowStart(p: SyncProgress, domain: SyncDomain) {

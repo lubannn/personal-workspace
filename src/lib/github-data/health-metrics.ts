@@ -8,7 +8,15 @@ export type ConfirmedHealthMetricData = HealthMetricCandidate & {
   confirmation_status: "confirmed";
   staging_record_id: string;
 };
-export type AutomaticHealthMetricData = HealthMetricCandidate & AutomaticCorosFields & { health_metric_version: 2 };
+export type AutomaticHealthMetricData = HealthMetricCandidate & AutomaticCorosFields & {
+  health_metric_version: 2;
+  /** Explicit source evidence for completed daily aggregates; absent means unknown. */
+  day_complete?: boolean;
+  /** Daily endpoint dates identify buckets, not measurement instants. */
+  measurement_time_kind?: "observed_at";
+  /** Immutable prior version retained by the metric sync writer; excluded from live ratings. */
+  revision_of?: string;
+};
 export type HealthMetricData = ConfirmedHealthMetricData | AutomaticHealthMetricData;
 export type HealthMetricRecord = WorkspaceRecord<HealthMetricData>;
 
@@ -19,8 +27,10 @@ export function createConfirmedHealthMetricData(candidate: HealthMetricCandidate
   return data;
 }
 
-export function createAutomaticHealthMetricData(candidate: HealthMetricCandidate, provenance: CorosProvenance): AutomaticHealthMetricData {
-  const data: AutomaticHealthMetricData = { ...candidate, health_metric_version: 2, import_mode: "automatic", review_status: "validated", source: provenance };
+export function createAutomaticHealthMetricData(candidate: HealthMetricCandidate, provenance: CorosProvenance, dayComplete?: boolean, measurementTimeKind?: "observed_at"): AutomaticHealthMetricData {
+  const data: AutomaticHealthMetricData = { ...candidate, health_metric_version: 2, import_mode: "automatic", review_status: "validated", source: provenance,
+    ...(dayComplete === undefined ? {} : { day_complete: dayComplete }),
+    ...(measurementTimeKind === undefined ? {} : { measurement_time_kind: measurementTimeKind }) };
   validateData(data);
   return data;
 }
@@ -37,7 +47,10 @@ function validateData(data: HealthMetricData) {
   const keys = "aggregation_period,confirmation_status,health_metric_version,local_date,measured_at,metric_type,staging_record_id,timezone,unit,value";
   const automaticKeys = "aggregation_period,health_metric_version,import_mode,local_date,measured_at,metric_type,review_status,source,timezone,unit,value";
   const validOrigin = data.health_metric_version === 2
-    ? Object.keys(data).sort().join(",") === automaticKeys && validAutomaticCorosFields(data)
+    ? Object.keys(data).filter(key => !["day_complete", "measurement_time_kind", "revision_of"].includes(key)).sort().join(",") === automaticKeys && validAutomaticCorosFields(data)
+      && (!Object.hasOwn(data, "day_complete") || (typeof data.day_complete === "boolean" && data.aggregation_period === "daily"))
+      && (!Object.hasOwn(data, "measurement_time_kind") || data.measurement_time_kind === "observed_at")
+      && (!Object.hasOwn(data, "revision_of") || (typeof data.revision_of === "string" && /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/u.test(data.revision_of)))
       && typeof data.measured_at === "string" && typeof data.timezone === "string" && Boolean(data.timezone)
     : Object.keys(data).sort().join(",") === keys && data.health_metric_version === 1 && data.confirmation_status === "confirmed" && Boolean(data.staging_record_id);
   if (!validOrigin || !/^[a-z0-9][a-z0-9_-]{0,63}$/u.test(data.metric_type) || !data.unit || data.unit.length > 64

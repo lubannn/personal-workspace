@@ -14,7 +14,7 @@ type WorkoutItem = Extract<CorosSyncCandidate, { kind: "workout" }>;
 // This is a versioned parser for observed COROS output, not natural-language extraction.
 // Unknown layouts fail the entire read so the caller cannot advance a coverage checkpoint.
 function fail(): never { throw new Error("COROS_SYNC_FORMAT_UNSUPPORTED"); }
-function resultText(result: CorosReadResult): string {
+export function corosResultText(result: CorosReadResult): string {
   let payload: unknown;
   if (result.format === "content") {
     if (!Array.isArray(result.payload) || result.payload.length !== 1) return fail();
@@ -101,7 +101,7 @@ const sleepFields = new Set([
 ]);
 
 export function mapCorosSleep(result: CorosReadResult, options: CorosSyncDateRange): { items: SleepItem[]; reportedCount: number } {
-  const bounds = range(options); const text = resultText(result);
+  const bounds = range(options); const text = corosResultText(result);
   if (text === "No sleep overview data found.") {
     // This observed empty response has no dates. Accept it only within the
     // tool's verified three-day window; a larger request could be silently capped.
@@ -258,7 +258,7 @@ function nonNegative(value: string) {
   const number = Number(value); if (!Number.isFinite(number)) return fail(); return number;
 }
 export function mapCorosWorkouts(result: CorosReadResult, options: CorosSyncDateRange): { items: WorkoutItem[]; reportedCount: number } {
-  const bounds = range(options); const text = resultText(result);
+  const bounds = range(options); const text = corosResultText(result);
   const empty = /^No sport records found from (\d{4}-\d{2}-\d{2}) to (\d{4}-\d{2}-\d{2})\.$/u.exec(text);
   if (empty) {
     if (empty[1] !== bounds.start || empty[2] !== bounds.end) return fail();

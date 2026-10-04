@@ -1,5 +1,7 @@
 "use client";
 
+import styles from "../workbench.module.css";
+
 import { useState, type FormEvent } from "react";
 
 import type { TaskCategory, TaskEditableFields, TaskPriority } from "../../../../src/lib/github-data/tasks";
@@ -119,12 +121,12 @@ export function TasksSection(props: Props) {
   }
 
   return (
-    <section className="tasks-card" aria-labelledby="tasks-title">
+    <section className={`tasks-card ${styles.scope}`} aria-labelledby="tasks-title">
       <div className="card-heading">
         <div>
-          <p className="eyebrow">Phase 2 · Task foundation</p>
+          <p className="eyebrow">TASKS</p>
           <h2 id="tasks-title">任务清单</h2>
-          <p className="tasks-subtitle">创建、编辑、完成、取消、归档与恢复均直接同步到 Private GitHub。</p>
+          <p className="tasks-subtitle">把今天要推进的事排清楚，完成一项就划掉。</p>
         </div>
         <div className="task-view-actions" aria-label="任务视图与同步">
           <button className={`view-button ${taskView === "open" ? "active" : ""}`} type="button" aria-pressed={taskView === "open"} onClick={() => onTaskViewChange("open")} disabled={taskFormActive || Boolean(savingTaskId)}>待办 {openTaskFiles.length}</button>
@@ -132,7 +134,7 @@ export function TasksSection(props: Props) {
           <button className={`view-button ${taskView === "cancelled" ? "active" : ""}`} type="button" aria-pressed={taskView === "cancelled"} onClick={() => onTaskViewChange("cancelled")} disabled={taskFormActive || Boolean(savingTaskId)}>已取消 {cancelledTaskFiles.length}</button>
           <button className={`view-button ${taskView === "archived" ? "active" : ""}`} type="button" aria-pressed={taskView === "archived"} onClick={() => onTaskViewChange("archived")} disabled={taskFormActive || Boolean(savingTaskId)}>已归档 {archivedTaskFiles.length}</button>
           <button className={`view-button ${taskView === "trash" ? "active" : ""}`} type="button" aria-pressed={taskView === "trash"} onClick={() => onTaskViewChange("trash")} disabled={taskFormActive || Boolean(savingTaskId)}>回收站 {trashedTaskFiles.length}</button>
-          <button className="secondary-button" type="button" onClick={onRefresh} disabled={!connection || loadingTasks || taskFormActive || Boolean(savingTaskId)}>{loadingTasks ? "刷新中…" : "从 GitHub 刷新"}</button>
+          <button className="secondary-button" type="button" onClick={onRefresh} disabled={!connection || loadingTasks || taskFormActive || Boolean(savingTaskId)}>{loadingTasks ? "刷新中…" : "刷新"}</button>
         </div>
       </div>
 
@@ -140,6 +142,7 @@ export function TasksSection(props: Props) {
         <label className="task-title-field">任务标题
           <input value={taskTitle} onChange={(event) => onTaskTitleChange(event.target.value)} maxLength={300} placeholder={connection ? "今天要推进什么？" : "连接 Private 数据仓库后创建任务"} disabled={!connection || savingTask || taskFormActive} />
         </label>
+        <details className="task-create-options"><summary>分类与优先级 · {TASK_CATEGORY_LABELS[taskCategory]} / {TASK_PRIORITY_LABELS[taskPriority]}</summary><div className="task-options-grid">
         <label>分类
           <select value={taskCategory} onChange={(event) => onTaskCategoryChange(event.target.value as TaskCategory)} disabled={!connection || savingTask || taskFormActive}>
             {Object.entries(TASK_CATEGORY_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
@@ -150,13 +153,14 @@ export function TasksSection(props: Props) {
             {Object.entries(TASK_PRIORITY_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
           </select>
         </label>
+        </div></details>
         <label>项目
           <select value={taskProjectId} onChange={(event) => onTaskProjectIdChange(event.target.value)} disabled={!connection || savingTask || taskFormActive}>
             <option value="">无项目</option>
             {selectableProjectFiles.map((item) => <option key={item.record.id} value={item.record.id}>{item.record.data.name}</option>)}
           </select>
         </label>
-        <label>DDL
+        <label>截止日期
           <input type="date" value={taskDueDate} onChange={(event) => onTaskDueDateChange(event.target.value)} onInput={(event) => onTaskDueDateChange(event.currentTarget.value)} disabled={!connection || savingTask || taskFormActive} />
         </label>
         <button className="primary-button" type="submit" disabled={!connection || !taskTitle.trim() || savingTask || taskFormActive || online === false}>{savingTask ? "保存中…" : "创建任务"}</button>
@@ -182,11 +186,6 @@ export function TasksSection(props: Props) {
                       <label className="task-edit-title">任务标题
                         <input value={editTitle} onChange={(event) => setEditTitle(event.target.value)} maxLength={300} autoFocus disabled={savingTaskId === item.record.id} />
                       </label>
-                      <label>分类
-                        <select value={editCategory} onChange={(event) => setEditCategory(event.target.value as TaskCategory)} disabled={savingTaskId === item.record.id}>
-                          {Object.entries(TASK_CATEGORY_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-                        </select>
-                      </label>
                       <label>优先级
                         <select value={editPriority} onChange={(event) => setEditPriority(event.target.value as TaskPriority)} disabled={savingTaskId === item.record.id}>
                           {Object.entries(TASK_PRIORITY_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
@@ -198,8 +197,14 @@ export function TasksSection(props: Props) {
                           {projectOptions(selectableProjectFiles, item.record.data.project_id, projectFiles).map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
                         </select>
                       </label>
-                      <label>DDL
+                      <label>截止日期
                         <input type="date" value={editDueDate} onChange={(event) => setEditDueDate(event.target.value)} onInput={(event) => setEditDueDate(event.currentTarget.value)} disabled={savingTaskId === item.record.id} />
+                      </label>
+                      <details className="task-edit-options"><summary>分类、标签、耗时与备注</summary><div className="task-options-grid">
+                      <label>分类
+                        <select value={editCategory} onChange={(event) => setEditCategory(event.target.value as TaskCategory)} disabled={savingTaskId === item.record.id}>
+                          {Object.entries(TASK_CATEGORY_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                        </select>
                       </label>
                       <label className="task-edit-tags">标签（逗号分隔）
                         <input value={editTags} onChange={(event) => setEditTags(event.target.value)} maxLength={1020} placeholder="周报, 等待反馈" disabled={savingTaskId === item.record.id} />
@@ -213,6 +218,7 @@ export function TasksSection(props: Props) {
                       <label className="task-edit-notes">Markdown 备注
                         <textarea value={editNotes} onChange={(event) => setEditNotes(event.target.value)} maxLength={50000} rows={5} placeholder="补充上下文、检查清单或结果…" disabled={savingTaskId === item.record.id} />
                       </label>
+                      </div></details>
                       <div className="task-edit-actions">
                         <button className="primary-button" type="submit" disabled={!editTitle.trim() || Boolean(savingTaskId) || online === false}>{savingTaskId === item.record.id ? "保存中…" : "保存修改"}</button>
                         <button className="secondary-button" type="button" onClick={() => setEditingTaskId(null)} disabled={savingTaskId === item.record.id}>放弃修改</button>
@@ -221,7 +227,7 @@ export function TasksSection(props: Props) {
                   ) : <>
                     <strong>{item.record.data.title}</strong>
                     {item.record.data.parent_task_id ? <span className="task-parent-label">↳ {parentTitle(item, taskFiles)}</span> : null}
-                    <span>{TASK_CATEGORY_LABELS[item.record.data.category]} · {TASK_PRIORITY_LABELS[item.record.data.priority]}优先级 · {projectName(item.record.data.project_id, projectFiles)} · {formatTaskDue(item.record.data.due_at, currentTaskDate)}</span>
+                    <div className="task-metadata"><span className={`task-due ${item.record.data.due_at && item.record.data.due_at.slice(0, 10) < currentTaskDate && taskView === "open" ? "overdue" : ""}`}>{formatTaskDue(item.record.data.due_at, currentTaskDate).replace("无 DDL", "未设截止日期")}</span><span className="task-project">{projectName(item.record.data.project_id, projectFiles)}</span><span className={`task-priority priority-${item.record.data.priority}`}>{TASK_PRIORITY_LABELS[item.record.data.priority]}优先级</span><span>{TASK_CATEGORY_LABELS[item.record.data.category]}</span></div>
                     {hasTaskDetails(item) ? <span className="task-detail-summary">{formatTaskDetails(item)}</span> : null}
                     {subtaskParentId === item.record.id ? <form className="task-subtask-form" onSubmit={(event) => submitSubtask(event, item)}>
                       <label>子任务标题
@@ -236,13 +242,15 @@ export function TasksSection(props: Props) {
                   </>}
                 </div>
                 <div className="task-row-actions">
-                  <code>v{item.record.version}</code>
+
                   {editingTaskId === item.record.id ? null : <div className="task-item-actions">
                     {taskView === "archived" || taskView === "trash" ? null : <button className="text-button" type="button" onClick={() => beginEdit(item)} disabled={taskFormActive || Boolean(savingTaskId) || online === false}>编辑</button>}
+                    {taskView !== "trash" ? <details className="row-more"><summary>更多</summary><div className="row-more-actions">
                     {taskView === "open" && item.record.data.parent_task_id === null ? <button className="text-button" type="button" onClick={() => beginSubtask(item)} disabled={taskFormActive || Boolean(savingTaskId) || online === false}>添加子任务</button> : null}
                     {taskView === "open" ? <button className="text-button task-destructive-button" type="button" onClick={() => onLifecycleChange(item, "cancel")} disabled={taskFormActive || Boolean(savingTaskId) || online === false}>取消任务</button> : null}
-                    {taskView !== "archived" && taskView !== "trash" ? <button className="text-button" type="button" onClick={() => onLifecycleChange(item, "archive")} disabled={taskFormActive || Boolean(savingTaskId) || online === false}>归档</button> : null}
-                    {taskView !== "trash" ? <button className="text-button task-destructive-button" type="button" onClick={() => onDeletionChange(item, "trash")} disabled={taskFormActive || Boolean(savingTaskId) || online === false}>移到回收站</button> : null}
+                    {taskView !== "archived" ? <button className="text-button" type="button" onClick={() => onLifecycleChange(item, "archive")} disabled={taskFormActive || Boolean(savingTaskId) || online === false}>归档</button> : null}
+                    <button className="text-button task-destructive-button" type="button" onClick={() => onDeletionChange(item, "trash")} disabled={taskFormActive || Boolean(savingTaskId) || online === false}>移到回收站</button>
+                    </div></details> : null}
                   </div>}
                 </div>
               </li>

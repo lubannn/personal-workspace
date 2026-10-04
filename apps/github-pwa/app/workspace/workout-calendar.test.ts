@@ -42,7 +42,7 @@ describe("paired sleep and workout calendars", () => {
     const rows = [workout("run"), workout("ride", { activity: "骑行" }), workout("walk", { activity: "步行" })];
     const html = renderToStaticMarkup(createElement(SleepCalendarSection, { rows: [], workouts: rows, timezone: "Asia/Shanghai" }));
     expect((html.match(/class="sleep-calendar-month(?: workout-calendar-month)?"/g) ?? [])).toHaveLength(2);
-    expect(html).toContain("2024年2月睡眠月历");
+    expect(html).toContain("2024年2月综合健康月历");
     expect(html).toContain("2024年2月运动月历");
     expect(html).toContain("跑步"); expect(html).toContain("45分"); expect(html).toContain("+1次");
     expect(html).toContain("07:30开始"); expect(html).toContain("共2时15分");

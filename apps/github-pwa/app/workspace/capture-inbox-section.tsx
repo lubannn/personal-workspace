@@ -1,5 +1,7 @@
 "use client";
 
+import styles from "../workbench.module.css";
+
 import { useMemo, useState } from "react";
 import { CAPTURE_KINDS, captureMatches, suggestCapture, type CaptureFields } from "../../../../src/lib/github-data/capture-details";
 import { CAPTURE_DESTINATIONS } from "../../../../src/lib/github-data/capture-routing";
@@ -59,9 +61,9 @@ export function CaptureInboxSection(props: Props) {
   const matches = useMemo(() => visibleCaptures.filter((item) => captureMatches(item.record, query)), [visibleCaptures, query]);
   const titleId = module === "ideas" ? "ideas-title" : "recent-title";
   return (
-    <section className="recent-card capture-inbox" aria-labelledby={titleId}>
+    <section className={`recent-card capture-inbox ${styles.scope}`} aria-labelledby={titleId}>
       <div className="card-heading capture-inbox-heading">
-        <h2 id={titleId}>{module === "ideas" ? "想法" : "待整理随手记"}</h2>
+        <h2 id={titleId}>{module === "ideas" ? "想法" : "记录列表"}</h2>
         <button className="secondary-button" type="button" aria-label={module === "ideas" ? "刷新想法" : "刷新随手记"} onClick={onRefresh} disabled={!connection || online === false || loadingCaptures || Boolean(savingCaptureId) || editingId !== null}>{loadingCaptures ? "刷新中…" : "刷新"}</button>
       </div>
       <div className="recent-actions capture-view-actions" aria-label={module === "ideas" ? "想法视图" : "随手记视图"}>
@@ -81,11 +83,15 @@ export function CaptureInboxSection(props: Props) {
                 {editingId === item.record.id ? <CaptureEditor item={item} timezone={connection.timezone} saving={Boolean(savingCaptureId)} online={online} onSave={onEdit} onCancel={() => setEditingId(null)} /> : <p>{item.record.data.raw_text}</p>}
               </div>
               <div className="capture-row-actions">
-                {item.record.data.routed_to ? <button className="view-button" type="button" onClick={() => onOpenDestination(item.record.data.routed_to!.tab)}>打开{item.record.data.routed_to.label}</button> : captureView !== "trash" ? <>
-                  <button className="view-button" type="button" disabled={Boolean(savingCaptureId) || editingId !== null} onClick={() => setEditingId(item.record.id)}>编辑</button>
-                  <button className="view-button" type="button" disabled={Boolean(savingCaptureId) || loadingCaptures || online === false || editingId !== null} onClick={() => onLifecycleChange(item, captureView === "archived" ? "unarchive" : "archive")}>{captureView === "archived" ? "放回待整理" : "归档"}</button>
-                </> : null}
-                {!item.record.data.routed_to ? <button className={captureView === "trash" ? "restore-button" : "trash-button"} type="button" onClick={() => onLifecycleChange(item, captureView === "trash" ? "restore" : "trash")} disabled={Boolean(savingCaptureId) || loadingCaptures || online === false || editingId !== null}>{savingCaptureId === item.record.id ? "同步中…" : captureView === "trash" ? "恢复" : "移到回收站"}</button> : null}
+                {item.record.data.routed_to ? <button className="view-button" type="button" onClick={() => onOpenDestination(item.record.data.routed_to!.tab)}>打开{item.record.data.routed_to.label}</button>
+                  : captureView === "trash" ? <button className="restore-button" type="button" onClick={() => onLifecycleChange(item, "restore")} disabled={Boolean(savingCaptureId) || loadingCaptures || online === false || editingId !== null}>{savingCaptureId === item.record.id ? "同步中…" : "恢复"}</button>
+                    : <>
+                      <button className="view-button" type="button" disabled={Boolean(savingCaptureId) || editingId !== null} onClick={() => setEditingId(item.record.id)}>编辑</button>
+                      <details className="row-more"><summary>更多</summary><div className="row-more-actions">
+                        <button className="view-button" type="button" disabled={Boolean(savingCaptureId) || loadingCaptures || online === false || editingId !== null} onClick={() => onLifecycleChange(item, captureView === "archived" ? "unarchive" : "archive")}>{captureView === "archived" ? "放回待整理" : "归档"}</button>
+                        <button className="trash-button" type="button" onClick={() => onLifecycleChange(item, "trash")} disabled={Boolean(savingCaptureId) || loadingCaptures || online === false || editingId !== null}>{savingCaptureId === item.record.id ? "同步中…" : "移到回收站"}</button>
+                      </div></details>
+                    </>}
               </div>
             </li>)}</ul>}
       {connection && matches.length > 0 ? <div className="capture-list-footer"><span role="status">显示 {Math.min(limit, matches.length)} / {matches.length} 条</span>{limit < matches.length ? <button className="view-button" type="button" onClick={() => setLimit(limit + 20)}>加载更多</button> : null}</div> : null}
