@@ -153,7 +153,7 @@ export async function runCorosSync(env: CorosSyncEnv, now = new Date(), deps: Co
     progress.conflicts = outcome.totalPendingConflicts;
     progress.lastSuccessAt = now.toISOString(); progress.lastErrorCode = null; progress.failureCount = 0;
     progress.lastBatch = { domain: window.domain, from: window.from, through: window.through,
-      created: outcome.created, unchanged: outcome.unchanged, conflicts: outcome.conflicts };
+      created: outcome.created, unchanged: outcome.unchanged, updated: outcome.updated ?? 0, conflicts: outcome.conflicts };
     await db.prepare("UPDATE coros_connections SET last_sync_at = ?1, last_error_code = NULL WHERE github_user_id = ?2 AND state = 'enabled'")
       .bind(now.toISOString(), userId).run();
     return { status: "processed", batch: progress.lastBatch, progress };

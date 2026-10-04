@@ -69,3 +69,21 @@
   .health-records-date-inputs input { width: 100%; }
   .health-records-date-inputs > button { flex-basis: 100%; text-align: left; }
 }
+
+.coros-compact { padding: 20px 24px; }
+.coros-compact-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.coros-compact-heading h2 { margin: 0; font: 500 21px/1.3 ui-serif, Georgia, "Songti SC", serif; }
+.coros-compact-status { margin: 6px 0 0; color: var(--accent); font-size: 12px; }
+.coros-compact-meta { margin: 10px 0; color: var(--soft); font-size: 11px; line-height: 1.7; }
+.coros-compact .learning-view-actions { margin: 0; flex-wrap: wrap; }
+.coros-compact button { min-height: 34px; padding: 8px 12px; font-size: 11px; }
+.coros-compact-settings { margin-top: 10px; color: var(--soft); font-size: 11px; }
+.coros-compact-settings summary { width: fit-content; cursor: pointer; padding: 4px 0; }
+.coros-compact-settings-body { display: grid; gap: 12px; padding-top: 12px; border-top: 1px solid var(--line); margin-top: 8px; }
+.coros-compact-settings-body p { margin: 0; line-height: 1.7; }
+@media (max-width: 600px) {
+  .coros-compact { padding: 16px; }
+  .coros-compact-heading { align-items: flex-start; }
+  .coros-compact-heading h2 { font-size: 19px; }
+  .coros-compact-heading .learning-view-actions { flex-shrink: 0; }
+}
