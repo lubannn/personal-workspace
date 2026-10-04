@@ -3,7 +3,7 @@ import type { WorkspaceTabId } from "./workspace-tab-navigation";
 // Include the collections used by each module's forms and mutations as well as
 // its visible records. For example, calendar edits validate linked task IDs.
 export const WORKSPACE_MODULE_COLLECTIONS = {
-  overview: ["dashboard", "captures", "tasks", "projects", "milestones", "calendar", "journal"],
+  overview: ["dashboard", "captures", "tasks", "calendar"],
   journal: ["journal"],
   ideas: ["captures"],
   tasks: ["tasks", "projects", "timeEntries"],
