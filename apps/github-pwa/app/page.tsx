@@ -692,7 +692,8 @@ export default function GitHubWorkspacePage() {
     setErrorMessage("");
     setStatusMessage("");
     try {
-      const fingerprint = JSON.stringify({ repository: connection.repository, ownerId: connection.ownerId, fields: captureFields });
+      // Retry identity follows the user's draft, not date suggestions refreshed at midnight.
+      const fingerprint = JSON.stringify({ repository: connection.repository, ownerId: connection.ownerId, timezone: connection.timezone, draft: captureDraft });
       const retry = captureSubmissionRef.current?.fingerprint === fingerprint;
       if (!retry) {
         const timestamp = new Date().toISOString();

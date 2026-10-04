@@ -86,6 +86,18 @@ describe("canonical destination creation", () => {
     expect(submission.tab).toBe("ideas");
     expect(parseCaptureRecord(serializeRecord(submission.record)).data.kind).toBe("idea");
   });
+  it("uses the submission date for an undated journal while preserving an explicit yesterday", () => {
+    const timestamp = "2026-10-04T16:00:00.001Z";
+    const midnight = { ...context, timestamp, today: "2026-10-05" };
+    const draft = { ...fields("日记：跨午夜保留的草稿"), date: null };
+    const relative = prepareCaptureSubmission(draft, midnight);
+    expect(parseJournalEntryRecord(serializeRecord(relative.record)).data).toMatchObject({
+      journal_date: "2026-10-05", first_entry_at: timestamp, last_entry_at: timestamp,
+    });
+    const explicit = prepareCaptureSubmission({ ...draft, date: "2026-10-04" }, midnight);
+    expect(parseJournalEntryRecord(serializeRecord(explicit.record)).data.journal_date).toBe("2026-10-04");
+    expect(relative.record.created_at).toBe(timestamp);
+  });
   it("blocks empty bodies and missing schedule dates before a write can occur", () => {
     expect(() => prepareCaptureSubmission(fields("日记："), context)).toThrow("CAPTURE_BODY_REQUIRED");
     expect(() => prepareCaptureSubmission({ ...fields("日程：开会"), date: null }, context)).toThrow("CAPTURE_DATE_REQUIRED");
@@ -106,6 +118,28 @@ describe("single-record submission and retry", () => {
     writer.readText.mockResolvedValue({ path: submission.path, text: serializeRecord(submission.record), blobSha: "existing" });
     expect(await writeCaptureSubmission(writer, submission, true)).toMatchObject({ blobSha: "existing" });
     expect(writer.writeText).not.toHaveBeenCalled();
+  });
+  it("preserves the journal path, date, and instant when retrying a lost response across midnight", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-10-04T15:59:59.999Z"));
+      const writer = adapter();
+      const submission = prepareCaptureSubmission({ ...fields("日记：午夜前提交"), date: null }, {
+        ...context, timestamp: new Date().toISOString(), today: "2026-10-04",
+      });
+      const serialized = serializeRecord(submission.record);
+      writer.writeText.mockRejectedValueOnce(new Error("response lost after commit"));
+      await expect(writeCaptureSubmission(writer, submission)).rejects.toThrow("response lost");
+      vi.setSystemTime(new Date("2026-10-04T16:00:00.001Z"));
+      writer.readText.mockResolvedValue({ path: submission.path, text: serialized, blobSha: "existing" });
+      await expect(writeCaptureSubmission(writer, submission, true)).resolves.toMatchObject({ path: submission.path, blobSha: "existing" });
+      expect(writer.writeText).toHaveBeenCalledOnce();
+      expect(writer.readText).toHaveBeenCalledWith(submission.path);
+      expect(submission.record.created_at).toBe("2026-10-04T15:59:59.999Z");
+      expect(parseJournalEntryRecord(serialized).data.journal_date).toBe("2026-10-04");
+    } finally {
+      vi.useRealTimers();
+    }
   });
   it("retries the same path only if it was never written, and rejects changed records", async () => {
     const writer = adapter();
