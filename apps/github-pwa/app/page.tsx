@@ -106,7 +106,8 @@ import { createHabitData, setHabitStatus, type HabitFields, type HabitStatus } f
 import { correctHabitCheckIn, createAutomaticHabitCheckInData, createManualHabitCheckInData, type HabitCheckInStatus } from "../../../src/lib/github-data/habit-check-ins";
 import { createSleepHabitRuleData, evaluateSleepHabitRule, type SleepHabitRuleFields } from "../../../src/lib/github-data/sleep-habit-rules";
 import { listCompleteHealthDirectory } from "./workspace/health-collection-loading";
-import { canWriteJournalDate } from "../../../src/lib/github-data/journal-entries";
+import { canWriteJournalDate, resolveJournalCreateDate, type JournalDateChoice } from "../../../src/lib/github-data/journal-entries";
+import { watchWorkspaceDate } from "./workspace/current-date";
 import { createJournalEntrySingleFile, updateJournalEntrySingleFile } from "../../../src/lib/github-data/journal-single-file-writes";
 import {
   DEFAULT_OWNER,
@@ -423,12 +424,7 @@ export default function GitHubWorkspacePage() {
 
   const workspaceTimezone = connection?.timezone ?? "Asia/Shanghai";
   const [currentTaskDate, setCurrentTaskDate] = useState("");
-  useEffect(() => {
-    const updateCurrentDate = () => setCurrentTaskDate(localDateInTimezone(workspaceTimezone));
-    updateCurrentDate();
-    const intervalId = window.setInterval(updateCurrentDate, 60_000);
-    return () => window.clearInterval(intervalId);
-  }, [workspaceTimezone]);
+  useEffect(() => watchWorkspaceDate(workspaceTimezone, setCurrentTaskDate), [workspaceTimezone]);
   const taskDueDate = taskDueDateOverride ?? currentTaskDate;
 
   const readiness = useMemo(
@@ -702,7 +698,9 @@ export default function GitHubWorkspacePage() {
       if (!retry) {
         const timestamp = new Date().toISOString();
         const suffix = `${timestamp.replaceAll(/\D/g, "").slice(0, 17)}_${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`;
-        captureSubmissionRef.current = { fingerprint, submission: prepareCaptureSubmission(captureFields, { ownerId: connection.ownerId, suffix, timestamp, today: localDateInTimezone(connection.timezone) }) };
+        const today = localDateInTimezone(connection.timezone, new Date(timestamp));
+        const fields = captureFields.kind === "journal" && captureDraft.date == null ? { ...captureFields, date: today } : captureFields;
+        captureSubmissionRef.current = { fingerprint, submission: prepareCaptureSubmission(fields, { ownerId: connection.ownerId, suffix, timestamp, today }) };
       }
       const submission = captureSubmissionRef.current!.submission;
       const result = await writeCaptureSubmission(adapter, submission, retry);
@@ -1613,19 +1611,18 @@ export default function GitHubWorkspacePage() {
     finally { setSavingTimeEntryId(null); }
   }
 
-  async function saveJournalEntry(fields: { journalDate: string; bodyMarkdown: string }) {
+  async function saveJournalEntry(fields: { journalDate: string; dateChoice?: JournalDateChoice; bodyMarkdown: string }) {
     const adapter = adapterRef.current;
     if (!adapter || !connection || savingJournalEntry || online === false) return false;
-    if (!canWriteJournalDate(fields.journalDate, localDateInTimezone(connection.timezone))) {
-      setErrorMessage("只能写今天或昨天的日记；未保存。"); return false;
-    }
-    setSavingJournalEntry(true); setErrorMessage(""); setStatusMessage("");
     const timestamp = new Date().toISOString();
-    const id = `journal_entry_${fields.journalDate.replaceAll("-", "")}_${timestamp.replaceAll(/\D/g, "").slice(0, 17)}_${crypto.randomUUID().replaceAll("-", "")}`;
+    let dates: ReturnType<typeof resolveJournalCreateDate>;
+    try { dates = resolveJournalCreateDate({ ...fields, timezone: connection.timezone, timestamp }); }
+    catch { setErrorMessage("只能写今天或昨天的日记；未保存。"); return false; }
+    setSavingJournalEntry(true); setErrorMessage(""); setStatusMessage("");
+    const id = `journal_entry_${dates.journalDate.replaceAll("-", "")}_${timestamp.replaceAll(/\D/g, "").slice(0, 17)}_${crypto.randomUUID().replaceAll("-", "")}`;
     try {
       const { entry, file } = await createJournalEntrySingleFile(adapter, {
-        ownerId: connection.ownerId, id, journalDate: fields.journalDate,
-        todayDate: localDateInTimezone(connection.timezone), timezone: connection.timezone,
+        ownerId: connection.ownerId, id, ...dates, timezone: connection.timezone,
         bodyMarkdown: fields.bodyMarkdown, timestamp,
       });
       if (!rememberJournalEntry({ record: entry, path: file.path, blobSha: file.blobSha }, adapter)) return false;

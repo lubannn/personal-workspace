@@ -21,6 +21,23 @@ export type JournalEntryRecord = WorkspaceRecord<JournalEntryData>;
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 const MONTH_ONLY = /^\d{4}-\d{2}$/;
 
+export type JournalDateChoice = "today" | "yesterday";
+
+export function journalLocalDate(timezone: string, timestamp: string) {
+  const parts = new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date(timestamp));
+  return ["year", "month", "day"].map((type) => parts.find((part) => part.type === type)!.value).join("-");
+}
+
+// Resolve relative choices from the same instant stored as the submission time,
+// never from the last rendered clock. Explicit dates (and edits) stay fixed.
+export function resolveJournalCreateDate(input: { journalDate: string; dateChoice?: JournalDateChoice; timezone: string; timestamp: string }) {
+  const todayDate = journalLocalDate(input.timezone, input.timestamp);
+  if (input.dateChoice !== undefined && input.dateChoice !== "today" && input.dateChoice !== "yesterday") throw new Error("INVALID_JOURNAL_DATE_CHOICE");
+  const journalDate = input.dateChoice === "today" ? todayDate : input.dateChoice === "yesterday" ? previousJournalDate(todayDate) : input.journalDate;
+  if (!canWriteJournalDate(journalDate, todayDate)) throw new Error("JOURNAL_DATE_NOT_WRITABLE");
+  return { journalDate, todayDate };
+}
+
 export function createJournalEntryData(input: {
   journalDate: string;
   timezone: string;
