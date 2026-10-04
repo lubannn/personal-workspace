@@ -1048,3 +1048,60 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
   .topbar-settings-link { min-height: 42px; }
   .settings-heading { align-items: flex-start; }
 }
+
+
+/* Keep connection status in the header and capture above the daily modules. */
+.topbar-actions { gap: 14px; }
+.header-connection { position: relative; font-size: 11px; }
+.header-connection > summary { display: flex; align-items: center; gap: 7px; min-height: 36px; color: var(--accent); cursor: pointer; list-style: none; white-space: nowrap; }
+.header-connection > summary::-webkit-details-marker { display: none; }
+.header-connection > summary::after { content: "⌄"; color: var(--muted); }
+.header-connection > summary i { width: 7px; height: 7px; flex-shrink: 0; border-radius: 50%; background: #668363; }
+.header-connection > summary i.offline { background: #a55b4f; }
+.header-connection-panel { position: absolute; top: calc(100% + 6px); right: 0; z-index: 50; width: 330px; max-width: calc(100vw - 32px); padding: 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); box-shadow: 0 10px 30px #17171318; }
+.header-connection-panel > strong { display: block; overflow-wrap: anywhere; color: var(--ink); }
+.header-connection-panel > p { margin: 8px 0 12px; color: var(--muted); }
+.header-connection-panel .connection-actions { flex-wrap: wrap; justify-content: flex-start; gap: 8px; }
+.header-connection-panel .revoke-confirm { justify-content: flex-start; }
+.header-connection-panel .revoke-confirm > span { text-align: left; }
+.capture-bar { margin: 0 0 10px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 14px; background: #e8ece3; }
+.capture-bar .capture-composer { margin: 0; }
+.capture-inline-row { display: flex; align-items: flex-end; gap: 10px; }
+.capture-inline-row > h2 { flex: 0 0 auto; align-self: center; margin: 0; color: var(--ink); font-size: 16px; line-height: 1.4; }
+.capture-inline-input { flex: 1 1 280px; min-width: 180px; }
+.capture-bar textarea { display: block; width: 100%; height: 40px; min-height: 40px; max-height: 180px; margin: 0; padding: 8px 10px; border-radius: 8px; font-size: 13px; line-height: 1.6; resize: vertical; }
+.capture-bar .capture-datetime { flex: 0 0 auto; flex-wrap: nowrap; gap: 6px; margin: 0; }
+.capture-bar .capture-datetime label, .capture-bar .capture-destination-select { display: flex; flex-direction: column; align-items: stretch; gap: 3px; color: var(--muted); font-size: 9px; }
+.capture-bar .capture-datetime input { min-height: 40px; padding: 6px 7px; font-size: 12px; }
+.capture-bar input[type="date"] { width: 130px; }
+.capture-bar input[type="time"] { width: 92px; }
+.capture-bar .capture-destination-select { flex: 0 0 126px; }
+.capture-bar .capture-destination-select select { width: 126px; min-height: 40px; font-size: 12px; }
+.capture-bar .capture-inline-save { flex: 0 0 auto; width: auto; min-height: 40px; padding: 8px 12px; font-size: 12px; white-space: nowrap; }
+.capture-inline-meta { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 14px; margin-top: 6px; }
+.capture-bar .capture-hint { margin: 0; font-size: 10px; line-height: 1.5; }
+.capture-extra-options { min-width: 0; color: var(--muted); font-size: 10px; }
+.capture-extra-options > summary { cursor: pointer; }
+.capture-extra-options[open] { flex-basis: 100%; }
+.capture-extra-options[open] .capture-hint { margin-top: 5px; }
+.capture-extra-options footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 6px; }
+.capture-bar .capture-submit-actions button { min-height: 30px; font-size: 10px; }
+@media (max-width: 1100px) {
+  .capture-inline-row { flex-wrap: wrap; }
+  .capture-inline-row > h2 { flex-basis: 100%; }
+}
+@media (max-width: 900px) {
+  .header-connection { flex-basis: 100%; }
+  .header-connection > summary { justify-content: flex-end; min-height: 22px; font-size: 10px; }
+}
+@media (max-width: 720px) {
+  .capture-bar { padding: 10px; }
+  .capture-inline-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+  .capture-inline-row > h2, .capture-inline-input, .capture-bar .capture-datetime { grid-column: 1 / -1; }
+  .capture-inline-input { min-width: 0; }
+  .capture-bar .capture-datetime label { flex: 1 1 0; min-width: 0; }
+  .capture-bar .capture-datetime input { width: 100%; min-width: 0; }
+  .capture-bar .capture-destination-select { width: 100%; }
+  .capture-bar .capture-destination-select select { width: 100%; }
+  .capture-bar .capture-inline-save { min-height: 40px; }
+}
