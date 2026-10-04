@@ -60,7 +60,7 @@ describe("strict COROS sleep text mapping", () => {
     expect(mapped.items[0]).toEqual({ kind: "sleep", sourceId: "sleep:2024-01-02:main", candidate: {
       start_at: "2024-01-01T15:00:00.000Z", end_at: "2024-01-01T23:00:00.000Z", local_date: "2024-01-01",
       timezone: "Asia/Shanghai", session_type: "main_sleep", duration_minutes: 480,
-    }, metrics: { asleep_minutes: 450, awake_minutes: null, score: 80, wake_date: "2024-01-02" } });
+    }, metrics: { asleep_minutes: 450, awake_minutes: null, score: 80, wake_date: "2024-01-02", daily_sleep_minutes: 495 } });
     expect(mapped.items[1]).toMatchObject({ sourceId: "sleep:2024-01-02:nap:2024-01-02T05:00:00.000Z", metrics: { asleep_minutes: 45, awake_minutes: 15, score: null } });
   });
   it("does not pretend ambiguous legacy periods are asleep durations", () => {
@@ -68,6 +68,14 @@ describe("strict COROS sleep text mapping", () => {
     expect(mapped.items[0].candidate.duration_minutes).toBe(480);
     expect(mapped.items[0].metrics).toMatchObject({ asleep_minutes: null, awake_minutes: null });
     expect(mapped.items[1].metrics).toMatchObject({ asleep_minutes: null, awake_minutes: null });
+  });
+  it("retains a reported legacy daily total without deriving per-episode asleep durations", () => {
+    const mapped = mapCorosSleep(result(legacy.replace("Sleep Score: 70", "Sleep Score: 70\nDaily Sleep: 8h 0min (incl. naps)")), options);
+    expect(mapped.items[0].metrics).toMatchObject({ asleep_minutes: null, daily_sleep_minutes: 480 });
+    expect(mapped.items[1].metrics).not.toHaveProperty("daily_sleep_minutes");
+    for (const invalid of ["unknown", "8h 0min", "40h 0min (incl. naps)"]) {
+      expect(() => mapCorosSleep(result(legacy.replace("Sleep Score: 70", `Sleep Score: 70\nDaily Sleep: ${invalid}`)), options)).toThrow("COROS_SYNC_FORMAT_UNSUPPORTED");
+    }
   });
   it.each([true, false])("corrects only the authorized legacy 1982 nap year and retains exact original instants (encoded=%s)", encoded => {
     const mapped = mapCorosSleep(result(wrongYearNap, encoded), yearCorrectionOptions);
@@ -176,11 +184,11 @@ describe("strict COROS sleep text mapping", () => {
     const mapped = mapCorosSleep(result(input), options);
     expect(mapped.items).toHaveLength(2);
     expect(mapped.items.map(item => item.metrics)).toEqual([
-      { asleep_minutes: null, awake_minutes: null, score: null, wake_date: "2024-01-02" },
+      { asleep_minutes: null, awake_minutes: null, score: null, wake_date: "2024-01-02", daily_sleep_minutes: 50 },
       { asleep_minutes: null, awake_minutes: null, score: null, wake_date: "2024-01-02" },
     ]);
     const single = input.replace("Nap Window: 2024-01-02 12:00 - 2024-01-02 12:20\nNap Window: 2024-01-02 16:00 - 2024-01-02 16:40", "Nap Window: 2024-01-02 12:00 - 2024-01-02 13:00");
-    expect(mapCorosSleep(result(single), options).items[0].metrics).toEqual({ asleep_minutes: 50, awake_minutes: 10, score: null, wake_date: "2024-01-02" });
+    expect(mapCorosSleep(result(single), options).items[0].metrics).toEqual({ asleep_minutes: 50, awake_minutes: 10, score: null, wake_date: "2024-01-02", daily_sleep_minutes: 50 });
     for (const invalid of [input.replace("Sleep Score: -1", "Sleep Score: 70"), input.replaceAll("50min", "51min"),
       input.replace("Naps Total (asleep): 50 min", "Naps Total (asleep): 61 min"),
       input.replace("Naps Period (incl. awake): 1h 0min", "Naps Period (incl. awake): 59 min"),

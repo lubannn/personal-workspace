@@ -125,6 +125,9 @@ export function mapCorosSleep(result: CorosReadResult, options: CorosSyncDateRan
       fields.set(match[1], match[2]);
     }
     const naps = rawNaps.map(nap => legacyNapDateCorrection(nap, date, fields));
+    const dailyText = fields.get("Daily Sleep");
+    if (dailyText !== undefined && !dailyText.endsWith(" (incl. naps)")) return fail();
+    const dailyMinutes = dailyText === undefined ? null : minutes(dailyText.slice(0, -13));
     // Nap-only days omit main-sleep fields; the fuller layouts use -1 for an
     // unavailable score. Legacy totals represent periods, not time asleep.
     if (!fields.has("Main Sleep Window")) {
@@ -166,6 +169,7 @@ export function mapCorosSleep(result: CorosReadResult, options: CorosSyncDateRan
           timezone: options.timezone, session_type: "nap", duration_minutes: nap.minutes },
         metrics: { asleep_minutes: naps.length === 1 ? napsAsleep : null,
           awake_minutes: naps.length === 1 && napsAsleep !== null ? nap.minutes - napsAsleep : null, score: null, wake_date: date,
+          ...(nap === sorted[0] && dailyMinutes !== null ? { daily_sleep_minutes: dailyMinutes } : {}),
           ...(nap.dateCorrection ? { date_correction: nap.dateCorrection } : {}) },
       });
       continue;
@@ -197,6 +201,7 @@ export function mapCorosSleep(result: CorosReadResult, options: CorosSyncDateRan
       kind: "sleep", sourceId: `sleep:${date}:${type === "main_sleep" ? "main" : `nap:${span.start}`}`,
       candidate: { start_at: span.start, end_at: span.end, local_date: span.startDate, timezone: options.timezone, session_type: type, duration_minutes: span.minutes },
       metrics: { asleep_minutes: slept, awake_minutes: awakeMinutes, score: type === "main_sleep" ? score : null, wake_date: date,
+        ...(type === "main_sleep" && dailyMinutes !== null ? { daily_sleep_minutes: dailyMinutes } : {}),
         ...(span.dateCorrection ? { date_correction: span.dateCorrection } : {}) },
     });
     const napPeriod = naps.reduce((sum, nap) => sum + nap.minutes, 0);

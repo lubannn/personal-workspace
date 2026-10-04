@@ -67,12 +67,17 @@ export async function writeCorosSyncBatch(adapter: SyncAdapter, input: {
       ? { kind: item.kind, candidate: item.candidate, metrics: item.metrics }
       : { kind: item.kind, candidate: item.candidate };
     const fingerprint = await hash(stableJson(payload));
+    let legacyFingerprint: string | null = null;
+    if (item.kind === "sleep" && item.metrics.daily_sleep_minutes !== undefined) {
+      const metrics = { ...item.metrics }; delete metrics.daily_sleep_minutes;
+      legacyFingerprint = await hash(stableJson({ kind: "sleep", candidate: item.candidate, metrics }));
+    }
     const source: CorosProvenance = { kind: "coros_mcp", source_id: item.sourceId, source_sha256: fingerprint, mapping_version: 1, retrieved_at: input.timestamp };
     const id = `coros_${item.kind}_${await hash(item.sourceId)}`;
     const record: CanonicalRecord = item.kind === "sleep"
       ? createWorkspaceRecord({ entityType: "sleep_session", id, ownerId: input.ownerId, timestamp: input.timestamp, data: createAutomaticSleepSessionData(item.candidate, source, item.metrics) })
       : createWorkspaceRecord({ entityType: "workout", id, ownerId: input.ownerId, timestamp: input.timestamp, data: createAutomaticWorkoutData(item.candidate, source) });
-    return { item, payload, fingerprint, record, key: `${item.kind}:${item.sourceId}` };
+    return { item, payload, fingerprint, legacyFingerprint, record, key: `${item.kind}:${item.sourceId}` };
   }));
   const unique = new Map<string, typeof prepared[number]>();
   let repeated = 0;
@@ -99,7 +104,7 @@ export async function writeCorosSyncBatch(adapter: SyncAdapter, input: {
         previousIndex = null;
       }
     }
-    const cached = new Map(previousIndex?.data.records.map((entry) => [entry.path, entry]));
+    const cached = new Map(previousIndex?.data.records.map((entry) => [entry.path, { ...entry, source: entry.source ? { ...entry.source } : null }]));
     const canonicalFiles = inventory.filter((file) => /^data\/(?:sleep-sessions|workouts)\/[^/]+\.json$/u.test(file.path));
     const records: CorosSyncIndexEntry[] = [];
     const selected = canonicalFiles.filter((file) => {
@@ -126,6 +131,15 @@ export async function writeCorosSyncBatch(adapter: SyncAdapter, input: {
       sourceIndex.set(key, record);
     }
     const files: Array<{ path: string; text: string }> = [];
+    // Adding a previously omitted daily total is schema enrichment, not a changed sleep episode.
+    // Read only the matching records, in a batch; existing facts and genuine revisions stay protected.
+    const enrichmentPaths = new Set([...unique.values()].flatMap(entry => {
+      const existing = sourceIndex.get(entry.key);
+      return entry.legacyFingerprint && existing?.deleted_at === null && existing.source?.source_sha256 === entry.legacyFingerprint ? [existing.path] : [];
+    }));
+    const hydrated = new Map(stored.map(file => [file.path, file.text]));
+    const enrichmentFiles = canonicalFiles.filter(file => enrichmentPaths.has(file.path) && !hydrated.has(file.path));
+    if (enrichmentFiles.length) for (const file of await adapter.readBlobTexts(enrichmentFiles)) hydrated.set(file.path, file.text);
     const paths = new Set(inventory.map((file) => file.path));
     const result: CorosSyncWriteResult = { created: 0, unchanged: repeated, conflicts: 0, totalPendingConflicts: [...existingConflicts.values()].filter(conflict => conflict.data.status === "pending").length, conflictDetails: [], latestSleepDate: null, latestWorkoutDate: null };
     for (const entry of unique.values()) {
@@ -135,6 +149,24 @@ export async function writeCorosSyncBatch(adapter: SyncAdapter, input: {
       // Respect tombstones even if COROS later changes the source. Never recreate a deletion.
       if (duplicate && duplicate.deleted_at !== null) { result.unchanged += 1; continue; }
       if (sameSource && oldSource?.source_sha256 === entry.fingerprint) { result.unchanged += 1; continue; }
+      if (sameSource && entry.item.kind === "sleep" && entry.legacyFingerprint && oldSource?.source_sha256 === entry.legacyFingerprint) {
+        const current = parseSleepSessionRecord(hydrated.get(sameSource.path)!);
+        const candidate = entry.item.candidate;
+        const metrics = { ...entry.item.metrics }; delete metrics.daily_sleep_minutes;
+        if (current.owner_id !== input.ownerId || current.id !== sameSource.id || current.deleted_at !== null
+          || current.data.sleep_session_version !== 2 || current.data.source.source_id !== entry.item.sourceId
+          || current.data.source.source_sha256 !== entry.legacyFingerprint
+          || stableJson(current.data.sleep_metrics_json) !== stableJson(metrics)
+          || Object.entries(candidate).some(([key, value]) => current.data[key as keyof typeof candidate] !== value)) throw new Error("COROS_SYNC_RECORD_IDENTITY_MISMATCH");
+        const next = updateWorkspaceRecord(current, { ...current.data, sleep_metrics_json: entry.item.metrics,
+          source: { ...current.data.source, source_sha256: entry.fingerprint, retrieved_at: input.timestamp } }, input.timestamp);
+        const text = serializeRecord(next);
+        parseSleepSessionRecord(text);
+        files.push({ path: sameSource.path, text });
+        Object.assign(sameSource, corosSyncIndexEntry(next, await corosCanonicalBlobSha(text)));
+        result.unchanged += 1;
+        continue;
+      }
       // Exact FIT intervals are already present; sport labels may differ between parsers.
       // Manual sleep remains a reviewable conflict even when its interval matches exactly.
       if (duplicate && !oldSource && entry.item.kind === "workout") {

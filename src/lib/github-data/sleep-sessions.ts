@@ -21,6 +21,8 @@ export type CorosSleepMetrics = {
   awake_minutes: number | null;
   score: number | null;
   wake_date: string;
+  /** COROS's explicitly reported daily total, including naps. Never apportion it across episodes. */
+  daily_sleep_minutes?: number;
   date_correction?: CorosSleepDateCorrection;
 };
 export type AutomaticSleepSessionData = SleepSessionCandidate & AutomaticCorosFields & {
@@ -72,7 +74,9 @@ function validateData(data: SleepSessionData) {
       || typeof data.start_at !== "string" || typeof data.end_at !== "string" || typeof data.timezone !== "string" || !data.timezone
       || !["main_sleep", "nap"].includes(data.session_type) || !isDateOnly(data.local_date)
       || !Number.isFinite(duration) || duration <= 0 || duration > 2_160 || duration !== data.duration_minutes
-      || !metrics || !["asleep_minutes,awake_minutes,score,wake_date", "asleep_minutes,awake_minutes,date_correction,score,wake_date"].includes(Object.keys(metrics).sort().join(","))
+      || !metrics || !["asleep_minutes,awake_minutes,score,wake_date", "asleep_minutes,awake_minutes,date_correction,score,wake_date",
+        "asleep_minutes,awake_minutes,daily_sleep_minutes,score,wake_date", "asleep_minutes,awake_minutes,daily_sleep_minutes,date_correction,score,wake_date"].includes(Object.keys(metrics).sort().join(","))
+      || (Object.hasOwn(metrics, "daily_sleep_minutes") && (!Number.isInteger(metrics.daily_sleep_minutes) || metrics.daily_sleep_minutes! < 0 || metrics.daily_sleep_minutes! > 2160))
       || !validMinutes(metrics.asleep_minutes) || !validMinutes(metrics.awake_minutes)
       || (metrics.asleep_minutes !== null && metrics.awake_minutes !== null && metrics.asleep_minutes + metrics.awake_minutes > duration + 1)
       || !(metrics.score === null || (Number.isFinite(metrics.score) && metrics.score >= 0 && metrics.score <= 100))

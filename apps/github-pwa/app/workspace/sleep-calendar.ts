@@ -17,6 +17,8 @@ export type SleepCalendarDay = {
   hasIncompleteDuration: boolean;
   hasDateCorrection: boolean;
   napCount: number;
+  usesCorosDailyTotal: boolean;
+  recordedPeriodSeconds: number;
 };
 
 export function sleepGrade(score: number | null): SleepGrade {
@@ -46,8 +48,13 @@ export function buildSleepCalendarDays(rows: SleepRecordRow[]): SleepCalendarDay
     const scored = main.filter((row) => row.source.kind === "coros_mcp" && sleepGrade(row.score) !== "unscored")
       .sort((a, b) => Date.parse(b.endAt) - Date.parse(a.endAt) || a.id.localeCompare(b.id));
     const score = scored[0]?.score ?? null;
-    return { date, score, grade: sleepGrade(score), asleepSeconds: sum(items), mainSeconds: sum(main), napSeconds: sum(naps),
-      hasIncompleteDuration: items.some((row) => row.asleepSeconds === null || !Number.isFinite(row.asleepSeconds) || row.asleepSeconds < 0),
+    const dailyTotals = items.filter(row => row.source.kind === "coros_mcp" && row.dailySleepSeconds !== null && row.dailySleepSeconds !== undefined)
+      .map(row => row.dailySleepSeconds!).filter(value => Number.isFinite(value) && value >= 0);
+    const dailyTotal = dailyTotals.length && new Set(dailyTotals).size === 1 ? dailyTotals[0] : null;
+    return { date, score, grade: sleepGrade(score), asleepSeconds: dailyTotal ?? sum(items), mainSeconds: sum(main), napSeconds: sum(naps),
+      usesCorosDailyTotal: dailyTotal !== null,
+      recordedPeriodSeconds: items.reduce((total, row) => total + row.durationSeconds, 0),
+      hasIncompleteDuration: dailyTotal === null && items.some((row) => row.asleepSeconds === null || !Number.isFinite(row.asleepSeconds) || row.asleepSeconds < 0),
       hasDateCorrection: items.some((row) => Boolean(row.dateCorrection)), napCount: naps.length };
   }).sort((a, b) => a.date.localeCompare(b.date));
 }

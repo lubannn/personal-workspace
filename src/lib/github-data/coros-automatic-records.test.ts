@@ -55,6 +55,14 @@ describe("automatic COROS canonical records", () => {
     expect(() => createAutomaticSleepSessionData({ ...sleep, session_type: "unknown" }, provenance, sleepMetrics)).toThrow("INVALID_SLEEP_SESSION_DETAILS");
     expect(() => createAutomaticSleepSessionData(sleep, provenance, { ...sleepMetrics, score: 101 })).toThrow("INVALID_SLEEP_SESSION_DETAILS");
   });
+  it("accepts a separate daily total above a single episode duration while rejecting invalid totals", () => {
+    const data = createAutomaticSleepSessionData(sleep, provenance, { ...sleepMetrics, daily_sleep_minutes: 600 });
+    const record = createWorkspaceRecord({ entityType: "sleep_session", id: "daily_total", ownerId: "github_fixture", timestamp, data });
+    expect(parseSleepSessionRecord(serializeRecord(record)).data.sleep_metrics_json).toMatchObject({ daily_sleep_minutes: 600, asleep_minutes: 465 });
+    for (const value of [-1, 2161, 30.5, NaN, null, "600"]) {
+      expect(() => createAutomaticSleepSessionData(sleep, provenance, { ...sleepMetrics, daily_sleep_minutes: value as number })).toThrow("INVALID_SLEEP_SESSION_DETAILS");
+    }
+  });
 
   it("validates the exact legacy nap correction and rejects arbitrary date edits or invented measurements", () => {
     const record = createWorkspaceRecord({ entityType: "sleep_session", id: "sleep_corrected_nap", ownerId: "github_fixture", timestamp,

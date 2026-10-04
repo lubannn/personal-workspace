@@ -13,7 +13,7 @@ export type HealthRecordRow = {
   source: HealthRecordSource;
   recordDate?: string;
 };
-export type SleepRecordRow = HealthRecordRow & { category: string; durationSeconds: number; asleepSeconds: number | null; awakeSeconds: number | null; score: number | null; dateCorrection: CorosSleepMetrics["date_correction"] | null };
+export type SleepRecordRow = HealthRecordRow & { category: string; durationSeconds: number; asleepSeconds: number | null; dailySleepSeconds?: number | null; awakeSeconds: number | null; score: number | null; dateCorrection: CorosSleepMetrics["date_correction"] | null };
 export type WorkoutRecordRow = HealthRecordRow & { activity: string; durationSeconds: number; distanceMetres: number | null };
 export type HealthDateRange = { from: string; to: string };
 
@@ -49,6 +49,7 @@ export function buildHealthRecordRows(sleepSessions: SyncedSleepSession[], worko
         durationSeconds: data.duration_minutes * 60,
         recordDate: data.sleep_session_version === 2 ? data.sleep_metrics_json.wake_date : undefined,
         asleepSeconds: data.sleep_session_version === 2 && data.sleep_metrics_json.asleep_minutes !== null ? data.sleep_metrics_json.asleep_minutes * 60 : null,
+        dailySleepSeconds: data.sleep_session_version === 2 && data.sleep_metrics_json.daily_sleep_minutes !== undefined ? data.sleep_metrics_json.daily_sleep_minutes * 60 : null,
         awakeSeconds: data.sleep_session_version === 2 && data.sleep_metrics_json.awake_minutes !== null ? data.sleep_metrics_json.awake_minutes * 60 : null,
         score: data.sleep_session_version === 2 ? data.sleep_metrics_json.score : null,
         dateCorrection: data.sleep_session_version === 2 ? data.sleep_metrics_json.date_correction ?? null : null,
