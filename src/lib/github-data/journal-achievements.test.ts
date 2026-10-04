@@ -26,13 +26,13 @@ describe("journal achievements from existing statistics", () => {
   });
 
   it("retains a streak until the current date passes, and remembers earned historical streaks", () => {
-    const files = range("2025-01-01", 200, 999);
+    const files = range("2025-01-01", 365, 999);
     const last = files.at(-1)!.date;
-    expect(journalAchievements(files, last)?.daily).toEqual({ current: 200, longest: 200 });
+    expect(journalAchievements(files, last)?.daily).toEqual({ current: 365, longest: 365 });
     const nextDay = new Date(Date.parse(`${last}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
-    expect(journalAchievements(files, nextDay)?.daily.current).toBe(200);
+    expect(journalAchievements(files, nextDay)?.daily.current).toBe(365);
     const result = journalAchievements(files, "2026-10-04")!;
-    expect(result.daily).toEqual({ current: 0, longest: 200 });
+    expect(result.daily).toEqual({ current: 0, longest: 365 });
     expect(series(result, "daily").badges.map((badge) => badge.earned)).toEqual([true, false, false, false]);
     expect(series(result, "daily-writing").badges[0].earned).toBe(false);
   });
@@ -81,5 +81,46 @@ describe("journal achievements from existing statistics", () => {
     expect(series(changed, "record-days").badges[0].earned).toBe(false);
     expect(series(changed, "words").badges[0].earned).toBe(false);
     expect(files[0].deleted).toBe(false);
+  });
+
+  it("uses the requested four levels and leaves the other five series unchanged", () => {
+    const result = journalAchievements([], "2026-10-04")!;
+    for (const [id, targets] of Object.entries({ daily: [365, 730, 1095, 1460], weekly: [52, 104, 260, 520], monthly: [12, 24, 60, 120], "record-days": [1000, 2000, 5000, 10000], "daily-writing": [14, 30, 60, 100], "weekly-writing": [26, 52, 104, 156], "monthly-writing": [12, 24, 36, 48], "thousand-days": [500, 1000, 1500, 2000], words: [1_000_000, 2_000_000, 3_000_000, 4_000_000] })) {
+      expect(series(result, id).badges.map((badge) => badge.target)).toEqual(targets);
+      expect(series(result, id).badges.map((badge) => badge.level)).toEqual(["I", "II", "III", "IV"]);
+    }
+    expect(series(result, "calendar").name).toBe("四季相逢");
+    expect(series(result, "calendar").badges.map((badge) => badge.id)).toEqual(["calendar-1", "calendar-2", "calendar-5", "calendar-10"]);
+    expect(series(journalAchievements(range("2025-01-01", 200), "2026-10-04")!, "daily").badges.every((badge) => !badge.earned)).toBe(true);
+    expect(result.count).toBe(40);
+  });
+
+  it.each([
+    ...[365, 730, 1095, 1460].map((target, index) => ({ id: "daily", target, index })),
+    ...[52, 104, 260, 520].map((target, index) => ({ id: "weekly", target, index })),
+    ...[12, 24, 60, 120].map((target, index) => ({ id: "monthly", target, index })),
+    ...[1000, 2000, 5000, 10000].map((target, index) => ({ id: "record-days", target, index })),
+  ])("unlocks $id level $index only at its exact $target threshold", ({ id, target, index }) => {
+    const files = id === "weekly" ? Array.from({ length: target }, (_, i) => file(new Date(Date.UTC(2010, 0, 4 + i * 7)).toISOString().slice(0, 10), 1))
+      : id === "monthly" ? Array.from({ length: target }, (_, i) => file(new Date(Date.UTC(2010, i, 1)).toISOString().slice(0, 10), 1))
+        : range("1990-01-01", target, 1);
+    const before = series(journalAchievements(files.slice(0, -1), "2026-10-04")!, id).badges[index];
+    const at = series(journalAchievements([...files, { ...files[0], entries: 3 }], "2026-10-04")!, id).badges[index];
+    expect(before).toMatchObject({ value: target - 1, earned: false });
+    expect(at).toMatchObject({ value: target, earned: true });
+    expect(at.name).not.toMatch(/两百|千五日记|两千五百/u);
+    if (id !== "record-days") expect(at.requirement).toContain(`${target / (id === "weekly" ? 52 : id === "monthly" ? 12 : 365)} 年`);
+  });
+
+  it.each([1, 2, 5, 10])("requires all 365 month-days in %s distinct years for anniversary coverage", (years) => {
+    const files = Array.from({ length: years }, (_, index) => range(`${2010 + index * 2}-01-01`, 366, 1).filter((item) => item.date.startsWith(`${2010 + index * 2}-`) && !item.date.endsWith("02-29"))).flat();
+    const result = journalAchievements(files, "2030-10-04")!;
+    const badge = series(result, "calendar").badges.find((item) => item.id === `calendar-${years}`)!;
+    expect(badge).toMatchObject({ target: 365, value: 365, earned: true });
+    expect(badge.requirement).toContain(`至少 ${years} 个不同年份`);
+    const missingDay = series(journalAchievements(files.slice(0, -1), "2030-10-04")!, "calendar").badges.find((item) => item.id === badge.id)!;
+    expect(missingDay).toMatchObject({ value: 364, earned: false });
+    const duplicateYear = series(journalAchievements([...files.slice(0, -1), ...files.slice(0, 364)], "2030-10-04")!, "calendar").badges.find((item) => item.id === badge.id)!;
+    expect(duplicateYear.earned).toBe(false);
   });
 });
