@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { GitHubConflictError, type GitHubDirectoryItem } from "../../../src/lib/github-data/github-contents";
 import { createWorkspaceRecord, parseRecord, recordPath, serializeRecord, type WorkspaceRecord } from "../../../src/lib/github-data/protocol";
 import { createConfirmedSleepSessionData, parseSleepSessionRecord } from "../../../src/lib/github-data/sleep-sessions";
-import { parseCorosSyncConflictRecord } from "../../../src/lib/github-data/coros-sync-conflicts";
+import { acceptCorosSourceRevision, parseCorosSyncConflictRecord } from "../../../src/lib/github-data/coros-sync-conflicts";
 import { COROS_SYNC_INDEX_PATH, parseCorosSyncIndexRecord } from "../../../src/lib/github-data/coros-sync-index";
 import type { CorosSyncCandidate } from "./coros-sync-mapping";
 import { writeCorosSyncBatch } from "./coros-sync-writer";
@@ -99,6 +99,31 @@ describe("atomic COROS synchronization writer", () => {
     const conflict = [...fake.files].find(([path]) => path.includes("coros-sync-conflicts"))!;
     expect(parseCorosSyncConflictRecord(conflict[1]).data).toMatchObject({ reason: "source_changed",
       existing_record_id: parseRecord(original[1]).id, candidate: { kind: "sleep", metrics: upstreamFixed.metrics } });
+  });
+
+  it("retains an accepted revision's previous score and excludes resolved differences on subsequent sync", async () => {
+    const fake = fakeAdapter();
+    await writeCorosSyncBatch(fake.adapter, { ownerId, items: [sleep], timestamp });
+    const revised = { ...sleep, metrics: { ...sleep.metrics, score: 86 } };
+    await writeCorosSyncBatch(fake.adapter, { ownerId, items: [revised], timestamp });
+    const [path, text] = [...fake.files].find(([path]) => path.startsWith("data/sleep-sessions/"))!;
+    const [conflictPath, conflictText] = [...fake.files].find(([path]) => path.includes("coros-sync-conflicts"))!;
+    const conflict = parseCorosSyncConflictRecord(conflictText), previous = parseSleepSessionRecord(text);
+    const accepted = acceptCorosSourceRevision(conflict, previous, "2024-01-04T00:00:00.000Z");
+    expect(parseSleepSessionRecord(serializeRecord(accepted.record)).data.sleep_metrics_json).toMatchObject({ score: 86, asleep_minutes: 450 });
+    expect(accepted.record.version).toBe(previous.version + 1);
+    expect(accepted.conflict.data).toMatchObject({ status: "resolved", resolution: { previous_record: previous } });
+    fake.files.set(path, serializeRecord(accepted.record));
+    fake.files.set(conflictPath, serializeRecord(accepted.conflict));
+    expect(await writeCorosSyncBatch(fake.adapter, { ownerId, items: [revised], timestamp })).toMatchObject({ unchanged: 1, conflicts: 0, totalPendingConflicts: 0 });
+    const future = { ...sleep, metrics: { ...sleep.metrics, score: 88 } };
+    expect(await writeCorosSyncBatch(fake.adapter, { ownerId, items: [future], timestamp })).toMatchObject({ conflicts: 1, totalPendingConflicts: 1 });
+    expect(fake.files.get(conflictPath)).toBe(serializeRecord(accepted.conflict));
+    expect(() => acceptCorosSourceRevision(conflict, accepted.record, "2024-01-05T00:00:00.000Z")).toThrow("COROS_CONFLICT_RECORD_CHANGED");
+    const forged = structuredClone(accepted.conflict);
+    forged.data.resolution!.previous_record.owner_id = "someone_else";
+    expect(() => parseCorosSyncConflictRecord(JSON.stringify(forged))).toThrow("INVALID_COROS_SYNC_CONFLICT_RECORD");
+    expect(() => acceptCorosSourceRevision(conflict, previous, "2024-01-01T00:00:00.000Z")).toThrow("INVALID_COROS_SYNC_CONFLICT_RECORD");
   });
 
   it("does not resurrect deleted automatic sources or exact-interval legacy records", async () => {
