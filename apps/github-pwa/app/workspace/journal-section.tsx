@@ -5,12 +5,12 @@ import type { GitHubContentsAdapter } from "../../../../src/lib/github-data/gith
 import type { GitHubDirectoryItem } from "../../../../src/lib/github-data/github-contents";
 import { journalCatalogDates } from "../../../../src/lib/github-data/journal-archive-catalog";
 import { searchJournalDisplaySegments } from "../../../../src/lib/github-data/journal-display";
-import { activeJournalEntries, canWriteJournalDate, filterJournalEntries, journalEntrySubmittedTime, journalMonthDays, previousJournalDate, shiftJournalMonth, trashedJournalEntries } from "../../../../src/lib/github-data/journal-entries";
+import { activeJournalEntries, canWriteJournalDate, filterJournalEntries, journalEntrySubmittedTime, journalMonthDays, previousJournalDate, shiftJournalMonth, trashedJournalEntries, type JournalDateChoice } from "../../../../src/lib/github-data/journal-entries";
 import { JournalStatistics } from "./journal-statistics";
 import { JournalAchievements } from "./journal-achievements";
 import type { Connection, SyncedJournalEntry } from "./page-model";
 
-type JournalFields = { journalDate: string; bodyMarkdown: string };
+type JournalFields = { journalDate: string; dateChoice?: JournalDateChoice; bodyMarkdown: string };
 
 type Props = {
   connection: Connection | null;
@@ -36,6 +36,7 @@ export function JournalSection({ connection, adapter, online, todayDate, journal
   const [view] = useState<"active" | "trash">("active");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [journalDate, setJournalDate] = useState("");
+  const [dateChoice, setDateChoice] = useState<JournalDateChoice>("today");
   const [bodyMarkdown, setBodyMarkdown] = useState("");
   const [month, setMonth] = useState("");
   const [monthPickerOpen, setMonthPickerOpen] = useState(false);
@@ -61,7 +62,7 @@ export function JournalSection({ connection, adapter, online, todayDate, journal
     return recentView && !searchQuery.trim() ? matches.slice(0, 3) : matches;
   }, [byId, displayedMonth, recentView, records, searchQuery, selectedDay, view]);
   const busy = saving || Boolean(savingId);
-  const selectedDate = journalDate || todayDate;
+  const selectedDate = editingId ? journalDate : dateChoice === "yesterday" && todayDate ? previousJournalDate(todayDate) : todayDate;
   const writable = canWriteJournalDate(selectedDate, todayDate);
   const catalogDates = useMemo(() => journalCatalogDates(journalEntryCatalog), [journalEntryCatalog]);
   const daysWithEntries = useMemo(() => monthLoaded || view === "trash" ? new Set(source.map((item) => item.record.data.journal_date)) : new Set([...catalogDates, ...source.map((item) => item.record.data.journal_date)]), [catalogDates, monthLoaded, source, view]);
@@ -102,7 +103,7 @@ export function JournalSection({ connection, adapter, online, todayDate, journal
     const editing = editingId ? byId.get(editingId) : null;
     const saved = editing
       ? await onEdit(editing, { bodyMarkdown })
-      : await onCreate({ journalDate: selectedDate, bodyMarkdown });
+      : await onCreate({ journalDate: selectedDate, dateChoice, bodyMarkdown });
     if (saved) resetForm();
   }
 
@@ -116,7 +117,7 @@ export function JournalSection({ connection, adapter, online, todayDate, journal
   }
 
   function resetForm() {
-    setEditingId(null); setJournalDate(""); setBodyMarkdown("");
+    setEditingId(null); setJournalDate(""); setDateChoice("today"); setBodyMarkdown("");
   }
 
   return <JournalStatistics key={connection ? `${connection.ownerId}:${connection.repository}` : "disconnected"} connection={connection} adapter={adapter} catalog={journalEntryCatalog} catalogReady={catalogReady} loaded={journalEntryFiles} busy={loading || busy}>{(statisticsControls, statistics, complete) => <section className="journal-card" aria-labelledby="journal-title">
@@ -129,7 +130,7 @@ export function JournalSection({ connection, adapter, online, todayDate, journal
     </div>
     {view === "active" ? <form className="journal-form" onSubmit={submit}>
       <div className="journal-form-meta">
-        <label>写入日期<select value={selectedDate} onChange={(event) => setJournalDate(event.target.value)} disabled={!connection || busy || Boolean(editingId) || !todayDate}><option value={todayDate}>今天 · {todayDate}</option>{todayDate ? <option value={previousJournalDate(todayDate)}>昨天 · {previousJournalDate(todayDate)}</option> : null}</select></label>
+        <label>写入日期<select value={selectedDate} onChange={(event) => setDateChoice(event.target.value === todayDate ? "today" : "yesterday")} disabled={!connection || busy || Boolean(editingId) || !todayDate}><option value={todayDate}>今天 · {todayDate}</option>{todayDate ? <option value={previousJournalDate(todayDate)}>昨天 · {previousJournalDate(todayDate)}</option> : null}</select></label>
         <div className="journal-form-actions">{editingId ? <button className="secondary-button" type="button" onClick={resetForm} disabled={busy}>取消编辑</button> : null}<button className="primary-button" type="submit" disabled={!connection || !writable || !bodyMarkdown.trim() || busy || online === false}>{busy ? "保存中…" : editingId ? "保存修订" : "保存日记"}</button></div>
       </div>
       <label className="journal-body">Markdown 正文<textarea value={bodyMarkdown} onChange={(event) => setBodyMarkdown(event.target.value)} maxLength={2_000_000} placeholder="今天发生了什么？" disabled={!connection || busy} /></label>

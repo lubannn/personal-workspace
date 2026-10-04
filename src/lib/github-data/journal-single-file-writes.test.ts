@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { GitHubConflictError, GitHubContentsAdapter } from "./github-contents";
-import { createJournalEntryData, parseJournalEntryRecord } from "./journal-entries";
+import { createJournalEntryData, parseJournalEntryRecord, resolveJournalCreateDate } from "./journal-entries";
 import { createWorkspaceRecord, recordPath, setWorkspaceRecordDeleted } from "./protocol";
 import { createJournalEntrySingleFile, updateJournalEntrySingleFile } from "./journal-single-file-writes";
 
@@ -21,6 +21,15 @@ function adapter(status = 201) {
 }
 
 describe("single-file journal saving", () => {
+  it("writes the resolved midnight date and original timestamp in a single PUT", async () => {
+    const { api, fetcher } = adapter();
+    const timestamp = "2026-10-04T16:00:22.631Z";
+    const dates = resolveJournalCreateDate({ journalDate: "2026-10-04", dateChoice: "today", timezone: "Asia/Shanghai", timestamp });
+    const saved = await createJournalEntrySingleFile(api, { ...createInput, ...dates, timestamp });
+    expect(saved.entry.data).toMatchObject({ journal_date: "2026-10-05", first_entry_at: timestamp });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(fetcher.mock.calls[0]?.[1]?.method).toBe("PUT");
+  });
   it("creates date, time and body with exactly one PUT, with no archive or revision requests", async () => {
     const { api, fetcher } = adapter();
     const saved = await createJournalEntrySingleFile(api, createInput);
