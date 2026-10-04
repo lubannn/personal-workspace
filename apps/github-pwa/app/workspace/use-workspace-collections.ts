@@ -32,21 +32,18 @@ import { parseLearningResourceRecord } from "../../../../src/lib/github-data/lea
 import { parseHabitRecord } from "../../../../src/lib/github-data/habits";
 import { parseHabitRuleRecord } from "../../../../src/lib/github-data/habit-rules";
 import { parseHabitCheckInRecord } from "../../../../src/lib/github-data/habit-check-ins";
-import { parseHealthStagingRecord } from "../../../../src/lib/github-data/health-staging-records";
-import { parseHealthMetricRecord } from "../../../../src/lib/github-data/health-metrics";
-import { parseSleepSessionRecord } from "../../../../src/lib/github-data/sleep-sessions";
-import { isWorkoutLinkedToStaging, parseWorkoutRecord } from "../../../../src/lib/github-data/workouts";
 import { parseCaptureRecord } from "../../../../src/lib/github-data/workspace";
-import { loadHealthDirectory } from "./health-collection-loading";
+import { HealthArchiveReader, type HealthArchiveSnapshot } from "./health-archive-reader";
 import { friendlyError, type SyncedActivityEvent, type SyncedCalendarEvent, type SyncedCapture, type SyncedHabit, type SyncedHabitCheckIn, type SyncedHabitRule, type SyncedHealthMetric, type SyncedHealthStagingRecord, type SyncedJournalEntry, type SyncedJournalImportCheckpoint, type SyncedJournalRevision, type SyncedJournalSegment, type SyncedLearningActivity, type SyncedLearningArea, type SyncedLearningGoal, type SyncedLearningResource, type SyncedMilestone, type SyncedObsidianDocument, type SyncedProject, type SyncedProjectFileReference, type SyncedProjectNote, type SyncedProjectPhase, type SyncedReportDraft, type SyncedSleepSession, type SyncedSyncConflict, type SyncedTask, type SyncedTimeEntry, type SyncedWorkout } from "./page-model";
 
 type Options = {
   adapterRef: MutableRefObject<GitHubContentsAdapter | null>;
   setErrorMessage: (message: string) => void;
   setDashboardClean: () => void;
+  timezone?: string;
 };
 
-export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashboardClean }: Options) {
+export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashboardClean, timezone = "Asia/Shanghai" }: Options) {
   const [captureFiles, setCaptureFiles] = useState<SyncedCapture[]>([]);
   const [taskFiles, setTaskFiles] = useState<SyncedTask[]>([]);
   const [timeEntryFiles, setTimeEntryFiles] = useState<SyncedTimeEntry[]>([]);
@@ -85,6 +82,11 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
   const [healthLoadError, setHealthLoadError] = useState("");
   const [healthUnverifiedWorkoutCount, setHealthUnverifiedWorkoutCount] = useState(0);
   const healthLoadRequestRef = useRef(0);
+  const healthReaderRef = useRef<{ adapter: GitHubContentsAdapter; reader: HealthArchiveReader; timezone: string } | null>(null);
+  const healthRequestRef = useRef<{ controller: AbortController; promise: Promise<boolean>; month?: string; refresh: boolean } | null>(null);
+  const healthMonthRef = useRef("");
+  const healthRefreshQueuedRef = useRef<Promise<boolean> | null>(null);
+  const [healthArchive, setHealthArchive] = useState<HealthArchiveSnapshot | null>(null);
   const [dashboardLayout, setDashboardLayout] = useState<DashboardLayout | null>(null);
   const [dashboardBlobSha, setDashboardBlobSha] = useState<string | null>(null);
   const [loadingCaptures, setLoadingCaptures] = useState(false);
@@ -735,49 +737,66 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     finally { setLoadingHabits(false); }
   }, [adapterRef, setErrorMessage]);
 
-  const loadHealthDomain = useCallback(async (adapter = adapterRef.current) => {
-    if (!adapter || adapter !== adapterRef.current) return false;
+  const loadHealthView = useCallback((adapter: GitHubContentsAdapter | null, month?: string, refresh = false): Promise<boolean> => {
+    if (!adapter || adapter !== adapterRef.current) return Promise.resolve(false);
+    if (healthReaderRef.current?.adapter !== adapter || healthReaderRef.current?.timezone !== timezone) {
+      healthRequestRef.current?.controller.abort();
+      healthReaderRef.current?.reader.dispose();
+      healthRequestRef.current = null;
+      healthRefreshQueuedRef.current = null;
+      healthReaderRef.current = { adapter, reader: new HealthArchiveReader(adapter, timezone), timezone };
+      healthMonthRef.current = "";
+    }
+    const pending = healthRequestRef.current;
+    // Coalesce duplicate refresh notifications; never launch another full read in parallel.
+    if (pending && pending.month === month && pending.refresh === refresh) return pending.promise;
+    pending?.controller.abort();
+    const controller = new AbortController();
     const requestId = ++healthLoadRequestRef.current;
-    const isActiveRequest = () => healthLoadRequestRef.current === requestId && adapterRef.current === adapter;
-    let failed = false;
-    const isCurrent = () => !failed && isActiveRequest();
-    setLoadingHealth(true); setHealthLoadError(""); setErrorMessage("");
-    try {
-      const [staging, metrics, sleepSessions, workouts] = await Promise.all([
-        loadHealthDirectory(adapter, "data/health-staging-records", parseHealthStagingRecord, isCurrent),
-        loadHealthDirectory(adapter, "data/health-metrics", parseHealthMetricRecord, isCurrent),
-        loadHealthDirectory(adapter, "data/sleep-sessions", parseSleepSessionRecord, isCurrent),
-        loadHealthDirectory(adapter, "data/workouts", parseWorkoutRecord, isCurrent),
-      ]);
-      if (!isCurrent()) return false;
-      const stagingById = new Map(staging.map((item) => [item.record.id, item.record]));
-      let unverifiedWorkoutCount = 0;
-      const verifiedWorkouts = workouts.filter((item) => {
-        // Version 2 is validated by parseWorkoutRecord and carries COROS provenance directly.
-        if (item.record.data.workout_version === 2) return true;
-        const source = stagingById.get(item.record.data.staging_record_id);
-        const verified = source ? isWorkoutLinkedToStaging(item.record, source) : false;
-        if (!verified && item.record.deleted_at === null) unverifiedWorkoutCount += 1;
-        return verified;
-      });
-      setHealthStagingFiles(staging); setHealthMetricFiles(metrics); setSleepSessionFiles(sleepSessions);
-      setWorkoutFiles(verifiedWorkouts);
-      setHealthUnverifiedWorkoutCount(unverifiedWorkoutCount);
+    const current = () => !controller.signal.aborted && healthLoadRequestRef.current === requestId && adapterRef.current === adapter;
+    const reader = healthReaderRef.current.reader;
+    const publish = (snapshot: HealthArchiveSnapshot) => {
+      if (!current()) return;
+      healthMonthRef.current = snapshot.month;
+      setHealthArchive(snapshot);
+      setHealthStagingFiles(snapshot.staging); setSleepSessionFiles(snapshot.sleepSessions); setWorkoutFiles(snapshot.workouts);
+      setHealthUnverifiedWorkoutCount(snapshot.unverifiedWorkoutCount);
       setHealthLoaded(true);
-      return true;
-    } catch (error) {
-      if (!isCurrent()) return false;
-      // Stop queued batches in sibling directories after any incomplete read.
-      failed = true;
-      const message = error instanceof Error && error.message === "HEALTH_DIRECTORY_LIMIT"
-        ? "健康记录目录已达到读取上限，暂时无法确认完整记录范围。请联系维护者扩展读取方式。"
-        : error instanceof Error && error.message === "HEALTH_RECORD_INVALID"
-          ? "部分健康记录格式无效，本次读取未完成；请检查数据后重试。"
+    };
+    setLoadingHealth(true); setHealthLoadError(""); setErrorMessage("");
+    const promise = (async () => {
+      try {
+        publish(await reader.load(month, { refresh, signal: controller.signal, onCatalog: publish, onProgress: publish }));
+        return current();
+      } catch (error) {
+        if (!current()) return false;
+        const message = error instanceof Error && error.message === "HEALTH_RECORD_INVALID"
+          ? "部分健康记录格式无效，本月读取未完成，请检查后重试。"
           : `健康记录读取未完成：${friendlyError(error)}`;
-      setHealthLoadError(message); setErrorMessage(message);
-      return false;
-    } finally { if (isActiveRequest()) setLoadingHealth(false); }
-  }, [adapterRef, setErrorMessage]);
+        setHealthLoadError(message); setErrorMessage(message);
+        return false;
+      } finally {
+        if (current()) { setLoadingHealth(false); healthRequestRef.current = null; }
+      }
+    })();
+    healthRequestRef.current = { controller, promise, month, refresh };
+    return promise;
+  }, [adapterRef, setErrorMessage, timezone]);
+
+  const loadHealthDomain = useCallback((adapter = adapterRef.current): Promise<boolean> => {
+    if (!adapter || adapter !== adapterRef.current) return Promise.resolve(false);
+    const pending = healthReaderRef.current?.adapter === adapter && healthReaderRef.current?.timezone === timezone ? healthRequestRef.current : null;
+    if (!pending) return loadHealthView(adapter, healthMonthRef.current || undefined, true);
+    // A successful COROS write during a read still needs one subsequent catalog check.
+    if (!healthRefreshQueuedRef.current) {
+      const queued = pending.promise.then(() => adapter === adapterRef.current
+        ? loadHealthView(adapter, healthMonthRef.current || undefined, true) : false);
+      healthRefreshQueuedRef.current = queued;
+      void queued.finally(() => { if (healthRefreshQueuedRef.current === queued) healthRefreshQueuedRef.current = null; });
+    }
+    return healthRefreshQueuedRef.current;
+  }, [adapterRef, loadHealthView, timezone]);
+  const loadHealthMonth = useCallback((month: string) => loadHealthView(adapterRef.current, month), [adapterRef, loadHealthView]);
 
   const loadProjectFileReferences = useCallback(async (adapter = adapterRef.current) => {
     if (!adapter) return;
@@ -846,6 +865,13 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
 
   function clearCollections() {
     healthLoadRequestRef.current += 1;
+    healthRequestRef.current?.controller.abort();
+    healthRequestRef.current = null;
+    healthReaderRef.current?.reader.dispose();
+    healthReaderRef.current = null;
+    healthRefreshQueuedRef.current = null;
+    healthMonthRef.current = "";
+    setHealthArchive(null);
     setLoadingHealth(false);
     setHealthLoaded(false);
     setHealthLoadError("");
@@ -972,6 +998,7 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     loadingHabits,
     loadingHealth,
     healthLoaded,
+    healthArchive,
     healthLoadError,
     healthUnverifiedWorkoutCount,
     loadingDashboard,
@@ -997,6 +1024,7 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     loadLearningAreas,
     loadHabitDomain,
     loadHealthDomain,
+    loadHealthMonth,
     loadDashboardLayout,
     clearCollections,
   };

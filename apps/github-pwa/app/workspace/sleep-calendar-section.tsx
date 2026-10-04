@@ -14,13 +14,15 @@ function dayDescription(day: SleepCalendarDay) {
   return `${day.date}，${SLEEP_GRADES[day.grade].label}${day.score === null ? "" : `，${day.score}分`}，${duration}${day.napCount ? `，包含${day.napCount}次小睡` : ""}${day.hasIncompleteDuration ? "，部分分段实睡时长缺失" : ""}${day.hasDateCorrection ? "，小睡日期已修正" : ""}`;
 }
 
-export function SleepCalendarSection({ rows, workouts = [], timezone }: { rows: SleepRecordRow[]; workouts?: WorkoutRecordRow[]; timezone: string }) {
+export function SleepCalendarSection({ rows, workouts = [], timezone, months: archiveMonths, selectedMonth, onMonthChange, monthReady = true, monthError = false }: { rows: SleepRecordRow[]; workouts?: WorkoutRecordRow[]; timezone: string; months?: string[]; selectedMonth?: string; onMonthChange?: (month: string) => void; monthReady?: boolean; monthError?: boolean }) {
   const days = useMemo(() => buildSleepCalendarDays(rows), [rows]);
   const workoutDays = useMemo(() => buildWorkoutCalendarDays(workouts, timezone), [workouts, timezone]);
-  const months = useMemo(() => healthCalendarMonths(days, workoutDays), [days, workoutDays]);
+  const rowMonths = useMemo(() => healthCalendarMonths(days, workoutDays), [days, workoutDays]);
+  const months = archiveMonths ?? rowMonths;
   const [requestedMonth, setRequestedMonth] = useState("");
   const [selectedDate, setSelectedDate] = useState("");
-  const month = months.includes(requestedMonth) ? requestedMonth : months.at(-1) ?? "";
+  const month = selectedMonth ?? (months.includes(requestedMonth) ? requestedMonth : months.at(-1) ?? "");
+  const selectMonth = (value: string) => { if (onMonthChange) onMonthChange(value); else setRequestedMonth(value); };
   const index = months.indexOf(month);
   const visibleMonths = month ? [month] : [];
   const monthDays = days.filter(day => day.date.startsWith(`${month}-`));
@@ -33,9 +35,9 @@ export function SleepCalendarSection({ rows, workouts = [], timezone }: { rows: 
   return <section className="sleep-calendar" aria-labelledby="sleep-calendar-title">
     <div className="sleep-calendar-heading">
       <h3 id="sleep-calendar-title" className="sr-only">睡眠与运动月历</h3>
-      {months.length ? <div className="sleep-calendar-controls"><button className="secondary-button" type="button" aria-label="查看上一个月份" disabled={index < 1} onClick={() => setRequestedMonth(months[Math.max(0, index - 1)])}><ChevronLeft size={16} aria-hidden="true" /></button><label><select aria-label="查看月份" value={month} onChange={(event) => setRequestedMonth(event.target.value)}>{[...months].reverse().map((value) => <option key={value} value={value}>{monthLabel(value)}</option>)}</select></label><button className="secondary-button" type="button" aria-label="查看下一个月份" disabled={index === months.length - 1} onClick={() => setRequestedMonth(months[Math.min(months.length - 1, index + 1)])}><ChevronRight size={16} aria-hidden="true" /></button></div> : null}
+      {months.length ? <div className="sleep-calendar-controls"><button className="secondary-button" type="button" aria-label="查看上一个月份" disabled={index < 1} onClick={() => selectMonth(months[Math.max(0, index - 1)])}><ChevronLeft size={16} aria-hidden="true" /></button><label><select aria-label="查看月份" value={month} onChange={(event) => selectMonth(event.target.value)}>{[...months].reverse().map((value) => <option key={value} value={value}>{monthLabel(value)}</option>)}</select></label><button className="secondary-button" type="button" aria-label="查看下一个月份" disabled={index === months.length - 1} onClick={() => selectMonth(months[Math.min(months.length - 1, index + 1)])}><ChevronRight size={16} aria-hidden="true" /></button></div> : null}
     </div>
-    {months.length ? <>
+    {months.length && !monthReady ? <p className="health-records-load-message" role="status">{monthLabel(month)}{monthError ? "读取未完成，请重试。" : "记录读取中…"}</p> : months.length ? <>
       <div className="sleep-calendar-months">{visibleMonths.map((value) => {
         const monthDays = days.filter((day) => day.date.startsWith(value));
         const stats = summarizeSleepDays(monthDays);
