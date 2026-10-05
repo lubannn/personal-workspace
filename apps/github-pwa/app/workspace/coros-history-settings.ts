@@ -1,8 +1,24 @@
+import { parseCorosOAuthFailure } from "../../../auth-worker/src/coros-oauth-errors";
 import type { DomainProgress, SyncProgress } from "../../../auth-worker/src/coros-sync-state";
 import type { BulkHealthSource, BulkHealthSourceProgress } from "../../../auth-worker/src/coros-health-history";
 
 export function corosSyncErrorMessage(code: string | null | undefined): string | null {
   if (!code) return null;
+  const oauth = parseCorosOAuthFailure(code);
+  if (oauth) {
+    const phase = { RESOURCE_METADATA: "COROS 资源发现", AUTH_METADATA: "COROS 授权服务发现", REFRESH: "COROS 授权刷新",
+      REGISTRATION: "COROS 客户端注册", EXCHANGE: "COROS 授权兑换" }[oauth.phase];
+    const status = oauth.status === null ? "" : `（HTTP ${oauth.status}）`;
+    const reason = oauth.oauthError === "invalid_grant" ? "刷新或兑换凭据被拒绝，请核对授权状态"
+      : oauth.oauthError === "invalid_client" || oauth.oauthError === "unauthorized_client" ? "客户端被拒绝，请核对服务端注册配置"
+        : oauth.status !== null && [301, 302, 303, 307, 308].includes(oauth.status) ? "接口返回重定向，需核对服务端地址"
+          : oauth.reason === "BODY_MISSING" ? "响应缺少正文，需核对授权接口"
+          : oauth.reason === "TIMEOUT" ? "请求超时，可稍后检查状态"
+            : oauth.reason === "TRANSPORT_FAILED" ? "网络请求失败，可稍后检查状态"
+              : oauth.status === 429 ? "请求受到限流，请等待已安排的重试"
+                : "请求未完成，需核对授权服务响应";
+    return `${phase}${status}${oauth.oauthError ? `（${oauth.oauthError}）` : ""}：${reason}。已有记录与进度保留。`;
+  }
   if (code === "COROS_SYNC_HISTORY_UNSUPPORTED" || code === "COROS_ROUTE_NOT_FOUND") return "后台尚不支持保存历史范围，请等待服务更新后点击「检查状态」；当前范围与暂停状态保持不变。";
   if (code === "COROS_SYNC_HISTORY_BUSY") return "仍有批次占用或进度已变化，请检查状态后重试；历史范围未保存。";
   if (code === "COROS_SYNC_PAUSE_REQUIRED") return "请先暂停自动更新，再保存历史范围或恢复受阻来源。";

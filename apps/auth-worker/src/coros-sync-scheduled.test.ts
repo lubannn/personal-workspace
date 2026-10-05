@@ -327,6 +327,24 @@ describe("awaited cron with bounded serial COROS batches", () => {
     } finally { f.db.sqlite.close(); }
   });
 
+
+  it.each(["COROS_OAUTH_RESOURCE_METADATA_HTTP_503", "COROS_OAUTH_AUTH_METADATA_HTTP_401", "COROS_OAUTH_REFRESH_HTTP_400_INVALID_GRANT", "COROS_OAUTH_REFRESH_HTTP_200_TIMEOUT"])
+  ("keeps shared OAuth failure stopping policy for %s", async code => {
+    const f = fixture(); f.deps.refresh = vi.fn().mockRejectedValue(new Error(code));
+    try {
+      expect(await runScheduledCorosSync(f.db.env, f.deps)).toMatchObject({ batches: 1, errors: 1, result: { status: "error", errorCode: code } });
+      expect(f.db.saved()?.lease_token).toBeNull();
+    } finally { f.db.sqlite.close(); }
+  });
+  it.each(["COROS_OAUTH_RESOURCE_METADATA_TRANSPORT_FAILED", "COROS_OAUTH_AUTH_METADATA_HTTP_200_JSON_INVALID", "COROS_OAUTH_REFRESH_HTTP_200_RESPONSE_TOO_LARGE", "COROS_OAUTH_REFRESH_HTTP_200_BODY_READ_FAILED"])
+  ("keeps the existing source-error budget for %s", async code => {
+    const f = fixture(); f.deps.refresh = vi.fn().mockRejectedValue(new Error(code));
+    try {
+      expect(await runScheduledCorosSync(f.db.env, f.deps)).toMatchObject({ batches: 3, errors: 3, result: { status: "error", errorCode: code } });
+      expect(f.db.saved()?.lease_token).toBeNull();
+    } finally { f.db.sqlite.close(); }
+  });
+
   it("allows only one invocation to hold the existing atomic lease", async () => {
     const f = fixture(), base = f.deps.refresh;
     let entered!: () => void, release!: () => void;

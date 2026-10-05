@@ -1,4 +1,5 @@
 import { handleAuthRequest } from "./auth";
+import { CorosOAuthRequestError, parseCorosOAuthFailure } from "./coros-oauth-errors";
 import { handleCorosConnectionRequest, type CorosConnectionEnv } from "./coros-connection";
 import { runScheduledCorosSync } from "./coros-sync-scheduled";
 
@@ -155,6 +156,9 @@ export async function handleRequest(request: Request, env: CorosConnectionEnv = 
   try {
     return await routeRequest(request, env);
   } catch (error) {
+    if (error instanceof CorosOAuthRequestError && parseCorosOAuthFailure(error.message)) {
+      return jsonResponse({ error: error.message }, 502);
+    }
     console.error(
       JSON.stringify({
         event: "worker_request_failed",

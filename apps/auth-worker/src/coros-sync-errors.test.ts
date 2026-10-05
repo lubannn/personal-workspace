@@ -79,6 +79,14 @@ describe("bounded synchronization error diagnostics", () => {
     expect(JSON.stringify(fixture.saved())).not.toContain("synthetic-private-conflict-detail");
   });
 
+
+  it.each(["COROS_OAUTH_REFRESH_TRANSPORT_FAILED_PRIVATE_CANARY", "COROS_OAUTH_REFRESH_HTTP_400_PRIVATE_CANARY", "COROS_OAUTH_AUTH_METADATA_HTTP_600"])
+  ("rejects forged OAuth classifications %s without persisting payloads", async code => {
+    const { deps } = dependencies(); vi.mocked(deps.refresh).mockRejectedValue(new Error(code));
+    expect(await runCorosSync(fixture.env, new Date(), deps)).toMatchObject({ status: "error", errorCode: "COROS_SYNC_FAILED" });
+    expect(fixture.saved()?.lease_token).toBeNull(); expect(JSON.stringify(fixture.saved())).not.toContain(code);
+  });
+
   it("clears an earlier failed stage on a subsequent successful batch", async () => {
     const { deps } = dependencies();
     const saved = fixture.saved()!.progress;
