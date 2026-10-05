@@ -9,9 +9,9 @@ export const SYNC_TEST_ORIGIN = "https://workspace.example";
 export const SYNC_TEST_USER = "42";
 
 /** Executes the production SQL on SQLite rather than mocking SQL strings. */
-export function syncTestDatabase() {
-  const sqlite = new Database(":memory:");
-  for (const filename of ["0002_coros_connections.sql", "0003_coros_sync_jobs.sql", "0004_coros_daily_requests.sql"]) {
+export function syncTestDatabase(snapshot?: Buffer) {
+  const sqlite = new Database(snapshot ?? ":memory:");
+  for (const filename of snapshot ? [] : ["0002_coros_connections.sql", "0003_coros_sync_jobs.sql", "0004_coros_daily_requests.sql"]) {
     sqlite.exec(readFileSync(new URL(`../migrations/${filename}`, import.meta.url), "utf8"));
   }
   const db: D1DatabaseLike = { prepare(query) {

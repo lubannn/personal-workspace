@@ -25,8 +25,15 @@ export function mapCorosActivityDetail(result: CorosReadResult, workout: Workout
     const match = /^([^:]+): (.+)$/u.exec(line); if (!match) fail();
     if (fields.has(match[1])) fail(); fields.set(match[1], match[2]);
   }
-  const moving = seconds(fields.get("Workout Time") ?? ""), elapsed = seconds(fields.get("Total Time") ?? "");
-  if (Math.abs(elapsed - workout.candidate.duration_seconds) > 1 || moving > elapsed + 1
+  const moving = seconds(fields.get("Workout Time") ?? "");
+  const totalTime = fields.get("Total Time");
+  // Verified jump-rope details omit elapsed time. Compare their active time
+  // with the list's active time; never treat it as the elapsed epoch span.
+  if (totalTime === undefined && (workout.candidate.metrics_json.coros_sport_type !== 901
+    || !/^🚶 Jump Rope Activity Details\n/u.test(text) || workout.candidate.metrics_json.moving_seconds === null)) fail();
+  const elapsed = totalTime === undefined ? null : seconds(totalTime);
+  if ((elapsed === null ? moving > workout.candidate.duration_seconds + 1
+    : Math.abs(elapsed - workout.candidate.duration_seconds) > 1 || moving > elapsed + 1)
     || (workout.candidate.metrics_json.moving_seconds !== null && Math.abs(moving - workout.candidate.metrics_json.moving_seconds) > 1)) {
     throw new Error("COROS_SYNC_HEALTH_DETAIL_MISMATCH");
   }
