@@ -112,7 +112,7 @@ describe("historical jump-rope details and official HRV through persistence", ()
     const f = setup(); let db = f.db;
     try {
       expect(await runCorosSync(db.env, new Date(), f.deps, { forceDue: true })).toMatchObject({ status: "processed",
-        progress: { lastErrorCode: "COROS_SYNC_ACTIVITY_DETAILS_PENDING" }, batch: { created: 17 } });
+        progress: { lastErrorCode: null }, continuation: { detailsRead: 4 }, batch: { created: 17 } });
       expect(db.saved()?.progress.health).toMatchObject({ backfillNext: "2024-01-01", backfillThrough: null });
       expect(f.records()).toHaveLength(17); expect(f.records().some(r => r.data.metric_type === "elevation_gain" || r.data.metric_type === "training_load")).toBe(false);
       const saved = db.saved()!;
@@ -120,7 +120,7 @@ describe("historical jump-rope details and official HRV through persistence", ()
       expect(JSON.parse(await decryptRefreshToken(saved.progress.health!.encryptedActivityCache!, key)).entries).toHaveLength(4);
       expect(f.read.mock.calls.filter(([name]) => name === "getActivityDetail").map(([, args]) => args.labelId)).toEqual(["107", "106", "105", "104"]);
       const snapshot = db.sqlite.serialize(); db.sqlite.close(); db = syncTestDatabase(snapshot); db.env.TOKEN_ENCRYPTION_KEY = key;
-      vi.setSystemTime("2024-02-01T04:10:00Z"); f.read.mockClear();
+      f.read.mockClear();
       expect(await runCorosSync(db.env, new Date(), f.deps, { forceDue: true })).toMatchObject({ status: "processed", batch: { created: 7, unchanged: 17 } });
       expect(f.read.mock.calls.filter(([name]) => name === "getActivityDetail").map(([, args]) => args.labelId)).toEqual(["103", "102", "101"]);
       expect(db.saved()?.progress.health).toMatchObject({ backfillNext: "2024-01-08", backfillThrough: "2024-01-07", lastErrorCode: null });

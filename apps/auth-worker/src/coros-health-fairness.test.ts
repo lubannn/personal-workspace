@@ -54,7 +54,7 @@ describe("independent health sources during pending activity detail batches", ()
       const result = { items: [], through: window.through, observedAt: new Date().toISOString(), limitations: [],
         observedDates: [], unconfirmedZeroDates: [] };
       return window.source ? { ...result, bulkSource: window.source, activityError: undefined }
-        : { ...result, bulkSource: undefined, activityError: "COROS_SYNC_ACTIVITY_DETAILS_PENDING" };
+        : { ...result, bulkSource: undefined, activityError: undefined, activityContinuation: { detailsRead: 4 } };
     });
     const deps: CorosSyncDependencies = {
       refresh: vi.fn().mockResolvedValue({ resourceUrl: "https://mcpcn.coros.com/mcp", accessToken: "synthetic-token" }),

@@ -6,6 +6,7 @@ import type { CorosHealthMetricItem } from "./coros-health-mapping";
 
 type Workout = Extract<CorosSyncCandidate, { kind: "workout" }>;
 type Detail = { elevationGainMeters: number | null; trainingLoad: number | null };
+type PendingWindow = [string, string[]];
 type Cached = Detail & { signature: string; date: string; requestSequence: number };
 type Read = (name: CorosReadTool, args: Record<string, unknown>) => Promise<CorosReadResult>;
 function fail(): never { throw new Error("COROS_SYNC_HEALTH_DETAIL_FORMAT_UNSUPPORTED"); }
@@ -64,6 +65,7 @@ export async function collectCorosActivityTotals(read: Read, from: string, reque
   const localDate = (workout: Workout) => todayInTimezone(new Date(workout.candidate.start_at), progress.timezone);
   const workouts = mapped.items.filter(workout => localDate(workout) >= from && localDate(workout) <= through);
   let cache: Record<string, Cached> = {};
+  let pendingWindows: PendingWindow[] = [];
   const encrypted = progress.health?.encryptedActivityCache;
   if (encrypted && encryptionKey) {
     try {
@@ -72,18 +74,25 @@ export async function collectCorosActivityTotals(read: Read, from: string, reque
         cache = Object.fromEntries(parsed.entries.filter((entry: [string, Cached]) => Array.isArray(entry) && /^workout:\d{1,30}$/.test(entry[0])
           && entry[1] && typeof entry[1].signature === "string" && /^\d{4}-\d{2}-\d{2}$/.test(entry[1].date) && Number.isSafeInteger(entry[1].requestSequence)
           && [entry[1].elevationGainMeters, entry[1].trainingLoad].every(v => v === null || (typeof v === "number" && Number.isFinite(v) && v >= 0))));
+        // Optional v1 metadata pins the two serial recent/history windows.
+        // It affects eviction only, never completeness or accepted facts.
+        if (Array.isArray(parsed.pendingWindows)) pendingWindows = parsed.pendingWindows.filter((entry: PendingWindow) =>
+          Array.isArray(entry) && /^\d{4}-\d{2}-\d{2}\/\d{4}-\d{2}-\d{2}$/u.test(entry[0])
+          && Array.isArray(entry[1]) && entry[1].length < 20 && entry[1].every(id => typeof id === "string" && /^workout:\d{1,30}$/u.test(id))).slice(-2);
       }
-    } catch { cache = {}; } // An unusable optional cache never becomes evidence.
+    } catch { cache = {}; pendingWindows = []; } // An unusable optional cache never becomes evidence.
   }
+  const windowId = `${from}/${through}`;
+  const wasPending = pendingWindows.some(([id]) => id === windowId);
+  pendingWindows = [...pendingWindows.filter(([id]) => id !== windowId), [windowId, workouts.map(workout => workout.sourceId)] as PendingWindow].slice(-2);
   const remember = async () => {
     if (!encryptionKey || !progress.health) return;
-    // Pin the in-flight window, including old backfills: evicting its first
-    // four details would otherwise make a full cache prevent resumable progress.
-    const currentIds = new Set(workouts.map(workout => workout.sourceId));
+    // Both in-flight windows survive fair recent/history rotation at capacity.
+    const currentIds = new Set([...workouts.map(workout => workout.sourceId), ...pendingWindows.flatMap(([, ids]) => ids)]);
     const pinned = Object.entries(cache).filter(([id]) => currentIds.has(id));
     const others = Object.entries(cache).filter(([id]) => !currentIds.has(id)).sort((a, b) => a[1].date.localeCompare(b[1].date));
     const entries = [...others.slice(-Math.max(0, 256 - pinned.length)), ...pinned];
-    progress.health.encryptedActivityCache = await encryptRefreshToken(JSON.stringify({ version: 1, timezone: progress.timezone, entries }), encryptionKey);
+    progress.health.encryptedActivityCache = await encryptRefreshToken(JSON.stringify({ version: 1, timezone: progress.timezone, entries, pendingWindows }), encryptionKey);
     await checkpoint?.();
   };
   const observationSequence = progress.health?.recentObservationSequence ?? progress.request?.sequence ?? 0;
@@ -94,12 +103,19 @@ export async function collectCorosActivityTotals(read: Read, from: string, reque
     // Today's mutable activities refresh for a new observation, while partial
     // same-day continuation and historical identities reuse encrypted facts.
     if (cached?.signature === signature && (cached.date < todayInTimezone(new Date(observedAt), progress.timezone) || cached.requestSequence === observationSequence)) continue;
-    if (reads === 4) { await remember(); throw new Error("COROS_SYNC_ACTIVITY_DETAILS_PENDING"); }
+    if (reads === 4) {
+      // A bounded batch with saved, validated details is normal continuation.
+      // It cannot establish a daily total until every listed detail is known.
+      return { items: [] as CorosHealthMetricItem[], through,
+        continuation: { detailsRead: encryptionKey && progress.health ? reads : 0 } };
+    }
     const result = await read("getActivityDetail", { labelId: workout.sourceId.slice(8), sportType: workout.candidate.metrics_json.coros_sport_type });
     reads++; await assertActive();
     cache[workout.sourceId] = { signature, date: localDate(workout), requestSequence: observationSequence, ...mapCorosActivityDetail(result, workout) };
     await remember();
   }
+  pendingWindows = pendingWindows.filter(([id]) => id !== windowId);
+  if (reads || wasPending) await remember();
   const items: CorosHealthMetricItem[] = [];
   for (let date = from; date <= through; date = shiftDate(date, 1)) {
     const day = workouts.filter(workout => localDate(workout) === date);
@@ -111,5 +127,5 @@ export async function collectCorosActivityTotals(read: Read, from: string, reque
           timezone: progress.timezone, measured_at: observedAt, aggregation_period: "daily" } });
     }
   }
-  return { items, through };
+  return { items, through, continuation: undefined };
 }

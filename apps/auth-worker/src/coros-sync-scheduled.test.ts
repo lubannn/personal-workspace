@@ -7,9 +7,11 @@ import { parseRecord } from "../../../src/lib/github-data/protocol";
 import { collectCorosHealth, nextHealthSyncWindow } from "./coros-health-sync";
 import { writeCorosHealthMetrics } from "./coros-health-writer";
 import { writeCorosSyncBatch } from "./coros-sync-writer";
-import { runCorosSync, type CorosSyncDependencies } from "./coros-sync";
+import { corosSyncDependenciesWithFetch, runCorosSync, type CorosSyncDependencies } from "./coros-sync";
 import { COROS_SCHEDULED_BUDGET, runScheduledCorosSync, scheduledCorosFetch } from "./coros-sync-scheduled";
 import { COROS_SYNC_SOURCES, initialSyncProgress, shiftDate } from "./coros-sync-state";
+import { encryptRefreshToken } from "./security";
+import { COROS_READ_TOOL_ALLOWLIST } from "./coros-read-client";
 import { SYNC_TEST_NOW, syncTestDatabase } from "./coros-sync-test-helpers";
 
 // Nonempty observed source grammars; every date, identity and value is synthetic.
@@ -191,16 +193,17 @@ describe("awaited cron with bounded serial COROS batches", () => {
     } finally { f.db.sqlite.close(); }
   });
 
-  it("preserves real rate-limit backoff even if subsequent MCP cleanup exhausted the budget", async () => {
-    const f = fixture(); f.deps.read = vi.fn().mockRejectedValue(new Error("COROS_READ_RATE_LIMITED"));
+  it.each(["COROS_READ_RATE_LIMITED", "COROS_READ_TIMEOUT", "COROS_SYNC_FORMAT_UNSUPPORTED", "COROS_READ_UPSTREAM_UNAVAILABLE"])
+  ("preserves real %s backoff even if subsequent MCP cleanup exhausted the budget", async code => {
+    const f = fixture(); f.deps.read = vi.fn().mockRejectedValue(new Error(code));
     try {
-      expect(await runCorosSync(f.db.env, new Date(), f.deps, { budgetExhausted: () => true })).toMatchObject({ status: "error", errorCode: "COROS_READ_RATE_LIMITED" });
+      expect(await runCorosSync(f.db.env, new Date(), f.deps, { budgetExhausted: () => true })).toMatchObject({ status: "error", errorCode: code });
       expect(f.db.saved()?.progress.domains.sleep).toMatchObject({ backfillNext: "2024-01-01", retryAfter: "2024-02-01T04:20:00.000Z" });
       expect(f.db.saved()?.lease_token).toBeNull();
     } finally { f.db.sqlite.close(); }
   });
 
-  it("retains four encrypted details through independent batches and resumes the remaining three on the next cron", async () => {
+  it("retains four encrypted details through independent batches and completes the same window in one cron", async () => {
     const f = fixture(), base = f.deps.read;
     f.deps.read = vi.fn<CorosSyncDependencies["read"]>(async (...args) => {
       if (args[2] !== "querySportRecords") return base(...args);
@@ -212,14 +215,115 @@ describe("awaited cron with bounded serial COROS batches", () => {
           return `${i + 1}. Jump Rope — ${a.date}\n   Time Window: startTimestamp=${start} | endTimestamp=${start + 600}\n   Duration: 10:00 | Sets: 500\n   LabelId: ${a.id} | SportType: 901`; }).join("\n\n"));
     });
     try {
-      await runScheduledCorosSync(f.db.env, f.deps);
-      expect(f.db.saved()?.progress.health).toMatchObject({ backfillNext: "2024-01-01", lastErrorCode: "COROS_SYNC_ACTIVITY_DETAILS_PENDING", retryAfter: "2024-02-01T04:10:00.000Z" });
-      expect(f.turns).toContain("dailyHealth"); expect(f.turns).toContain("restingHeartRate");
-      expect(vi.mocked(f.deps.read).mock.calls.filter(([, , name]) => name === "getActivityDetail")).toHaveLength(4);
-      f.restart(); vi.setSystemTime("2024-02-01T04:10:00Z"); vi.mocked(f.deps.read).mockClear();
       expect((await runScheduledCorosSync(f.db.env, f.deps)).result?.status).toBe("complete");
-      expect(vi.mocked(f.deps.read).mock.calls.filter(([, , name]) => name === "getActivityDetail").map(([, , , args]) => args.labelId)).toEqual(["1004", "1005", "1006", "1008"]);
+      expect(f.db.saved()?.progress.health).toMatchObject({ backfillNext: "2024-01-15", lastErrorCode: null, retryAfter: null });
+      expect(f.turns).toContain("dailyHealth"); expect(f.turns).toContain("restingHeartRate");
+      const labels = vi.mocked(f.deps.read).mock.calls.filter(([, , name]) => name === "getActivityDetail").map(([, , , args]) => args.labelId);
+      expect(labels).toEqual(["1000", "1001", "1002", "1003", "1004", "1005", "1006", "1008"]);
+      expect(new Set(labels).size).toBe(labels.length);
+      f.restart(); vi.setSystemTime("2024-02-01T04:30:00Z"); vi.mocked(f.deps.read).mockClear();
+      expect((await runScheduledCorosSync(f.db.env, f.deps)).result?.status).toBe("complete");
+      expect(f.deps.read).not.toHaveBeenCalled();
       expect(f.db.saved()?.progress.health).toMatchObject({ backfillNext: "2024-01-15", lastErrorCode: null });
+    } finally { f.db.sqlite.close(); }
+  });
+
+
+  it("removes only the legacy normal-continuation gate and completes without waiting", async () => {
+    const f = fixture();
+    try {
+      const p = f.db.saved()!.progress;
+      p.health!.retryAfter = "2024-02-01T05:00:00.000Z";
+      p.health!.lastErrorCode = p.lastErrorCode = "COROS_SYNC_ACTIVITY_DETAILS_PENDING";
+      p.health!.lastErrorStage = p.lastErrorStage = "health_collect";
+      f.db.saveProgress(p);
+      expect((await runScheduledCorosSync(f.db.env, f.deps)).result?.status).toBe("complete");
+      expect(f.db.saved()?.progress.health).toMatchObject({ backfillNext: "2024-01-15", retryAfter: null, lastErrorCode: null });
+      expect(f.db.saved()?.lease_token).toBeNull();
+    } finally { f.db.sqlite.close(); }
+  });
+
+  it("stops a successful-looking continuation with no newly saved details or coverage", async () => {
+    const f = fixture();
+    try {
+      const p = f.db.saved()!.progress;
+      for (const d of Object.values(p.domains)) d.backfillNext = "2024-01-15";
+      f.db.saveProgress(p);
+      f.deps.health = vi.fn(async (_read, window) => ({ items: [], through: window.through, observedAt: new Date().toISOString(),
+        limitations: [], activityContinuation: { detailsRead: 0 }, observedDates: [], unconfirmedZeroDates: [] }));
+      expect(await runScheduledCorosSync(f.db.env, f.deps)).toMatchObject({ batches: 1, errors: 0,
+        result: { status: "processed", madeProgress: false, continuation: { detailsRead: 0 } } });
+      expect(f.db.saved()?.progress.health).toMatchObject({ backfillNext: "2024-01-01", retryAfter: null, lastErrorCode: null });
+      expect(f.db.saved()?.lease_token).toBeNull();
+    } finally { f.db.sqlite.close(); }
+  });
+
+  it.each([false, true])("uses real OAuth and MCP SDK at 40 fetches, finalizes and resumes nonempty sources (cleanup failure=%s)", async cleanupFailure => {
+    const f = fixture();
+    const origin = "https://mcpcn.coros.com";
+    let rotations = 0;
+    const methods: string[] = [];
+    const upstream = vi.fn<typeof fetch>(async (input, init) => {
+      const url = String(input);
+      if (url.includes("protected-resource")) return Response.json({ resource: `${origin}/mcp`, authorization_servers: [origin], scopes_supported: ["mcp.tools", "offline_access"] });
+      if (url.includes("well-known")) return Response.json({ issuer: origin, authorization_endpoint: `${origin}/oauth2/authorize`,
+        token_endpoint: `${origin}/oauth2/token`, registration_endpoint: `${origin}/connect/register`,
+        code_challenge_methods_supported: ["S256"], grant_types_supported: ["authorization_code", "refresh_token"], token_endpoint_auth_methods_supported: ["none"] });
+      if (url.endsWith("/oauth2/token")) return Response.json({ access_token: "synthetic-access", refresh_token: `synthetic-refresh-${++rotations}`,
+        token_type: "Bearer", expires_in: 3600, scope: "mcp.tools" });
+      if (init?.method === "GET") return new Response(null, { status: 405 });
+      if (init?.method === "DELETE") { methods.push("DELETE"); if (cleanupFailure) throw new Error("synthetic-cleanup-failure"); return new Response(null, { status: 204 }); }
+      const rpc = JSON.parse(String(init?.body)); methods.push(rpc.method);
+      if (rpc.method === "server/discover") return Response.json({ jsonrpc: "2.0", id: rpc.id, error: { code: -32601, message: "Method not found" } });
+      if (rpc.method === "notifications/initialized") return new Response(null, { status: 202 });
+      const result = rpc.method === "initialize" ? { protocolVersion: "2025-11-25", capabilities: { tools: {} }, serverInfo: { name: "synthetic-coros", version: "1" } }
+        : rpc.method === "tools/list" ? { tools: COROS_READ_TOOL_ALLOWLIST.map(name => ({ name, inputSchema: { type: "object" } })) }
+          : { content: response(rpc.params.name, rpc.params.arguments).payload };
+      return Response.json({ jsonrpc: "2.0", id: rpc.id, result }, { headers: rpc.method === "initialize" ? { "mcp-session-id": "synthetic-session" } : {} });
+    });
+    try {
+      const encrypted = await encryptRefreshToken("synthetic-refresh-0", f.db.env.TOKEN_ENCRYPTION_KEY!);
+      f.db.sqlite.prepare("UPDATE coros_connections SET encrypted_refresh_token = ?").run(encrypted);
+      let completed = false, yielded = false;
+      for (let invocation = 0; invocation < 12 && !completed; invocation++) {
+        const before = upstream.mock.calls.length;
+        const budget = scheduledCorosFetch(Date.now() + 480_000, upstream);
+        const deps = { ...corosSyncDependenciesWithFetch(budget.fetch), adapter: f.deps.adapter };
+        for (let batch = 0; batch < 20; batch++) {
+          const result = await runCorosSync(f.db.env, new Date(), deps, { forceDue: true, budgetExhausted: budget.denied });
+          expect(f.db.saved()?.lease_token).toBeNull();
+          if (result.status === "complete") { completed = true; break; }
+          if (result.errorCode === "COROS_SYNC_BUDGET_EXHAUSTED") { yielded = true; break; }
+          expect(result.status, JSON.stringify({ code: result.errorCode, stage: result.progress?.lastErrorStage, methods })).toBe("processed");
+        }
+        expect(upstream.mock.calls.length - before).toBeLessThanOrEqual(40);
+        expect(f.db.saved()?.progress.failureCount).toBe(0);
+        f.restart();
+      }
+      expect(yielded).toBe(true); expect(completed).toBe(true);
+      expect(methods).toContain("server/discover"); expect(methods).toContain("initialize"); expect(methods).toContain("DELETE");
+      expect(upstream.mock.calls.every(([, init]) => init?.redirect === "manual")).toBe(true);
+      expect(rotations).toBeGreaterThan(5);
+      for (const d of [...Object.values(f.db.saved()!.progress.domains), f.db.saved()!.progress.health!, ...Object.values(f.db.saved()!.progress.health!.bulk!)]) {
+        expect(d.backfillNext).toBe("2024-01-15"); expect(d.retryAfter).toBeNull();
+      }
+      expect([...f.files.keys()].some(path => path.includes("sleep-sessions"))).toBe(true);
+      expect([...f.files.keys()].some(path => path.includes("workouts"))).toBe(true);
+      expect([...f.files.keys()].some(path => path.includes("health-metrics"))).toBe(true);
+    } finally { f.db.sqlite.close(); }
+  });
+
+  it.each(["OAuth", "MCP"])("finalizes the lease on a rejected %s manual redirect", async source => {
+    const f = fixture();
+    try {
+      const upstream = vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 307, headers: { location: "https://mcpcn.coros.com/mcp" } }));
+      const budget = scheduledCorosFetch(Date.now() + 60_000, upstream);
+      const deps = { ...corosSyncDependenciesWithFetch(budget.fetch), adapter: f.deps.adapter,
+        ...(source === "MCP" ? { refresh: f.deps.refresh } : {}) };
+      expect((await runCorosSync(f.db.env, new Date(), deps)).status).toBe("error");
+      expect(f.db.saved()?.lease_token).toBeNull(); expect(upstream.mock.calls.length).toBeGreaterThan(0);
+      expect(upstream.mock.calls.length).toBeLessThanOrEqual(2);
+      expect(f.db.saved()?.progress.failureCount).toBe(1);
     } finally { f.db.sqlite.close(); }
   });
 
