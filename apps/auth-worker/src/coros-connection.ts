@@ -140,7 +140,7 @@ async function status(request: Request, env: CorosConnectionEnv, userId: string)
       domain.backfillNext <= closedHistoryThrough(progress, new Date())))));
   return json({ connected: Boolean(row), state: row?.state ?? null,
     connectedAt: row?.connected_at ?? null, lastSyncAt: row?.last_sync_at ?? null,
-    lastErrorCode: row?.last_error_code ?? null, sync: { readiness: syncReadiness(env),
+    lastErrorCode: row?.last_error_code ?? null, sync: { readiness: syncReadiness(env), capabilities: { historyScope: true },
       progress, dailyRequestedDate: job?.daily_requested_date ?? null,
       running: Boolean(job?.lease_until && job.lease_until > new Date().toISOString()),
       nextRunAt: pending ? job?.next_run_at ?? null : null } });
@@ -169,12 +169,16 @@ async function controlSync(request: Request, env: CorosConnectionEnv, userId: st
     // Changing an existing scope is explicit and cannot race a background writer.
     if (row.state !== "paused") return json({ error: "COROS_SYNC_PAUSE_REQUIRED" }, 409);
     if (Number(request.headers.get("content-length")) > 1024) return json({ error: "COROS_SYNC_INVALID_DATE" }, 400);
-    const body = await request.json().catch(() => null) as { startDate?: unknown } | null;
+    const body = await request.json().catch(() => null) as { startDate?: unknown; retryBlockedSources?: unknown } | null;
     if (!dateOnly(body?.startDate)) return json({ error: "COROS_SYNC_INVALID_DATE" }, 400);
+    const retrySources = body.retryBlockedSources;
+    if (retrySources !== undefined && (!Array.isArray(retrySources) || retrySources.length > 2
+      || retrySources.some(source => source !== "dailyHealth" && source !== "restingHeartRate")
+      || new Set(retrySources).size !== retrySources.length)) return json({ error: "COROS_SYNC_INVALID_DATE" }, 400);
     const existing = await readSyncJob(env.DB!, userId);
     if (!existing || existing.lease_token) return json({ error: "COROS_SYNC_HISTORY_BUSY" }, 409);
     const progress = parseSyncProgress(existing.progress_json);
-    try { extendSyncHistory(progress, body.startDate); } catch { return json({ error: "COROS_SYNC_INVALID_DATE" }, 400); }
+    try { extendSyncHistory(progress, body.startDate, retrySources as ("dailyHealth" | "restingHeartRate")[] | undefined); } catch { return json({ error: "COROS_SYNC_INVALID_DATE" }, 400); }
     progress.backfillEnd = shiftDate(todayInTimezone(new Date(), progress.timezone), -1);
     const saved = await env.DB!.prepare(`UPDATE coros_sync_jobs SET progress_json = ?1, updated_at = ?2
       WHERE github_user_id = ?3 AND progress_json = ?4 AND lease_token IS NULL

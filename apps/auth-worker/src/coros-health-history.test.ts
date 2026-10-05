@@ -108,6 +108,8 @@ describe("resumable full-scope relative COROS health history", () => {
       acceptSyncRequest(saved, { request_seq: 2, requested_through: "2024-02-01" });
       expect(saved.health?.bulk?.dailyHealth.blockedCode).toBe("COROS_READ_RESULT_TOO_LARGE");
       extendSyncHistory(saved, saved.startDate);
+      expect(saved.health?.bulk?.dailyHealth.blockedCode).toBe("COROS_READ_RESULT_TOO_LARGE");
+      extendSyncHistory(saved, saved.startDate, ["dailyHealth"]);
       expect(saved.health?.bulk?.dailyHealth.blockedCode).toBeUndefined();
       expect(nextBulkHealthWindow(saved, new Date())?.source).toBe("dailyHealth");
     } finally { fixture.sqlite.close(); }

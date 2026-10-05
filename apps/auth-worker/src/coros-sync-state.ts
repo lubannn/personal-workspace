@@ -1,5 +1,6 @@
 import type { AuthEnv, D1DatabaseLike } from "./auth";
 import type { HealthSyncProgress } from "./coros-health-sync";
+import type { BulkHealthSource } from "./coros-health-history";
 
 export type CorosSyncEnv = AuthEnv & {
   GITHUB_APP_ID?: string;
@@ -112,9 +113,13 @@ export function acceptSyncRequest(p: SyncProgress, job: Pick<SyncJob, "request_s
 }
 
 /** Invoke only while paused, then persist with a lease/state compare-and-swap. */
-export function extendSyncHistory(p: SyncProgress, startDate: string) {
+export function extendSyncHistory(p: SyncProgress, startDate: string, retryBlockedSources: readonly BulkHealthSource[] = []) {
   if (!dateOnly(startDate) || startDate < "2000-01-01" || startDate > p.startDate) throw new Error("COROS_SYNC_INVALID_DATE");
-  for (const d of Object.values(p.health?.bulk ?? {})) { delete d.blockedCode; d.retryAfter = null; }
+  // Editing the date never silently resumes a source blocked by capacity/range.
+  for (const source of retryBlockedSources) {
+    const d = p.health?.bulk?.[source];
+    if (d) { delete d.blockedCode; d.retryAfter = null; }
+  }
   if (startDate === p.startDate) return;
   p.startDate = startDate;
   const domains: DomainProgress[] = [...Object.values(p.domains), ...(p.health ? [p.health] : []), ...Object.values(p.health?.bulk ?? {})];
