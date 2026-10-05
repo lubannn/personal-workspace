@@ -23,6 +23,13 @@ const baseline = buildHealthBaseline(baseDays);
 const grade = (patch: Partial<HealthStatusDay> = {}) => classifyHealthDay(day(patch), baseline);
 
 describe("reviewed COROS health status rules", () => {
+  it("matches the historical recovery exception while retaining HRV pressure and never treating training load as recovery", () => {
+    const historical = (patch: Partial<HealthStatusDay>) => classifyHealthDay(day({ recoveryPct: undefined, ...patch }), baseline, "2024-02-03");
+    expect(historical({ sleepScore: 96, hrvMs: 45 })).toMatchObject({ status: "good", recoveryNotIncluded: true });
+    expect(historical({ sleepScore: 97, hrvMs: 25 })).toMatchObject({ status: "rest", recoveryNotIncluded: true });
+    expect(historical({ sleepScore: 96, hrvMs: undefined, trainingLoad: 12 })).toMatchObject({ status: "insufficient", missing: expect.arrayContaining(["HRV"]) });
+    expect(classifyHealthDay(day({ recoveryPct: undefined, trainingLoad: 12 }), baseline, "2024-02-02").missing).toContain("恢复");
+  });
   it("omits only absent historical recovery after approval, preserving every other gate and priority", () => {
     const historical = (patch: Partial<HealthStatusDay> = {}) => classifyHealthDay(day({ recoveryPct: undefined, ...patch }), baseline, "2024-02-03");
     expect(historical()).toMatchObject({ status: "good", missing: [], recoveryNotIncluded: true, reasons: expect.arrayContaining(["未纳入恢复数据"]) });

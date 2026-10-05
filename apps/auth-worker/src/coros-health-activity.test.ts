@@ -24,6 +24,24 @@ function read(count = 1, duplicate = false, crossMidnight = false) {
 }
 
 describe("complete daily activity evidence", () => {
+  it("checkpoints encrypted details individually and resumes them after an interrupted later read", async () => {
+    const p = progress(), reader = read(3);
+    let committed: string | undefined;
+    const checkpoint = vi.fn(async () => { committed = p.health!.encryptedActivityCache; });
+    reader.mockImplementation(async (tool, args) => {
+      if (tool === "querySportRecords") return list(iso(args.startDate), iso(args.endDate), 3);
+      if (args.labelId === "102") throw new Error("COROS_READ_TIMEOUT");
+      return detail(1, 10);
+    });
+    await expect(collectCorosActivityTotals(reader, "2024-01-02", "2024-01-02", p, async () => {}, observedAt, key, checkpoint)).rejects.toThrow("COROS_READ_TIMEOUT");
+    expect(checkpoint).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(await decryptRefreshToken(committed!, key)).entries.map(([id]: [string]) => id)).toEqual(["workout:101"]);
+    const resumed = progress(); resumed.health!.encryptedActivityCache = committed;
+    const resumedReader = read(3);
+    await collectCorosActivityTotals(resumedReader, "2024-01-02", "2024-01-02", resumed, async () => {}, observedAt, key);
+    expect(resumedReader.mock.calls.filter(([tool]) => tool === "getActivityDetail").map(([, args]) => args.labelId)).toEqual(["102", "103"]);
+    expect(resumed.health?.backfillThrough).toBeNull();
+  });
   it("maps exact ascent and per-activity load, and rejects units or mismatching duration", () => {
     const workout = mapCorosWorkouts(list("2024-01-01", "2024-01-03"), { startDate: "2024-01-01", endDate: "2024-01-03", timezone: "Asia/Shanghai" }).items[0];
     expect(mapCorosActivityDetail(detail(), workout)).toEqual({ elevationGainMeters: 7, trainingLoad: 10 });

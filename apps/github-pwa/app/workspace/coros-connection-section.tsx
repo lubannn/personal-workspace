@@ -5,7 +5,7 @@ import type { SyncProgress } from "../../../auth-worker/src/coros-sync-state";
 import { readCookie, type ConnectionMethod } from "./page-model";
 import "./health-records.css";
 import { CorosConflicts } from "./coros-conflicts";
-import { drainCorosHistory } from "./coros-history-client";
+import { COROS_BUSY_POLL_MS, drainCorosHistory } from "./coros-history-client";
 import { corosHistorySources, corosSyncErrorMessage as errorMessage, saveCorosHistorySettings } from "./coros-history-settings";
 import type { BulkHealthSource } from "../../../auth-worker/src/coros-health-history";
 
@@ -253,8 +253,8 @@ export function CorosConnectionSection({ connectionMethod, onClearHealthCache, c
     {view === "error" ? <p role="alert">暂时无法确认同步状态，请在设置中重新检查。</p> : null}
     {status?.connected && !ready ? <p role="status">后台同步服务尚未准备好。</p> : null}
     {lastError ? <p role="alert">{lastError}</p> : null}
-    {historyRunning ? <p role="status">{historyWaiting ? "等待后台处理后继续补齐" : "正在补齐历史"} · 已完成 {historyBatches} 批。
-      {historyWaiting && historyRetryAt ? <> 预计继续：{displayTime(historyRetryAt)}。</> : null}
+    {historyRunning ? <p role="status">{historyWaiting ? "等待同步任务释放租约" : "正在补齐历史"} · 本页面已完成 {historyBatches} 批。
+      {historyWaiting ? <> 每 {COROS_BUSY_POLL_MS / 1000} 秒检查是否可继续。{historyRetryAt ? <>当前租约到期：{displayTime(historyRetryAt)}；提前释放即可继续。</> : null}</> : null}
       <button className="secondary-button" type="button" onClick={stopHistoryBackfill}>停止本次补齐</button><span>仅停止本页面连续处理；后台仍会继续。停止后可点击「暂停自动更新」暂停后台。</span>
     </p> : null}
     <details className="coros-compact-settings"><summary>同步设置与记录</summary>

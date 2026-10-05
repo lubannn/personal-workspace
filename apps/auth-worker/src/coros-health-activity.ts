@@ -40,7 +40,7 @@ export function mapCorosActivityDetail(result: CorosReadResult, workout: Workout
 
 /** A complete list plus every unique detail establishes a daily sum, independently per metric. */
 export async function collectCorosActivityTotals(read: Read, from: string, requestedThrough: string, progress: SyncProgress,
-  assertActive: () => Promise<void>, observedAt: string, encryptionKey?: string) {
+  assertActive: () => Promise<void>, observedAt: string, encryptionKey?: string, checkpoint?: () => Promise<void>) {
   let through = requestedThrough;
   let mapped;
   for (;;) {
@@ -77,6 +77,7 @@ export async function collectCorosActivityTotals(read: Read, from: string, reque
     const others = Object.entries(cache).filter(([id]) => !currentIds.has(id)).sort((a, b) => a[1].date.localeCompare(b[1].date));
     const entries = [...others.slice(-Math.max(0, 256 - pinned.length)), ...pinned];
     progress.health.encryptedActivityCache = await encryptRefreshToken(JSON.stringify({ version: 1, timezone: progress.timezone, entries }), encryptionKey);
+    await checkpoint?.();
   };
   let reads = 0;
   for (const workout of workouts) {

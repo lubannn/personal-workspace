@@ -111,6 +111,10 @@ describe("resumable full-scope relative COROS health history", () => {
       expect(saved.health?.bulk?.dailyHealth.blockedCode).toBe("COROS_READ_RESULT_TOO_LARGE");
       extendSyncHistory(saved, saved.startDate, ["dailyHealth"]);
       expect(saved.health?.bulk?.dailyHealth.blockedCode).toBeUndefined();
+      // The newly accepted request gives the other bulk source a turn first;
+      // clearing a block does not remove source fairness.
+      expect(nextBulkHealthWindow(saved, new Date())?.source).toBe("restingHeartRate");
+      saved.health!.lastBulkAttemptSource = "restingHeartRate";
       expect(nextBulkHealthWindow(saved, new Date())?.source).toBe("dailyHealth");
     } finally { fixture.sqlite.close(); }
   });

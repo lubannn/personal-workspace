@@ -11,7 +11,7 @@ type Options = {
 };
 
 const MAX_WINDOWS = 2_000;
-const MAX_BUSY_RETRIES = 44;
+export const COROS_BUSY_POLL_MS = 5_000;
 const MAX_BUSY_WAIT_MS = 11 * 60_000;
 const MAX_TRANSPORT_RETRIES = 3;
 
@@ -62,7 +62,6 @@ export async function drainCorosHistory({ csrf, signal, onUpdate, fetcher = fetc
   // One explicit request also clears retry state from a previously failed parser.
   await post("/coros/sync");
   let processed = 0;
-  let busyRetries = 0;
   let busySince: number | null = null;
   const maxWindows = recentOnly ? 12 : MAX_WINDOWS;
   const maxBusyWait = recentOnly ? 30_000 : MAX_BUSY_WAIT_MS;
@@ -79,17 +78,17 @@ export async function drainCorosHistory({ csrf, signal, onUpdate, fetcher = fetc
       return { status: "complete", retryAt: null, progress: update.progress };
     }
     if (update.status === "processed") {
-      busyRetries = 0;
       busySince = null;
       if (processed < maxWindows) await abortableDelay(250, signal);
-    } else if (update.status === "busy" && busyRetries < MAX_BUSY_RETRIES) {
+    } else if (update.status === "busy") {
       busySince ??= Date.now();
       const remaining = maxBusyWait - (Date.now() - busySince);
       if (remaining <= 0) return update;
       const retryAt = update.retryAt ? Date.parse(update.retryAt) : NaN;
-      const delay = Number.isFinite(retryAt) ? Math.max(1_000, retryAt - Date.now()) : 15_000;
-      busyRetries += 1;
-      await abortableDelay(Math.min(remaining, recentOnly ? 5_000 : delay), signal);
+      // lease_until bounds ownership; it is not an instruction to sleep until
+      // expiry. The owner can finish early, so recheck without stealing its lease.
+      const delay = Number.isFinite(retryAt) ? Math.max(1_000, retryAt - Date.now()) : COROS_BUSY_POLL_MS;
+      await abortableDelay(Math.min(remaining, COROS_BUSY_POLL_MS, delay), signal);
     } else return update;
   }
   return { status: "limit" };

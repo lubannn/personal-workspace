@@ -21,7 +21,8 @@ export function initializeBulkHealthProgress(progress: SyncProgress): BulkHealth
 export function nextBulkHealthWindow(progress: SyncProgress, now: Date): BulkHealthWindow | null {
   if (!progress.request) return null;
   const bulk = initializeBulkHealthProgress(progress), through = progress.request.through;
-  const available = COROS_BULK_HEALTH_SOURCES.filter(source => !bulk[source].blockedCode && (!bulk[source].retryAfter || bulk[source].retryAfter! <= now.toISOString()));
+  const available = COROS_BULK_HEALTH_SOURCES.filter(source => !bulk[source].blockedCode && (!bulk[source].retryAfter || bulk[source].retryAfter! <= now.toISOString()))
+    .sort((a, b) => Number(a === progress.health?.lastBulkAttemptSource) - Number(b === progress.health?.lastBulkAttemptSource));
   for (const source of available) {
     const d = bulk[source];
     if (d.recentRequestSequence !== progress.request.sequence) return { domain: "health", source, recent: true,
