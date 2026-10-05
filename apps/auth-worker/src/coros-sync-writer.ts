@@ -182,6 +182,12 @@ export async function writeCorosSyncBatch(adapter: SyncAdapter, input: {
         const text = hydrated.get(sameSource.path)!;
         const current = entry.item.kind === "sleep" ? parseSleepSessionRecord(text) : parseWorkoutRecord(text);
         if ("source" in current.data && Date.parse(current.data.source.retrieved_at) > Date.parse(input.timestamp)) { result.unchanged += 1; continue; }
+        const currentData = current.data;
+        const candidate = Object.fromEntries(Object.keys(entry.item.candidate).map(key => [key, currentData[key as keyof typeof currentData]]));
+        const storedFingerprint = await hash(stableJson(entry.item.kind === "sleep"
+          ? { kind: "sleep", candidate, metrics: (current as SleepSessionRecord).data.sleep_metrics_json }
+          : { kind: "workout", candidate }));
+        if (storedFingerprint !== oldSource?.source_sha256) throw new Error("COROS_SYNC_STORED_RECORD_MODIFIED");
         const prior = [...existingConflicts.values()].find(audit => audit.data.status === "pending" && audit.data.reason === "source_changed"
           && audit.data.source_id === entry.item.sourceId && audit.data.source_sha256 === entry.fingerprint
           && audit.data.existing_record_id === current.id && audit.data.existing_source_sha256 === oldSource?.source_sha256);

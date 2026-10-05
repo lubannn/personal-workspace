@@ -41,6 +41,12 @@ describe("COROS read-only tool boundary", () => {
       .rejects.toThrow("COROS_TOOL_NOT_ALLOWED");
   });
 
+  it("rejects an oversized response before a collector can parse or write it", async () => {
+    mcp.callTool.mockResolvedValueOnce({ content: [{ type: "text", text: "x".repeat(512 * 1024) }] });
+    await expect(callCorosReadTool("https://mcpcn.coros.com/mcp", "synthetic-token", "querySleepOverview", {})).rejects.toThrow("COROS_READ_RESULT_TOO_LARGE");
+    expect(mcp.close).toHaveBeenCalledTimes(1);
+  });
+
   it.each([
     { content: [{ type: "text", text: "No sleep overview data found." }] },
     { structuredContent: { text: "No sleep overview data found." }, content: [] },

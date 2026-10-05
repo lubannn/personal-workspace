@@ -4,6 +4,8 @@ import { parseHealthMetricRecord } from "../../../src/lib/github-data/health-met
 import { recordPath, serializeRecord } from "../../../src/lib/github-data/protocol";
 import { corosMetricId, writeCorosHealthMetrics } from "./coros-health-writer";
 import type { CorosHealthMetricItem } from "./coros-health-mapping";
+import { collectBulkHealthHistory } from "./coros-health-history";
+import { initialSyncProgress, shiftDate } from "./coros-sync-state";
 
 const timestamp = "2024-02-01T04:00:00.000Z";
 const item: CorosHealthMetricItem = { sourceId: "health:2024-02-01:steps:daily", measurementTimeKind: "observed_at",
@@ -23,6 +25,29 @@ function fake() {
   return { adapter, files, advance: () => version++ };
 }
 describe("atomic metric persistence and revisions", () => {
+  it("filters a complete 600-day relative response before the atomic batch limit, then replays without another commit", async () => {
+    const now = new Date(timestamp), start = shiftDate("2024-02-01", -599), p = initialSyncProgress(start, "Asia/Shanghai");
+    const body = `Daily Health Data — Last 600 days | Resting HR: 50 bpm | HRV Baseline: 40 ms\nNote: sleep entries are dated by their wake-up day.`
+      + Array.from({ length: 600 }, (_, index) => `\n\n--- ${shiftDate(start, index).replaceAll("-", "")} ---\nSteps: 100 | Calories: 10 kcal | Exercise: 0 min`).join("");
+    const result = await collectBulkHealthHistory(async () => ({ format: "content", payload: [{ type: "text", text: JSON.stringify(body) }] }),
+      { domain: "health", source: "dailyHealth", recent: false, from: start, through: shiftDate(start, 27) }, p, async () => {}, now);
+    expect(result.items).toHaveLength(84); expect(result.observedDates).toHaveLength(28);
+    expect(result.items.every(item => item.candidate.local_date <= shiftDate(start, 27))).toBe(true);
+    const f = fake();
+    expect(await writeCorosHealthMetrics(f.adapter, { ownerId: "synthetic_owner", items: result.items, timestamp })).toMatchObject({ created: 84 });
+    expect(f.adapter.writeAtomicFiles).toHaveBeenCalledTimes(1); expect(f.files.size).toBe(84);
+    expect(await writeCorosHealthMetrics(f.adapter, { ownerId: "synthetic_owner", items: result.items, timestamp })).toMatchObject({ created: 0, unchanged: 84 });
+    expect(f.adapter.writeAtomicFiles).toHaveBeenCalledTimes(1);
+  });
+  it("holds a locally modified canonical value rather than overwriting it with a backfill", async () => {
+    const f = fake(); await writeCorosHealthMetrics(f.adapter, { ownerId: "synthetic_owner", items: [item], timestamp });
+    const path = recordPath("health_metric", corosMetricId(item)); const old = parseHealthMetricRecord(f.files.get(path)!);
+    f.files.set(path, serializeRecord({ ...old, data: { ...old.data, value: 99 } }));
+    const before = f.files.get(path);
+    await expect(writeCorosHealthMetrics(f.adapter, { ownerId: "synthetic_owner", items: [{ ...item, candidate: { ...item.candidate, value: 1500 } }], timestamp }))
+      .rejects.toThrow("STORED_RECORD_MODIFIED");
+    expect(f.files.get(path)).toBe(before); expect(f.adapter.writeAtomicFiles).toHaveBeenCalledTimes(1);
+  });
   it("persists a 90-day bulk baseline in one atomic commit without a 200-item ceiling", async () => {
     const f = fake();
     const items = Array.from({ length: 90 }, (_, index) => new Date(Date.parse("2024-02-01") - index * 86400_000).toISOString().slice(0, 10))

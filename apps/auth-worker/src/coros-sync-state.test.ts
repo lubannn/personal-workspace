@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { acceptSyncRequest, initialSyncProgress, nextSyncWindow, shiftDate, todayInTimezone, type SyncProgress } from "./coros-sync-state";
+import { acceptSyncRequest, advanceHistoricalCoverage, initialSyncProgress, nextSyncWindow, shiftDate, todayInTimezone, type SyncProgress } from "./coros-sync-state";
 
 const now = new Date("2024-02-01T16:30:00.000Z");
 const domains = ["sleep", "workout"] as const;
 function requested(start = "2024-01-01", through = "2024-02-02", sequence = 1) {
   const progress = initialSyncProgress(start, "Asia/Shanghai");
-  acceptSyncRequest(progress, { request_seq: sequence, requested_through: through });
+  acceptSyncRequest(progress, { request_seq: sequence, requested_through: through }, now);
   return progress;
 }
 function recentComplete(progress: SyncProgress) {
@@ -86,9 +86,9 @@ describe("COROS explicitly requested sync windows", () => {
       progress.domains[window.domain].backfillThrough = window.through;
     }
     for (const domain of domains) {
-      expect(dates[domain]).toHaveLength(32);
-      expect(dates[domain][0]).toBe("2024-01-02"); expect(dates[domain].at(-1)).toBe("2024-02-02");
-      expect(new Set(dates[domain]).size).toBe(32);
+      expect(dates[domain]).toHaveLength(31);
+      expect(dates[domain][0]).toBe("2024-01-02"); expect(dates[domain].at(-1)).toBe("2024-02-01");
+      expect(new Set(dates[domain]).size).toBe(31);
     }
     expect(nextSyncWindow(progress, now)).toBeNull(); expect(progress.backfillEnd).toBe("2024-01-01");
   });
@@ -106,7 +106,7 @@ describe("COROS explicitly requested sync windows", () => {
     acceptSyncRequest(progress, { request_seq: 2, requested_through: "2024-02-03" });
     for (const domain of domains) expect(progress.domains[domain]).toMatchObject({ recentNext: null, retryAfter: null,
       backfillNext: "2024-01-20", backfillThrough: "2024-01-19", created: 10, recentRequestSequence: 1 });
-    expect(progress.request).toEqual({ sequence: 2, through: "2024-02-03" }); expect(progress.backfillEnd).toBe("2024-02-02");
+    expect(progress.request).toMatchObject({ sequence: 2, through: "2024-02-03" }); expect(progress.backfillEnd).toBe("2024-02-01");
     expect(nextSyncWindow(progress, now)?.recent).toBe(true);
   });
 
@@ -115,6 +115,22 @@ describe("COROS explicitly requested sync windows", () => {
     const progress = requested("2024-02-02", "2024-02-02");
     expect(nextSyncWindow(progress, now)).toEqual({ domain: "sleep", recent: true, from: "2024-02-02", through: "2024-02-02" });
     recentComplete(progress);
-    expect(nextSyncWindow(progress, now)).toEqual({ domain: "sleep", recent: false, from: "2024-02-02", through: "2024-02-02" });
+    expect(nextSyncWindow(progress, now)).toBeNull();
+  });
+  it("leaves today's observations outside history coverage, then closes them via next day's overlap", () => {
+    const progress = requested("2024-01-01", "2024-02-02");
+    const d = progress.domains.sleep;
+    d.backfillNext = "2024-02-01";
+    advanceHistoricalCoverage(progress, d, "2024-01-31", "2024-02-02", now);
+    expect(d).toMatchObject({ backfillThrough: "2024-02-01", backfillNext: "2024-02-02" });
+    const tomorrow = new Date("2024-02-02T16:30:00Z");
+    recentComplete(progress);
+    progress.domains.workout.backfillNext = "2024-02-02";
+    expect(nextSyncWindow(progress, tomorrow)).toBeNull(); // frozen historical end before a newer request
+    expect(progress.request!.historyThrough).toBe("2024-02-01");
+    acceptSyncRequest(progress, { request_seq: 2, requested_through: "2024-02-03" }, tomorrow);
+    advanceHistoricalCoverage(progress, d, "2024-02-01", "2024-02-03", tomorrow);
+    expect(d).toMatchObject({ backfillThrough: "2024-02-02", backfillNext: "2024-02-03" });
+    expect(progress.startDate).toBe("2024-01-01");
   });
 });

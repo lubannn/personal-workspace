@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mapCorosDailyHealth, mapCorosRecovery, mapCorosRestingHeartRate, mapCorosSleepHrv } from "./coros-health-mapping";
 import { collectCorosHealth, nextHealthSyncWindow } from "./coros-health-sync";
+import { initializeBulkHealthProgress } from "./coros-health-history";
 import { acceptSyncRequest, initialSyncProgress } from "./coros-sync-state";
 import type { CorosReadResult } from "./coros-read-client";
 import { runCorosSync, type CorosSyncDependencies } from "./coros-sync";
@@ -48,11 +49,11 @@ describe("bounded COROS health metric collection", () => {
     const read = reader(); const active = vi.fn(async () => {}); const w = nextHealthSyncWindow(p, new Date())!;
     expect(w).toEqual({ domain: "health", recent: true, from: "2024-01-26", through: "2024-02-01" });
     const result = await collectCorosHealth(read, w, p, active);
-    expect(read.mock.calls.map(call => call[0])).toEqual(["queryDailyHealthData", "queryRestingHeartRate", "queryRecoveryStatus", "querySleepHrv", "querySleepHrv", "querySportRecords"]);
-    expect(read.mock.calls[0][1]).toEqual({ days: 90 }); expect(result.through).toBe("2024-01-26"); expect(result.items).toHaveLength(10);
+    expect(read.mock.calls.map(call => call[0])).toEqual(["queryRecoveryStatus", "querySleepHrv", "querySleepHrv", "querySportRecords"]);
+    expect(read.mock.calls[0][1]).toEqual({}); expect(result.through).toBe("2024-01-26"); expect(result.items).toHaveLength(6);
     p.health!.recentDataThrough = "2024-01-31";
     read.mockClear(); await collectCorosHealth(read, { ...w, from: "2024-02-01" }, p, active);
-    expect(read.mock.calls[0][1]).toEqual({ days: 3 });
+    expect(read.mock.calls[0][0]).toBe("queryRecoveryStatus");
     read.mockClear(); p.health!.recentNext = "2024-02-01";
     await collectCorosHealth(read, { ...w, from: "2024-02-01" }, p, active);
     expect(read.mock.calls.map(call => call[0])).toEqual(["querySleepHrv", "querySportRecords"]);
@@ -61,6 +62,7 @@ describe("bounded COROS health metric collection", () => {
     const p = initialSyncProgress("2024-01-01", "Asia/Shanghai"); expect(nextHealthSyncWindow(p, new Date())).toBeNull();
     acceptSyncRequest(p, { request_seq: 1, requested_through: "2024-02-01" }); nextHealthSyncWindow(p, new Date());
     p.health!.recentRequestSequence = 1;
+    for (const source of Object.values(initializeBulkHealthProgress(p))) { source.recentRequestSequence = 1; source.backfillNext = "2024-02-02"; }
     const read = reader(); read.mockImplementation(async (name) => name === "querySportRecords" ? text(`No sport records found from 2023-12-31 to 2024-01-02.`) : empty("2024-01-01"));
     const result = await collectCorosHealth(read, nextHealthSyncWindow(p, new Date())!, p, async () => {});
     expect(result).toMatchObject({ through: "2024-01-01", items: expect.arrayContaining([expect.objectContaining({ candidate: expect.objectContaining({ value: 0, metric_type: "training_load" }) })]) }); expect(read.mock.calls.map(call => call[0])).toEqual(["querySleepHrv", "querySleepHrv", "querySportRecords"]);
@@ -82,7 +84,7 @@ describe("bounded COROS health metric collection", () => {
     });
     const result = await collectCorosHealth(read, nextHealthSyncWindow(p, new Date())!, p, async () => {});
     expect(result.activityError).toBe("COROS_READ_TOOL_UNAVAILABLE");
-    expect(result.items).toHaveLength(8); expect(result.items.some(item => item.candidate.metric_type === "sleep_hrv_avg")).toBe(true);
+    expect(result.items).toHaveLength(4); expect(result.items.some(item => item.candidate.metric_type === "sleep_hrv_avg")).toBe(true);
     expect(p.health!.backfillNext).toBe("2024-01-01");
   });
   it("integrates into the existing lease and request lifecycle without a new credential or scope", async () => {
@@ -113,7 +115,7 @@ describe("bounded COROS health metric collection", () => {
       write: vi.fn(), health: collectCorosHealth, writeMetrics: write };
     try {
       expect(await runCorosSync(fixture.env, new Date(), deps, { forceDue: true })).toMatchObject({ status: "processed", progress: { lastErrorCode: "COROS_READ_TOOL_UNAVAILABLE" } });
-      expect(write.mock.calls[0][1].items).toHaveLength(8);
+      expect(write.mock.calls[0][1].items).toHaveLength(4);
       expect(fixture.saved()?.progress.health).toMatchObject({ backfillNext: "2024-01-01", backfillThrough: null, recentNext: "2024-01-26", recentDataThrough: "2024-02-01", retryAfter: "2024-02-01T04:10:00.000Z" });
       expect(fixture.saved()?.lease_token).toBeNull();
     } finally { fixture.sqlite.close(); }

@@ -272,7 +272,7 @@ describe("COROS scheduled synchronization", () => {
       progress: { request: { sequence: 1, through: "2024-02-01" }, domains: { sleep: { recentRequestSequence: 1 } } } });
     await runCorosSync(fixture.env, new Date(), deps);
     expect(deps.read).toHaveBeenLastCalledWith(expect.any(String), expect.any(String), "querySleepOverview", { startDate: "20240131", endDate: "20240202" });
-    expect(fixture.saved()?.progress.request).toEqual({ sequence: 2, through: "2024-02-02" });
+    expect(fixture.saved()?.progress.request).toMatchObject({ sequence: 2, through: "2024-02-02", historyThrough: "2024-01-31" });
   });
 
   it("advances contiguous coverage from the recent overlap without re-reading that range as history", async () => {
@@ -283,7 +283,7 @@ describe("COROS scheduled synchronization", () => {
     await runCorosSync(fixture.env, new Date(), deps);
     vi.setSystemTime("2024-02-01T04:10:00.000Z"); await runCorosSync(fixture.env, new Date(), deps);
     for (const domain of ["sleep", "workout"] as const) expect(fixture.saved()?.progress.domains[domain]).toMatchObject({
-      backfillNext: "2024-02-02", backfillThrough: "2024-02-01", recentRequestSequence: 1,
+      backfillNext: "2024-02-01", backfillThrough: "2024-01-31", recentRequestSequence: 1,
     });
     vi.setSystemTime("2024-02-01T04:20:00.000Z"); await runCorosSync(fixture.env, new Date(), deps);
     expect(deps.read).toHaveBeenCalledTimes(2);
@@ -346,8 +346,8 @@ describe("COROS scheduled synchronization", () => {
     expect(deps.read.mock.calls.map(call => call[3].endDate)).toEqual(["20240130", "20240115"]);
     expect(fixture.saved()?.progress.domains.workout.backfillNext).toBe("2024-01-16");
     await runCorosSync(fixture.env, new Date(), deps, { forceDue: true });
-    expect(deps.read).toHaveBeenLastCalledWith(expect.any(String), expect.any(String), "querySportRecords", expect.objectContaining({ startDate: "20240116", endDate: "20240201" }));
-    expect(fixture.saved()?.progress.domains.workout.backfillNext).toBe("2024-02-02");
+    expect(deps.read).toHaveBeenLastCalledWith(expect.any(String), expect.any(String), "querySportRecords", expect.objectContaining({ startDate: "20240116", endDate: "20240131" }));
+    expect(fixture.saved()?.progress.domains.workout.backfillNext).toBe("2024-02-01");
   });
 
   it("returns only a safe error code when a drain window fails", async () => {

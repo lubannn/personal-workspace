@@ -84,6 +84,16 @@ export function formatMainSleepStart(day?: SleepCalendarDay, compact = false): s
   return `入睡${local.time}`;
 }
 
+/** Legacy archives retain elapsed windows, not proven daily asleep totals. */
+export function formatSleepCalendarDuration(day?: SleepCalendarDay): string {
+  if (!day || day.hasConflictingDailyTotals) return "总计—";
+  if (day.asleepSeconds !== null) return `总计${formatSleepTime(day.asleepSeconds, day.hasIncompleteDuration, true)}`;
+  if (!day.hasOverlappingEpisodes && Number.isFinite(day.recordedPeriodSeconds) && day.recordedPeriodSeconds > 0) {
+    return `时段${formatSleepTime(day.recordedPeriodSeconds, false, true)}†`;
+  }
+  return "总计—";
+}
+
 export function summarizeSleepDays(days: SleepCalendarDay[]) {
   const grades = { excellent: 0, good: 0, fair: 0, poor: 0, unscored: 0 };
   for (const day of days) grades[day.grade]++;
