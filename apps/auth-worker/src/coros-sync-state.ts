@@ -11,10 +11,15 @@ export type CorosSyncEnv = AuthEnv & {
   COROS_WORKSPACE_OWNER_ID?: string;
 };
 export type SyncDomain = "sleep" | "workout";
+export const COROS_SYNC_ERROR_STAGES = ["progress_checkpoint", "credentials_refresh", "health_collect", "records_collect",
+  "github_adapter", "workspace_read", "workspace_validate", "health_write", "records_write", "coverage_checkpoint",
+  "querySportRecords", "getActivityDetail", "querySleepData", "querySleepOverview", "queryAvgHeartRate",
+  "queryRestingHeartRate", "queryDailyHealthData", "querySleepHrv", "queryRecoveryStatus", "queryStressLevel"] as const;
+export type SyncErrorStage = typeof COROS_SYNC_ERROR_STAGES[number];
 export type DomainProgress = {
   backfillNext: string; backfillThrough: string | null; recentThrough: string | null;
   lastRecentAt: string | null; latestRecordDate: string | null; created: number;
-  recentNext?: string | null; retryAfter?: string | null; lastErrorCode?: string | null;
+  recentNext?: string | null; retryAfter?: string | null; lastErrorCode?: string | null; lastErrorStage?: SyncErrorStage | null;
   recentRequestSequence?: number;
 };
 export type SyncProgress = {
@@ -24,6 +29,7 @@ export type SyncProgress = {
   domains: Record<SyncDomain, DomainProgress>;
   health?: HealthSyncProgress;
   lastAttemptAt: string | null; lastSuccessAt: string | null; lastErrorCode: string | null;
+  lastErrorStage?: SyncErrorStage | null;
   failureCount: number; conflicts: number;
   lastBatch: { domain: SyncDomain | "health"; from: string; through: string; created: number; unchanged: number; updated?: number; conflicts: number } | null;
 };
@@ -73,6 +79,7 @@ export function initialSyncProgress(startDate: string, timezone: string): SyncPr
 export function parseSyncProgress(text: string): SyncProgress {
   const p = JSON.parse(text) as SyncProgress;
   if (p.version !== 1 || !dateOnly(p.startDate) || !p.domains || !Number.isInteger(p.failureCount)) throw new Error("COROS_SYNC_STATE_INVALID");
+  if (p.lastErrorStage !== undefined && p.lastErrorStage !== null && !COROS_SYNC_ERROR_STAGES.includes(p.lastErrorStage)) throw new Error("COROS_SYNC_STATE_INVALID");
   todayInTimezone(new Date(), p.timezone);
   if (p.backfillEnd && !dateOnly(p.backfillEnd)) throw new Error("COROS_SYNC_STATE_INVALID");
   if (p.request && (!Number.isSafeInteger(p.request.sequence) || p.request.sequence < 1 || !dateOnly(p.request.through))) throw new Error("COROS_SYNC_STATE_INVALID");
@@ -90,6 +97,9 @@ export function parseSyncProgress(text: string): SyncProgress {
     for (const dates of [d.observedDates, d.unconfirmedZeroDates]) if (dates && (!Array.isArray(dates) || dates.length > 20_000
       || dates.some(date => !dateOnly(date) || date < p.startDate) || new Set(dates).size !== dates.length)) throw new Error("COROS_SYNC_STATE_INVALID");
     if (d.blockedCode && !["COROS_READ_RESULT_TOO_LARGE", "COROS_SYNC_HEALTH_RANGE_UNCONFIRMED"].includes(d.blockedCode)) throw new Error("COROS_SYNC_STATE_INVALID");
+  }
+  for (const d of [...Object.values(p.domains), ...(p.health ? [p.health] : []), ...Object.values(p.health?.bulk ?? {})]) {
+    if (d.lastErrorStage !== undefined && d.lastErrorStage !== null && !COROS_SYNC_ERROR_STAGES.includes(d.lastErrorStage)) throw new Error("COROS_SYNC_STATE_INVALID");
   }
   return p;
 }

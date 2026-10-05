@@ -1,4 +1,4 @@
-import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
+import { Client, StreamableHTTPClientTransport, SdkError, SdkErrorCode, SdkHttpError, ProtocolError } from "@modelcontextprotocol/client";
 import { isAllowedCorosResourceUrl } from "./coros-oauth";
 
 /** Explicitly excludes every COROS training-plan, workout, or schedule write tool. */
@@ -92,6 +92,22 @@ export async function callCorosReadTool(
     return await Promise.race([read(), deadline]);
   } catch (error) {
     if (readController.signal.aborted) throw readController.signal.reason;
+    // SDK messages may contain HTTP bodies. Persist only classifications derived
+    // from its typed status/code, never those messages, data or causes.
+    if (error instanceof SdkHttpError) {
+      const code = error.status === 429 ? "COROS_READ_RATE_LIMITED"
+        : error.status === 401 ? "COROS_READ_UNAUTHORIZED"
+          : error.status === 403 ? "COROS_READ_FORBIDDEN"
+            : error.status >= 500 && error.status <= 599 ? "COROS_READ_UPSTREAM_UNAVAILABLE" : "COROS_READ_HTTP_FAILED";
+      throw new Error(code);
+    }
+    if (error instanceof SdkError) {
+      const code = error.code === SdkErrorCode.RequestTimeout ? "COROS_READ_TIMEOUT"
+        : [SdkErrorCode.ConnectionClosed, SdkErrorCode.SendFailed, SdkErrorCode.NotConnected].includes(error.code) ? "COROS_READ_TRANSPORT_FAILED"
+          : error.code === SdkErrorCode.InvalidResult ? "COROS_READ_RESPONSE_INVALID" : "COROS_READ_SDK_FAILED";
+      throw new Error(code);
+    }
+    if (error instanceof ProtocolError) throw new Error("COROS_READ_PROTOCOL_FAILED");
     throw error;
   } finally {
     clearTimeout(timer);

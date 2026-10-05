@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { SdkError, SdkErrorCode, SdkHttpError, ProtocolError } from "@modelcontextprotocol/client";
 import { COROS_READ_TOOL_ALLOWLIST, callCorosReadTool, isAllowedCorosReadTool } from "./coros-read-client";
 
 const mcp = vi.hoisted(() => ({ connect: vi.fn(), listTools: vi.fn(), callTool: vi.fn(), close: vi.fn(), terminateSession: vi.fn(), transportOptions: vi.fn() }));
-vi.mock("@modelcontextprotocol/client", () => ({
+vi.mock("@modelcontextprotocol/client", async importOriginal => ({
+  ...await importOriginal<typeof import("@modelcontextprotocol/client")>(),
   Client: class {
     connect = mcp.connect;
     listTools = mcp.listTools;
@@ -45,6 +47,26 @@ describe("COROS read-only tool boundary", () => {
     mcp.callTool.mockResolvedValueOnce({ content: [{ type: "text", text: "x".repeat(512 * 1024) }] });
     await expect(callCorosReadTool("https://mcpcn.coros.com/mcp", "synthetic-token", "querySleepOverview", {})).rejects.toThrow("COROS_READ_RESULT_TOO_LARGE");
     expect(mcp.close).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([[401, "COROS_READ_UNAUTHORIZED"], [403, "COROS_READ_FORBIDDEN"], [429, "COROS_READ_RATE_LIMITED"],
+    [500, "COROS_READ_UPSTREAM_UNAVAILABLE"], [404, "COROS_READ_HTTP_FAILED"]] as const)
+  ("classifies typed HTTP status %s without leaking the SDK payload", async (status, code) => {
+    mcp.callTool.mockRejectedValue(new SdkHttpError(SdkErrorCode.SendFailed, "synthetic-private-body-and-token", { status }));
+    await expect(callCorosReadTool("https://mcpcn.coros.com/mcp", "synthetic-token", "querySleepOverview", {})).rejects.toMatchObject({ message: code });
+    expect(mcp.terminateSession).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([[SdkErrorCode.RequestTimeout, "COROS_READ_TIMEOUT"], [SdkErrorCode.SendFailed, "COROS_READ_TRANSPORT_FAILED"],
+    [SdkErrorCode.InvalidResult, "COROS_READ_RESPONSE_INVALID"]] as const)
+  ("classifies typed SDK code %s even before the outer deadline", async (sdkCode, code) => {
+    mcp.callTool.mockRejectedValue(new SdkError(sdkCode, "synthetic-private-sdk-body", { healthBody: "synthetic-canary" }));
+    await expect(callCorosReadTool("https://mcpcn.coros.com/mcp", "synthetic-token", "querySleepOverview", {})).rejects.toMatchObject({ message: code });
+  });
+
+  it("discards protocol error messages and data", async () => {
+    mcp.callTool.mockRejectedValue(new ProtocolError(-32603, "synthetic-private-protocol-body", { healthBody: "synthetic-canary" }));
+    await expect(callCorosReadTool("https://mcpcn.coros.com/mcp", "synthetic-token", "querySleepOverview", {})).rejects.toMatchObject({ message: "COROS_READ_PROTOCOL_FAILED" });
   });
 
   it.each([
