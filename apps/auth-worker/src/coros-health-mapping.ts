@@ -64,12 +64,15 @@ export function mapCorosSleepHrv(result: CorosReadResult, options: Context): Cor
   context(options); const text = corosResultText(result);
   if (!/^Sleep HRV — .+\n=+\n/u.test(text)) fail();
   const assessment = /HRV Assessment — Last \d+ days\n=+\n+([\s\S]*?)\n\nSleep HRV Time Series — Last \d+ days\n/u.exec(text)?.[1];
-  if (!assessment) fail(); const sections = assessment.split(/\n\n/u); const seen = new Set<string>(); const items: CorosHealthMetricItem[] = [];
+  if (!assessment) fail(); const sections = assessment.trim().split(/\n+(?=\d{4}-\d{2}-\d{2}:\n)/u); const seen = new Set<string>(); const items: CorosHealthMetricItem[] = [];
   for (const section of sections) {
-    const match = /^(\d{4}-\d{2}-\d{2}):\n  HRV Avg: ([\d.]+) ms — [^\n]+\n  Normal Range: ([\d.]+) - ([\d.]+) ms\n  Baseline: ([\d.]+) ms$/u.exec(section); if (!match) fail();
-    const local = date(match[1], options); if (seen.has(local) || numeric(match[3]) > numeric(match[4])) fail(); seen.add(local);
-    items.push(item(local, "sleep_hrv_avg", numeric(match[2]), "ms", options), item(local, "sleep_hrv_normal_range_low", numeric(match[3]), "ms", options),
-      item(local, "sleep_hrv_baseline", numeric(match[5]), "ms", options));
+    // Early official assessments may contain only an average. Optional range,
+    // baseline and evaluation belong to that day; time-series points never fill them.
+    const match = /^(\d{4}-\d{2}-\d{2}):\n  HRV Avg: ([\d.]+) ms(?: — [^\n]+)?(?:\n  Normal Range: ([\d.]+) - ([\d.]+) ms)?(?:\n  Baseline: ([\d.]+) ms)?$/u.exec(section); if (!match) fail();
+    const local = date(match[1], options); if (seen.has(local) || (match[3] !== undefined && numeric(match[3]) > numeric(match[4]))) fail(); seen.add(local);
+    items.push(item(local, "sleep_hrv_avg", numeric(match[2]), "ms", options));
+    if (match[3] !== undefined) items.push(item(local, "sleep_hrv_normal_range_low", numeric(match[3]), "ms", options));
+    if (match[5] !== undefined) items.push(item(local, "sleep_hrv_baseline", numeric(match[5]), "ms", options));
   }
   return items;
 }
