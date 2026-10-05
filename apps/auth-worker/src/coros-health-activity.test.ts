@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { collectCorosActivityTotals, mapCorosActivityDetail } from "./coros-health-activity";
 import { mapCorosWorkouts } from "./coros-sync-mapping";
-import { initialSyncProgress, shiftDate } from "./coros-sync-state";
+import { acceptSyncRequest, initialSyncProgress, shiftDate } from "./coros-sync-state";
 import type { CorosReadResult, CorosReadTool } from "./coros-read-client";
 import { decryptRefreshToken, encryptRefreshToken } from "./security";
 
@@ -69,6 +69,22 @@ describe("complete daily activity evidence", () => {
     reader.mockClear(); const result = await collectCorosActivityTotals(reader, "2024-01-02", "2024-01-02", p, async () => {}, observedAt, key);
     expect(reader.mock.calls.filter(([tool]) => tool === "getActivityDetail")).toHaveLength(1);
     expect(result.items.map(item => item.candidate.value)).toEqual([15, 50]);
+  });
+  it("resumes today's pending details across another request, then refreshes after the observation completes", async () => {
+    const p = progress(), reader = read(5), date = new Date("2024-01-02T04:00:00Z");
+    p.request = { sequence: 1, through: "2024-01-02" }; p.health!.recentNext = "2024-01-02";
+    await expect(collectCorosActivityTotals(reader, "2024-01-02", "2024-01-02", p, async () => {}, date.toISOString(), key)).rejects.toThrow("DETAILS_PENDING");
+    expect(reader.mock.calls.filter(([tool]) => tool === "getActivityDetail")).toHaveLength(4);
+    acceptSyncRequest(p, { request_seq: 2, requested_through: "2024-01-02" }, date);
+    reader.mockClear();
+    await collectCorosActivityTotals(reader, "2024-01-02", "2024-01-02", p, async () => {}, date.toISOString(), key);
+    expect(reader.mock.calls.filter(([tool]) => tool === "getActivityDetail").map(([, args]) => args.labelId)).toEqual(["105"]);
+    p.health!.recentRequestSequence = 2; p.health!.recentNext = null;
+    acceptSyncRequest(p, { request_seq: 3, requested_through: "2024-01-02" }, date);
+    reader.mockClear();
+    await expect(collectCorosActivityTotals(reader, "2024-01-02", "2024-01-02", p, async () => {}, date.toISOString(), key)).rejects.toThrow("DETAILS_PENDING");
+    expect(reader.mock.calls.filter(([tool]) => tool === "getActivityDetail").map(([, args]) => args.labelId)).toEqual(["101", "102", "103", "104"]);
+    expect(p.health!.backfillThrough).toBeNull();
   });
   it("keeps a capped raw list incomplete even when its rows deduplicate to one activity", async () => {
     const p = progress(), reader = read(20, true);

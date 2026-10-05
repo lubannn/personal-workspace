@@ -79,16 +79,18 @@ export async function collectCorosActivityTotals(read: Read, from: string, reque
     progress.health.encryptedActivityCache = await encryptRefreshToken(JSON.stringify({ version: 1, timezone: progress.timezone, entries }), encryptionKey);
     await checkpoint?.();
   };
+  const observationSequence = progress.health?.recentObservationSequence ?? progress.request?.sequence ?? 0;
   let reads = 0;
   for (const workout of workouts) {
     const signature = JSON.stringify([1, workout.candidate.start_at, workout.candidate.end_at, workout.candidate.metrics_json.moving_seconds, workout.candidate.metrics_json.coros_sport_type]);
     const cached = cache[workout.sourceId];
-    // Today's mutable activities are refreshed; completed historical identities reuse encrypted facts.
-    if (cached?.signature === signature && (cached.date < todayInTimezone(new Date(observedAt), progress.timezone) || cached.requestSequence === progress.request?.sequence)) continue;
+    // Today's mutable activities refresh for a new observation, while partial
+    // same-day continuation and historical identities reuse encrypted facts.
+    if (cached?.signature === signature && (cached.date < todayInTimezone(new Date(observedAt), progress.timezone) || cached.requestSequence === observationSequence)) continue;
     if (reads === 4) { await remember(); throw new Error("COROS_SYNC_ACTIVITY_DETAILS_PENDING"); }
     const result = await read("getActivityDetail", { labelId: workout.sourceId.slice(8), sportType: workout.candidate.metrics_json.coros_sport_type });
     reads++; await assertActive();
-    cache[workout.sourceId] = { signature, date: localDate(workout), requestSequence: progress.request?.sequence ?? 0, ...mapCorosActivityDetail(result, workout) };
+    cache[workout.sourceId] = { signature, date: localDate(workout), requestSequence: observationSequence, ...mapCorosActivityDetail(result, workout) };
     await remember();
   }
   const items: CorosHealthMetricItem[] = [];

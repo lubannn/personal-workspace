@@ -9,11 +9,11 @@ describe("independent health sources during pending activity detail batches", ()
   beforeEach(() => { vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(SYNC_TEST_NOW); });
   afterEach(() => vi.useRealTimers());
 
-  it("persists the accepted request and source before I/O, so an interrupted lease yields a bulk turn without advancing coverage", async () => {
+  it("persists the accepted request and source before I/O, so an interrupted lease yields a historical turn without advancing coverage", async () => {
     const fixture = syncTestDatabase(); fixture.connection();
     const p = initialSyncProgress("2024-01-01", "Asia/Shanghai");
     p.domains.sleep.recentRequestSequence = 1; p.domains.workout.recentRequestSequence = 1;
-    fixture.job(p);
+    for (const d of Object.values(p.domains)) d.backfillNext = "2024-02-01"; fixture.job(p);
     const refresh = vi.fn().mockImplementationOnce(() => new Promise(() => {}))
       .mockResolvedValue({ resourceUrl: "https://mcpcn.coros.com/mcp", accessToken: "synthetic-token" });
     const health = vi.fn<typeof collectCorosHealth>().mockImplementation(async (_read, window) => {
@@ -37,8 +37,9 @@ describe("independent health sources during pending activity detail batches", ()
       expect(started.progress.lastSuccessAt).toBeNull();
       vi.setSystemTime(Date.parse(SYNC_TEST_NOW) + 600_000);
       expect((await runCorosSync(fixture.env, new Date(), deps)).status).toBe("processed");
-      expect(health.mock.calls[0][1].source).toBe("dailyHealth");
-      expect(fixture.saved()?.progress.health?.backfillThrough).toBeNull();
+      expect(health.mock.calls[0][1]).toMatchObject({ recent: false, from: "2024-01-01" });
+      expect(started.progress.scheduling).toMatchObject({ lastKind: "recent", recentSource: "hrvActivity" });
+      expect(started.progress.health?.backfillThrough).toBeNull();
     } finally { fixture.sqlite.close(); }
   });
 
@@ -46,7 +47,7 @@ describe("independent health sources during pending activity detail batches", ()
     const fixture = syncTestDatabase(); fixture.connection();
     const p = initialSyncProgress("2024-01-01", "Asia/Shanghai");
     p.domains.sleep.recentRequestSequence = 1; p.domains.workout.recentRequestSequence = 1;
-    fixture.job(p);
+    for (const d of Object.values(p.domains)) d.backfillNext = "2024-02-01"; fixture.job(p);
     const sources: string[] = [];
     const health = vi.fn<typeof collectCorosHealth>().mockImplementation(async (_read, window) => {
       sources.push(window.source ?? "hrvActivity");
@@ -66,12 +67,12 @@ describe("independent health sources during pending activity detail batches", ()
         expect((await runCorosSync(fixture.env, new Date(), deps)).status).toBe("processed");
         expect(fixture.saved()?.lease_token).toBeNull();
       }
-      expect(sources).toEqual(["hrvActivity", "dailyHealth", "hrvActivity", "restingHeartRate", "hrvActivity", "dailyHealth"]);
+      expect(sources).toEqual(["hrvActivity", "hrvActivity", "dailyHealth", "dailyHealth", "restingHeartRate", "restingHeartRate"]);
       const saved = fixture.saved()!.progress;
       expect(saved.health?.backfillNext).toBe("2024-01-01"); // Pending details never become coverage.
       expect(saved.health?.bulk?.dailyHealth.backfillThrough).toBe("2024-01-28");
       expect(saved.health?.bulk?.restingHeartRate.recentRequestSequence).toBe(1);
-      expect(saved.health?.lastAttemptSource).toBe("dailyHealth");
+      expect(saved.health?.lastAttemptSource).toBe("restingHeartRate");
       expect(deps.read).not.toHaveBeenCalled(); expect(deps.writeMetrics).not.toHaveBeenCalled();
     } finally { fixture.sqlite.close(); }
   });

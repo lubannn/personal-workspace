@@ -89,6 +89,9 @@ describe("bounded synchronization error diagnostics", () => {
 
   it("retains a common-source diagnostic while an independent bulk source succeeds", async () => {
     const { deps, health } = dependencies();
+    const progress = fixture.saved()!.progress;
+    for (const d of Object.values(progress.domains)) d.backfillNext = "2024-02-01";
+    fixture.saveProgress(progress);
     health.mockImplementationOnce(async read => { await read("querySleepHrv", { days: 1 }); throw new Error("unreachable"); });
     vi.mocked(deps.read).mockRejectedValue(new Error("synthetic-private-read-failure"));
     expect((await runCorosSync(fixture.env, new Date(), deps)).status).toBe("error");

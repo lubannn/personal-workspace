@@ -69,15 +69,16 @@ describe("COROS scheduled synchronization", () => {
     expect(deps.write).toHaveBeenCalledTimes(1); expect(fixture.saved()?.lease_token).toBeNull();
   });
 
-  it("reads recent sleep and workouts first, then advances bounded historical coverage", async () => {
+  it("interleaves bounded history between recent sleep and workouts", async () => {
     fixture.connection(); fixture.job(); const { deps } = dependencies();
     await runCorosSync(fixture.env, new Date(), deps);
     expect(deps.read).toHaveBeenLastCalledWith(expect.any(String), expect.any(String), "querySleepOverview", { startDate: "20240130", endDate: "20240201" });
     expect(fixture.saved()?.progress.domains.sleep).toMatchObject({ recentThrough: "2024-02-01", backfillNext: "2024-01-01", backfillThrough: null });
     vi.setSystemTime("2024-02-01T04:10:00.000Z"); await runCorosSync(fixture.env, new Date(), deps);
-    expect(deps.read).toHaveBeenLastCalledWith(expect.any(String), expect.any(String), "querySportRecords", expect.objectContaining({ startDate: "20240126", endDate: "20240201", limit: 100 }));
-    vi.setSystemTime("2024-02-01T04:20:00.000Z"); await runCorosSync(fixture.env, new Date(), deps);
+    expect(deps.read).toHaveBeenLastCalledWith(expect.any(String), expect.any(String), "querySleepOverview", { startDate: "20240101", endDate: "20240103" });
     expect(fixture.saved()?.progress.domains.sleep).toMatchObject({ backfillNext: "2024-01-04", backfillThrough: "2024-01-03" });
+    vi.setSystemTime("2024-02-01T04:20:00.000Z"); await runCorosSync(fixture.env, new Date(), deps);
+    expect(deps.read).toHaveBeenLastCalledWith(expect.any(String), expect.any(String), "querySportRecords", expect.objectContaining({ startDate: "20240126", endDate: "20240201", limit: 100 }));
     expect(fixture.saved()?.progress.domains.workout.backfillThrough).toBeNull();
     expect(fixture.saved()?.next_run_at).toBe("2024-02-01T04:30:00.000Z");
   });
@@ -221,11 +222,11 @@ describe("COROS scheduled synchronization", () => {
     const progress = initialSyncProgress("2024-01-01", "Asia/Shanghai"); progress.domains.sleep.lastRecentAt = SYNC_TEST_NOW;
     fixture.connection(); fixture.job(progress); const { deps } = dependencies();
     deps.read.mockImplementationOnce(async (_resource, _token, _tool, args) => cappedWorkouts(args));
-    await runCorosSync(fixture.env, new Date(), deps);
+    await runCorosSync(fixture.env, new Date(), deps, { recentOnly: true });
     expect(deps.read.mock.calls.map(call => call[3].endDate)).toEqual(["20240201", "20240129"]);
     expect(fixture.saved()?.progress.domains.workout).toMatchObject({ recentThrough: "2024-01-29", recentNext: "2024-01-30", lastRecentAt: null, backfillNext: "2024-01-01" });
     expect(deps.write).toHaveBeenCalledTimes(1);
-    vi.setSystemTime("2024-02-01T04:10:00.000Z"); await runCorosSync(fixture.env, new Date(), deps);
+    vi.setSystemTime("2024-02-01T04:10:00.000Z"); await runCorosSync(fixture.env, new Date(), deps, { recentOnly: true });
     expect(deps.read).toHaveBeenLastCalledWith(expect.any(String), expect.any(String), "querySportRecords", expect.objectContaining({ startDate: "20240130", endDate: "20240201" }));
     expect(fixture.saved()?.progress.domains.workout).toMatchObject({ recentNext: null, recentThrough: "2024-02-01", lastRecentAt: "2024-02-01T04:10:00.000Z" });
   });
@@ -267,10 +268,12 @@ describe("COROS scheduled synchronization", () => {
       fixture.sqlite.exec("UPDATE coros_sync_jobs SET request_seq = 2, requested_through = '2024-02-02', daily_requested_date = '2024-02-02'");
       return readResult(args);
     });
-    await runCorosSync(fixture.env, new Date(), deps);
+    await runCorosSync(fixture.env, new Date(), deps, { recentOnly: true });
     expect(fixture.saved()).toMatchObject({ request_seq: 2, requested_through: "2024-02-02", next_run_at: SYNC_TEST_NOW,
       progress: { request: { sequence: 1, through: "2024-02-01" }, domains: { sleep: { recentRequestSequence: 1 } } } });
-    await runCorosSync(fixture.env, new Date(), deps);
+    await runCorosSync(fixture.env, new Date(), deps, { recentOnly: true });
+    expect(deps.read).toHaveBeenLastCalledWith(expect.any(String), expect.any(String), "querySportRecords", expect.objectContaining({ startDate: "20240127", endDate: "20240202" }));
+    await runCorosSync(fixture.env, new Date(), deps, { forceDue: true, recentOnly: true });
     expect(deps.read).toHaveBeenLastCalledWith(expect.any(String), expect.any(String), "querySleepOverview", { startDate: "20240131", endDate: "20240202" });
     expect(fixture.saved()?.progress.request).toMatchObject({ sequence: 2, through: "2024-02-02", historyThrough: "2024-01-31" });
   });
@@ -280,23 +283,23 @@ describe("COROS scheduled synchronization", () => {
     progress.domains.sleep.backfillNext = "2024-01-31";
     progress.domains.workout.backfillNext = "2024-01-31";
     fixture.connection(); fixture.job(progress); const { deps } = dependencies();
-    await runCorosSync(fixture.env, new Date(), deps);
-    vi.setSystemTime("2024-02-01T04:10:00.000Z"); await runCorosSync(fixture.env, new Date(), deps);
+    await runCorosSync(fixture.env, new Date(), deps, { recentOnly: true });
+    vi.setSystemTime("2024-02-01T04:10:00.000Z"); await runCorosSync(fixture.env, new Date(), deps, { recentOnly: true });
     for (const domain of ["sleep", "workout"] as const) expect(fixture.saved()?.progress.domains[domain]).toMatchObject({
       backfillNext: "2024-02-01", backfillThrough: "2024-01-31", recentRequestSequence: 1,
     });
-    vi.setSystemTime("2024-02-01T04:20:00.000Z"); await runCorosSync(fixture.env, new Date(), deps);
+    vi.setSystemTime("2024-02-01T04:20:00.000Z"); await runCorosSync(fixture.env, new Date(), deps, { recentOnly: true });
     expect(deps.read).toHaveBeenCalledTimes(2);
   });
 
   it("drains one window per authenticated call without resetting or incrementing the queued request", async () => {
     fixture.connection(); fixture.job(); const { deps } = dependencies();
     fixture.sqlite.exec("UPDATE coros_sync_jobs SET next_run_at = '2024-02-01T05:00:00.000Z'");
-    expect(await runCorosSync(fixture.env, new Date(), deps)).toMatchObject({ status: "deferred", retryAt: "2024-02-01T05:00:00.000Z" });
+    expect(await runCorosSync(fixture.env, new Date(), deps, { recentOnly: true })).toMatchObject({ status: "deferred", retryAt: "2024-02-01T05:00:00.000Z" });
     expect(deps.read).not.toHaveBeenCalled();
-    expect(await runCorosSync(fixture.env, new Date(), deps, { forceDue: true })).toMatchObject({ status: "processed", batch: { domain: "sleep" } });
+    expect(await runCorosSync(fixture.env, new Date(), deps, { forceDue: true, recentOnly: true })).toMatchObject({ status: "processed", batch: { domain: "sleep" } });
     expect(deps.read).toHaveBeenCalledTimes(1);
-    expect(await runCorosSync(fixture.env, new Date(), deps, { forceDue: true })).toMatchObject({ status: "processed", batch: { domain: "workout" } });
+    expect(await runCorosSync(fixture.env, new Date(), deps, { forceDue: true, recentOnly: true })).toMatchObject({ status: "processed", batch: { domain: "workout" } });
     expect(deps.read).toHaveBeenCalledTimes(2);
     expect(fixture.saved()).toMatchObject({ request_seq: 1, progress: { request: { sequence: 1, through: "2024-02-01" } } });
   });

@@ -45,10 +45,10 @@ describe("COROS explicitly requested sync windows", () => {
     const progress = requested("2024-01-01", "2024-02-01");
     expect(nextSyncWindow(progress, now)).toEqual({ domain: "sleep", recent: true, from: "2024-01-30", through: "2024-02-01" });
     progress.domains.sleep.recentRequestSequence = 1;
-    expect(nextSyncWindow(progress, new Date("2024-02-03T00:00:00Z"))).toEqual({ domain: "workout", recent: true, from: "2024-01-26", through: "2024-02-01" });
+    expect(nextSyncWindow(progress, new Date("2024-02-03T00:00:00.000Z"))).toEqual({ domain: "workout", recent: true, from: "2024-01-26", through: "2024-02-01" });
     recentComplete(progress);
     for (const domain of domains) progress.domains[domain].backfillNext = "2024-02-01";
-    expect(nextSyncWindow(progress, new Date("2024-02-03T00:00:00Z"))).toEqual({ domain: "sleep", recent: false, from: "2024-02-01", through: "2024-02-01" });
+    expect(nextSyncWindow(progress, new Date("2024-02-03T00:00:00.000Z"))).toEqual({ domain: "sleep", recent: false, from: "2024-02-01", through: "2024-02-01" });
   });
 
   it("keeps domain cursors independent and chooses the oldest unfinished historical interval", () => {
@@ -93,10 +93,10 @@ describe("COROS explicitly requested sync windows", () => {
     expect(nextSyncWindow(progress, now)).toBeNull(); expect(progress.backfillEnd).toBe("2024-01-01");
   });
 
-  it("resets recent partial progress only for a newer request, without moving historical cursors backwards", () => {
+  it("rechecks overlap on a new date while retaining source backoff and historical cursors", () => {
     const progress = requested(); recentComplete(progress);
     for (const domain of domains) {
-      progress.domains[domain].recentNext = "2024-02-01"; progress.domains[domain].retryAfter = "2024-02-03T00:00:00Z";
+      progress.domains[domain].recentNext = "2024-02-01"; progress.domains[domain].retryAfter = "2024-02-03T00:00:00.000Z";
       progress.domains[domain].backfillNext = "2024-01-20"; progress.domains[domain].backfillThrough = "2024-01-19";
       progress.domains[domain].created = 10;
     }
@@ -104,10 +104,11 @@ describe("COROS explicitly requested sync windows", () => {
     acceptSyncRequest(progress, { request_seq: 1, requested_through: "2024-02-03" }); expect(progress).toEqual(saved);
     acceptSyncRequest(progress, { request_seq: 0, requested_through: "2024-01-01" }); expect(progress).toEqual(saved);
     acceptSyncRequest(progress, { request_seq: 2, requested_through: "2024-02-03" });
-    for (const domain of domains) expect(progress.domains[domain]).toMatchObject({ recentNext: null, retryAfter: null,
+    for (const domain of domains) expect(progress.domains[domain]).toMatchObject({ recentNext: null, retryAfter: "2024-02-03T00:00:00.000Z",
       backfillNext: "2024-01-20", backfillThrough: "2024-01-19", created: 10, recentRequestSequence: 1 });
     expect(progress.request).toMatchObject({ sequence: 2, through: "2024-02-03" }); expect(progress.backfillEnd).toBe("2024-02-01");
-    expect(nextSyncWindow(progress, now)?.recent).toBe(true);
+    expect(nextSyncWindow(progress, now)).toBeNull();
+    expect(nextSyncWindow(progress, new Date("2024-02-03T00:00:00.000Z"))?.recent).toBe(true);
   });
 
   it("clamps recent queries to the selected start date and correctly rolls over leap days", () => {

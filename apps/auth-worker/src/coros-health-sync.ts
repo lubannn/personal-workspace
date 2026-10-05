@@ -1,27 +1,28 @@
 import type { CorosReadTool, CorosReadResult } from "./coros-read-client";
 import { corosResultText } from "./coros-sync-mapping";
 import { mapCorosRecovery, mapCorosSleepHrv, type CorosHealthMetricItem } from "./coros-health-mapping";
-import { closedHistoryThrough, shiftDate, todayInTimezone, type DomainProgress, type SyncProgress } from "./coros-sync-state";
+import { closedHistoryThrough, shiftDate, todayInTimezone, type DomainProgress, type SyncProgress, type SyncWindowFilter } from "./coros-sync-state";
 import { collectCorosActivityTotals } from "./coros-health-activity";
 import { collectBulkHealthHistory, nextBulkHealthWindow, type BulkHealthProgress, type BulkHealthSource, type BulkHealthWindow } from "./coros-health-history";
 
-export type HealthSyncProgress = DomainProgress & { recentDataThrough?: string; limitations?: string[]; encryptedActivityCache?: string; bulk?: BulkHealthProgress;
+export type HealthSyncProgress = DomainProgress & { recentDataThrough?: string; recentObservationSequence?: number; limitations?: string[]; encryptedActivityCache?: string; bulk?: BulkHealthProgress;
   lastAttemptSource?: "hrvActivity" | BulkHealthSource; lastBulkAttemptSource?: BulkHealthSource };
 export type HealthSyncWindow = { domain: "health"; source?: undefined; recent: boolean; from: string; through: string } | BulkHealthWindow;
-export function nextHealthSyncWindow(progress: SyncProgress, now: Date): HealthSyncWindow | null {
+export function nextHealthSyncWindow(progress: SyncProgress, now: Date, filter: SyncWindowFilter = {}): HealthSyncWindow | null {
   if (!progress.request) return null;
   progress.health ??= { backfillNext: progress.startDate, backfillThrough: null, recentThrough: null, lastRecentAt: null, latestRecordDate: null, created: 0 };
   const d = progress.health, through = progress.request.through;
-  const available = !d.retryAfter || d.retryAfter <= now.toISOString();
-  const recent: HealthSyncWindow | null = available && d.recentRequestSequence !== progress.request.sequence ? { domain: "health", recent: true,
+  const available = (!filter.source || filter.source === "hrvActivity") && (!d.retryAfter || d.retryAfter <= now.toISOString());
+  const recent: HealthSyncWindow | null = filter.recent !== false && available && d.recentRequestSequence !== progress.request.sequence ? { domain: "health", recent: true,
     from: d.recentNext ?? [progress.startDate, shiftDate(through, -6)].sort()[1], through } : null;
-  const bulk = nextBulkHealthWindow(progress, now);
+  const bulk = nextBulkHealthWindow(progress, now, filter);
   // A pending recent activity window retries on the same ten-minute rhythm as
   // cron. Give independent bulk sources a turn after every common attempt,
   // including failed/pending attempts, instead of letting that retry gate them.
   if (bulk && d.lastAttemptSource === "hrvActivity") return bulk;
   if (recent) return recent;
   if (bulk?.recent) return bulk;
+  if (filter.recent === true) return null;
   const historyThrough = closedHistoryThrough(progress, now);
   const history = available && d.backfillNext <= historyThrough ? { domain: "health" as const, recent: false, from: d.backfillNext, through: [shiftDate(d.backfillNext, 6), historyThrough].sort()[0] } : null;
   return bulk && (!history || bulk.from <= history.from) ? bulk : history;
