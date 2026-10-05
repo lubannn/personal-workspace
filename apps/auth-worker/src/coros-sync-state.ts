@@ -81,6 +81,8 @@ export function parseSyncProgress(text: string): SyncProgress {
     if (!p.domains[domain] || !dateOnly(p.domains[domain].backfillNext)) throw new Error("COROS_SYNC_STATE_INVALID");
   }
   if (p.health && (!dateOnly(p.health.backfillNext) || (p.health.recentDataThrough && !dateOnly(p.health.recentDataThrough)))) throw new Error("COROS_SYNC_STATE_INVALID");
+  if (p.health?.lastAttemptSource && !["hrvActivity", "dailyHealth", "restingHeartRate"].includes(p.health.lastAttemptSource)) throw new Error("COROS_SYNC_STATE_INVALID");
+  if (p.health?.lastBulkAttemptSource && !["dailyHealth", "restingHeartRate"].includes(p.health.lastBulkAttemptSource)) throw new Error("COROS_SYNC_STATE_INVALID");
   if (p.health?.bulk) for (const source of ["dailyHealth", "restingHeartRate"] as const) {
     const d = p.health.bulk[source];
     if (!d || !dateOnly(d.backfillNext) || d.backfillNext < p.startDate

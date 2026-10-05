@@ -3,18 +3,24 @@ import { corosResultText } from "./coros-sync-mapping";
 import { mapCorosRecovery, mapCorosSleepHrv, type CorosHealthMetricItem } from "./coros-health-mapping";
 import { closedHistoryThrough, shiftDate, todayInTimezone, type DomainProgress, type SyncProgress } from "./coros-sync-state";
 import { collectCorosActivityTotals } from "./coros-health-activity";
-import { collectBulkHealthHistory, nextBulkHealthWindow, type BulkHealthProgress, type BulkHealthWindow } from "./coros-health-history";
+import { collectBulkHealthHistory, nextBulkHealthWindow, type BulkHealthProgress, type BulkHealthSource, type BulkHealthWindow } from "./coros-health-history";
 
-export type HealthSyncProgress = DomainProgress & { recentDataThrough?: string; limitations?: string[]; encryptedActivityCache?: string; bulk?: BulkHealthProgress };
+export type HealthSyncProgress = DomainProgress & { recentDataThrough?: string; limitations?: string[]; encryptedActivityCache?: string; bulk?: BulkHealthProgress;
+  lastAttemptSource?: "hrvActivity" | BulkHealthSource; lastBulkAttemptSource?: BulkHealthSource };
 export type HealthSyncWindow = { domain: "health"; source?: undefined; recent: boolean; from: string; through: string } | BulkHealthWindow;
 export function nextHealthSyncWindow(progress: SyncProgress, now: Date): HealthSyncWindow | null {
   if (!progress.request) return null;
   progress.health ??= { backfillNext: progress.startDate, backfillThrough: null, recentThrough: null, lastRecentAt: null, latestRecordDate: null, created: 0 };
   const d = progress.health, through = progress.request.through;
   const available = !d.retryAfter || d.retryAfter <= now.toISOString();
-  if (available && d.recentRequestSequence !== progress.request.sequence) return { domain: "health", recent: true,
-    from: d.recentNext ?? [progress.startDate, shiftDate(through, -6)].sort()[1], through };
+  const recent: HealthSyncWindow | null = available && d.recentRequestSequence !== progress.request.sequence ? { domain: "health", recent: true,
+    from: d.recentNext ?? [progress.startDate, shiftDate(through, -6)].sort()[1], through } : null;
   const bulk = nextBulkHealthWindow(progress, now);
+  // A pending recent activity window retries on the same ten-minute rhythm as
+  // cron. Give independent bulk sources a turn after every common attempt,
+  // including failed/pending attempts, instead of letting that retry gate them.
+  if (bulk && d.lastAttemptSource === "hrvActivity") return bulk;
+  if (recent) return recent;
   if (bulk?.recent) return bulk;
   const historyThrough = closedHistoryThrough(progress, now);
   const history = available && d.backfillNext <= historyThrough ? { domain: "health" as const, recent: false, from: d.backfillNext, through: [shiftDate(d.backfillNext, 6), historyThrough].sort()[0] } : null;
@@ -22,7 +28,7 @@ export function nextHealthSyncWindow(progress: SyncProgress, now: Date): HealthS
 }
 
 type Read = (name: CorosReadTool, args: Record<string, unknown>) => Promise<CorosReadResult>;
-export async function collectCorosHealth(read: Read, window: HealthSyncWindow, progress: SyncProgress, assertActive: () => Promise<void>, now = new Date(), encryptionKey?: string) {
+export async function collectCorosHealth(read: Read, window: HealthSyncWindow, progress: SyncProgress, assertActive: () => Promise<void>, now = new Date(), encryptionKey?: string, checkpoint?: () => Promise<void>) {
   if (window.source) return { ...await collectBulkHealthHistory(read, window, progress, assertActive, now), activityError: undefined };
   const observedAt = () => new Date().toISOString();
   const options = (from: string, through: string) => ({ startDate: from, endDate: through, timezone: progress.timezone, observedAt: observedAt() });
@@ -52,7 +58,7 @@ export async function collectCorosHealth(read: Read, window: HealthSyncWindow, p
   }
   let activityError: string | undefined;
   try {
-    const activity = await collectCorosActivityTotals(read, window.from, through, progress, assertActive, observedAt(), encryptionKey);
+    const activity = await collectCorosActivityTotals(read, window.from, through, progress, assertActive, observedAt(), encryptionKey, checkpoint);
     // Both domains must cover the same checkpoint; a narrowed list cannot advance HRV past it.
     through = activity.through; items.push(...activity.items);
   } catch (error) {

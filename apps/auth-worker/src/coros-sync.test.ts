@@ -306,7 +306,12 @@ describe("COROS scheduled synchronization", () => {
     for (const domain of ["sleep", "workout"] as const) progress.domains[domain].retryAfter = "2024-02-01T06:00:00.000Z";
     fixture.connection(); fixture.job(progress); const { deps } = dependencies();
     fixture.sqlite.exec("UPDATE coros_sync_jobs SET lease_token = 'other-worker', lease_until = '2024-02-01T04:10:00.000Z'");
-    expect(await runCorosSync(fixture.env, new Date(), deps, { forceDue: true })).toEqual({ status: "busy", retryAt: "2024-02-01T04:10:00.000Z" });
+    const savedBeforePolling = fixture.saved();
+    for (let poll = 0; poll < 120; poll++) {
+      vi.setSystemTime(Date.parse(SYNC_TEST_NOW) + poll * 5_000);
+      expect(await runCorosSync(fixture.env, new Date(), deps, { forceDue: true })).toMatchObject({ status: "busy", retryAt: "2024-02-01T04:10:00.000Z", progress: { startDate: "2024-01-01" } });
+    }
+    expect(fixture.saved()).toEqual(savedBeforePolling);
     expect(fixture.saved()?.lease_token).toBe("other-worker");
     fixture.sqlite.exec("UPDATE coros_sync_jobs SET lease_token = NULL, lease_until = NULL");
     expect(await runCorosSync(fixture.env, new Date(), deps, { forceDue: true })).toMatchObject({ status: "deferred", retryAt: "2024-02-01T06:00:00.000Z" });

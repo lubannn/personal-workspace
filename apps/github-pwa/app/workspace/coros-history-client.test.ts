@@ -9,6 +9,22 @@ const response = (status: string) => Response.json({ status });
 const options = (fetcher: typeof fetch) => ({ csrf: "test-csrf", signal: new AbortController().signal, onUpdate: vi.fn(), fetcher });
 
 describe("explicit COROS history continuation", () => {
+  it("checks an early-finished owner within five seconds instead of sleeping until lease expiry", async () => {
+    vi.setSystemTime("2030-01-01T00:00:00Z");
+    const controller = new AbortController();
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(response("requested"))
+      .mockResolvedValueOnce(Response.json({ status: "busy", retryAt: "2030-01-01T00:10:00Z" }))
+      .mockResolvedValueOnce(response("processed")).mockResolvedValueOnce(response("complete"));
+    const run = drainCorosHistory({ ...options(fetcher), signal: controller.signal });
+    const outcome = run.catch(error => error);
+    try {
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(fetcher).toHaveBeenCalledTimes(3);
+      await vi.advanceTimersByTimeAsync(250);
+      expect(await outcome).toMatchObject({ status: "complete" });
+      expect(fetcher.mock.calls.filter(call => call[0] === "/coros/sync")).toHaveLength(1);
+    } finally { controller.abort(); await outcome; }
+  });
   it("requests an update once and serially drains completed windows with CSRF protection", async () => {
     let finishFirst!: (response: Response) => void;
     const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(response("requested"))
@@ -37,7 +53,7 @@ describe("explicit COROS history continuation", () => {
     const run = drainCorosHistory(options(fetcher));
     await vi.advanceTimersByTimeAsync(11 * 60_000);
     await expect(run).resolves.toMatchObject({ status: "busy" });
-    expect(fetcher).toHaveBeenCalledTimes(46);
+    expect(fetcher).toHaveBeenCalledTimes(134);
     expect(vi.getTimerCount()).toBe(0);
   });
 
@@ -110,7 +126,7 @@ describe("explicit COROS history continuation", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  it("recovers from the known Pages proxy failure and waits for an abandoned lease without another sync request", async () => {
+  it("recovers from the Pages proxy failure and detects an early lease release without another sync request", async () => {
     const now = new Date("2030-01-01T00:00:00Z"); vi.setSystemTime(now);
     const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(response("requested"))
       .mockResolvedValueOnce(Response.json({ error: "AUTH_UPSTREAM_UNAVAILABLE" }, { status: 502 }))
@@ -121,11 +137,25 @@ describe("explicit COROS history continuation", () => {
     await vi.advanceTimersByTimeAsync(1_000);
     expect(fetcher).toHaveBeenCalledTimes(3);
     expect(input.onUpdate).toHaveBeenLastCalledWith(expect.objectContaining({ status: "busy" }), 0);
-    await vi.advanceTimersByTimeAsync(598_999);
+    await vi.advanceTimersByTimeAsync(4_999);
     expect(fetcher).toHaveBeenCalledTimes(3);
     await vi.advanceTimersByTimeAsync(251);
     await expect(run).resolves.toMatchObject({ status: "complete" });
     expect(fetcher.mock.calls.map(call => call[0])).toEqual(["/coros/sync", "/coros/drain", "/coros/drain", "/coros/drain", "/coros/drain"]);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("keeps checking a genuinely occupied lease without another sync request or an early takeover", async () => {
+    const start = Date.parse("2030-01-01T00:00:00Z"); vi.setSystemTime(start);
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(async path => path === "/coros/sync" ? response("requested")
+      : Date.now() < start + 600_000 ? Response.json({ status: "busy", retryAt: "2030-01-01T00:10:00Z" }) : response("complete"));
+    const run = drainCorosHistory(options(fetcher));
+    await vi.advanceTimersByTimeAsync(599_999);
+    expect(fetcher.mock.calls.filter(call => call[0] === "/coros/sync")).toHaveLength(1);
+    expect(fetcher).toHaveBeenCalledTimes(121);
+    await vi.advanceTimersByTimeAsync(1);
+    await expect(run).resolves.toMatchObject({ status: "complete" });
+    expect(fetcher).toHaveBeenCalledTimes(122);
     expect(vi.getTimerCount()).toBe(0);
   });
 
@@ -136,7 +166,7 @@ describe("explicit COROS history continuation", () => {
     const run = drainCorosHistory(options(fetcher));
     await vi.advanceTimersByTimeAsync(11 * 60_000);
     await expect(run).resolves.toMatchObject({ status: "busy" });
-    expect(fetcher).toHaveBeenCalledTimes(3);
+    expect(fetcher).toHaveBeenCalledTimes(134);
     expect(vi.getTimerCount()).toBe(0);
   });
 

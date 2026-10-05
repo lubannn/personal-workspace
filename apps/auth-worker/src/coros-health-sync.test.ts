@@ -100,7 +100,8 @@ describe("bounded COROS health metric collection", () => {
       expect(fixture.saved()?.lease_token).toBeNull(); expect(deps.write).not.toHaveBeenCalled();
       read.mockImplementation(async () => { throw new Error("COROS_READ_TOOL_UNAVAILABLE"); });
       expect(await runCorosSync(fixture.env, new Date(), deps, { forceDue: true })).toMatchObject({ status: "error", errorCode: "COROS_READ_TOOL_UNAVAILABLE" });
-      expect(fixture.saved()?.progress.health).toMatchObject({ recentNext: "2024-01-27", retryAfter: "2024-02-01T04:20:00.000Z" });
+      expect(fixture.saved()?.progress.health).toMatchObject({ recentNext: "2024-01-27", retryAfter: null,
+        lastAttemptSource: "dailyHealth", bulk: { dailyHealth: { retryAfter: "2024-02-01T04:20:00.000Z" } } });
       expect(write).toHaveBeenCalledTimes(1);
     } finally { fixture.sqlite.close(); }
   });

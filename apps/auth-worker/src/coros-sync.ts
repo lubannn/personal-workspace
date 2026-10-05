@@ -54,13 +54,17 @@ export async function runCorosSync(env: CorosSyncEnv, now = new Date(), deps: Co
   if (!claimed.success || claimed.meta?.changes !== 1) {
     const current = await readSyncJob(db, userId);
     if (!current) return { status: "error", errorCode: "COROS_SYNC_NOT_CONFIGURED" };
-    return current.lease_until && current.lease_until > now.toISOString()
-      ? { status: "busy", retryAt: current.lease_until }
-      : { status: "deferred", retryAt: current.next_run_at };
+    if (current.lease_until && current.lease_until > now.toISOString()) {
+      // These are committed checkpoints, never the other owner's uncommitted work.
+      let progress: SyncProgress | undefined;
+      try { progress = parseSyncProgress(current.progress_json); } catch { /* The owner handles invalid state. */ }
+      return { status: "busy", retryAt: current.lease_until, ...(progress ? { progress } : {}) };
+    }
+    return { status: "deferred", retryAt: current.next_run_at };
   }
   const job = await readSyncJob(db, userId);
   if (!job || job.lease_token !== token) return { status: "busy" };
-  let progress;
+  let progress: SyncProgress;
   try { progress = parseSyncProgress(job.progress_json); acceptSyncRequest(progress, job, now); }
   catch {
     await db.prepare("UPDATE coros_connections SET last_error_code = 'COROS_SYNC_STATE_INVALID', state = 'paused' WHERE github_user_id = ?1").bind(userId).run();
@@ -78,6 +82,15 @@ export async function runCorosSync(env: CorosSyncEnv, now = new Date(), deps: Co
       .bind(userId, token, new Date().toISOString(), connectedAt).first<{ lease_token: string }>();
     if (!row) throw new Error("COROS_SYNC_CANCELLED");
   }
+  async function checkpoint() {
+    // Persist accepted requests, source selection and encrypted detail cache before
+    // long I/O. Coverage still advances only after a successful Git commit.
+    const saved = await db.prepare(`UPDATE coros_sync_jobs SET progress_json = ?1, updated_at = ?2
+      WHERE github_user_id = ?3 AND lease_token = ?4 AND lease_until > ?2
+      AND EXISTS (SELECT 1 FROM coros_connections WHERE github_user_id = ?3 AND state = 'enabled' AND connected_at = ?5)`)
+      .bind(JSON.stringify(progress), new Date().toISOString(), userId, token, connectedAt).run();
+    if (!saved.success || saved.meta?.changes !== 1) throw new Error("COROS_SYNC_CANCELLED");
+  }
   try {
     if (!window) {
       const retryAt = pendingRetry(progress, now);
@@ -87,11 +100,16 @@ export async function runCorosSync(env: CorosSyncEnv, now = new Date(), deps: Co
       return { status: retryAt ? "deferred" : "complete", retryAt, progress };
     }
     progress.lastAttemptAt = now.toISOString();
+    if (window.domain === "health") {
+      progress.health!.lastAttemptSource = window.source ?? "hrvActivity";
+      if (window.source) progress.health!.lastBulkAttemptSource = window.source;
+    }
+    await checkpoint();
     const ready = await deps.refresh(db, userId, env.TOKEN_ENCRYPTION_KEY);
     if (!ready) throw new Error("COROS_SYNC_CANCELLED");
     await assertActive();
     if (window.domain === "health") {
-      const collected = await deps.health!((name, args) => deps.read(ready.resourceUrl, ready.accessToken, name, args), window, progress, assertActive, now, env.TOKEN_ENCRYPTION_KEY);
+      const collected = await deps.health!((name, args) => deps.read(ready.resourceUrl, ready.accessToken, name, args), window, progress, assertActive, now, env.TOKEN_ENCRYPTION_KEY, checkpoint);
       await assertActive();
       const adapter = await deps.adapter({ appId: env.GITHUB_APP_ID!, installationId: env.GITHUB_APP_INSTALLATION_ID!, privateKeyPem: env.GITHUB_APP_PRIVATE_KEY!, owner: env.ALLOWED_REPO_OWNER!, repository: env.ALLOWED_REPO_NAME! });
       const descriptor = parseWorkspaceDescriptor((await adapter.readText("workspace.json")).text);
