@@ -41,6 +41,7 @@ export async function callCorosReadTool(
   accessToken: string,
   name: string,
   args: Record<string, unknown>,
+  fetcher: typeof fetch = globalThis.fetch.bind(globalThis),
 ): Promise<CorosReadResult> {
   if (!isAllowedCorosReadTool(name)) throw new Error("COROS_TOOL_NOT_ALLOWED");
   if (!accessToken || !isAllowedCorosResourceUrl(resourceUrl)) throw new Error("COROS_MCP_CONNECTION_INVALID");
@@ -53,7 +54,7 @@ export async function callCorosReadTool(
       const signals = [transportSignal];
       if (init?.signal) signals.push(init.signal);
       if (input instanceof Request) signals.push(input.signal);
-      return fetch(input, { ...init, signal: AbortSignal.any(signals) });
+      return fetcher(input, { ...init, signal: AbortSignal.any(signals) });
     },
   });
   const client = new Client({ name: "personal-workspace", version: "1.0.0" }, {

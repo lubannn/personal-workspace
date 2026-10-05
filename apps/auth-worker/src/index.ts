@@ -1,6 +1,6 @@
 import { handleAuthRequest } from "./auth";
 import { handleCorosConnectionRequest, type CorosConnectionEnv } from "./coros-connection";
-import { runCorosSync } from "./coros-sync";
+import { runScheduledCorosSync } from "./coros-sync-scheduled";
 
 const PUBLIC_APP_ORIGIN = "https://personal-workspace-app.pages.dev";
 const LEGACY_PUBLIC_APP_BASE_PATH = "/personal-workspace";
@@ -176,7 +176,7 @@ export async function handleRequest(request: Request, env: CorosConnectionEnv = 
 
 const worker = {
   async scheduled(_event: unknown, env: CorosConnectionEnv): Promise<void> {
-    await runCorosSync(env);
+    await runScheduledCorosSync(env);
   },
   fetch(request: Request, env: CorosConnectionEnv): Promise<Response> {
     return handleRequest(request, env);

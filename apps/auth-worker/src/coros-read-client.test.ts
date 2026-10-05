@@ -43,6 +43,14 @@ describe("COROS read-only tool boundary", () => {
       .rejects.toThrow("COROS_TOOL_NOT_ALLOWED");
   });
 
+  it("uses the invocation-scoped fetcher for MCP transport requests", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response("synthetic"));
+    mcp.connect.mockImplementation(() => mcp.transportOptions.mock.calls[0][0].fetch("https://mcpcn.coros.com/mcp", {}));
+    await callCorosReadTool("https://mcpcn.coros.com/mcp", "test-token", "querySleepOverview", {}, fetcher);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(fetcher.mock.calls[0][1]?.signal).toBeInstanceOf(AbortSignal);
+  });
+
   it("rejects an oversized response before a collector can parse or write it", async () => {
     mcp.callTool.mockResolvedValueOnce({ content: [{ type: "text", text: "x".repeat(512 * 1024) }] });
     await expect(callCorosReadTool("https://mcpcn.coros.com/mcp", "synthetic-token", "querySleepOverview", {})).rejects.toThrow("COROS_READ_RESULT_TOO_LARGE");

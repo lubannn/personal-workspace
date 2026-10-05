@@ -14,6 +14,13 @@ import { advanceHistoricalCoverage, closedHistoryThrough, acceptSyncRequest, par
 const dependencies = { refresh: refreshEnabledCorosConnection, read: callCorosReadTool,
   adapter: createPrivateDataInstallationAdapter, write: writeCorosSyncBatch, health: collectCorosHealth, writeMetrics: writeCorosHealthMetrics };
 export type CorosSyncDependencies = Omit<typeof dependencies, "health" | "writeMetrics"> & Partial<Pick<typeof dependencies, "health" | "writeMetrics">>;
+/** Scope transport budgets to this invocation, including OAuth, MCP and GitHub. */
+export function corosSyncDependenciesWithFetch(fetcher: typeof fetch): CorosSyncDependencies {
+  return { ...dependencies,
+    refresh: (db, userId, key) => refreshEnabledCorosConnection(db, userId, key, fetcher),
+    read: (url, token, name, args) => callCorosReadTool(url, token, name, args, fetcher),
+    adapter: config => createPrivateDataInstallationAdapter(config, fetcher) };
+}
 const isoAfter = (now: Date, milliseconds: number) => new Date(now.getTime() + milliseconds).toISOString();
 const SAFE_GITHUB_ERROR_CODES = new Set(["GITHUB_API_ERROR", "GITHUB_BAD_REQUEST", "GITHUB_NOT_FOUND", "GITHUB_FORBIDDEN",
   "GITHUB_UNAUTHORIZED", "GITHUB_RATE_LIMITED", "GITHUB_UNAVAILABLE", "GITHUB_SYNC_CONFLICT", "GITHUB_TRANSPORT_ERROR",
@@ -45,7 +52,8 @@ function pendingRetry(progress: SyncProgress, now: Date, recentOnly = false): st
 
 /** One bounded window per invocation; authenticated drain skips queue delay, never leases or backoff. */
 export async function runCorosSync(env: CorosSyncEnv, now = new Date(), deps: CorosSyncDependencies = dependencies,
-  options: { forceDue?: boolean; recentOnly?: boolean } = {}): Promise<CorosSyncRunResult> {
+  options: { forceDue?: boolean; recentOnly?: boolean; deadlineMs?: number; budgetExhausted?: () => boolean;
+    expectedRequest?: { sequence: number; through: string } } = {}): Promise<CorosSyncRunResult> {
   if (!env.DB || !env.TOKEN_ENCRYPTION_KEY || !syncReadiness(env).ready) return { status: "error", errorCode: "COROS_SYNC_NOT_CONFIGURED" };
   const db = env.DB; const userId = env.COROS_GITHUB_USER_ID!;
   const connection = await db.prepare("SELECT state, connected_at FROM coros_connections WHERE github_user_id = ?1")
@@ -55,8 +63,10 @@ export async function runCorosSync(env: CorosSyncEnv, now = new Date(), deps: Co
   const token = crypto.randomUUID();
   const claimed = await db.prepare(`UPDATE coros_sync_jobs SET lease_token = ?1, lease_until = ?2
     WHERE github_user_id = ?3 AND (?5 = 1 OR next_run_at <= ?4) AND (lease_until IS NULL OR lease_until <= ?4)
-    AND EXISTS (SELECT 1 FROM coros_connections WHERE github_user_id = ?3 AND state = 'enabled')`)
-    .bind(token, isoAfter(now, 10 * 60000), userId, now.toISOString(), options.forceDue ? 1 : 0).run();
+    AND EXISTS (SELECT 1 FROM coros_connections WHERE github_user_id = ?3 AND state = 'enabled')
+    AND (?6 IS NULL OR (request_seq = ?6 AND requested_through = ?7))`)
+    .bind(token, isoAfter(now, 10 * 60000), userId, now.toISOString(), options.forceDue ? 1 : 0,
+      options.expectedRequest?.sequence ?? null, options.expectedRequest?.through ?? null).run();
   if (!claimed.success || claimed.meta?.changes !== 1) {
     const current = await readSyncJob(db, userId);
     if (!current) return { status: "error", errorCode: "COROS_SYNC_NOT_CONFIGURED" };
@@ -81,6 +91,7 @@ export async function runCorosSync(env: CorosSyncEnv, now = new Date(), deps: Co
   let nextRunAt = nextSyncTick(now);
   let stage: SyncErrorStage = "progress_checkpoint";
   async function assertActive() {
+    if (options.deadlineMs !== undefined && Date.now() >= options.deadlineMs) throw new Error("COROS_SYNC_BUDGET_EXHAUSTED");
     const row = await db.prepare(`SELECT j.lease_token FROM coros_sync_jobs j JOIN coros_connections c
       ON c.github_user_id = j.github_user_id WHERE j.github_user_id = ?1 AND c.state = 'enabled'
       AND j.lease_token = ?2 AND j.lease_until > ?3 AND c.connected_at = ?4`)
@@ -120,6 +131,7 @@ export async function runCorosSync(env: CorosSyncEnv, now = new Date(), deps: Co
     if (!ready) throw new Error("COROS_SYNC_CANCELLED");
     await assertActive();
     const read = async (name: CorosReadTool, args: Record<string, unknown>) => {
+      await assertActive();
       const previousStage = stage; stage = name;
       const result = await deps.read(ready.resourceUrl, ready.accessToken, name, args);
       stage = previousStage;
@@ -264,6 +276,13 @@ export async function runCorosSync(env: CorosSyncEnv, now = new Date(), deps: Co
     // explanatory message. Never persist upstream messages, bodies or stacks.
     const message = error instanceof GitHubDataError ? SAFE_GITHUB_ERROR_CODES.has(error.code) ? error.code : ""
       : error instanceof Error ? error.message : "";
+    // A scheduled invocation's exhausted budget is a resumable yield, not a
+    // source failure. Keep prior backoff/coverage and individually saved facts.
+    const limited = options.budgetExhausted?.() || (options.deadlineMs !== undefined && Date.now() >= options.deadlineMs);
+    // An MCP cleanup denied by the budget must not hide a preceding 429/401/403.
+    if (message === "COROS_SYNC_BUDGET_EXHAUSTED" || (limited && !/RATE_LIMITED|UNAUTHORIZED|FORBIDDEN/u.test(message))) {
+      return { status: "deferred", errorCode: "COROS_SYNC_BUDGET_EXHAUSTED", progress };
+    }
     // Store only bounded internal codes, never exception payloads, credentials or health bodies.
     const code = /^(?:COROS|GITHUB)_[A-Z_]{1,80}$/u.test(message) ? message : "COROS_SYNC_FAILED";
     progress.lastErrorCode = code; progress.lastErrorStage = stage; progress.failureCount += 1;
