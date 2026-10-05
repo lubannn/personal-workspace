@@ -16,9 +16,7 @@ export function nextHealthSyncWindow(progress: SyncProgress, now: Date, filter: 
   const recent: HealthSyncWindow | null = filter.recent !== false && available && d.recentRequestSequence !== progress.request.sequence ? { domain: "health", recent: true,
     from: d.recentNext ?? [progress.startDate, shiftDate(through, -6)].sort()[1], through } : null;
   const bulk = nextBulkHealthWindow(progress, now, filter);
-  // A pending recent activity window retries on the same ten-minute rhythm as
-  // cron. Give independent bulk sources a turn after every common attempt,
-  // including failed/pending attempts, instead of letting that retry gate them.
+  // Give independent bulk sources a turn after each common attempt.
   if (bulk && d.lastAttemptSource === "hrvActivity") return bulk;
   if (recent) return recent;
   if (bulk?.recent) return bulk;
@@ -28,9 +26,13 @@ export function nextHealthSyncWindow(progress: SyncProgress, now: Date, filter: 
   return bulk && (!history || bulk.from <= history.from) ? bulk : history;
 }
 
+type CollectedHealth = { items: CorosHealthMetricItem[]; through: string; observedAt: string; limitations: string[];
+  activityError?: string; activityContinuation?: { detailsRead: number }; bulkSource?: BulkHealthSource;
+  observedDates: string[]; unconfirmedZeroDates: string[] };
+
 type Read = (name: CorosReadTool, args: Record<string, unknown>) => Promise<CorosReadResult>;
-export async function collectCorosHealth(read: Read, window: HealthSyncWindow, progress: SyncProgress, assertActive: () => Promise<void>, now = new Date(), encryptionKey?: string, checkpoint?: () => Promise<void>) {
-  if (window.source) return { ...await collectBulkHealthHistory(read, window, progress, assertActive, now), activityError: undefined };
+export async function collectCorosHealth(read: Read, window: HealthSyncWindow, progress: SyncProgress, assertActive: () => Promise<void>, now = new Date(), encryptionKey?: string, checkpoint?: () => Promise<void>): Promise<CollectedHealth> {
+  if (window.source) return { ...await collectBulkHealthHistory(read, window, progress, assertActive, now), activityError: undefined, activityContinuation: undefined };
   const observedAt = () => new Date().toISOString();
   const options = (from: string, through: string) => ({ startDate: from, endDate: through, timezone: progress.timezone, observedAt: observedAt() });
   const items: CorosHealthMetricItem[] = [];
@@ -58,16 +60,18 @@ export async function collectCorosHealth(read: Read, window: HealthSyncWindow, p
     through = window.from; // Never advance past silently omitted days.
   }
   let activityError: string | undefined;
+  let activityContinuation: { detailsRead: number } | undefined;
   try {
     const activity = await collectCorosActivityTotals(read, window.from, through, progress, assertActive, observedAt(), encryptionKey, checkpoint);
     // Both domains must cover the same checkpoint; a narrowed list cannot advance HRV past it.
     through = activity.through; items.push(...activity.items);
+    activityContinuation = activity.continuation;
   } catch (error) {
     const code = error instanceof Error ? error.message : "";
-    if (!["COROS_SYNC_ACTIVITY_DETAILS_PENDING", "COROS_SYNC_WINDOW_TRUNCATED", "COROS_SYNC_FORMAT_UNSUPPORTED",
+    if (!["COROS_SYNC_WINDOW_TRUNCATED", "COROS_SYNC_FORMAT_UNSUPPORTED",
       "COROS_SYNC_HEALTH_DETAIL_FORMAT_UNSUPPORTED", "COROS_SYNC_HEALTH_DETAIL_MISMATCH", "COROS_READ_TOOL_UNAVAILABLE"].includes(code)) throw error;
     activityError = code;
     limitations.push(`活动汇总尚未完成（${code}）；其他已验证指标保留，活动覆盖进度不前移`);
   }
-  return { items: items.filter(item => item.candidate.local_date <= through || item.candidate.metric_type === "recovery_percentage"), through, observedAt: observedAt(), limitations, activityError, bulkSource: undefined, observedDates: [], unconfirmedZeroDates: [] };
+  return { items: items.filter(item => item.candidate.local_date <= through || item.candidate.metric_type === "recovery_percentage"), through, observedAt: observedAt(), limitations, activityError, activityContinuation, bulkSource: undefined, observedDates: [], unconfirmedZeroDates: [] };
 }

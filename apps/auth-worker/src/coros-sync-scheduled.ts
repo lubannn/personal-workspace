@@ -38,12 +38,14 @@ export async function runScheduledCorosSync(env: CorosSyncEnv, deps?: CorosSyncD
     if (!result.progress?.request) break;
     expectedRequest ??= { sequence: result.progress.request.sequence, through: result.progress.request.through };
     const code = result.errorCode ?? result.progress.lastErrorCode;
-    if (code && code !== "COROS_SYNC_ACTIVITY_DETAILS_PENDING") {
+    if (code) {
       errors++;
       // Shared credentials or rate limits cannot be repaired by rotating tools.
       if (/RATE_LIMITED|UNAUTHORIZED|FORBIDDEN|OAUTH|TOKEN|CANCELLED|PAUSED|NOT_CONFIGURED|STATE_INVALID|WORKSPACE_MISMATCH/u.test(code)
         || errors >= COROS_SCHEDULED_BUDGET.errors) break;
     }
+    // A successful call must advance coverage or save new resumable details.
+    if (!code && result.status === "processed" && result.madeProgress === false) break;
   }
   return { batches, errors, result };
 }

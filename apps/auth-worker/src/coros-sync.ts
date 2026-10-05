@@ -32,6 +32,8 @@ export type CorosSyncRunResult = {
   batch?: NonNullable<SyncProgress["lastBatch"]>;
   retryAt?: string | null;
   errorCode?: string;
+  madeProgress?: boolean;
+  continuation?: { detailsRead: number };
 };
 export type CorosDrainResult = CorosSyncRunResult;
 
@@ -87,7 +89,20 @@ export async function runCorosSync(env: CorosSyncEnv, now = new Date(), deps: Co
     await db.prepare("UPDATE coros_sync_jobs SET lease_token = NULL, lease_until = NULL WHERE github_user_id = ?1 AND lease_token = ?2").bind(userId, token).run();
     return { status: "error", errorCode: "COROS_SYNC_STATE_INVALID" };
   }
+  // Migrate the previous normal-yield marker without clearing real failures.
+  if (progress.health?.lastErrorCode === "COROS_SYNC_ACTIVITY_DETAILS_PENDING") {
+    progress.health.retryAfter = null; progress.health.lastErrorCode = null; progress.health.lastErrorStage = null;
+  }
+  if (progress.lastErrorCode === "COROS_SYNC_ACTIVITY_DETAILS_PENDING") {
+    progress.lastErrorCode = null; progress.lastErrorStage = null;
+  }
   const window = nextFairSyncWindow(progress, now, Boolean(deps.health && deps.writeMetrics), options.recentOnly);
+  const domainPosition = () => {
+    const domain = window?.domain === "health" ? window.source ? progress.health!.bulk![window.source] : progress.health!
+      : window ? progress.domains[window.domain] : undefined;
+    return JSON.stringify(domain && [domain.backfillNext, domain.backfillThrough, domain.recentNext, domain.recentThrough, domain.recentRequestSequence]);
+  };
+  const positionBefore = domainPosition();
   let nextRunAt = nextSyncTick(now);
   let stage: SyncErrorStage = "progress_checkpoint";
   async function assertActive() {
@@ -165,7 +180,7 @@ export async function runCorosSync(env: CorosSyncEnv, now = new Date(), deps: Co
           if (!domain.recentNext) { domain.recentRequestSequence = progress.request!.sequence; domain.lastRecentAt = collected.observedAt; }
           advanceHistoricalCoverage(progress, domain, window.from, collected.through, now);
         } else { advanceHistoricalCoverage(progress, domain, window.from, collected.through, now); }
-      } else if (collected.activityError) {
+      } else if (collected.activityError || collected.activityContinuation) {
         // A pending activity source never discards verified bulk/HRV facts or
         // advances the common coverage checkpoint. Encrypted details resume later.
         if (window.recent) { health.recentDataThrough = todayInTimezone(new Date(collected.observedAt), progress.timezone); domain.recentNext = window.from; }
@@ -184,7 +199,9 @@ export async function runCorosSync(env: CorosSyncEnv, now = new Date(), deps: Co
       progress.lastErrorStage = collected.activityError ? "health_collect" : null; progress.failureCount = 0;
       progress.lastBatch = { domain: "health", from: window.from, through: collected.through, ...outcome, conflicts: 0 };
       await db.prepare("UPDATE coros_connections SET last_sync_at = ?1, last_error_code = ?2 WHERE github_user_id = ?3 AND state = 'enabled'").bind(collected.observedAt, collected.activityError ?? null, userId).run();
-      return { status: "processed", batch: progress.lastBatch, progress };
+      return { status: "processed", batch: progress.lastBatch, progress,
+        madeProgress: collected.activityContinuation ? collected.activityContinuation.detailsRead > 0 : positionBefore !== domainPosition(),
+        ...(collected.activityContinuation ? { continuation: collected.activityContinuation } : {}) };
     }
     const range = { startDate: window.from, endDate: window.through, timezone: progress.timezone };
     const args = { startDate: window.from.replaceAll("-", ""), endDate: window.through.replaceAll("-", "") };
@@ -270,7 +287,7 @@ export async function runCorosSync(env: CorosSyncEnv, now = new Date(), deps: Co
       created: outcome.created, unchanged: outcome.unchanged, updated: outcome.updated ?? 0, conflicts: outcome.conflicts };
     await db.prepare("UPDATE coros_connections SET last_sync_at = ?1, last_error_code = NULL WHERE github_user_id = ?2 AND state = 'enabled'")
       .bind(now.toISOString(), userId).run();
-    return { status: "processed", batch: progress.lastBatch, progress };
+    return { status: "processed", batch: progress.lastBatch, progress, madeProgress: positionBefore !== domainPosition() };
   } catch (error) {
     // The typed adapter supplies bounded internal codes separately from its
     // explanatory message. Never persist upstream messages, bodies or stacks.
@@ -279,8 +296,10 @@ export async function runCorosSync(env: CorosSyncEnv, now = new Date(), deps: Co
     // A scheduled invocation's exhausted budget is a resumable yield, not a
     // source failure. Keep prior backoff/coverage and individually saved facts.
     const limited = options.budgetExhausted?.() || (options.deadlineMs !== undefined && Date.now() >= options.deadlineMs);
-    // An MCP cleanup denied by the budget must not hide a preceding 429/401/403.
-    if (message === "COROS_SYNC_BUDGET_EXHAUSTED" || (limited && !/RATE_LIMITED|UNAUTHORIZED|FORBIDDEN/u.test(message))) {
+    // SDK/adapters can wrap a denied fetch. Cleanup denial must not hide a
+    // typed timeout, format failure, authentication failure or upstream status.
+    const wrappedBudget = limited && ["COROS_READ_TRANSPORT_FAILED", "COROS_READ_SDK_FAILED", "GITHUB_TRANSPORT_ERROR"].includes(message);
+    if (message === "COROS_SYNC_BUDGET_EXHAUSTED" || wrappedBudget) {
       return { status: "deferred", errorCode: "COROS_SYNC_BUDGET_EXHAUSTED", progress };
     }
     // Store only bounded internal codes, never exception payloads, credentials or health bodies.

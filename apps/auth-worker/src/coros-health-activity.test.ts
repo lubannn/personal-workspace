@@ -62,7 +62,7 @@ describe("complete daily activity evidence", () => {
     const p = progress(), reader = read(5);
     p.health!.encryptedActivityCache = await encryptRefreshToken(JSON.stringify({ version: 1, timezone: "Asia/Shanghai",
       entries: Array.from({ length: 256 }, (_, index) => [`workout:${1000 + index}`, { signature: "synthetic_other", date: "2024-01-31", requestSequence: 1, elevationGainMeters: 1, trainingLoad: 1 }]) }), key);
-    await expect(collectCorosActivityTotals(reader, "2024-01-02", "2024-01-02", p, async () => {}, observedAt, key)).rejects.toThrow("DETAILS_PENDING");
+    await expect(collectCorosActivityTotals(reader, "2024-01-02", "2024-01-02", p, async () => {}, observedAt, key)).resolves.toMatchObject({ items: [], continuation: { detailsRead: 4 } });
     expect(reader.mock.calls.filter(([tool]) => tool === "getActivityDetail")).toHaveLength(4);
     const cached = JSON.parse(await decryptRefreshToken(p.health!.encryptedActivityCache!, key));
     expect(cached.entries).toHaveLength(256); expect(cached.entries.some(([id]: [string]) => id === "workout:101")).toBe(true);
@@ -73,7 +73,7 @@ describe("complete daily activity evidence", () => {
   it("resumes today's pending details across another request, then refreshes after the observation completes", async () => {
     const p = progress(), reader = read(5), date = new Date("2024-01-02T04:00:00Z");
     p.request = { sequence: 1, through: "2024-01-02" }; p.health!.recentNext = "2024-01-02";
-    await expect(collectCorosActivityTotals(reader, "2024-01-02", "2024-01-02", p, async () => {}, date.toISOString(), key)).rejects.toThrow("DETAILS_PENDING");
+    await expect(collectCorosActivityTotals(reader, "2024-01-02", "2024-01-02", p, async () => {}, date.toISOString(), key)).resolves.toMatchObject({ items: [], continuation: { detailsRead: 4 } });
     expect(reader.mock.calls.filter(([tool]) => tool === "getActivityDetail")).toHaveLength(4);
     acceptSyncRequest(p, { request_seq: 2, requested_through: "2024-01-02" }, date);
     reader.mockClear();
@@ -82,10 +82,39 @@ describe("complete daily activity evidence", () => {
     p.health!.recentRequestSequence = 2; p.health!.recentNext = null;
     acceptSyncRequest(p, { request_seq: 3, requested_through: "2024-01-02" }, date);
     reader.mockClear();
-    await expect(collectCorosActivityTotals(reader, "2024-01-02", "2024-01-02", p, async () => {}, date.toISOString(), key)).rejects.toThrow("DETAILS_PENDING");
+    await expect(collectCorosActivityTotals(reader, "2024-01-02", "2024-01-02", p, async () => {}, date.toISOString(), key)).resolves.toMatchObject({ items: [], continuation: { detailsRead: 4 } });
     expect(reader.mock.calls.filter(([tool]) => tool === "getActivityDetail").map(([, args]) => args.labelId)).toEqual(["101", "102", "103", "104"]);
     expect(p.health!.backfillThrough).toBeNull();
   });
+
+  it("retains both unfinished recent and historical detail windows when the encrypted cache is full", async () => {
+    const p = progress();
+    p.health!.encryptedActivityCache = await encryptRefreshToken(JSON.stringify({ version: 1, timezone: "Asia/Shanghai",
+      entries: Array.from({ length: 256 }, (_, i) => [`workout:${1000 + i}`, { signature: "synthetic-other", date: "2024-01-31", requestSequence: 1, elevationGainMeters: 1, trainingLoad: 1 }]) }), key);
+    const reader = vi.fn(async (tool: CorosReadTool, args: Record<string, unknown>) => {
+      if (tool !== "querySportRecords") return detail(1, 10);
+      const recent = args.startDate === "20240119";
+      let body = String(list(iso(args.startDate), iso(args.endDate), 7).payload);
+      if (recent) {
+        const old = Date.parse("2024-01-02T04:00:00Z") / 1000, next = Date.parse("2024-01-20T04:00:00Z") / 1000;
+        body = body.replaceAll("2024-01-02", "2024-01-20").replaceAll(`startTimestamp=${old}`, `startTimestamp=${next}`)
+          .replaceAll(`endTimestamp=${old + 600}`, `endTimestamp=${next + 600}`).replace(/LabelId: (\d+)/g, (_, id) => `LabelId: ${Number(id) + 100}`);
+      }
+      return text(body);
+    });
+    const collect = (date: string) => collectCorosActivityTotals(reader, date, date, p, async () => {}, observedAt, key);
+    expect((await collect("2024-01-02")).continuation?.detailsRead).toBe(4);
+    expect((await collect("2024-01-20")).continuation?.detailsRead).toBe(4);
+    reader.mockClear();
+    expect((await collect("2024-01-02")).continuation).toBeUndefined();
+    expect(reader.mock.calls.filter(([tool]) => tool === "getActivityDetail").map(([, args]) => args.labelId)).toEqual(["105", "106", "107"]);
+    reader.mockClear();
+    expect((await collect("2024-01-20")).continuation).toBeUndefined();
+    expect(reader.mock.calls.filter(([tool]) => tool === "getActivityDetail").map(([, args]) => args.labelId)).toEqual(["205", "206", "207"]);
+    const cache = JSON.parse(await decryptRefreshToken(p.health!.encryptedActivityCache!, key));
+    expect(cache.entries).toHaveLength(256); expect(cache.pendingWindows).toHaveLength(0);
+  });
+
   it("keeps a capped raw list incomplete even when its rows deduplicate to one activity", async () => {
     const p = progress(), reader = read(20, true);
     await expect(collectCorosActivityTotals(reader, "2024-01-02", "2024-01-08", p, async () => {}, observedAt, key)).rejects.toThrow("WINDOW_TRUNCATED");
