@@ -1,4 +1,4 @@
-import type { SyncProgress } from "../../../auth-worker/src/coros-sync-state";
+import type { DomainProgress, SyncProgress } from "../../../auth-worker/src/coros-sync-state";
 import type { BulkHealthSource, BulkHealthSourceProgress } from "../../../auth-worker/src/coros-health-history";
 
 export function corosSyncErrorMessage(code: string | null | undefined): string | null {
@@ -27,6 +27,18 @@ export function corosHistorySources(progress: SyncProgress) {
     { id: "restingHeartRate", label: "静息心率", progress: progress.health?.bulk?.restingHeartRate, resetSource: "restingHeartRate" },
   ];
   return sources;
+}
+
+/** Configured scope and record dates cannot establish a legacy check's start. */
+export function corosCheckedRangeText(progress?: DomainProgress): string {
+  const ranges = progress?.checkedRanges ?? [];
+  const parts = ranges.length ? [`已检查区间：${ranges.map(range => `${range.from} 至 ${range.through}`).join("；")}`] : [];
+  for (const [label, through] of [["历史", progress?.backfillThrough], ["近期", progress?.recentThrough]] as const) {
+    if (through && !ranges.some(range => range.from <= through && range.through >= through)) {
+      parts.push(`${label}检查截止 ${through}（起点未记录，范围待核验）`);
+    }
+  }
+  return parts.join("；") || "已检查区间：尚无已确认区间";
 }
 
 /** Only a deliberate paused UI action may edit scope or reset a named blocked source. */

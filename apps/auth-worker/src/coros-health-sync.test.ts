@@ -97,6 +97,7 @@ describe("bounded COROS health metric collection", () => {
     try {
       expect(await runCorosSync(fixture.env, new Date(), deps, { forceDue: true })).toMatchObject({ status: "processed", batch: { domain: "health", through: "2024-01-26", created: 8 } });
       expect(fixture.saved()?.progress.health).toMatchObject({ backfillNext: "2024-01-01", recentNext: "2024-01-27", recentDataThrough: "2024-02-01" });
+      expect(fixture.saved()?.progress.health?.checkedRanges).toEqual([{ from: "2024-01-26", through: "2024-01-26" }]);
       expect(fixture.saved()?.lease_token).toBeNull(); expect(deps.write).not.toHaveBeenCalled();
       read.mockImplementation(async () => { throw new Error("COROS_READ_TOOL_UNAVAILABLE"); });
       expect(await runCorosSync(fixture.env, new Date(), deps, { forceDue: true })).toMatchObject({ status: "error", errorCode: "COROS_READ_TOOL_UNAVAILABLE" });
@@ -118,6 +119,7 @@ describe("bounded COROS health metric collection", () => {
       expect(await runCorosSync(fixture.env, new Date(), deps, { forceDue: true })).toMatchObject({ status: "processed", progress: { lastErrorCode: "COROS_READ_TOOL_UNAVAILABLE" } });
       expect(write.mock.calls[0][1].items).toHaveLength(4);
       expect(fixture.saved()?.progress.health).toMatchObject({ backfillNext: "2024-01-01", backfillThrough: null, recentNext: "2024-01-26", recentDataThrough: "2024-02-01", retryAfter: "2024-02-01T04:10:00.000Z" });
+      expect(fixture.saved()?.progress.health?.checkedRanges).toBeUndefined();
       expect(fixture.saved()?.lease_token).toBeNull();
     } finally { fixture.sqlite.close(); }
   });

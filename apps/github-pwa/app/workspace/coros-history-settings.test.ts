@@ -1,10 +1,42 @@
 import { describe, expect, it, vi } from "vitest";
 import { initialSyncProgress } from "../../../auth-worker/src/coros-sync-state";
-import { corosHistorySources, corosSyncErrorMessage, saveCorosHistorySettings } from "./coros-history-settings";
+import { corosCheckedRangeText, corosHistorySources, corosSyncErrorMessage, saveCorosHistorySettings } from "./coros-history-settings";
 
 const progress = () => initialSyncProgress("2024-02-01", "Asia/Shanghai");
 const options = () => ({ state: "paused" as const, running: false, historyScopeSupported: true,
   progress: progress(), startDate: "2024-01-01", csrf: "synthetic-csrf" });
+
+describe("COROS checked range display", () => {
+  it("shows empty/uninitialized sources without claiming the configured range or latest value was checked", () => {
+    expect(corosCheckedRangeText()).toBe("已检查区间：尚无已确认区间");
+    const p = progress(); p.domains.sleep.latestRecordDate = "2024-02-20";
+    expect(corosCheckedRangeText(p.domains.sleep)).toBe("已检查区间：尚无已确认区间");
+  });
+
+  it("retains separate historical and recent legacy endpoints, never guessing from configuration or records", () => {
+    const p = progress();
+    Object.assign(p.domains.sleep, { backfillThrough: "2024-02-05", recentThrough: "2024-03-20", latestRecordDate: "2024-03-19" });
+    expect(corosCheckedRangeText(p.domains.sleep)).toBe("历史检查截止 2024-02-05（起点未记录，范围待核验）；近期检查截止 2024-03-20（起点未记录，范围待核验）");
+  });
+
+  it("shows each source's actual intervals independently, including a single partially checked recent day", () => {
+    const p = progress(), domain = p.domains.sleep;
+    domain.checkedRanges = [{ from: "2024-02-01", through: "2024-02-05" }, { from: "2024-03-20", through: "2024-03-20" }];
+    domain.backfillThrough = "2024-02-05"; domain.recentThrough = "2024-03-20";
+    p.domains.workout.checkedRanges = [{ from: "2024-02-04", through: "2024-02-06" }];
+    const sources = corosHistorySources(p);
+    expect(corosCheckedRangeText(sources[0].progress)).toBe("已检查区间：2024-02-01 至 2024-02-05；2024-03-20 至 2024-03-20");
+    expect(corosCheckedRangeText(sources[1].progress)).toBe("已检查区间：2024-02-04 至 2024-02-06");
+    expect(corosCheckedRangeText(sources[2].progress)).toBe("已检查区间：尚无已确认区间");
+  });
+
+  it("keeps unknown legacy coverage visible beside newly proven checks", () => {
+    const p = progress();
+    p.domains.sleep.backfillThrough = "2024-02-05";
+    p.domains.sleep.checkedRanges = [{ from: "2024-03-18", through: "2024-03-20" }];
+    expect(corosCheckedRangeText(p.domains.sleep)).toBe("已检查区间：2024-03-18 至 2024-03-20；历史检查截止 2024-02-05（起点未记录，范围待核验）");
+  });
+});
 
 describe("explicit COROS history settings", () => {
   it.each([

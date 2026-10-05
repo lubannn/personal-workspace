@@ -9,7 +9,7 @@ import { writeCorosSyncBatch } from "./coros-sync-writer";
 import { collectCorosHealth } from "./coros-health-sync";
 import { writeCorosHealthMetrics } from "./coros-health-writer";
 import { COROS_BULK_HEALTH_SOURCES } from "./coros-health-history";
-import { advanceHistoricalCoverage, closedHistoryThrough, acceptSyncRequest, parseSyncProgress, readSyncJob, recentWindowStart, shiftDate, todayInTimezone, syncReadiness, type CorosSyncEnv, type SyncProgress, type SyncErrorStage } from "./coros-sync-state";
+import { recordCheckedRange, advanceHistoricalCoverage, closedHistoryThrough, acceptSyncRequest, parseSyncProgress, readSyncJob, recentWindowStart, shiftDate, todayInTimezone, syncReadiness, type CorosSyncEnv, type SyncProgress, type SyncErrorStage } from "./coros-sync-state";
 
 const dependencies = { refresh: refreshEnabledCorosConnection, read: callCorosReadTool,
   adapter: createPrivateDataInstallationAdapter, write: writeCorosSyncBatch, health: collectCorosHealth, writeMetrics: writeCorosHealthMetrics };
@@ -169,6 +169,7 @@ export async function runCorosSync(env: CorosSyncEnv, now = new Date(), deps: Co
       stage = "coverage_checkpoint";
       const health = progress.health!;
       const domain = collected.bulkSource ? health.bulk![collected.bulkSource] : health;
+      if (!collected.activityError) recordCheckedRange(domain, window.from, collected.through);
       if (collected.bulkSource) {
         const bulk = health.bulk![collected.bulkSource];
         bulk.observedDates = [...new Set([...(bulk.observedDates ?? []), ...collected.observedDates])].sort();
@@ -266,6 +267,7 @@ export async function runCorosSync(env: CorosSyncEnv, now = new Date(), deps: Co
     await assertActive();
     stage = "coverage_checkpoint";
     const domain = progress.domains[window.domain];
+    recordCheckedRange(domain, window.from, window.through);
     if (window.recent) {
       domain.recentThrough = window.through;
       domain.recentNext = window.through < progress.request!.through ? shiftDate(window.through, 1) : null;
