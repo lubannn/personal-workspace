@@ -86,9 +86,9 @@ describe("monthly sleep calendar", () => {
     expect(buildSleepCalendarDays([])).toEqual([]);
   });
 
-  it("shows the primary main-sleep onset in its original timezone and marks overnight dates", () => {
+  it("shows only onset time in cells while preserving the original date and timezone in details", () => {
     const previous = buildSleepCalendarDays([episode("main")])[0];
-    expect(formatMainSleepStart(previous, true)).toBe("入睡前日23:00");
+    expect(formatMainSleepStart(previous, true)).toBe("入睡23:00");
     expect(formatMainSleepStart(previous)).toBe("主睡眠入睡 2024-02-01 23:00（Asia/Shanghai）");
     const same = buildSleepCalendarDays([episode("same", { startAt: "2024-02-01T16:30:00Z" })])[0];
     expect(formatMainSleepStart(same, true)).toBe("入睡00:30");
@@ -97,11 +97,12 @@ describe("monthly sleep calendar", () => {
     const older = episode("older", { startAt: "2024-01-31T15:00:00Z", endAt: "2024-01-31T23:00:00Z" });
     expect(buildSleepCalendarDays([older, episode("main")])[0].mainStartAt).toBe(previous.mainStartAt);
     const html = renderToStaticMarkup(createElement(SleepCalendarSection, { rows: [episode("main")], timezone: "UTC" }));
-    expect(html).toContain("入睡前日23:00");
+    expect(html).toContain("入睡23:00");
+    expect(html).not.toContain("入睡前日");
     expect(html).toContain("Asia/Shanghai");
     expect(html).toContain("总计7:00");
-    expect(html.indexOf("待补指标</strong>")).toBeLessThan(html.indexOf("入睡前日23:00</span>"));
-    expect(html.indexOf("入睡前日23:00</span>")).toBeLessThan(html.indexOf("总计7:00</span>"));
+    expect(html.indexOf("待补指标</strong>")).toBeLessThan(html.indexOf("入睡23:00</span>"));
+    expect(html.indexOf("入睡23:00</span>")).toBeLessThan(html.indexOf("总计7:00</span>"));
   });
 
   it("aligns Monday-first calendar cells across leap years and year boundaries, independent of host timezone", () => {

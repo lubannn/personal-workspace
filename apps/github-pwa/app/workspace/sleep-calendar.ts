@@ -76,15 +76,12 @@ export function buildSleepCalendarDays(rows: SleepRecordRow[]): SleepCalendarDay
   }).sort((a, b) => a.date.localeCompare(b.date));
 }
 
-/** Keep the stored sleep day and source timezone; show the onset's actual local date. */
+/** Keep the stored sleep day and source timezone; details retain the actual local date. */
 export function formatMainSleepStart(day?: SleepCalendarDay, compact = false): string {
   if (!day?.mainStartAt || !day.mainTimezone) return compact ? "入睡—" : "主睡眠入睡时间缺失";
   const local = healthLocalParts(day.mainStartAt, day.mainTimezone);
   if (!compact) return `主睡眠入睡 ${local.date} ${local.time}（${day.mainTimezone}）`;
-  const previousDate = new Date(`${day.date}T00:00:00Z`);
-  previousDate.setUTCDate(previousDate.getUTCDate() - 1);
-  const prefix = local.date === day.date ? "" : local.date === previousDate.toISOString().slice(0, 10) ? "前日" : `${local.date.slice(5)} `;
-  return `入睡${prefix}${local.time}`;
+  return `入睡${local.time}`;
 }
 
 export function summarizeSleepDays(days: SleepCalendarDay[]) {
