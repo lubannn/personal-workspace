@@ -155,12 +155,21 @@ describe("resumable full-scope relative COROS health history", () => {
     try {
       expect(await runCorosSync(fixture.env, new Date(), deps, { forceDue: true })).toMatchObject({ status: "processed" });
       expect(fixture.saved()?.progress.health?.bulk).toMatchObject({ dailyHealth: { backfillNext: "2023-10-29", backfillThrough: "2023-10-28", observedDates: ["2023-10-01"], unconfirmedZeroDates: ["2023-10-02"] }, restingHeartRate: { backfillNext: "2023-10-01" } });
+      expect(fixture.saved()?.progress.health?.bulk?.dailyHealth.checkedRanges).toEqual([{ from: "2023-10-01", through: "2023-10-28" }]);
       write.mockRejectedValueOnce(new Error("GITHUB_WRITE_FAILED"));
       expect(await runCorosSync(fixture.env, new Date(), deps, { forceDue: true })).toMatchObject({ status: "error", errorCode: "GITHUB_WRITE_FAILED" });
       expect(fixture.saved()?.progress.health?.bulk?.restingHeartRate).toMatchObject({ backfillNext: "2023-10-01", backfillThrough: null, retryAfter: "2024-02-01T04:20:00.000Z" });
+      expect(fixture.saved()?.progress.health?.bulk?.restingHeartRate.checkedRanges).toBeUndefined();
       expect(fixture.saved()?.lease_token).toBeNull();
       expect(deps.write).not.toHaveBeenCalled();
       expect(reader.mock.calls.map(call => call[0])).toEqual(["queryDailyHealthData", "queryRestingHeartRate"]);
+      // Once persistence succeeds, RHR records its own checked range, independent of sparse value dates.
+      vi.setSystemTime("2024-02-01T04:20:00.000Z");
+      const saved = fixture.saved()!.progress;
+      saved.health!.bulk!.dailyHealth.backfillNext = "2024-02-02";
+      fixture.saveProgress(saved);
+      expect(await runCorosSync(fixture.env, new Date(), deps, { forceDue: true })).toMatchObject({ status: "processed" });
+      expect(fixture.saved()?.progress.health?.bulk?.restingHeartRate.checkedRanges).toEqual([{ from: "2023-10-01", through: "2023-10-28" }]);
     } finally { fixture.sqlite.close(); }
   });
 });

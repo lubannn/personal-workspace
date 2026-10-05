@@ -19,11 +19,14 @@ export const COROS_SYNC_ERROR_STAGES = ["progress_checkpoint", "credentials_refr
   "querySportRecords", "getActivityDetail", "querySleepData", "querySleepOverview", "queryAvgHeartRate",
   "queryRestingHeartRate", "queryDailyHealthData", "querySleepHrv", "queryRecoveryStatus", "queryStressLevel"] as const;
 export type SyncErrorStage = typeof COROS_SYNC_ERROR_STAGES[number];
+export type CheckedRange = { from: string; through: string };
 export type DomainProgress = {
   backfillNext: string; backfillThrough: string | null; recentThrough: string | null;
   lastRecentAt: string | null; latestRecordDate: string | null; created: number;
   recentNext?: string | null; retryAfter?: string | null; lastErrorCode?: string | null; lastErrorStage?: SyncErrorStage | null;
   recentRequestSequence?: number;
+  /** Successful, persisted checks only; absent in legacy state. Never drives sync cursors. */
+  checkedRanges?: CheckedRange[];
 };
 export type SyncProgress = {
   version: 1; startDate: string; timezone: string;
@@ -56,6 +59,19 @@ export function dateOnly(value: unknown): value is string {
 export function shiftDate(value: string, days: number): string {
   if (!dateOnly(value)) throw new Error("COROS_SYNC_INVALID_DATE");
   return new Date(Date.parse(`${value}T00:00:00Z`) + days * 86400000).toISOString().slice(0, 10);
+}
+/** Preserve gaps, merging only overlapping or adjacent verified windows. */
+export function recordCheckedRange(domain: DomainProgress, from: string, through: string) {
+  if (!dateOnly(from) || !dateOnly(through) || from > through) throw new Error("COROS_SYNC_INVALID_DATE");
+  const ranges = [...(domain.checkedRanges ?? []), { from, through }].sort((a, b) => a.from.localeCompare(b.from));
+  const merged: CheckedRange[] = [];
+  for (const range of ranges) {
+    const previous = merged.at(-1);
+    if (previous && range.from <= shiftDate(previous.through, 1)) {
+      previous.through = [previous.through, range.through].sort()[1];
+    } else merged.push({ ...range });
+  }
+  domain.checkedRanges = merged;
 }
 export function todayInTimezone(now: Date, timezone: string): string {
   const parts = new Intl.DateTimeFormat("en", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(now);
@@ -106,6 +122,9 @@ export function parseSyncProgress(text: string): SyncProgress {
     if (d.blockedCode && !["COROS_READ_RESULT_TOO_LARGE", "COROS_SYNC_HEALTH_RANGE_UNCONFIRMED"].includes(d.blockedCode)) throw new Error("COROS_SYNC_STATE_INVALID");
   }
   for (const d of [...Object.values(p.domains), ...(p.health ? [p.health] : []), ...Object.values(p.health?.bulk ?? {})]) {
+    if (d.checkedRanges !== undefined && (!Array.isArray(d.checkedRanges) || d.checkedRanges.length > 20_000
+      || d.checkedRanges.some((range, index, ranges) => !range || !dateOnly(range.from) || !dateOnly(range.through)
+        || range.from > range.through || (index > 0 && range.from <= shiftDate(ranges[index - 1].through, 1))))) throw new Error("COROS_SYNC_STATE_INVALID");
     if (d.lastErrorStage !== undefined && d.lastErrorStage !== null && !COROS_SYNC_ERROR_STAGES.includes(d.lastErrorStage)) throw new Error("COROS_SYNC_STATE_INVALID");
   }
   return p;

@@ -193,6 +193,7 @@ describe("COROS scheduled synchronization", () => {
     ]);
     expect(deps.write).toHaveBeenCalledTimes(1);
     expect(fixture.saved()?.progress.domains.sleep).toMatchObject({ lastRecentAt: null, recentThrough: "2024-01-30", recentNext: "2024-01-31", backfillNext: "2024-01-01", lastErrorCode: null });
+    expect(fixture.saved()?.progress.domains.sleep.checkedRanges).toEqual([{ from: "2024-01-30", through: "2024-01-30" }]);
   });
 
   it("advances only one historical day after an explicit empty-day fallback verifies a partial response", async () => {
@@ -207,6 +208,7 @@ describe("COROS scheduled synchronization", () => {
       { startDate: "20240110", endDate: "20240112" }, { startDate: "20240110", endDate: "20240110" },
     ]);
     expect(fixture.saved()?.progress.domains.sleep).toMatchObject({ backfillThrough: "2024-01-10", backfillNext: "2024-01-11" });
+    expect(fixture.saved()?.progress.domains.sleep.checkedRanges).toEqual([{ from: "2024-01-10", through: "2024-01-10" }]);
     expect(deps.adapter).not.toHaveBeenCalled(); expect(deps.write).not.toHaveBeenCalled();
   });
 
@@ -216,6 +218,7 @@ describe("COROS scheduled synchronization", () => {
     expect(await runCorosSync(fixture.env, new Date(), deps, { forceDue: true })).toMatchObject({ status: "error", errorCode: "COROS_SYNC_FORMAT_UNSUPPORTED" });
     expect(deps.read).toHaveBeenCalledTimes(1); expect(deps.write).not.toHaveBeenCalled();
     expect(fixture.saved()?.progress.domains.sleep).toMatchObject({ backfillNext: "2024-02-01", backfillThrough: null, recentThrough: null });
+    expect(fixture.saved()?.progress.domains.sleep.checkedRanges).toBeUndefined();
   });
 
   it("shrinks a capped workout window and resumes its unprocessed remainder", async () => {
@@ -229,6 +232,7 @@ describe("COROS scheduled synchronization", () => {
     vi.setSystemTime("2024-02-01T04:10:00.000Z"); await runCorosSync(fixture.env, new Date(), deps, { recentOnly: true });
     expect(deps.read).toHaveBeenLastCalledWith(expect.any(String), expect.any(String), "querySportRecords", expect.objectContaining({ startDate: "20240130", endDate: "20240201" }));
     expect(fixture.saved()?.progress.domains.workout).toMatchObject({ recentNext: null, recentThrough: "2024-02-01", lastRecentAt: "2024-02-01T04:10:00.000Z" });
+    expect(fixture.saved()?.progress.domains.workout.checkedRanges).toEqual([{ from: "2024-01-26", through: "2024-02-01" }]);
   });
 
   it("does not advance a single workout day that still reaches the result cap", async () => {

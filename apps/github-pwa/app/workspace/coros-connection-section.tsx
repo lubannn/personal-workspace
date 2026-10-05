@@ -6,7 +6,7 @@ import { readCookie, type ConnectionMethod } from "./page-model";
 import "./health-records.css";
 import { CorosConflicts } from "./coros-conflicts";
 import { COROS_BUSY_POLL_MS, drainCorosHistory } from "./coros-history-client";
-import { corosHistorySources, corosSyncErrorMessage as errorMessage, saveCorosHistorySettings } from "./coros-history-settings";
+import { corosCheckedRangeText, corosHistorySources, corosSyncErrorMessage as errorMessage, saveCorosHistorySettings } from "./coros-history-settings";
 import type { BulkHealthSource } from "../../../auth-worker/src/coros-health-history";
 
 type CorosStatus = {
@@ -264,9 +264,10 @@ export function CorosConnectionSection({ connectionMethod, onClearHealthCache, c
           <dl className="health-records-range">{(["sleep", "workout"] as const).map(domain => {
             const p = progress.domains[domain];
             return <div key={domain}><dt>{domain === "sleep" ? "睡眠" : "运动"}最新记录</dt><dd>{p.latestRecordDate ?? "暂无"}</dd></div>;
-          })}<div><dt>已保存历史范围</dt><dd>{progress.startDate} 至 {progress.backfillEnd ?? "等待请求"}</dd></div></dl>
+          })}<div><dt>配置的历史目标范围</dt><dd>{progress.startDate} 至 {progress.backfillEnd ?? "等待请求"}</dd></div></dl>
           <ul aria-label="各来源历史进度">{corosHistorySources(progress).map(source => <li key={source.id}>
-            <p><strong>{source.label}</strong>：已检查至 {source.progress?.backfillThrough ?? "尚未开始"}；最新记录 {source.progress?.latestRecordDate ?? "暂无"}。
+            <p><strong>{source.label}</strong>：{corosCheckedRangeText(source.progress).split(/(\d{4}-\d{2}-\d{2})/u).map((part, index) => /^\d{4}-\d{2}-\d{2}$/u.test(part)
+              ? <time key={index} className="coros-checked-range-date" dateTime={part}>{part}</time> : part)}；最新记录 {source.progress?.latestRecordDate ?? "暂无"}。
               {source.progress?.observedDates ? ` 已保存有值日期 ${source.progress.observedDates.length} 天。` : ""}
               {source.progress?.unconfirmedZeroDates?.length ? ` 全零且采样未确认 ${source.progress.unconfirmedZeroDates.length} 天，保持缺测。` : ""}</p>
             {source.progress?.blockedCode ? <><p role="status">已停止自动重试：{errorMessage(source.progress.blockedCode)} 不会把此来源报告为历史完成。</p>
@@ -274,7 +275,7 @@ export function CorosConnectionSection({ connectionMethod, onClearHealthCache, c
               <p>先核对接口容量或范围并暂停自动更新；此操作只清除该来源阻塞，仍保持暂停。</p></>
               : source.progress?.lastErrorCode || source.progress?.retryAfter ? <p role="status">未完成原因：{errorMessage(source.progress.lastErrorCode) ?? "上次检查尚未完成。"}{source.progress.retryAfter ? ` 下次可重试：${displayTime(source.progress.retryAfter)}。` : " 尚无自动重试时间。"}</p> : null}
           </li>)}</ul>
-          <p>已检查区间不等于每天都有数据；缺测日期不生成记录，恢复只保存同步当天的真实观测。</p>
+          <p>目标范围不代表已完成检查；分段区间之间的日期尚未确认。已检查区间不等于每天都有数据，含当天时仅表示截至该次检查；缺测日期不生成记录，恢复只保存同步当天的真实观测。</p>
           {historyBatch ? <p>最近一批：{historyBatch.domain === "sleep" ? "睡眠" : historyBatch.domain === "health" ? "健康指标" : "运动"} {historyBatch.from} 至 {historyBatch.through}，新增 {historyBatch.created} 条、更新 {historyBatch.updated ?? 0} 条。</p> : null}
           {progress.health ? <><p>首次按指定历史范围分批检查，其后沿保存进度补新增日期；90日仅用于评分参照，缺测不补值。</p>{progress.health.limitations?.map(value => <p key={value}>{value}</p>)}</> : null}
           <CorosConflicts count={progress.conflicts} />

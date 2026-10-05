@@ -1,8 +1,42 @@
 import { describe, expect, it } from "vitest";
-import { acceptSyncRequest, advanceHistoricalCoverage, initialSyncProgress, nextSyncWindow, shiftDate, todayInTimezone, type SyncProgress } from "./coros-sync-state";
+import { acceptSyncRequest, advanceHistoricalCoverage, extendSyncHistory, initialSyncProgress, nextSyncWindow, parseSyncProgress, recordCheckedRange, shiftDate, todayInTimezone, type SyncProgress } from "./coros-sync-state";
 
 const now = new Date("2024-02-01T16:30:00.000Z");
 const domains = ["sleep", "workout"] as const;
+describe("proven COROS checked ranges", () => {
+  it("keeps history and recent gaps until every intervening day is checked, without changing cursors", () => {
+    const p = initialSyncProgress("2024-01-01", "Asia/Shanghai"), d = p.domains.sleep;
+    const before = structuredClone(d);
+    recordCheckedRange(d, "2024-01-01", "2024-01-03");
+    recordCheckedRange(d, "2024-01-30", "2024-02-01");
+    recordCheckedRange(d, "2024-01-31", "2024-02-02");
+    expect(d.checkedRanges).toEqual([{ from: "2024-01-01", through: "2024-01-03" }, { from: "2024-01-30", through: "2024-02-02" }]);
+    recordCheckedRange(d, "2024-01-04", "2024-01-29");
+    expect(d).toEqual({ ...before, checkedRanges: [{ from: "2024-01-01", through: "2024-02-02" }] });
+    expect(p.domains.workout.checkedRanges).toBeUndefined();
+  });
+
+  it("preserves proven ranges when the desired scope is extended; never infers legacy starts", () => {
+    const p = initialSyncProgress("2024-02-01", "Asia/Shanghai");
+    p.domains.workout.backfillThrough = "2024-02-03";
+    recordCheckedRange(p.domains.sleep, "2024-02-01", "2024-02-03");
+    extendSyncHistory(p, "2024-01-01");
+    const saved = parseSyncProgress(JSON.stringify(p));
+    expect(saved.domains.sleep.checkedRanges).toEqual([{ from: "2024-02-01", through: "2024-02-03" }]);
+    expect(saved.domains.workout.checkedRanges).toBeUndefined();
+    expect(saved.domains.sleep.backfillNext).toBe("2024-01-01");
+  });
+
+  it.each([
+    [{ from: "2024-02-30", through: "2024-03-01" }],
+    [{ from: "2024-02-02", through: "2024-02-01" }],
+    [{ from: "2024-01-01", through: "2024-01-03" }, { from: "2024-01-03", through: "2024-01-05" }],
+  ])("rejects invalid persisted interval metadata %j", (...ranges) => {
+    const p = initialSyncProgress("2024-01-01", "Asia/Shanghai");
+    p.domains.sleep.checkedRanges = ranges;
+    expect(() => parseSyncProgress(JSON.stringify(p))).toThrow("COROS_SYNC_STATE_INVALID");
+  });
+});
 function requested(start = "2024-01-01", through = "2024-02-02", sequence = 1) {
   const progress = initialSyncProgress(start, "Asia/Shanghai");
   acceptSyncRequest(progress, { request_seq: sequence, requested_through: through }, now);

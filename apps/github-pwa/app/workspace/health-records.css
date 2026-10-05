@@ -81,6 +81,7 @@
 .coros-compact-settings summary { width: fit-content; cursor: pointer; padding: 4px 0; }
 .coros-compact-settings-body { display: grid; gap: 12px; padding-top: 12px; border-top: 1px solid var(--line); margin-top: 8px; }
 .coros-compact-settings-body p { margin: 0; line-height: 1.7; }
+.coros-checked-range-date { white-space: nowrap; }
 @media (max-width: 600px) {
   .coros-compact { padding: 16px; }
   .coros-compact-heading { align-items: flex-start; }
