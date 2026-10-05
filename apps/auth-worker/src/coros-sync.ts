@@ -1,3 +1,4 @@
+import { nextFairSyncWindow, nextSyncTick, recordSyncTurn } from "./coros-sync-scheduling";
 import { parseWorkspaceDescriptor } from "../../../src/lib/github-data/workspace";
 import { GitHubDataError } from "../../../src/lib/github-data/github-contents";
 import { refreshEnabledCorosConnection } from "./coros-credentials";
@@ -5,10 +6,10 @@ import { callCorosReadTool, type CorosReadTool } from "./coros-read-client";
 import { mapCorosSleep, mapCorosWorkouts } from "./coros-sync-mapping";
 import { createPrivateDataInstallationAdapter } from "./github-installation";
 import { writeCorosSyncBatch } from "./coros-sync-writer";
-import { collectCorosHealth, nextHealthSyncWindow } from "./coros-health-sync";
+import { collectCorosHealth } from "./coros-health-sync";
 import { writeCorosHealthMetrics } from "./coros-health-writer";
 import { COROS_BULK_HEALTH_SOURCES } from "./coros-health-history";
-import { advanceHistoricalCoverage, closedHistoryThrough, acceptSyncRequest, nextSyncWindow, parseSyncProgress, readSyncJob, recentWindowStart, shiftDate, todayInTimezone, syncReadiness, type CorosSyncEnv, type SyncProgress, type SyncErrorStage } from "./coros-sync-state";
+import { advanceHistoricalCoverage, closedHistoryThrough, acceptSyncRequest, parseSyncProgress, readSyncJob, recentWindowStart, shiftDate, todayInTimezone, syncReadiness, type CorosSyncEnv, type SyncProgress, type SyncErrorStage } from "./coros-sync-state";
 
 const dependencies = { refresh: refreshEnabledCorosConnection, read: callCorosReadTool,
   adapter: createPrivateDataInstallationAdapter, write: writeCorosSyncBatch, health: collectCorosHealth, writeMetrics: writeCorosHealthMetrics };
@@ -27,24 +28,24 @@ export type CorosSyncRunResult = {
 };
 export type CorosDrainResult = CorosSyncRunResult;
 
-function pendingRetry(progress: SyncProgress, now: Date): string | null {
+function pendingRetry(progress: SyncProgress, now: Date, recentOnly = false): string | null {
   if (!progress.request) return null;
   const retries = (["sleep", "workout"] as const).filter(domain =>
     progress.domains[domain].recentRequestSequence !== progress.request!.sequence
-    || progress.domains[domain].backfillNext <= closedHistoryThrough(progress, now))
+    || (!recentOnly && progress.domains[domain].backfillNext <= closedHistoryThrough(progress, now)))
     .map(domain => progress.domains[domain].retryAfter ?? null)
     .filter((time): time is string => time !== null);
-  if (progress.health?.retryAfter && (progress.health.recentRequestSequence !== progress.request.sequence || progress.health.backfillNext <= closedHistoryThrough(progress, now))) retries.push(progress.health.retryAfter);
+  if (progress.health?.retryAfter && (progress.health.recentRequestSequence !== progress.request.sequence || (!recentOnly && progress.health.backfillNext <= closedHistoryThrough(progress, now)))) retries.push(progress.health.retryAfter);
   for (const source of COROS_BULK_HEALTH_SOURCES) {
     const d = progress.health?.bulk?.[source];
-    if (d?.retryAfter && (d.recentRequestSequence !== progress.request.sequence || d.backfillNext <= closedHistoryThrough(progress, now))) retries.push(d.retryAfter);
+    if (d?.retryAfter && (d.recentRequestSequence !== progress.request.sequence || (!recentOnly && d.backfillNext <= closedHistoryThrough(progress, now)))) retries.push(d.retryAfter);
   }
   return retries.sort()[0] ?? null;
 }
 
 /** One bounded window per invocation; authenticated drain skips queue delay, never leases or backoff. */
 export async function runCorosSync(env: CorosSyncEnv, now = new Date(), deps: CorosSyncDependencies = dependencies,
-  options: { forceDue?: boolean } = {}): Promise<CorosSyncRunResult> {
+  options: { forceDue?: boolean; recentOnly?: boolean } = {}): Promise<CorosSyncRunResult> {
   if (!env.DB || !env.TOKEN_ENCRYPTION_KEY || !syncReadiness(env).ready) return { status: "error", errorCode: "COROS_SYNC_NOT_CONFIGURED" };
   const db = env.DB; const userId = env.COROS_GITHUB_USER_ID!;
   const connection = await db.prepare("SELECT state, connected_at FROM coros_connections WHERE github_user_id = ?1")
@@ -76,10 +77,8 @@ export async function runCorosSync(env: CorosSyncEnv, now = new Date(), deps: Co
     await db.prepare("UPDATE coros_sync_jobs SET lease_token = NULL, lease_until = NULL WHERE github_user_id = ?1 AND lease_token = ?2").bind(userId, token).run();
     return { status: "error", errorCode: "COROS_SYNC_STATE_INVALID" };
   }
-  const recordWindow = nextSyncWindow(progress, now);
-  const healthWindow = deps.health && deps.writeMetrics ? nextHealthSyncWindow(progress, now) : null;
-  const window = recordWindow?.recent ? recordWindow : healthWindow ?? recordWindow;
-  let nextRunAt = isoAfter(now, 10 * 60000);
+  const window = nextFairSyncWindow(progress, now, Boolean(deps.health && deps.writeMetrics), options.recentOnly);
+  let nextRunAt = nextSyncTick(now);
   let stage: SyncErrorStage = "progress_checkpoint";
   async function assertActive() {
     const row = await db.prepare(`SELECT j.lease_token FROM coros_sync_jobs j JOIN coros_connections c
@@ -101,13 +100,16 @@ export async function runCorosSync(env: CorosSyncEnv, now = new Date(), deps: Co
   }
   try {
     if (!window) {
-      const retryAt = pendingRetry(progress, now);
-      nextRunAt = retryAt ?? isoAfter(now, 30 * 60000);
-      const blocked = Object.values(progress.health?.bulk ?? {}).find(source => source.blockedCode);
+      const retryAt = pendingRetry(progress, now, options.recentOnly);
+      const historyPending = options.recentOnly && nextFairSyncWindow(progress, now, Boolean(deps.health && deps.writeMetrics));
+      nextRunAt = historyPending ? nextSyncTick(now) : pendingRetry(progress, now) ?? isoAfter(now, 30 * 60000);
+      const blocked = Object.values(progress.health?.bulk ?? {}).find(source => source.blockedCode
+        && (!options.recentOnly || source.recentRequestSequence !== progress.request?.sequence));
       if (!retryAt && blocked) return { status: "error", errorCode: blocked.blockedCode, retryAt: null, progress };
       return { status: retryAt ? "deferred" : "complete", retryAt, progress };
     }
     progress.lastAttemptAt = now.toISOString();
+    recordSyncTurn(progress, window);
     if (window.domain === "health") {
       progress.health!.lastAttemptSource = window.source ?? "hrvActivity";
       if (window.source) progress.health!.lastBulkAttemptSource = window.source;

@@ -27,14 +27,15 @@ function abortableDelay(milliseconds: number, signal: AbortSignal) {
 /** User-started continuation. Every request awaits one guarded server batch. */
 export async function drainCorosHistory({ csrf, signal, onUpdate, fetcher = fetch, recentOnly = false }: Options): Promise<CorosHistoryResult> {
   if (!csrf) throw new Error("COROS_AUTH_REQUIRED");
-  async function post(path: "/coros/sync" | "/coros/drain") {
+  async function post(path: "/coros/sync" | "/coros/daily" | "/coros/drain") {
     for (let attempt = 0; ; attempt += 1) {
       signal.throwIfAborted();
       const canRetry = path === "/coros/drain" && attempt < MAX_TRANSPORT_RETRIES;
       let response: Response;
       try {
         response = await fetcher(path, { method: "POST", credentials: "same-origin", cache: "no-store",
-          headers: { accept: "application/json", "x-pw-csrf": csrf }, signal });
+          headers: { accept: "application/json", "x-pw-csrf": csrf, ...(path === "/coros/drain" && recentOnly ? { "content-type": "application/json" } : {}) },
+          ...(path === "/coros/drain" && recentOnly ? { body: JSON.stringify({ recentOnly: true }) } : {}), signal });
       } catch (error) {
         signal.throwIfAborted();
         if (!canRetry) throw error;
@@ -59,8 +60,8 @@ export async function drainCorosHistory({ csrf, signal, onUpdate, fetcher = fetc
       return result;
     }
   }
-  // One explicit request also clears retry state from a previously failed parser.
-  await post("/coros/sync");
+  // Continuation reuses today's queued request; only extra update requests a fresh observation.
+  await post(recentOnly ? "/coros/sync" : "/coros/daily");
   let processed = 0;
   let busySince: number | null = null;
   const maxWindows = recentOnly ? 12 : MAX_WINDOWS;

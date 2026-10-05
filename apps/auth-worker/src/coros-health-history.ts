@@ -1,7 +1,7 @@
 import { mapCorosDailyHealth, mapCorosRestingHeartRate } from "./coros-health-mapping";
 import { corosResultText } from "./coros-sync-mapping";
 import type { CorosReadResult, CorosReadTool } from "./coros-read-client";
-import { closedHistoryThrough, shiftDate, todayInTimezone, type DomainProgress, type SyncProgress } from "./coros-sync-state";
+import { closedHistoryThrough, shiftDate, todayInTimezone, type DomainProgress, type SyncProgress, type SyncWindowFilter } from "./coros-sync-state";
 
 export const COROS_BULK_HEALTH_SOURCES = ["dailyHealth", "restingHeartRate"] as const;
 export type BulkHealthSource = typeof COROS_BULK_HEALTH_SOURCES[number];
@@ -18,16 +18,17 @@ export function initializeBulkHealthProgress(progress: SyncProgress): BulkHealth
 }
 
 /** Relative-days APIs have their own storage cursors, independent of the rating window. */
-export function nextBulkHealthWindow(progress: SyncProgress, now: Date): BulkHealthWindow | null {
+export function nextBulkHealthWindow(progress: SyncProgress, now: Date, filter: SyncWindowFilter = {}): BulkHealthWindow | null {
   if (!progress.request) return null;
   const bulk = initializeBulkHealthProgress(progress), through = progress.request.through;
-  const available = COROS_BULK_HEALTH_SOURCES.filter(source => !bulk[source].blockedCode && (!bulk[source].retryAfter || bulk[source].retryAfter! <= now.toISOString()))
+  const available = COROS_BULK_HEALTH_SOURCES.filter(source => (!filter.source || source === filter.source) && !bulk[source].blockedCode && (!bulk[source].retryAfter || bulk[source].retryAfter! <= now.toISOString()))
     .sort((a, b) => Number(a === progress.health?.lastBulkAttemptSource) - Number(b === progress.health?.lastBulkAttemptSource));
   for (const source of available) {
     const d = bulk[source];
-    if (d.recentRequestSequence !== progress.request.sequence) return { domain: "health", source, recent: true,
+    if (filter.recent !== false && d.recentRequestSequence !== progress.request.sequence) return { domain: "health", source, recent: true,
       from: d.recentNext ?? [progress.startDate, shiftDate(through, -6)].sort()[1], through };
   }
+  if (filter.recent === true) return null;
   const historyThrough = closedHistoryThrough(progress, now);
   const source = available.filter(source => bulk[source].backfillNext <= historyThrough)
     .sort((a, b) => bulk[a].backfillNext.localeCompare(bulk[b].backfillNext))[0];

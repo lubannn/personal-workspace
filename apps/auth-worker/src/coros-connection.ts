@@ -257,7 +257,14 @@ export async function handleCorosConnectionRequest(request: Request, env: CorosC
       if (request.method !== "POST") return json({ error: "METHOD_NOT_ALLOWED" }, 405);
       if (!validAuthenticatedMutation(request)) return json({ error: "CSRF_VALIDATION_FAILED" }, 403);
       if (user.id !== env.COROS_GITHUB_USER_ID) return json({ error: "COROS_SYNC_ACCOUNT_NOT_CONFIGURED" }, 409);
-      return json(await runCorosSync(env, new Date(), undefined, { forceDue: true }));
+      let recentOnly = false;
+      if (request.headers.get("content-type")?.startsWith("application/json")) {
+        if (Number(request.headers.get("content-length")) > 1024) return json({ error: "COROS_SYNC_REQUEST_INVALID" }, 400);
+        const body = await request.json().catch(() => null) as { recentOnly?: unknown } | null;
+        if (!body || typeof body !== "object" || Array.isArray(body) || typeof body.recentOnly !== "boolean") return json({ error: "COROS_SYNC_REQUEST_INVALID" }, 400);
+        recentOnly = body.recentOnly;
+      }
+      return json(await runCorosSync(env, new Date(), undefined, { forceDue: true, ...(recentOnly ? { recentOnly } : {}) }));
     }
     case "/coros/conflicts": {
       if (request.method !== "GET") return json({ error: "METHOD_NOT_ALLOWED" }, 405);

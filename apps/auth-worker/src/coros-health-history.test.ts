@@ -143,6 +143,7 @@ describe("resumable full-scope relative COROS health history", () => {
     const p = progress();
     p.domains.sleep.recentRequestSequence = 1; p.domains.workout.recentRequestSequence = 1;
     p.health!.backfillNext = "2024-02-02";
+    for (const d of Object.values(p.domains)) d.backfillNext = "2024-02-01";
     fixture.job(p);
     const reader = read(), write = vi.fn<typeof writeCorosHealthMetrics>().mockResolvedValue({ created: 3, updated: 0, unchanged: 0 });
     const deps: CorosSyncDependencies = {

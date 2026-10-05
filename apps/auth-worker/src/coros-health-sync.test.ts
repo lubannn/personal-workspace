@@ -89,7 +89,7 @@ describe("bounded COROS health metric collection", () => {
   });
   it("integrates into the existing lease and request lifecycle without a new credential or scope", async () => {
     const fixture = syncTestDatabase(); fixture.connection(); const p = initialSyncProgress("2024-01-01", "Asia/Shanghai");
-    p.domains.sleep.recentRequestSequence = 1; p.domains.workout.recentRequestSequence = 1; fixture.job(p);
+    p.domains.sleep.recentRequestSequence = 1; p.domains.workout.recentRequestSequence = 1; for (const d of Object.values(p.domains)) d.backfillNext = "2024-02-01"; fixture.job(p);
     const read = reader(); const write = vi.fn<typeof writeCorosHealthMetrics>().mockResolvedValue({ created: 8, updated: 0, unchanged: 0 });
     const deps: CorosSyncDependencies = { refresh: vi.fn().mockResolvedValue({ resourceUrl: "https://mcpcn.coros.com/mcp", accessToken: "synthetic-token", githubUserId: "42" }),
       read: vi.fn(async (_resource, _token, name, args) => read(name, args)), adapter: vi.fn().mockResolvedValue({ readText: async () => ({ text: JSON.stringify({ schema_version: 1, workspace_id: "test-workspace", owner_id: "test-owner", owner_login: "example-owner", locale: "zh-CN", timezone: "Asia/Shanghai" }) }) }),
@@ -100,8 +100,8 @@ describe("bounded COROS health metric collection", () => {
       expect(fixture.saved()?.lease_token).toBeNull(); expect(deps.write).not.toHaveBeenCalled();
       read.mockImplementation(async () => { throw new Error("COROS_READ_TOOL_UNAVAILABLE"); });
       expect(await runCorosSync(fixture.env, new Date(), deps, { forceDue: true })).toMatchObject({ status: "error", errorCode: "COROS_READ_TOOL_UNAVAILABLE" });
-      expect(fixture.saved()?.progress.health).toMatchObject({ recentNext: "2024-01-27", retryAfter: null,
-        lastAttemptSource: "dailyHealth", bulk: { dailyHealth: { retryAfter: "2024-02-01T04:20:00.000Z" } } });
+      expect(fixture.saved()?.progress.health).toMatchObject({ recentNext: "2024-01-27", retryAfter: "2024-02-01T04:20:00.000Z",
+        lastAttemptSource: "hrvActivity", backfillNext: "2024-01-01", backfillThrough: null });
       expect(write).toHaveBeenCalledTimes(1);
     } finally { fixture.sqlite.close(); }
   });

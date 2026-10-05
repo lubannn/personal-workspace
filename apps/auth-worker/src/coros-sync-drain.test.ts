@@ -29,6 +29,19 @@ describe("authenticated COROS drain route", () => {
     expect(fixture.saved()).toBeNull();
   });
 
+  it("passes a validated recent-only drain without starting historical work", async () => {
+    const input = request(); input.headers.set("content-type", "application/json");
+    const response = await handleCorosConnectionRequest(new Request(input, { body: JSON.stringify({ recentOnly: true }) }), fixture.env);
+    expect(response.status).toBe(200);
+    expect(runCorosSync).toHaveBeenCalledExactlyOnceWith(fixture.env, new Date(SYNC_TEST_NOW), undefined, { forceDue: true, recentOnly: true });
+  });
+
+  it.each(["null", "[]", "{}", '{"recentOnly":"true"}', "invalid"])("rejects invalid drain options %s before execution", async body => {
+    const input = request(); input.headers.set("content-type", "application/json");
+    expect((await handleCorosConnectionRequest(new Request(input, { body }), fixture.env)).status).toBe(400);
+    expect(runCorosSync).not.toHaveBeenCalled();
+  });
+
   it("rejects anonymous requests without invoking the worker", async () => {
     vi.mocked(authenticatedGitHubUser).mockResolvedValue(null);
     expect((await handleCorosConnectionRequest(request(), fixture.env)).status).toBe(401);
