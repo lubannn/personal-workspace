@@ -136,8 +136,8 @@ describe("monthly sleep calendar", () => {
   });
   it("shows available legacy periods with an explicit marker instead of a blank or invented actual duration", () => {
     const html = renderToStaticMarkup(createElement(SleepCalendarSection, { rows: [episode("legacy", { asleepSeconds: null })], timezone: "Asia/Shanghai" }));
-    expect(html).toContain("总计—");
-    expect(html).not.toContain("8:00†");
+    expect(html).toContain("时段8:00†");
+    expect(html).not.toContain("总计8:00");
     expect(html).toContain("记录时段8时00分（含清醒）");
     expect(html).not.toContain("平均睡眠");
   });
