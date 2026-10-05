@@ -10,6 +10,7 @@ import { corosSyncIndexEntry, COROS_SYNC_INDEX_PATH } from "../../../../src/lib/
 import { mapCorosActivities } from "../../../../src/lib/github-data/coros-activity-mapping";
 import { planCorosWorkoutStaging } from "../../../../src/lib/github-data/coros-workout-staging-plan";
 import { confirmWorkoutHealthStaging } from "../../../../src/lib/github-data/health-staging-records";
+import { createAutomaticHealthMetricData } from "../../../../src/lib/github-data/health-metrics";
 
 const timestamp = "2026-10-04T02:00:00.000Z";
 const provenance = { kind: "coros_mcp" as const, source_id: "synthetic", source_sha256: "a".repeat(64), mapping_version: 1 as const, retrieved_at: timestamp };
@@ -45,6 +46,55 @@ function fake(records: (SleepSessionRecord | WorkoutRecord)[]) {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("incremental health month reads", () => {
+  it("reads metric history once for stable baselines, reuses SHAs across months, and removes revised/deleted signals", async () => {
+    const f = fake([sleep("2026-10-04"), sleep("2026-09-30")]);
+    const metric = (value: number) => createWorkspaceRecord({ entityType: "health_metric", id: "metric_synthetic", ownerId: "owner_test", timestamp,
+      data: createAutomaticHealthMetricData({ metric_type: "resting_heart_rate", value, unit: "bpm", local_date: "2026-08-15", measured_at: timestamp, timezone: "Asia/Shanghai", aggregation_period: "daily" }, provenance, true) });
+    const path = recordPath("health_metric", "metric_synthetic");
+    f.files.set(path, serializeRecord(metric(50)));
+    const first = await f.reader.load();
+    expect(first.healthMetrics).toHaveLength(1);
+    expect(first.months).toEqual(["2026-08", "2026-09", "2026-10"]);
+    expect(f.calls.flat().filter(item => item === path)).toHaveLength(1);
+    f.calls.length = 0;
+    const older = await f.reader.load("2026-09");
+    expect(older.healthMetrics).toEqual(first.healthMetrics);
+    expect(f.calls.flat()).not.toContain(path);
+    f.calls.length = 0;
+    f.files.set(path, serializeRecord(metric(60)));
+    const updated = await f.reader.load("2026-09", { refresh: true });
+    expect(updated.healthMetrics![0].record.data.value).toBe(60);
+    expect(f.calls.flat()).toEqual([path]);
+    f.files.delete(path);
+    expect((await f.reader.load("2026-09", { refresh: true })).healthMetrics).toEqual([]);
+    expect(f.reader.snapshot().months).toEqual(["2026-09", "2026-10"]);
+    f.files.set(path, "{}");
+    await expect(f.reader.load("2026-09", { refresh: true })).rejects.toThrow("HEALTH_RECORD_INVALID");
+  });
+
+  it("loads bounded cross-month baseline bodies, avoids historical revisions, and fetches changed SHAs only when needed", async () => {
+    const f = fake([]);
+    const metric = (date: string, value = 50) => {
+      const id = `coros_metric_${date.replaceAll("-", "")}_resting_heart_rate_daily`;
+      return createWorkspaceRecord({ entityType: "health_metric", id, ownerId: "owner_test", timestamp,
+        data: createAutomaticHealthMetricData({ metric_type: "resting_heart_rate", value, unit: "bpm", local_date: date, measured_at: timestamp, timezone: "Asia/Shanghai", aggregation_period: "daily" }, provenance) });
+    };
+    for (let i = 0; i < 650; i++) {
+      const date = new Date(Date.parse("2025-01-01") + i * 86400_000).toISOString().slice(0, 10);
+      const record = metric(date); f.files.set(recordPath("health_metric", record.id), serializeRecord(record));
+    }
+    f.files.set("data/health-metrics/coros_metric_revision_synthetic.json", "must not be read");
+    const september = await f.reader.load("2026-09"); expect(september.healthMetrics).toHaveLength(92);
+    expect(f.calls.flat()).toHaveLength(92); expect(f.calls.flat().every(path => /coros_metric_2026(?:07|08|09)/.test(path))).toBe(true);
+    f.calls.length = 0; await f.reader.load("2026-09"); expect(f.calls.flat()).toHaveLength(0);
+    await f.reader.load("2026-08"); f.calls.length = 0;
+    const revised = metric("2026-08-15", 60); const path = recordPath("health_metric", revised.id); f.files.set(path, serializeRecord(revised));
+    await f.reader.load("2026-09", { refresh: true }); expect(f.calls.flat()).toEqual([path]);
+    f.calls.length = 0;
+    await f.reader.load("2026-08"); expect(f.calls.flat()).toEqual([]);
+    expect(f.reader.snapshot().healthMetrics!.find(item => item.path === path)?.record.data.value).toBe(60);
+  });
+
   it("reads only the newest month and latest workout, makes zero requests when revisiting, and fetches only one revised body", async () => {
     const records = Array.from({ length: 650 }, (_, i) => sleep(new Date(Date.parse("2025-01-01") + i * 86400_000).toISOString().slice(0, 10)));
     // Keep a large archive, with exactly four days in the newest month.

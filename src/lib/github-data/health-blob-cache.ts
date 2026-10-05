@@ -15,7 +15,7 @@ export interface HealthBlobCache {
 }
 const MAX_AGE = 30 * 86400_000;
 const MAX_RECORD_BYTES = 1024 * 1024;
-const allowed = (path: string) => /^data\/(sleep-sessions|workouts|health-staging-records)\/[a-zA-Z0-9_-]+\.json$/.test(path);
+const allowed = (path: string) => /^data\/(sleep-sessions|workouts|health-staging-records|health-metrics)\/[a-zA-Z0-9_-]+\.json$/.test(path);
 const context = (scope: string, sha: string, size: number) => new TextEncoder().encode(JSON.stringify([scope, sha, size]));
 async function bodySha(body: Uint8Array<ArrayBuffer>) {
   const header = new TextEncoder().encode(`blob ${body.byteLength}\0`);

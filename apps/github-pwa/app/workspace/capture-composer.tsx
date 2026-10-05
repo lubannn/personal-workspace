@@ -1,5 +1,7 @@
 "use client";
 
+import styles from "../workbench.module.css";
+
 import { useId } from "react";
 import { CAPTURE_KINDS, type CaptureFields, type CaptureSuggestion } from "../../../../src/lib/github-data/capture-details";
 import { CAPTURE_DESTINATIONS } from "../../../../src/lib/github-data/capture-routing";
@@ -17,9 +19,9 @@ export function CaptureComposer({ draft, fields, suggestion, saving, connected, 
     && !(["schedule", "deadline"].includes(fields.kind) && suggestion.warning === "时间无效，请手动选择。" && draft.time === null)
     && !(["schedule", "deadline"].includes(fields.kind) && suggestion.warning === "日期无效，请手动选择。" && draft.date === null);
   return (
-    <form className="widget-capture capture-composer capture-composer-inline" onSubmit={(event) => { event.preventDefault(); if (canSave) onSave(); }}>
+    <form className={`widget-capture capture-composer capture-composer-inline ${styles.scope}`} onSubmit={(event) => { event.preventDefault(); if (canSave) onSave(); }}>
       <div className="capture-inline-row">
-      <h2 id="quick-capture-title">随手记下一件事</h2>
+      <h2 id="quick-capture-title">随手记</h2>
       <div className="capture-inline-input">
       <label className="visually-hidden" htmlFor={`${id}-text`}>随手记内容</label>
       <textarea id={`${id}-text`} value={draft.text} onChange={(event) => onChange({ text: event.target.value })} placeholder="明天十点开会、买牛奶、日记：今天的事…" rows={1} maxLength={10_000} disabled={saving} aria-describedby={`${id}-hint`} onKeyDown={(event) => {

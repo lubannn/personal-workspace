@@ -58,7 +58,6 @@ import { createProjectFileReferenceData, type ProjectFileReferenceFields } from 
 import { createActivityEventData, type ActivityChangeSummary } from "../../../src/lib/github-data/activity-events";
 import {
   createCalendarEventData,
-  localDateTimeToIso,
   setCalendarEventStatus,
   updateCalendarEventDetails,
 } from "../../../src/lib/github-data/calendar-events";
@@ -693,7 +692,8 @@ export default function GitHubWorkspacePage() {
     setErrorMessage("");
     setStatusMessage("");
     try {
-      const fingerprint = JSON.stringify({ repository: connection.repository, ownerId: connection.ownerId, fields: captureFields });
+      // Retry identity follows the user's draft, not date suggestions refreshed at midnight.
+      const fingerprint = JSON.stringify({ repository: connection.repository, ownerId: connection.ownerId, timezone: connection.timezone, draft: captureDraft });
       const retry = captureSubmissionRef.current?.fingerprint === fingerprint;
       if (!retry) {
         const timestamp = new Date().toISOString();
@@ -859,23 +859,22 @@ export default function GitHubWorkspacePage() {
     const timePart = timestamp.replaceAll(/\D/g, "").slice(0, 17);
     const id = `calendar_event_${timePart}_${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`;
     try {
-      const startAt = localDateTimeToIso(fields.localDate, fields.startTime, connection.timezone);
-      const endAt = localDateTimeToIso(fields.localDate, fields.endTime, connection.timezone);
+      const window = captureScheduleWindow(fields.localDate, fields.allDay ? null : fields.startTime, fields.allDay ? null : fields.endTime, connection.timezone);
       const record = createWorkspaceRecord({
         entityType: "calendar_event",
         id,
         ownerId: connection.ownerId,
         timestamp,
-        data: createCalendarEventData({
+        data: { ...createCalendarEventData({
           title: fields.title,
           eventType: fields.eventType,
-          startAt,
-          endAt,
+          startAt: window.startAt,
+          endAt: window.endAt,
           timezone: connection.timezone,
           localDate: fields.localDate,
           linkedTaskId: fields.linkedTaskId,
           reminderOffsetsMinutes: fields.reminderOffsetsMinutes,
-        }),
+        }), all_day: window.allDay, local_end_date: window.localEndDate },
       });
       const result = await adapter.writeText({
         path: recordPath("calendar_event", id),

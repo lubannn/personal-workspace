@@ -51,7 +51,7 @@ export function HealthRecordsSection({ connected, connectionMethod = null, timez
       {error ? <p className="health-records-load-message health-records-load-error" role="alert">{loaded ? "本次刷新未完成，以下保留上次成功读取的记录；数量与日期可能不是最新。" : "健康记录读取未完成，暂时无法确认最新记录日期。"}<span>{error}</span></p> : loading ? <p className="health-records-load-message" role="status">{loaded ? "正在检查记录变化，已读取的月份会保留。" : "正在读取本月记录与最新日期…"}</p> : !loaded ? <p className="health-records-empty" role="status">健康记录尚未读取，点击「刷新记录」查看。</p> : null}
       {canShowRecords ? <>
         {unverifiedWorkoutCount > 0 ? <p className="health-records-load-message" role="status">已读取范围内有 {unverifiedWorkoutCount} 条运动记录未通过来源核验，未计入下方数量与日期。当前展示范围不代表全部历史。</p> : null}
-        <SleepCalendarSection rows={sleepRows} workouts={workoutRows} timezone={displayTimezone} months={archive?.months} selectedMonth={archive?.month} onMonthChange={onMonthChange} monthReady={monthReady} monthError={!monthReady && Boolean(error)} />
+        <SleepCalendarSection rows={sleepRows} workouts={workoutRows} healthMetrics={archive?.healthMetrics} timezone={displayTimezone} months={archive?.months} selectedMonth={archive?.month} onMonthChange={onMonthChange} monthReady={monthReady} monthError={!monthReady && Boolean(error)} />
       </> : null}
     </>}
   </section>;

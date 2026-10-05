@@ -18,6 +18,15 @@ const file = { path: "data/sleep-sessions/synthetic.json", blobSha: createHash("
 afterEach(() => vi.restoreAllMocks());
 
 describe("encrypted persistent health bodies", () => {
+  it("encrypts physiological metric bodies under the same scoped SHA cache and clears them", async () => {
+    const s = storage(); const cache = new EncryptedHealthBlobCache("repoA", s.api);
+    const metric = { ...file, path: "data/health-metrics/synthetic.json" };
+    await cache.remember([metric]);
+    expect(s.records.size).toBe(1);
+    expect(new TextDecoder().decode([...s.records.values()][0].ciphertext)).not.toContain("score");
+    expect(await new EncryptedHealthBlobCache("repoA", s.api).read([metric])).toEqual([metric]);
+    await cache.clear(); expect(await cache.read([metric])).toEqual([]);
+  });
   it("restores content across cache instances with encrypted bytes and a non-extractable key", async () => {
     const s = storage(); const first = new EncryptedHealthBlobCache("repoA", s.api);
     await first.remember([file]);

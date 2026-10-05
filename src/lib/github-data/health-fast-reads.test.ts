@@ -6,6 +6,15 @@ const adapter = (fetcher: typeof fetch, repository = "private") => new GitHubCon
 afterEach(() => vi.unstubAllGlobals());
 
 describe("health inventory metadata caching", () => {
+  it("includes the health-metrics directory when present and reuses its authenticated tree SHA", async () => {
+    const metricParent = { name: "health-metrics", path: "data/health-metrics", type: "dir", sha: "e".repeat(40), size: 0 };
+    const fetcher = vi.fn<typeof fetch>(async url => String(url).includes("/contents/data") ? Response.json([metricParent])
+      : Response.json({ truncated: false, tree: [{ path: "synthetic.json", type: "blob", sha: "f".repeat(40), size: 2 }] }));
+    const current = adapter(fetcher);
+    expect(await current.listHealthArchive()).toMatchObject([{ path: "data/health-metrics/synthetic.json" }]);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    await current.listHealthArchive(); expect(fetcher).toHaveBeenCalledTimes(3);
+  });
   it("reads all four complete directories in five requests, then uses one parent check, including across logins", async () => {
     const values = new Map<string, string>();
     vi.stubGlobal("localStorage", { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => values.set(key, value) });
