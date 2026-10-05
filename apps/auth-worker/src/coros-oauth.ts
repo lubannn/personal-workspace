@@ -1,5 +1,6 @@
 import { randomToken, sha256Base64Url } from "./security";
 import { readHttpResponseBytes, withHttpDeadline } from "./http-deadline";
+import { COROS_OAUTH_ERROR_VALUES, CorosOAuthRequestError, type CorosOAuthPhase } from "./coros-oauth-errors";
 
 const ALLOWED_RESOURCE_ORIGINS = new Set([
   "https://mcpcn.coros.com",
@@ -49,14 +50,45 @@ export type CorosOAuthToken = {
   scope: string;
 };
 
-async function boundedJson(response: Response, signal: AbortSignal): Promise<unknown> {
-  if (!response.ok || !response.body) throw new Error("COROS_OAUTH_REQUEST_FAILED");
-  const bytes = await readHttpResponseBytes(response, signal, { maxBytes: MAX_JSON_BYTES, errorCode: "COROS_RESPONSE_TOO_LARGE" });
-  return JSON.parse(new TextDecoder().decode(bytes)) as unknown;
-}
-
-function oauthJson(fetcher: typeof fetch, input: string, init?: RequestInit): Promise<unknown> {
-  return withHttpDeadline(fetcher, input, init, boundedJson, "COROS_OAUTH_TIMEOUT");
+async function oauthJson(fetcher: typeof fetch, input: string, phase: CorosOAuthPhase, init?: RequestInit): Promise<unknown> {
+  let status: number | undefined;
+  let httpFailure: CorosOAuthRequestError | undefined;
+  const failure = (reason?: string) => {
+    const prefix = `COROS_OAUTH_${phase}`;
+    return new CorosOAuthRequestError(status === undefined ? `${prefix}_${reason}` : `${prefix}_HTTP_${status}${reason ? `_${reason}` : ""}`);
+  };
+  const json = async (response: Response, signal: AbortSignal) => {
+    if (!Number.isInteger(response.status) || response.status < 100 || response.status > 599) throw failure("RESPONSE_INVALID");
+    status = response.status;
+    if (!response.ok || !response.body) {
+      httpFailure = failure(response.body ? undefined : "BODY_MISSING");
+      // Only a bounded token-endpoint error enum may leave this function.
+      // Descriptions, tokens, Location and every other field are discarded.
+      if (response.body && phase !== "RESOURCE_METADATA" && phase !== "AUTH_METADATA") {
+        try {
+          const bytes = await readHttpResponseBytes(response, signal, { maxBytes: MAX_JSON_BYTES, errorCode: "COROS_RESPONSE_TOO_LARGE" });
+          const value: unknown = JSON.parse(new TextDecoder().decode(bytes));
+          const error = value && typeof value === "object" && !Array.isArray(value) && "error" in value ? value.error : null;
+          const known = COROS_OAUTH_ERROR_VALUES.find(allowed => allowed === error);
+          if (known) httpFailure = failure(known.toUpperCase());
+        } catch { /* HTTP status remains evidence if its body is unusable. */ }
+      } else { void response.body?.cancel().catch(() => undefined); }
+      throw httpFailure;
+    }
+    const bytes = await readHttpResponseBytes(response, signal, { maxBytes: MAX_JSON_BYTES, errorCode: "COROS_RESPONSE_TOO_LARGE" });
+    return JSON.parse(new TextDecoder().decode(bytes)) as unknown;
+  };
+  try { return await withHttpDeadline(fetcher, input, init, json, "COROS_OAUTH_TIMEOUT"); }
+  catch (error) {
+    if (httpFailure) throw httpFailure;
+    if (error instanceof CorosOAuthRequestError) throw error;
+    const message = error instanceof Error ? error.message : "";
+    if (message === "COROS_SYNC_BUDGET_EXHAUSTED") throw new Error(message);
+    if (message === "COROS_OAUTH_TIMEOUT") throw Object.assign(failure("TIMEOUT"), { name: "AbortError" });
+    if (status !== undefined && message === "COROS_RESPONSE_TOO_LARGE") throw failure("RESPONSE_TOO_LARGE");
+    if (status !== undefined && error instanceof SyntaxError) throw failure("JSON_INVALID");
+    throw failure(status === undefined ? "TRANSPORT_FAILED" : "BODY_READ_FAILED");
+  }
 }
 
 function exactOriginUrl(value: string, origin: string): string {
@@ -73,14 +105,14 @@ export async function discoverCorosOAuth(
     throw new Error("COROS_RESOURCE_NOT_ALLOWED");
   }
   const resource = new URL(resourceUrl);
-  const protectedMetadata = await oauthJson(fetcher, `${resource.origin}/.well-known/oauth-protected-resource/mcp`, { cache: "no-store" }) as { resource?: string; authorization_servers?: string[]; scopes_supported?: string[] };
+  const protectedMetadata = await oauthJson(fetcher, `${resource.origin}/.well-known/oauth-protected-resource/mcp`, "RESOURCE_METADATA", { cache: "no-store" }) as { resource?: string; authorization_servers?: string[]; scopes_supported?: string[] };
   if (protectedMetadata.resource !== resourceUrl || protectedMetadata.authorization_servers?.length !== 1
     || protectedMetadata.authorization_servers[0] !== resource.origin
     || !protectedMetadata.scopes_supported?.includes("mcp.tools")
     || !protectedMetadata.scopes_supported?.includes("offline_access")) {
     throw new Error("COROS_RESOURCE_METADATA_INVALID");
   }
-  const metadata = await oauthJson(fetcher, `${resource.origin}/.well-known/oauth-authorization-server`, { cache: "no-store" }) as OAuthMetadata;
+  const metadata = await oauthJson(fetcher, `${resource.origin}/.well-known/oauth-authorization-server`, "AUTH_METADATA", { cache: "no-store" }) as OAuthMetadata;
   if (metadata.issuer !== resource.origin || !metadata.code_challenge_methods_supported?.includes("S256")
     || !metadata.grant_types_supported?.includes("authorization_code")
     || !metadata.grant_types_supported?.includes("refresh_token")
@@ -105,7 +137,7 @@ export async function registerCorosOAuthClient(
   if (redirect.protocol !== "https:" || redirect.pathname !== "/coros/callback" || redirect.search || redirect.hash) {
     throw new Error("COROS_REDIRECT_INVALID");
   }
-  const registered = await oauthJson(fetcher, endpoints.register, {
+  const registered = await oauthJson(fetcher, endpoints.register, "REGISTRATION", {
     method: "POST",
     headers: { accept: "application/json", "content-type": "application/json" },
     body: JSON.stringify({
@@ -147,7 +179,7 @@ async function tokenRequest(
   fetcher: typeof fetch,
   previousScope?: string,
 ): Promise<CorosOAuthToken> {
-  const token = await oauthJson(fetcher, endpoints.token, {
+  const token = await oauthJson(fetcher, endpoints.token, fields.grant_type === "refresh_token" ? "REFRESH" : "EXCHANGE", {
     method: "POST",
     headers: { accept: "application/json", "content-type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams(fields).toString(),

@@ -92,3 +92,27 @@ describe("explicit COROS history settings", () => {
     expect(sources[4].progress?.backfillThrough).toBeNull();
   });
 });
+
+
+describe("safe OAuth messages", () => {
+  it.each([
+    ["COROS_OAUTH_RESOURCE_METADATA_HTTP_307", "COROS 资源发现", "HTTP 307", "重定向"],
+    ["COROS_OAUTH_RESOURCE_METADATA_HTTP_307_BODY_MISSING", "COROS 资源发现", "HTTP 307", "重定向"],
+    ["COROS_OAUTH_AUTH_METADATA_HTTP_403", "COROS 授权服务发现", "HTTP 403", "授权服务响应"],
+    ["COROS_OAUTH_REFRESH_HTTP_400_INVALID_GRANT", "COROS 授权刷新", "HTTP 400", "invalid_grant"],
+    ["COROS_OAUTH_REFRESH_HTTP_401_INVALID_CLIENT", "COROS 授权刷新", "HTTP 401", "服务端注册配置"],
+    ["COROS_OAUTH_REFRESH_HTTP_200_BODY_MISSING", "COROS 授权刷新", "HTTP 200", "缺少正文"],
+    ["COROS_OAUTH_REFRESH_HTTP_429", "COROS 授权刷新", "HTTP 429", "限流"],
+    ["COROS_OAUTH_REFRESH_TIMEOUT", "COROS 授权刷新", "超时", "进度保留"],
+    ["COROS_OAUTH_REFRESH_TRANSPORT_FAILED", "COROS 授权刷新", "网络请求失败", "进度保留"],
+  ])("shows actionable bounded facts for %s", (code, ...facts) => {
+    const message = corosSyncErrorMessage(code)!;
+    for (const fact of facts) expect(message).toContain(fact);
+    expect(message).not.toContain("重新连接");
+  });
+  it.each(["COROS_OAUTH_REFRESH_HTTP_400_INVALID_GRANT_PRIVATE_CANARY", "COROS_OAUTH_REFRESH_HTTP_999",
+    "COROS_OAUTH_REFRESH_HTTP_400?token=synthetic-private-canary"])("never reflects unsafe input %s", code => {
+    const message = corosSyncErrorMessage(code)!;
+    expect(message).not.toContain(code); expect(message).not.toContain("CANARY"); expect(message).not.toContain("synthetic-private");
+  });
+});

@@ -34,7 +34,8 @@ describe("COROS OAuth boundary", () => {
       : operation === "registration" ? registerCorosOAuthClient(endpoints, callback, fetcher)
         : operation === "exchange" ? exchangeCorosCode(endpoints, client, "code", "verifier", fetcher)
           : refreshCorosToken(endpoints, client, "refresh-old", "mcp.tools", fetcher);
-    const result = expect(request).rejects.toMatchObject({ name: "AbortError", message: "COROS_OAUTH_TIMEOUT" });
+    const phase = { discovery: "RESOURCE_METADATA", registration: "REGISTRATION", exchange: "EXCHANGE", refresh: "REFRESH" }[operation];
+    const result = expect(request).rejects.toMatchObject({ name: "AbortError", message: `COROS_OAUTH_${phase}_HTTP_200_TIMEOUT` });
     await vi.advanceTimersByTimeAsync(30_000);
     await result;
     expect(cancel).toHaveBeenCalledTimes(1);
@@ -46,7 +47,7 @@ describe("COROS OAuth boundary", () => {
     vi.useFakeTimers();
     const fetcher = vi.fn<typeof fetch>(() => new Promise(() => undefined));
     const request = discoverCorosOAuth(resource, fetcher);
-    const result = expect(request).rejects.toThrow("COROS_OAUTH_TIMEOUT");
+    const result = expect(request).rejects.toThrow("COROS_OAUTH_RESOURCE_METADATA_TIMEOUT");
     await vi.advanceTimersByTimeAsync(30_000);
     await result;
     expect(fetcher.mock.calls[0][1]?.signal?.aborted).toBe(true);
@@ -56,7 +57,7 @@ describe("COROS OAuth boundary", () => {
     const cancel = vi.fn();
     const body = new ReadableStream({ start(controller) { controller.enqueue(new Uint8Array(65_537)); }, cancel });
     const fetcher = vi.fn<typeof fetch>(async () => new Response(body, { headers: withLength ? { "content-length": "65537" } : {} }));
-    await expect(discoverCorosOAuth(resource, fetcher)).rejects.toThrow("COROS_RESPONSE_TOO_LARGE");
+    await expect(discoverCorosOAuth(resource, fetcher)).rejects.toThrow("COROS_OAUTH_RESOURCE_METADATA_HTTP_200_RESPONSE_TOO_LARGE");
     expect(cancel).toHaveBeenCalledTimes(1);
   });
   it("discovers only same-origin metadata with PKCE and refresh support", async () => {

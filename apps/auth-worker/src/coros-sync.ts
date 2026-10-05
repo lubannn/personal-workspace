@@ -1,3 +1,4 @@
+import { COROS_OAUTH_PHASES, parseCorosOAuthFailure } from "./coros-oauth-errors";
 import { nextFairSyncWindow, nextSyncTick, recordSyncTurn } from "./coros-sync-scheduling";
 import { parseWorkspaceDescriptor } from "../../../src/lib/github-data/workspace";
 import { GitHubDataError } from "../../../src/lib/github-data/github-contents";
@@ -305,7 +306,8 @@ export async function runCorosSync(env: CorosSyncEnv, now = new Date(), deps: Co
       return { status: "deferred", errorCode: "COROS_SYNC_BUDGET_EXHAUSTED", progress };
     }
     // Store only bounded internal codes, never exception payloads, credentials or health bodies.
-    const code = /^(?:COROS|GITHUB)_[A-Z_]{1,80}$/u.test(message) ? message : "COROS_SYNC_FAILED";
+    const phasedOAuth = COROS_OAUTH_PHASES.some(phase => message.startsWith(`COROS_OAUTH_${phase}_`));
+    const code = parseCorosOAuthFailure(message) || (!phasedOAuth && /^(?:COROS|GITHUB)_[A-Z_]{1,80}$/u.test(message)) ? message : "COROS_SYNC_FAILED";
     progress.lastErrorCode = code; progress.lastErrorStage = stage; progress.failureCount += 1;
     if (window) {
       const domain = window.domain === "health" ? window.source ? progress.health!.bulk![window.source] : progress.health! : progress.domains[window.domain];

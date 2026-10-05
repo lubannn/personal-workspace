@@ -1,3 +1,4 @@
+import { parseCorosOAuthFailure } from "./coros-oauth-errors";
 import { corosSyncDependenciesWithFetch, runCorosSync, type CorosSyncDependencies, type CorosSyncRunResult } from "./coros-sync";
 import type { CorosSyncEnv } from "./coros-sync-state";
 
@@ -40,8 +41,12 @@ export async function runScheduledCorosSync(env: CorosSyncEnv, deps?: CorosSyncD
     const code = result.errorCode ?? result.progress.lastErrorCode;
     if (code) {
       errors++;
+      // Preserve the prior retry policy: transport/JSON/size failures used to
+      // be source failures; known HTTP failures and timeouts were shared OAuth failures.
+      const oauth = parseCorosOAuthFailure(code);
+      const sourceFailure = oauth && ["TRANSPORT_FAILED", "BODY_READ_FAILED", "JSON_INVALID", "RESPONSE_TOO_LARGE"].includes(oauth.reason ?? "");
       // Shared credentials or rate limits cannot be repaired by rotating tools.
-      if (/RATE_LIMITED|UNAUTHORIZED|FORBIDDEN|OAUTH|TOKEN|CANCELLED|PAUSED|NOT_CONFIGURED|STATE_INVALID|WORKSPACE_MISMATCH/u.test(code)
+      if ((!sourceFailure && /RATE_LIMITED|UNAUTHORIZED|FORBIDDEN|OAUTH|TOKEN|CANCELLED|PAUSED|NOT_CONFIGURED|STATE_INVALID|WORKSPACE_MISMATCH/u.test(code))
         || errors >= COROS_SCHEDULED_BUDGET.errors) break;
     }
     // A successful call must advance coverage or save new resumable details.
