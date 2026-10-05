@@ -39,6 +39,12 @@ export async function writeCorosHealthMetrics(adapter: Adapter, input: { ownerId
         || old.data.revision_of || old.data.source.source_id !== entry.record.data.source.source_id) throw new Error("COROS_SYNC_RECORD_IDENTITY_MISMATCH");
       if (old.deleted_at !== null || old.data.source.source_sha256 === entry.fingerprint
         || Date.parse(old.data.source.retrieved_at) > Date.parse(input.timestamp)) { unchanged++; continue; }
+      // A locally changed canonical fact must not be overwritten by a historical
+      // source refresh. Its stored provenance must still prove the retained facts.
+      const { metric_type, value, unit, local_date, timezone, aggregation_period } = old.data;
+      const storedFingerprint = await hash(stable({ metric_type, value, unit, local_date, timezone, aggregation_period,
+        day_complete: old.data.day_complete ?? null, measurement_time_kind: old.data.measurement_time_kind }));
+      if (storedFingerprint !== old.data.source.source_sha256) throw new Error("COROS_SYNC_STORED_RECORD_MODIFIED");
       const revisionId = `coros_metric_revision_${await hash(`${old.id}:${old.version}:${old.data.source.source_sha256}`)}`;
       const prior = createWorkspaceRecord({ entityType: "health_metric", id: revisionId, ownerId: input.ownerId, timestamp: input.timestamp,
         data: { ...old.data, revision_of: old.id } });

@@ -23,7 +23,7 @@ describe("COROS synchronization controls", () => {
   });
   afterEach(() => { fixture.sqlite.close(); vi.useRealTimers(); vi.resetAllMocks(); });
 
-  it.each(["enable", "pause", "sync", "daily"])("requires valid same-origin CSRF on %s", async action => {
+  it.each(["enable", "pause", "sync", "daily", "history"])("requires valid same-origin CSRF on %s", async action => {
     fixture.connection(); fixture.job();
     const before = fixture.saved();
     const response = await handleCorosConnectionRequest(request(action, { startDate: "2024-01-01" }, { origin: "https://other.example" }), fixture.env);
@@ -84,6 +84,29 @@ describe("COROS synchronization controls", () => {
     fixture.connection("paused"); fixture.job(); const before = fixture.saved();
     const response = await handleCorosConnectionRequest(request("enable", { startDate: "2023-01-01" }), fixture.env);
     expect(response.status).toBe(409); expect(fixture.saved()).toEqual(before);
+  });
+
+  it("explicitly extends paused history without queuing a write or erasing counters", async () => {
+    const p = initialSyncProgress("2024-01-01", "Asia/Shanghai");
+    p.domains.sleep.created = 10; p.domains.sleep.backfillThrough = "2024-01-31"; p.domains.sleep.backfillNext = "2024-02-01";
+    fixture.connection("paused"); fixture.job(p);
+    const before = queueState();
+    const response = await handleCorosConnectionRequest(request("history", { startDate: "2023-01-01" }), fixture.env);
+    expect(response.status).toBe(200); expect(await response.json()).toEqual({ state: "paused", historyStartDate: "2023-01-01", queued: false });
+    expect(fixture.saved()?.progress).toMatchObject({ startDate: "2023-01-01", domains: { sleep: { created: 10, backfillNext: "2023-01-01", backfillThrough: null } } });
+    expect(queueState()).toEqual(before);
+    expect(fixture.sqlite.prepare("SELECT state FROM coros_connections").get()).toEqual({ state: "paused" });
+  });
+
+  it("rejects history edits while enabled, leased, or attempting to shrink the scope", async () => {
+    fixture.connection(); fixture.job();
+    expect((await handleCorosConnectionRequest(request("history", { startDate: "2023-01-01" }), fixture.env)).status).toBe(409);
+    fixture.sqlite.exec("UPDATE coros_connections SET state = 'paused'; UPDATE coros_sync_jobs SET lease_token = 'active'");
+    expect((await handleCorosConnectionRequest(request("history", { startDate: "2023-01-01" }), fixture.env)).status).toBe(409);
+    fixture.sqlite.exec("UPDATE coros_sync_jobs SET lease_token = NULL");
+    const before = fixture.saved();
+    expect((await handleCorosConnectionRequest(request("history", { startDate: "2024-01-02" }), fixture.env)).status).toBe(400);
+    expect(fixture.saved()).toEqual(before);
   });
 
   it("queues a requested refresh without rewriting any in-progress cursors", async () => {

@@ -44,6 +44,16 @@ function fakeAdapter(initial: WorkspaceRecord[] = []) {
 }
 
 describe("atomic COROS synchronization writer", () => {
+  it("holds a locally modified sleep fact rather than replacing it during historical refresh", async () => {
+    const fake = fakeAdapter(); await writeCorosSyncBatch(fake.adapter, { ownerId, items: [sleep], timestamp });
+    const path = [...fake.files.keys()].find(path => path.startsWith("data/sleep-sessions/"))!;
+    const stored = parseSleepSessionRecord(fake.files.get(path)!);
+    fake.files.set(path, serializeRecord({ ...stored, data: { ...stored.data, sleep_metrics_json: { ...stored.data.sleep_metrics_json, score: 99 } } }));
+    const before = fake.files.get(path);
+    await expect(writeCorosSyncBatch(fake.adapter, { ownerId, items: [{ ...sleep, metrics: { ...sleep.metrics, score: 81 } }], timestamp }))
+      .rejects.toThrow("STORED_RECORD_MODIFIED");
+    expect(fake.files.get(path)).toBe(before); expect(fake.adapter.writeAtomicFiles).toHaveBeenCalledTimes(1);
+  });
   it("creates sleep and workout in one pinned commit, then retries as a no-op", async () => {
     const fake = fakeAdapter();
     const beforeCommit = vi.fn(async () => {});

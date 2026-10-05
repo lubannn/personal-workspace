@@ -35,6 +35,10 @@ export function mapCorosDailyHealth(result: CorosReadResult, options: Context): 
     if (hours && Number(hours[2]) >= 60) fail();
     const exercise = hours ? numeric(hours[1]) * 60 + numeric(hours[2]) : numeric(fields[3].slice(0, -4));
     if (exercise > 1440) fail();
+    // Relative daily responses can contain unverified zero-only rows. Three zero
+    // aggregates provide no evidence of device sampling; preserve them as holes.
+    // Individual reported zeros remain usable when another aggregate is positive.
+    if (numeric(fields[1]) === 0 && numeric(fields[2]) === 0 && exercise === 0) continue;
     items.push(item(local, "steps", numeric(fields[1]), "steps", options), item(local, "exercise_minutes", exercise, "min", options),
       // COROS Daily Features / Updating Your Calorie Goal: daily calories are
       // active calories from movement and exercise, excluding resting metabolism.

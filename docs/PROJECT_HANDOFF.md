@@ -164,12 +164,7 @@ Journal、Learning、Habit、Health、Publication 等仍是规划实体，尚未
 - TypeScript `5.9.x`；Vitest `4.1.11`；Wrangler `4.125.0`
 - 当前本地生产检查命令：`pnpm build:github-pwa`
 
-Codex 若提示 `node: not found`，把以下路径放在 PATH 前部：
-
-```text
-/Users/luban/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin
-/Users/luban/.cache/codex-runtimes/codex-primary-runtime/dependencies/bin/fallback
-```
+新环境需安装 Node.js 24 或更新版本及 pnpm 11.19.0，并在仓库根目录执行 `pnpm install --frozen-lockfile`。不依赖某台 Mac 的运行时路径或下载目录。
 
 ### 5.2 最新质量门
 

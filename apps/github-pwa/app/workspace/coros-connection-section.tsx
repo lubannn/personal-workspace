@@ -40,6 +40,7 @@ function errorMessage(code: string | null | undefined) {
   if (!code) return null;
   if (/CONFIG|INSTALLATION|GITHUB_APP|OWNER_MISMATCH|WORKSPACE_MISMATCH/iu.test(code)) return "后台写入连接尚未准备好，需要完成服务端配置后再同步。";
   if (code === "COROS_SYNC_INVALID_DATE") return "历史开始日期无效，请选择不晚于今天的日期。";
+  if (code === "COROS_READ_RESULT_TOO_LARGE" || code === "COROS_SYNC_HEALTH_RANGE_UNCONFIRMED") return "该历史来源的单次响应过大或返回范围不完整，已停止重复读取并保留进度；其他来源可继续。需要先核对接口容量或范围，再恢复此来源。";
   if (/TIMEOUT/iu.test(code)) return "连接响应超时，本批未完成；已有记录仍保留，可稍后重试。";
   if (/TOKEN|AUTHORIZATION|UNAUTHORIZED|CREDENTIAL|AUTH_REQUIRED/iu.test(code)) return "COROS 授权暂时不可用。请重新连接后恢复同步。";
   if (/FORMAT|MAPPING|READ_RESULT|READ_TOOL_UNAVAILABLE|TRUNCATED/iu.test(code)) return "部分 COROS 来源仍需核对；已验证记录保留，未完成来源的覆盖进度不前移。";
@@ -254,7 +255,7 @@ export function CorosConnectionSection({ connectionMethod, onClearHealthCache, c
           })}<div><dt>历史检查范围</dt><dd>{progress.startDate} 至 {progress.backfillEnd ?? "等待请求"}</dd></div></dl>
           <p>已连续检查：睡眠 {progress.domains.sleep.backfillThrough ?? "尚未开始"}，运动 {progress.domains.workout.backfillThrough ?? "尚未开始"}。范围内无记录的日期不会生成数据。</p>
           {historyBatch ? <p>最近一批：{historyBatch.domain === "sleep" ? "睡眠" : historyBatch.domain === "health" ? "健康指标" : "运动"} {historyBatch.from} 至 {historyBatch.through}，新增 {historyBatch.created} 条、更新 {historyBatch.updated ?? 0} 条。</p> : null}
-          {progress.health ? <><p>健康指标最近读取：{progress.health.recentDataThrough ?? "尚未读取"}；健康历史覆盖至 {progress.health.backfillThrough ?? "尚未开始"}。首次日健康及静息心率批量读取最近 90 日，其后读取变化重叠区间；更早空档保持未确认。{progress.health.lastErrorCode ? "活动汇总或本批读取尚未完成，可重试；其他已验证指标保留。" : ""}</p>{progress.health.limitations?.map(value => <p key={value}>{value}</p>)}</> : null}
+          {progress.health ? <><p>HRV与活动指标已检查至 {progress.health.backfillThrough ?? "尚未开始"}。日健康已检查至 {progress.health.bulk?.dailyHealth.backfillThrough ?? "尚未开始"}；静息心率已检查至 {progress.health.bulk?.restingHeartRate.backfillThrough ?? "尚未开始"}。首次按指定历史范围分批检查，其后沿保存进度补新增日期；90日仅用于评分参照，缺测不补值。{progress.health.lastErrorCode || Object.values(progress.health.bulk ?? {}).some(source => source.lastErrorCode) ? "活动汇总或本批读取尚未完成，可重试；其他已验证指标保留。" : ""}</p>{progress.health.limitations?.map(value => <p key={value}>{value}</p>)}</> : null}
           <CorosConflicts count={progress.conflicts} />
         </> : null}
         {status?.connected && status.state === "paused" && !progress ? <div className="health-records-date-inputs"><label>历史开始日期<input type="date" value={startDate} disabled={busy} onChange={event => setStartDate(event.target.value)} /></label></div> : null}
