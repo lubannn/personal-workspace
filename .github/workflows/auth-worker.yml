@@ -1,0 +1,65 @@
+name: Deploy nexus Worker
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Serialize production releases, including manual runs. Never interrupt an upload.
+concurrency:
+  group: nexus-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    # A copied workflow in a public fork must not publish to the production Worker.
+    if: github.repository == 'lubannn/personal-workspace' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      WRANGLER_SEND_METRICS: "false"
+    steps:
+      - name: Checkout release commit
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "24.19.0"
+      - name: Install pnpm
+        run: npm install --global pnpm@11.19.0
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Verify Wrangler version
+        run: node -e 'if (require("wrangler/package.json").version !== "4.125.0") throw new Error("Review the deployment workflow before upgrading Wrangler")'
+      - name: Validate Worker and shared data layer
+        run: |
+          pnpm exec eslint apps/auth-worker/src src/lib/github-data
+          pnpm typecheck
+          pnpm exec vitest run apps/auth-worker/src src/lib/github-data
+      - name: Package Worker without uploading
+        run: pnpm exec wrangler deploy --config apps/auth-worker/wrangler.jsonc --name nexus --dry-run
+      - name: Require the current main commit
+        # Concurrency does not guarantee queue ordering; reject stale retries.
+        run: |
+          latest_sha="$(git ls-remote origin refs/heads/main | cut -f1)"
+          if [ "$latest_sha" != "$GITHUB_SHA" ]; then
+            echo "::error::This commit is no longer main. Run the workflow on the current main branch."
+            exit 1
+          fi
+      - name: Deploy to existing nexus Worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || ! [[ "$CLOUDFLARE_ACCOUNT_ID" =~ ^[0-9a-fA-F]{32}$ ]]; then
+            echo "::error::Set the repository CLOUDFLARE_API_TOKEN secret and CLOUDFLARE_ACCOUNT_ID variable."
+            exit 1
+          fi
+          pnpm exec wrangler deploy --config apps/auth-worker/wrangler.jsonc --name nexus --message "$GITHUB_SHA"
+      - name: Check public health endpoint
+        run: curl --fail --silent --show-error --max-time 20 https://nexus.lubannn.workers.dev/health > /dev/null
