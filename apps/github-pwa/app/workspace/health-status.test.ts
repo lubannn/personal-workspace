@@ -23,6 +23,22 @@ const baseline = buildHealthBaseline(baseDays);
 const grade = (patch: Partial<HealthStatusDay> = {}) => classifyHealthDay(day(patch), baseline);
 
 describe("reviewed COROS health status rules", () => {
+  it("omits only absent historical recovery after approval, preserving every other gate and priority", () => {
+    const historical = (patch: Partial<HealthStatusDay> = {}) => classifyHealthDay(day({ recoveryPct: undefined, ...patch }), baseline, "2024-02-03");
+    expect(historical()).toMatchObject({ status: "good", missing: [], recoveryNotIncluded: true, reasons: expect.arrayContaining(["未纳入恢复数据"]) });
+    expect(historical().reasons.join(" ")).not.toContain("睡眠与恢复均");
+    expect(historical({ sleepScore: 80 }).status).toBe("steady");
+    expect(historical({ hrvMs: undefined })).toMatchObject({ status: "insufficient", missing: expect.arrayContaining(["HRV"]) });
+    expect(historical({ restingBpm: undefined }).missing).toContain("静息心率");
+    expect(classifyHealthDay(day({ recoveryPct: undefined }), buildHealthBaseline(baseDays.slice(0, 20)), "2024-02-03").missing).toContain("静息心率基线（20/21）");
+    expect(historical({ sleepScore: 69, steps: 2800 }).status).toBe("rest");
+    expect(historical({ steps: 2800, hrvMs: 20 }).status).toBe("active");
+    expect(historical({ hrvMs: 20 }).status).toBe("rest");
+    expect(historical({ recoveryPct: 60 })).toMatchObject({ status: "rest" });
+    expect(historical({ recoveryPct: 80 }).status).toBe("steady");
+    expect(historical({ partialSignals: ["recoveryPct"] }).missing).toContain("恢复尚未完整");
+    expect(classifyHealthDay(day({ recoveryPct: undefined }), baseline, "2024-02-02").missing).toContain("恢复");
+  });
   it("uses 90 local dates across a month boundary and an explicit historical cutoff", () => {
     expect(healthBaselineRange("2024-03", "2024-03-01")).toEqual({ start: "2023-12-03", end: "2024-03-01" });
     expect(healthBaselineRange("2024-01", "2024-03-01")).toEqual({ start: "2023-11-03", end: "2024-01-31" });
@@ -129,7 +145,9 @@ describe("health metric adaptation and calendar", () => {
     const result = buildHealthStatusDays([], [steps, steps, older, bad, removed, instant, manual, syntheticMetric("future", "steps", 999, "steps", "2025-01-01")], "2024-03-03");
     expect(result).toEqual([{ date: "2024-02-02", dayComplete: true, steps: 0 }]);
     expect(buildHealthStatusDays([], [syntheticMetric("unknown", "steps", 1, "steps")], "2024-03-03")[0].dayComplete).toBe(true);
-    expect(buildHealthStatusDays([], [steps], "2024-02-02")[0].dayComplete).toBe(true); // explicit upstream completeness exception
+    const todayDays = buildHealthStatusDays([], [steps], "2024-02-02");
+    expect(todayDays[0]).toMatchObject({ dayComplete: false, partialReason: "today" }); // source cannot close local today
+    expect(buildHealthBaseline(todayDays).steps.count).toBe(0);
     expect(buildHealthStatusDays([], [syntheticMetric("today_unknown", "steps", 10, "steps")], "2024-02-02")[0]).toMatchObject({ dayComplete: false, partialReason: "today" });
     const conflict = syntheticMetric("conflict", "steps", 100, "steps", "2024-02-02", true);
     expect(buildHealthStatusDays([], [steps, conflict], "2024-03-03")[0]).toEqual({ date: "2024-02-02", dayComplete: true });
@@ -170,5 +188,15 @@ describe("health metric adaptation and calendar", () => {
     expect(html).toContain("7:00"); expect(html).toContain("不作医学诊断");
     const noSleep = renderToStaticMarkup(createElement(SleepCalendarSection, { rows: [], timezone: "Asia/Shanghai", healthMetrics: [syntheticMetric("low", "recovery_percentage", 60, "%")] }));
     expect(noSleep).toContain("总睡眠时长缺失"); expect(noSleep).toContain("需休息");
+  });
+  it("renders a positive historical rating with the recovery omission disclosed", () => {
+    const metrics = [...baseDays.map((item, index) => syntheticMetric(`baseline_rhr_${index}`, "resting_heart_rate", 50, "bpm", item.date)),
+      syntheticMetric("day_rhr", "resting_heart_rate", 50, "bpm"), syntheticMetric("day_hrv", "sleep_hrv_avg", 40, "ms"),
+      syntheticMetric("day_hrv_reference", "sleep_hrv_baseline", 40, "ms")];
+    const html = renderToStaticMarkup(createElement(SleepCalendarSection, { rows: [episode()], timezone: "Asia/Shanghai", healthMetrics: metrics, selectedMonth: "2024-02" }));
+    expect(html).toContain("2024-02-02，状态不错");
+    expect(html).toContain("本月 1 天未纳入恢复数据");
+    expect(html).toContain("睡眠至少 90，HRV 与静息心率符合个人基线；未纳入恢复数据");
+    expect(html).not.toContain("；缺少恢复");
   });
 });

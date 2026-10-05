@@ -2,8 +2,8 @@ import { healthLocalParts } from "./health-records";
 import type { SyncedHealthMetric } from "./page-model";
 import type { SleepCalendarDay } from "./sleep-calendar";
 
-/** Port of the reviewed coros-health-calendar classifier, with explicit missingness. */
-export const HEALTH_STATUS_RULE_VERSION = 2;
+/** Reviewed thresholds, with explicit missingness and the approved historical recovery exception. */
+export const HEALTH_STATUS_RULE_VERSION = 3;
 export const HEALTH_STATUSES = {
   good: { label: "状态不错", short: "不错" },
   steady: { label: "平稳", short: "平稳" },
@@ -18,7 +18,7 @@ export type HealthSignal = "sleepScore" | "recoveryPct" | "hrvMs" | "hrvBaseline
 export type HealthStatusDay = { date: string; dayComplete: boolean; partialReason?: "today" | "source"; partialSignals?: HealthSignal[]; sleep?: SleepCalendarDay; recoveryObservedAt?: string } & Partial<Record<HealthSignal, number | null>>;
 type Distribution = { count: number; median: number | null; p20: number | null; p80: number | null; p90: number | null };
 export type HealthBaseline = Record<typeof baselineMetrics[number], Distribution>;
-export type HealthDayRating = { status: HealthStatus; reasons: string[]; missing: string[]; unavailable: string[]; partial: boolean; recoveryObservedAt?: string };
+export type HealthDayRating = { status: HealthStatus; reasons: string[]; missing: string[]; unavailable: string[]; partial: boolean; recoveryObservedAt?: string; recoveryNotIncluded?: boolean };
 const usable = (value: number | null | undefined): value is number => typeof value === "number" && Number.isFinite(value) && value >= 0;
 
 export function healthQuantile(values: number[], probability: number): number | null {
@@ -47,16 +47,19 @@ export function healthBaselineRange(month: string, today: string) {
 }
 const enough = (stat: Distribution) => stat.count >= 21 && stat.median !== null;
 
-export function classifyHealthDay(day: HealthStatusDay, baseline: HealthBaseline): HealthDayRating {
+export function classifyHealthDay(day: HealthStatusDay, baseline: HealthBaseline, today?: string): HealthDayRating {
   const hasSleep = usable(day.sleepScore) && day.sleepScore <= 100;
   const hasRecovery = usable(day.recoveryPct) && day.recoveryPct <= 100;
+  // COROS supplies current recovery only. Explicit local today is required:
+  // missing recovery on a historical date is omitted, never filled or assumed normal.
+  const recoveryNotIncluded = Boolean(today && day.date < today && !hasRecovery && !day.partialSignals?.includes("recoveryPct"));
   const hrvReference = usable(day.hrvBaselineMs) || enough(baseline.hrvMs);
   const hrvLow = usable(day.hrvMs) && (usable(day.hrvNormalRangeLowMs)
     ? day.hrvMs < day.hrvNormalRangeLowMs : enough(baseline.hrvMs) && day.hrvMs < baseline.hrvMs.p20!);
   const restingReference = enough(baseline.restingBpm);
   const restingHigh = usable(day.restingBpm) && restingReference
     && day.restingBpm >= Math.max(baseline.restingBpm.p80!, baseline.restingBpm.median! + 5);
-  const missing = [!hasSleep && "睡眠评分", !hasRecovery && "恢复", !usable(day.hrvMs) && "HRV",
+  const missing = [!hasSleep && "睡眠评分", !hasRecovery && !recoveryNotIncluded && "恢复", !usable(day.hrvMs) && "HRV",
     usable(day.hrvMs) && !hrvReference && !usable(day.hrvNormalRangeLowMs) && `HRV 基线（${baseline.hrvMs.count}/21）`,
     !usable(day.restingBpm) && "静息心率", usable(day.restingBpm) && !restingReference && `静息心率基线（${baseline.restingBpm.count}/21）`]
     .filter((value): value is string => typeof value === "string");
@@ -71,7 +74,7 @@ export function classifyHealthDay(day: HealthStatusDay, baseline: HealthBaseline
     else if (!enough(baseline[metric])) unavailable.push(`${label}基线（${baseline[metric].count}/21）`);
   }
   if (!day.dayComplete) missing.push(day.partialReason === "today" ? "当天尚未结束" : "来源部分日尚未完整");
-  const rating = (status: HealthStatus, reasons: string[]): HealthDayRating => ({ status, reasons, missing, unavailable, partial: !day.dayComplete || Boolean(day.partialSignals?.length), ...(day.recoveryObservedAt ? { recoveryObservedAt: day.recoveryObservedAt } : {}) });
+  const rating = (status: HealthStatus, reasons: string[]): HealthDayRating => ({ status, reasons: recoveryNotIncluded ? [...reasons, "未纳入恢复数据"] : reasons, missing, unavailable, partial: !day.dayComplete || Boolean(day.partialSignals?.length), ...(day.recoveryObservedAt ? { recoveryObservedAt: day.recoveryObservedAt } : {}), ...(recoveryNotIncluded ? { recoveryNotIncluded: true } : {}) });
   const low = [hasSleep && day.sleepScore! < 70 && "COROS 睡眠评分低于 70", hasRecovery && day.recoveryPct! < 70 && `${day.recoveryObservedAt ? "同步观测时" : "COROS "}恢复低于 70%`]
     .filter((value): value is string => typeof value === "string");
   if (low.length) return rating("rest", low);
@@ -83,12 +86,11 @@ export function classifyHealthDay(day: HealthStatusDay, baseline: HealthBaseline
   const pressure = [hrvLow && "HRV 低于 COROS 正常范围下限或个人 p20", restingHigh && "静息心率达到个人 p80 与中位数 +5 的较高值"]
     .filter((value): value is string => typeof value === "string");
   if (pressure.length) return rating("rest", pressure);
-  // The downloaded script permits missing physiological data to pass this branch.
-  // Here a positive combined rating needs observed recovery, HRV/reference and heart-rate/reference.
-  if (missing.length === 0 && hasSleep && day.sleepScore! >= 90 && hasRecovery && day.recoveryPct! >= 90
+  // Historical recovery omission is user-approved; all other physiological/reference gates remain.
+  if (missing.length === 0 && hasSleep && day.sleepScore! >= 90 && (recoveryNotIncluded || (hasRecovery && day.recoveryPct! >= 90))
     && usable(day.hrvMs) && hrvReference && day.hrvMs >= (usable(day.hrvBaselineMs) ? day.hrvBaselineMs : baseline.hrvMs.median!)
     && usable(day.restingBpm) && restingReference && day.restingBpm <= baseline.restingBpm.median! + 2) {
-    return rating("good", ["睡眠与恢复均至少 90，HRV 与静息心率符合个人基线"]);
+    return rating("good", [recoveryNotIncluded ? "睡眠至少 90，HRV 与静息心率符合个人基线" : "睡眠与恢复均至少 90，HRV 与静息心率符合个人基线"]);
   }
   const known = [hasSleep && `COROS 睡眠评分 ${day.sleepScore}`, hasRecovery && `${day.recoveryObservedAt ? "同步观测时" : "COROS "}恢复 ${day.recoveryPct}%`,
     usable(day.hrvMs) && usable(day.hrvNormalRangeLowMs) && !hrvLow && "已测 HRV 未低于 COROS 正常范围下限"]
@@ -126,7 +128,6 @@ export function buildHealthStatusDays(sleepDays: SleepCalendarDay[], metrics: Sy
     groups.set(key, [...(groups.get(key) ?? []), item]);
   }
   const partialDates = new Set<string>();
-  const explicitlyCompleteDates = new Set<string>();
   for (const items of groups.values()) {
     // Do not add repeated daily totals. Equal-time conflicts stay missing.
     const sorted = items.sort((a, b) => Number(b.record.data.aggregation_period === "daily") - Number(a.record.data.aggregation_period === "daily")
@@ -142,10 +143,9 @@ export function buildHealthStatusDays(sleepDays: SleepCalendarDay[], metrics: Sy
       partialDates.add(day.date);
       (day.partialSignals ??= []).push(spec.signal);
     }
-    if (latest.aggregation_period === "daily" && tied.every(item => item.record.data.health_metric_version === 2 && item.record.data.day_complete === true)) explicitlyCompleteDates.add(day.date);
   }
   for (const day of byDate.values()) {
-    day.dayComplete = (day.date < today || explicitlyCompleteDates.has(day.date)) && !partialDates.has(day.date);
+    day.dayComplete = day.date < today && !partialDates.has(day.date);
     if (day.date === today && !day.dayComplete) day.partialReason = "today";
     else if (partialDates.has(day.date)) day.partialReason = "source";
   }
