@@ -49,7 +49,7 @@ describe("bounded COROS health metric collection", () => {
     const read = reader(); const active = vi.fn(async () => {}); const w = nextHealthSyncWindow(p, new Date())!;
     expect(w).toEqual({ domain: "health", recent: true, from: "2024-01-26", through: "2024-02-01" });
     const result = await collectCorosHealth(read, w, p, active);
-    expect(read.mock.calls.map(call => call[0])).toEqual(["queryRecoveryStatus", "querySleepHrv", "querySleepHrv"]);
+    expect(read.mock.calls.map(call => call[0])).toEqual(["queryRecoveryStatus", "querySleepHrv"]);
     expect(read.mock.calls[0][1]).toEqual({}); expect(result.through).toBe("2024-01-26"); expect(result.items).toHaveLength(4);
     p.health!.recentDataThrough = "2024-01-31";
     read.mockClear(); await collectCorosHealth(read, { ...w, from: "2024-02-01" }, p, active);
@@ -57,6 +57,17 @@ describe("bounded COROS health metric collection", () => {
     read.mockClear(); p.health!.recentNext = "2024-02-01";
     await collectCorosHealth(read, { ...w, from: "2024-02-01" }, p, active);
     expect(read.mock.calls.map(call => call[0])).toEqual(["querySleepHrv"]);
+  });
+  it("commits a verified HRV prefix before an omitted date with no duplicate source read", async () => {
+    const p = initialSyncProgress("2024-01-01", "Asia/Shanghai"); acceptSyncRequest(p, { request_seq: 1, requested_through: "2024-02-01" });
+    const body = String(JSON.parse((hrv("2024-01-02").payload as { text: string }[])[0].text))
+      .replace("Sleep HRV — 2024-01-02", "Sleep HRV — 2024-01-02 to 2024-01-04").replaceAll("Last 1 days", "Last 3 days")
+      .replace("Sleep HRV Time Series", "2024-01-03:\n  HRV Avg: 39 ms — Normal\n  Normal Range: 30 - 50 ms\n  Baseline: 40 ms\n\nSleep HRV Time Series");
+    const read = vi.fn(async () => text(body));
+    const result = await collectCorosHealth(read, { domain: "health", recent: false, from: "2024-01-02", through: "2024-01-04" }, p, async () => {});
+    expect(result.through).toBe("2024-01-03");
+    expect(result.items.filter(item => item.candidate.metric_type === "sleep_hrv_avg").map(item => item.candidate.local_date)).toEqual(["2024-01-02", "2024-01-03"]);
+    expect(read).toHaveBeenCalledTimes(1);
   });
   it("does no work without a request; resumes historical HRV only and never reads current recovery for old days", async () => {
     const p = initialSyncProgress("2024-01-01", "Asia/Shanghai"); expect(nextHealthSyncWindow(p, new Date())).toBeNull();

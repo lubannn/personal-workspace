@@ -196,11 +196,11 @@ describe("historical source shape through persistence and coverage", () => {
     } finally { h.f.sqlite.close(); }
   });
 
-  it("rechecks omitted dates singly rather than treating a sparse No data response as a checked window", async () => {
+  it("retains an explicit missing prefix without checking the omitted dates", async () => {
     const h = pipeline(); h.read.mockResolvedValue(response([noData(from)]));
     try {
       expect(await runCorosSync(h.f.env, new Date(), h.deps, { forceDue: true })).toMatchObject({ status: "processed", batch: { from, through: from, created: 0 } });
-      expect(h.read.mock.calls.map(call => call[3].endDate)).toEqual(["20240108", "20240102"]);
+      expect(h.read.mock.calls.map(call => call[3].endDate)).toEqual(["20240108"]);
       expect(h.f.saved()?.progress.health).toMatchObject({ backfillNext: "2024-01-03", checkedRanges: [{ from, through: from }] });
     } finally { h.f.sqlite.close(); }
   });
@@ -231,14 +231,14 @@ describe("historical source shape through persistence and coverage", () => {
     } finally { h.f.sqlite.close(); }
   });
 
-  it("requeries sparse multi-day data singly and advances only the confirmed first day", async () => {
+  it("keeps a sparse response's confirmed prefix and leaves the gap and later days unchecked", async () => {
     const h = pipeline();
     h.read.mockImplementation(async (_url, _token, tool, args) => tool === "querySleepHrv"
       ? response(args.startDate === args.endDate ? [averageOnly()] : [averageOnly(), averageOnly(through)])
       : text(`No sport records found from ${iso(args.startDate)} to ${iso(args.endDate)}.`));
     try {
       expect(await runCorosSync(h.f.env, new Date(), h.deps, { forceDue: true })).toMatchObject({ status: "processed", batch: { from, through: from, created: 1 } });
-      expect(h.read.mock.calls.map(call => call[2])).toEqual(["querySleepHrv", "querySleepHrv"]);
+      expect(h.read.mock.calls.map(call => call[2])).toEqual(["querySleepHrv"]);
       expect(h.f.saved()?.progress.health).toMatchObject({ backfillNext: "2024-01-03", backfillThrough: from });
       expect(h.records().map(record => record.data.metric_type).sort()).toEqual(["sleep_hrv_avg"]);
       expect(h.records().find(record => record.data.metric_type === "sleep_hrv_avg")?.data.value).toBe(42);

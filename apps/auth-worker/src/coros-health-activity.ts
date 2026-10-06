@@ -28,10 +28,12 @@ export function mapCorosActivityDetail(result: CorosReadResult, workout: Workout
   }
   const moving = seconds(fields.get("Workout Time") ?? "");
   const totalTime = fields.get("Total Time");
-  // Verified jump-rope details omit elapsed time. Compare their active time
+  // Verified walk and jump-rope details omit elapsed time. Compare their active time
   // with the list's active time; never treat it as the elapsed epoch span.
-  if (totalTime === undefined && (workout.candidate.metrics_json.coros_sport_type !== 901
-    || !/^🚶 Jump Rope Activity Details\n/u.test(text) || workout.candidate.metrics_json.moving_seconds === null)) fail();
+  const sport = workout.candidate.metrics_json.coros_sport_type;
+  const activeOnlyLayout = (sport === 900 && /^🚶 Walk Activity Details\n/u.test(text))
+    || (sport === 901 && /^🚶 Jump Rope Activity Details\n/u.test(text));
+  if (totalTime === undefined && (!activeOnlyLayout || workout.candidate.metrics_json.moving_seconds === null)) fail();
   const elapsed = totalTime === undefined ? null : seconds(totalTime);
   if ((elapsed === null ? moving > workout.candidate.duration_seconds + 1
     : Math.abs(elapsed - workout.candidate.duration_seconds) > 1 || moving > elapsed + 1)
@@ -41,8 +43,17 @@ export function mapCorosActivityDetail(result: CorosReadResult, workout: Workout
   const elevation = fields.get("Elevation Gain / Loss");
   const elevationMatch = elevation && /^(\d+(?:\.\d+)?) m \/ (\d+(?:\.\d+)?) m$/u.exec(elevation);
   if (elevation && elevation !== "No data" && !elevationMatch) fail();
+  const gain = fields.get("Elevation Gain");
+  const gainMatch = gain && /^(\d+(?:\.\d+)?) m$/u.exec(gain);
+  if (gain && gain !== "No data" && !gainMatch) fail();
+  const combinedGain = elevationMatch ? number(elevationMatch[1]) : null;
+  const standaloneGain = gainMatch ? number(gainMatch[1]) : null;
+  // Two conflicting source fields cannot be resolved by guessing.
+  if (elevation !== undefined && gain !== undefined && combinedGain !== standaloneGain) {
+    throw new Error("COROS_SYNC_HEALTH_DETAIL_MISMATCH");
+  }
   const load = fields.get("Training Load");
-  return { elevationGainMeters: elevationMatch ? number(elevationMatch[1]) : null,
+  return { elevationGainMeters: combinedGain ?? standaloneGain,
     trainingLoad: load === undefined || load === "No data" ? null : number(load) };
 }
 

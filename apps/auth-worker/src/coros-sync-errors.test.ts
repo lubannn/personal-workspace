@@ -104,7 +104,7 @@ describe("bounded synchronization error diagnostics", () => {
     fixture.saveProgress(progress);
     health.mockImplementationOnce(async read => { await read("querySleepHrv", { days: 1 }); throw new Error("unreachable"); });
     vi.mocked(deps.read).mockRejectedValue(new Error("synthetic-private-read-failure"));
-    expect((await runCorosSync(fixture.env, new Date(), deps)).status).toBe("error");
+    expect(await runCorosSync(fixture.env, new Date(), deps)).toMatchObject({ status: "error", remainingWork: true });
     health.mockImplementation(async (_read, window) => {
       const result = { items: [], through: window.through, observedAt: SYNC_TEST_NOW, limitations: [], activityError: undefined,
         observedDates: [], unconfirmedZeroDates: [] };

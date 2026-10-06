@@ -77,7 +77,16 @@ export async function collectCorosHealth(read: Read, window: HealthSyncWindow, p
     const expected = Math.round((Date.parse(through) - Date.parse(window.from)) / 86400000) + 1;
     if (emptySingleDay || dates.size === expected) { items.push(...hrv); break; }
     if (window.from === through) throw new Error("COROS_SYNC_HEALTH_WINDOW_INCOMPLETE");
-    through = window.from; // Never advance past silently omitted days.
+    // Keep the already verified contiguous prefix instead of rereading its
+    // first date. The next invocation checks the first omitted date singly.
+    let firstMissing = window.from;
+    while (firstMissing <= through && dates.has(firstMissing)) firstMissing = shiftDate(firstMissing, 1);
+    if (firstMissing > window.from) {
+      through = shiftDate(firstMissing, -1);
+      items.push(...hrv.filter(item => item.candidate.local_date <= through));
+      break;
+    }
+    through = window.from; // Omitted first date still needs explicit single-day evidence.
   }
   return { items: items.filter(item => item.candidate.local_date <= through || item.candidate.metric_type === "recovery_percentage"), through, observedAt: observedAt(), limitations,
     bulkSource: undefined, observedDates: [], unconfirmedZeroDates: [] };
