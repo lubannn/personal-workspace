@@ -1,4 +1,5 @@
 import { COROS_OAUTH_PHASES, parseCorosOAuthFailure } from "./coros-oauth-errors";
+import { clearRejectedCredentialBackoff } from "./coros-credential-backoff";
 import { nextFairSyncWindow, nextSyncTick, recordSyncTurn } from "./coros-sync-scheduling";
 import { parseWorkspaceDescriptor } from "../../../src/lib/github-data/workspace";
 import { GitHubDataError } from "../../../src/lib/github-data/github-contents";
@@ -97,6 +98,11 @@ export async function runCorosSync(env: CorosSyncEnv, now = new Date(), deps: Co
   if (progress.lastErrorCode === "COROS_SYNC_ACTIVITY_DETAILS_PENDING") {
     progress.lastErrorCode = null; progress.lastErrorStage = null;
   }
+  // Recover connections reauthorized before this fix: either the new grant is
+  // newer than every attempt, or the latest attempt succeeded with that grant.
+  const grantAt = Date.parse(connectedAt), attemptedAt = Date.parse(progress.lastAttemptAt ?? ""), succeededAt = Date.parse(progress.lastSuccessAt ?? "");
+  if (Number.isFinite(attemptedAt) && (grantAt > attemptedAt
+    || (progress.lastErrorCode === null && succeededAt > grantAt && succeededAt >= attemptedAt))) clearRejectedCredentialBackoff(progress);
   const window = nextFairSyncWindow(progress, now, Boolean(deps.health && deps.writeMetrics), options.recentOnly);
   const domainPosition = () => {
     const domain = window?.domain === "health" ? window.source ? progress.health!.bulk![window.source] : progress.health!
@@ -146,6 +152,8 @@ export async function runCorosSync(env: CorosSyncEnv, now = new Date(), deps: Co
     const ready = await deps.refresh(db, userId, env.TOKEN_ENCRYPTION_KEY);
     if (!ready) throw new Error("COROS_SYNC_CANCELLED");
     await assertActive();
+    // Also recover residual gates when another source already ran after reauth.
+    if (clearRejectedCredentialBackoff(progress)) await checkpoint();
     const read = async (name: CorosReadTool, args: Record<string, unknown>) => {
       await assertActive();
       const previousStage = stage; stage = name;

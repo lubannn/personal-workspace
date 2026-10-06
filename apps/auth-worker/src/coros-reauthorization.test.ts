@@ -87,6 +87,45 @@ describe("existing COROS connection reauthorization", () => {
     } finally { f.sqlite.close(); }
   });
 
+  it("clears only rejected credential gates on successful callback, preserving retry/coverage/cache for other failures", async () => {
+    const f = fixture();
+    try {
+      const p = f.saved()!.progress;
+      p.lastErrorStage = "credentials_refresh";
+      for (const d of [p.health!, p.health!.bulk!.dailyHealth]) Object.assign(d, {
+        lastErrorCode: p.lastErrorCode, lastErrorStage: "credentials_refresh", retryAfter: "2099-01-01T00:00:00.000Z",
+      });
+      Object.assign(p.domains.workout, { lastErrorCode: "COROS_OAUTH_REFRESH_HTTP_429", lastErrorStage: "credentials_refresh" });
+      f.saveProgress(p);
+      const expected = structuredClone(p); expected.lastErrorCode = null; expected.lastErrorStage = null;
+      for (const d of [expected.health!, expected.health!.bulk!.dailyHealth]) {
+        d.lastErrorCode = null; d.lastErrorStage = null; d.retryAfter = null;
+      }
+      const state = await f.start();
+      expect((await f.request(`/coros/callback?state=${state}&code=synthetic-code`)).status).toBe(303);
+      expect(f.connection().state).toBe("paused");
+      expect(f.saved()!.progress).toEqual(expected);
+      const restarted = syncTestDatabase(f.sqlite.serialize());
+      try { expect(restarted.saved()!.progress).toEqual(expected); } finally { restarted.sqlite.close(); }
+    } finally { f.sqlite.close(); }
+  });
+
+  it("does not overwrite a concurrent progress change during callback recovery", async () => {
+    const f = fixture();
+    try {
+      const p = f.saved()!.progress; p.lastErrorStage = "credentials_refresh"; f.saveProgress(p);
+      const raced = structuredClone(p); raced.domains.workout.latestRecordDate = "2024-01-31";
+      const original = f.db.prepare.bind(f.db);
+      f.db.prepare = query => {
+        if (query.includes("UPDATE coros_sync_jobs SET progress_json = ?1")) f.saveProgress(raced);
+        return original(query);
+      };
+      const state = await f.start();
+      expect((await f.request(`/coros/callback?state=${state}&code=synthetic-code`)).status).toBe(303);
+      expect(f.saved()!.progress).toEqual(raced); expect(f.connection().state).toBe("paused");
+    } finally { f.sqlite.close(); }
+  });
+
   it("keeps the previous credentials, data cursors and retry gates when authorization is cancelled", async () => {
     const f = fixture();
     try {
