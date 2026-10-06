@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { TravelSection } from "./travel-section";
+import { TravelCitySelect, TravelSection } from "./travel-section";
 import boundaries from "./travel-map/provinces.json";
 import { createWorkspaceRecord } from "../../../../src/lib/github-data/protocol";
 import { createTravelVisitData, TRAVEL_PROVINCES } from "../../../../src/lib/github-data/travel-visits";
@@ -45,5 +45,21 @@ describe("travel UI registration and geography", () => {
     expect(html).toContain('西湖\n&lt;script&gt;提示&lt;/script&gt;');
     expect(html).not.toContain('<script>提示');
     expect(html.match(/class="travel-notes"/g)).toHaveLength(1);
+  });
+  it("renders only the selected province's cities and an explicit old-value retention option", () => {
+    const props = { provinceId: "330000", city: "杭州", original: { province_id: "330000", city: "杭州" }, onChange: () => {} };
+    const html = renderToStaticMarkup(createElement(TravelCitySelect, props));
+    expect(html).toContain('aria-label="城市"');
+    expect(html).toContain('required=""');
+    expect(html).toContain('value="杭州" selected="">保留原记录：杭州');
+    expect(html).toContain('<option value="杭州市">杭州市</option>');
+    expect(html).not.toContain('南京市');
+    const switched = renderToStaticMarkup(createElement(TravelCitySelect, { ...props, provinceId: "320000", city: "" }));
+    expect(switched).toContain('南京市');
+    expect(switched).not.toContain('保留原记录：杭州');
+    expect(switched).not.toContain('杭州市');
+    const empty = renderToStaticMarkup(createElement(TravelCitySelect, { ...props, provinceId: "", city: "" }));
+    expect(empty).toContain('disabled=""');
+    expect(empty).toContain('请先选择省级区域');
   });
 });
