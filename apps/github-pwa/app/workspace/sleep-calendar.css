@@ -86,7 +86,7 @@ button.sleep-calendar-day { cursor: pointer; }
 .health-status-steady { background: #e1edf6; color: #35576d; border-color: #c3d8e8 !important; }
 .health-status-rest { background: #f4deda; color: #7d403b; border-color: #e2bbb5 !important; }
 .health-status-active { background: #f1dccb; color: #82481f; border-color: #d3a67f !important; }
-.health-status-insufficient { background: #eeece6; color: #625f55; border-color: #d9d5c9 !important; }
+.health-status-insufficient, .health-status-empty { background: #eeece6; color: #625f55; border-color: #d9d5c9 !important; }
 
 .workout-calendar-legend { display: flex; flex-wrap: wrap; gap: 6px 12px; margin: 10px 0 0; padding: 0; list-style: none; }
 .workout-calendar-legend li { display: flex; align-items: center; gap: 5px; font-size: 10px; color: var(--soft); }

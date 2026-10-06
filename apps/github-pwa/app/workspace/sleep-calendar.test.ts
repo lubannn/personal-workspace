@@ -127,7 +127,7 @@ describe("monthly sleep calendar", () => {
     expect(html).not.toContain("2024年1月综合健康月历");
     expect(html).toContain("2024年2月综合健康月历");
     expect(html).toContain("2024年2月");
-    expect(html).toContain("2024-02-02，待补指标，总睡眠7时00分，主睡眠入睡 2024-02-01 23:00（Asia/Shanghai），COROS 睡眠84分");
+    expect(html).toContain("2024-02-02，平稳，总睡眠7时00分，主睡眠入睡 2024-02-01 23:00（Asia/Shanghai），COROS 睡眠84分");
     expect(html).toContain("2024-02-03，无记录");
     expect(html).toContain("health-status-rest");
     expect(html).toContain("health-status-good");

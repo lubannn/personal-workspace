@@ -37,7 +37,7 @@ function archivedRows(text = legacy, endDate = "2024-03-01") {
 }
 
 describe("legacy sleep archive display regression", () => {
-  it("restores all 31 synthetic March cells while preserving onset and the existing rating gates", () => {
+  it("restores all 31 synthetic March cells while preserving onset and using available historical scores", () => {
     const prefixEnd = legacy.indexOf("\n\n") + 2;
     const prefix = legacy.slice(0, prefixEnd), section = legacy.slice(prefixEnd);
     const body = prefix + Array.from({ length: 31 }, (_, index) => {
@@ -54,7 +54,7 @@ describe("legacy sleep archive display regression", () => {
     expect(html.match(/class="sleep-calendar-onset">入睡23:00<\/span>/gu)).toHaveLength(31);
     expect(html.match(/class="sleep-calendar-duration">时段8:45†<\/span>/gu)).toHaveLength(31);
     expect(html.match(/需休息<\/strong>/gu)).toHaveLength(13);
-    expect(html.match(/待补指标<\/strong>/gu)).toHaveLength(18);
+    expect(html.match(/平稳<\/strong>/gu)).toHaveLength(18);
     expect(html).not.toContain("总计—</span>");
     expect(html).not.toContain("总计8:45");
   });
