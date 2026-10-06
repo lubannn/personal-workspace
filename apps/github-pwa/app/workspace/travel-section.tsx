@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState, type FormEvent, type Ref } from "react";
-import { TRAVEL_PROVINCES, createTravelVisitData, visitedTravelProvinces, type TravelVisitFields } from "../../../../src/lib/github-data/travel-visits";
+import { TRAVEL_PROVINCES, createTravelVisitData, isTravelDate, visitedTravelProvinces, type TravelVisitFields } from "../../../../src/lib/github-data/travel-visits";
 import { travelCitiesForProvince, retainedTravelCity, isTravelCitySelection, changeTravelProvince } from "../../../../src/lib/github-data/travel-cities";
 import type { SyncedTravelVisit } from "../../../../src/lib/github-data/travel-sync";
 import type { Connection } from "./page-model";
@@ -27,6 +27,7 @@ export function TravelSection({ connection, online, files, loading, ready, savin
   const active = files.filter(item => item.record.deleted_at === null).sort((a, b) => b.record.data.start_date.localeCompare(a.record.data.start_date) || b.record.id.localeCompare(a.record.id));
   const trash = files.filter(item => item.record.deleted_at !== null);
   const disabled = !connection || online === false || loading || saving || !ready;
+  const dateError = travelDateError(fields);
   function cancel() { setFormOpen(false); setEditing(undefined); setFields(emptyFields); setFormError(""); }
   function selectProvince(id: string) {
     if (saving) return;
@@ -36,6 +37,7 @@ export function TravelSection({ connection, online, files, loading, ready, savin
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (disabled || submitRef.current) return;
+    if (dateError) { setFormError(dateError); return; }
     if (!isTravelCitySelection(fields.province_id, fields.city, editing?.record.data)) {
       setFormError("请选择该省的城市，或明确保留原记录的城市。"); return;
     }
@@ -78,12 +80,13 @@ export function TravelSection({ connection, online, files, loading, ready, savin
       <fieldset disabled={disabled}>
         <label>所属省级区域<select aria-label="所属省级区域" required value={fields.province_id} onChange={event => setFields(changeTravelProvince(fields, event.target.value, editing?.record.data))}><option value="">请选择</option>{TRAVEL_PROVINCES.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}</select></label>
         <TravelCitySelect provinceId={fields.province_id} city={fields.city} original={editing?.record.data} selectRef={cityRef} onChange={city => setFields({ ...fields, city })} />
-        <label>开始日期<input required type="date" min="0001-01-01" max="9999-12-31" value={fields.start_date} onChange={event => setFields({ ...fields, start_date: event.target.value })} /></label>
-        <label>结束日期<input required type="date" min={fields.start_date || "0001-01-01"} max="9999-12-31" value={fields.end_date} onChange={event => setFields({ ...fields, end_date: event.target.value })} /></label>
+        <label>开始日期<input required type="date" min="0001-01-01" max="9999-12-31" value={fields.start_date} onChange={event => { const startDate = event.target.value; setFields(previous => changeTravelStartDate(previous, startDate)); setFormError(""); }} /></label>
+        <label>结束日期<input required type="date" min={fields.start_date || "0001-01-01"} max="9999-12-31" value={fields.end_date} aria-invalid={dateError ? true : undefined} aria-describedby={dateError ? "travel-date-error" : undefined} onInvalid={() => setFormError("请选择有效的结束日期，且不得早于开始日期。")} onChange={event => { setFields({ ...fields, end_date: event.target.value }); setFormError(""); }} /></label>
         <label className="travel-notes-field">备注（可选）<textarea aria-label="备注（可选）" rows={3} maxLength={2000} value={fields.notes ?? ""} placeholder="景点、到访提示等" onChange={event => setFields({ ...fields, notes: event.target.value })} /></label>
       </fieldset>
+      {dateError && <p id="travel-date-error" role="alert">{dateError}</p>}
       {formError && <p role="alert">{formError}</p>}
-      <div className="travel-actions"><button className="primary-button" type="submit" disabled={disabled}>{saving ? "保存中…" : "保存到访"}</button><button type="button" disabled={saving} onClick={cancel}>取消</button></div>
+      <div className="travel-actions"><button className="primary-button" type="submit" disabled={disabled || Boolean(dateError)}>{saving ? "保存中…" : "保存到访"}</button><button type="button" disabled={saving} onClick={cancel}>取消</button></div>
     </form>}
     <h3>到访记录</h3>
     {!loading && ready && active.length === 0 && <p className="muted">还没有记录。新增一次到访，就会点亮所属省份。</p>}
@@ -93,6 +96,16 @@ export function TravelSection({ connection, online, files, loading, ready, savin
     </li>)}</ul>
     <details className="travel-trash"><summary>回收站（{trash.length}）</summary><ul className="travel-records">{trash.map(item => <li key={item.record.id}><TravelVisitDetails item={item} /><button type="button" disabled={disabled} onClick={() => void onRestore(item)}>恢复</button></li>)}</ul></details>
   </section>;
+}
+
+export function changeTravelStartDate(fields: TravelVisitFields, startDate: string): TravelVisitFields {
+  return { ...fields, start_date: startDate, end_date: isTravelDate(startDate) && isTravelDate(fields.end_date) && startDate > fields.end_date ? startDate : fields.end_date };
+}
+
+export function travelDateError(fields: Pick<TravelVisitFields, "start_date" | "end_date">): string {
+  if (fields.start_date && !isTravelDate(fields.start_date)) return "请输入有效的开始日期。";
+  if (fields.end_date && !isTravelDate(fields.end_date)) return "请输入有效的结束日期。";
+  return isTravelDate(fields.start_date) && isTravelDate(fields.end_date) && fields.end_date < fields.start_date ? "结束日期不得早于开始日期。" : "";
 }
 
 function TravelVisitDetails({ item }: { item: SyncedTravelVisit }) {
