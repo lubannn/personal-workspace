@@ -61,11 +61,21 @@ export function mapCorosRestingHeartRate(result: CorosReadResult, options: Conte
 
 /** Preserve official assessment; never derive averages or ranges from the time series. */
 export function mapCorosSleepHrv(result: CorosReadResult, options: Context): CorosHealthMetricItem[] {
+  return parseCorosSleepHrvAssessment(result, options).items;
+}
+
+/** Explicit missing-day assessments prove a checked date without creating a metric. */
+export function parseCorosSleepHrvAssessment(result: CorosReadResult, options: Context): { items: CorosHealthMetricItem[]; noDataDates: string[] } {
   context(options); const text = corosResultText(result);
   if (!/^Sleep HRV — .+\n=+\n/u.test(text)) fail();
   const assessment = /HRV Assessment — Last \d+ days\n=+\n+([\s\S]*?)\n\nSleep HRV Time Series — Last \d+ days\n/u.exec(text)?.[1];
-  if (!assessment) fail(); const sections = assessment.trim().split(/\n+(?=\d{4}-\d{2}-\d{2}:\n)/u); const seen = new Set<string>(); const items: CorosHealthMetricItem[] = [];
+  if (!assessment) fail(); const sections = assessment.trim().split(/\n+(?=\d{4}-\d{2}-\d{2}:\n)/u); const seen = new Set<string>(); const items: CorosHealthMetricItem[] = []; const noDataDates: string[] = [];
   for (const section of sections) {
+    const missing = /^(\d{4}-\d{2}-\d{2}):\n  No data$/u.exec(section);
+    if (missing) {
+      const local = date(missing[1], options); if (seen.has(local)) fail(); seen.add(local);
+      noDataDates.push(local); continue;
+    }
     // Early official assessments may contain only an average. Optional range,
     // baseline and evaluation belong to that day; time-series points never fill them.
     const match = /^(\d{4}-\d{2}-\d{2}):\n  HRV Avg: ([\d.]+) ms(?: — [^\n]+)?(?:\n  Normal Range: ([\d.]+) - ([\d.]+) ms)?(?:\n  Baseline: ([\d.]+) ms)?$/u.exec(section); if (!match) fail();
@@ -74,7 +84,7 @@ export function mapCorosSleepHrv(result: CorosReadResult, options: Context): Cor
     if (match[3] !== undefined) items.push(item(local, "sleep_hrv_normal_range_low", numeric(match[3]), "ms", options));
     if (match[5] !== undefined) items.push(item(local, "sleep_hrv_baseline", numeric(match[5]), "ms", options));
   }
-  return items;
+  return { items, noDataDates };
 }
 
 /** Current, untimestamped response: save the observation on the actual collection day, never a historical request day. */
