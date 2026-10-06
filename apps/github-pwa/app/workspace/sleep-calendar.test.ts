@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { SleepRecordRow } from "./health-records";
 import { SleepCalendarSection } from "./sleep-calendar-section";
-import { buildSleepCalendarDays, formatMainSleepStart, formatSleepTime, shiftSleepMonth, sleepCalendarMonths, sleepGrade, sleepMonthCells, summarizeSleepDays } from "./sleep-calendar";
+import { buildSleepCalendarDays, formatMainSleepStart, formatSleepBreakdown, formatSleepTime, shiftSleepMonth, sleepCalendarMonths, sleepGrade, sleepMonthCells, summarizeSleepDays } from "./sleep-calendar";
 
 function episode(id: string, patch: Partial<SleepRecordRow> = {}): SleepRecordRow {
   return { id, startAt: "2024-02-01T15:00:00Z", endAt: "2024-02-01T23:00:00Z", recordDate: "2024-02-02",
@@ -38,6 +38,30 @@ describe("monthly sleep calendar", () => {
     const napOnly = buildSleepCalendarDays([{ ...nap, dailySleepSeconds: 50 * 60 }, { ...nap, id: "second" }])[0];
     expect(napOnly).toMatchObject({ asleepSeconds: 50 * 60, grade: "unscored", napCount: 2, hasIncompleteDuration: false });
     expect(buildSleepCalendarDays([main, { ...nap, dailySleepSeconds: 475 * 60 }])[0].asleepSeconds).toBe(475 * 60);
+  });
+  it("displays available main and nap periods when COROS omits per-episode asleep durations", () => {
+    const main = episode("legacy_main", { asleepSeconds: null, awakeSeconds: null, dailySleepSeconds: 475 * 60 });
+    const nap = episode("legacy_nap", { category: "小睡", startAt: "2024-02-02T05:00:00Z", endAt: "2024-02-02T06:00:00Z",
+      durationSeconds: 3600, asleepSeconds: null, awakeSeconds: null, score: null });
+    const [day] = buildSleepCalendarDays([main, nap]);
+    expect(formatSleepBreakdown(day, "main")).toBe("夜间时段 8时00分†");
+    expect(formatSleepBreakdown(day, "nap")).toBe("小睡时段 1时00分†");
+    expect(day).toMatchObject({ asleepSeconds: 475 * 60, mainSeconds: null, napSeconds: null });
+    const html = renderToStaticMarkup(createElement(SleepCalendarSection, { rows: [main, nap], timezone: "Asia/Shanghai" }));
+    expect(html).toContain("夜间时段 8时00分†；小睡时段 1时00分†");
+    expect(html).toContain("总计7:55");
+    expect(html).not.toContain("总计9:00");
+  });
+  it("keeps actual, partial and overlapping breakdowns distinct from recorded periods", () => {
+    const actual = buildSleepCalendarDays([episode("main")])[0];
+    expect(formatSleepBreakdown(actual, "main")).toBe("夜间 7时00分");
+    const nap = episode("nap", { category: "小睡", startAt: "2024-02-02T05:00:00Z", endAt: "2024-02-02T06:00:00Z", durationSeconds: 3600, asleepSeconds: 3000, score: null });
+    const unknown = { ...nap, id: "unknown", startAt: "2024-02-02T07:00:00Z", endAt: "2024-02-02T08:00:00Z", asleepSeconds: null };
+    const partial = buildSleepCalendarDays([nap, unknown])[0];
+    expect(formatSleepBreakdown(partial, "nap")).toBe("小睡 ≥0时50分");
+    const overlap = buildSleepCalendarDays([nap, { ...unknown, startAt: nap.startAt, endAt: nap.endAt }])[0];
+    expect(formatSleepBreakdown(overlap, "nap")).toBe("小睡时长缺失");
+    expect(overlap.napRecordedPeriodSeconds).toBeNull();
   });
 
   it("does not count a repeated ID or an overlapping manual copy, but preserves separate manual episodes", () => {

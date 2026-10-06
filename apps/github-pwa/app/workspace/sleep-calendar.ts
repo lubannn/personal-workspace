@@ -15,6 +15,10 @@ export type SleepCalendarDay = {
   asleepSeconds: number | null;
   mainSeconds: number | null;
   napSeconds: number | null;
+  mainRecordedPeriodSeconds: number | null;
+  napRecordedPeriodSeconds: number | null;
+  mainHasIncompleteDuration: boolean;
+  napHasIncompleteDuration: boolean;
   hasIncompleteDuration: boolean;
   hasDateCorrection: boolean;
   napCount: number;
@@ -51,6 +55,9 @@ export function buildSleepCalendarDays(rows: SleepRecordRow[]): SleepCalendarDay
     const ordered = [...items].sort((a, b) => Date.parse(a.startAt) - Date.parse(b.startAt));
     return ordered.some((row, index) => index > 0 && Date.parse(row.startAt) < Math.max(...ordered.slice(0, index).map(item => Date.parse(item.endAt))));
   };
+  const incomplete = (items: SleepRecordRow[]) => overlaps(items) || items.some(row => row.asleepSeconds === null || !Number.isFinite(row.asleepSeconds) || row.asleepSeconds < 0);
+  const period = (items: SleepRecordRow[]) => items.length && !overlaps(items)
+    ? items.reduce((total, row) => total + row.durationSeconds, 0) : null;
   return [...groups].map(([date, items]) => {
     const main = items.filter((row) => row.category === "夜间睡眠");
     const naps = items.filter((row) => row.category === "小睡");
@@ -67,6 +74,8 @@ export function buildSleepCalendarDays(rows: SleepRecordRow[]): SleepCalendarDay
     const hasConflictingDailyTotals = new Set(dailyTotals).size > 1;
     const hasOverlappingEpisodes = overlaps(items);
     return { date, score, grade: sleepGrade(score), asleepSeconds: hasConflictingDailyTotals ? null : dailyTotal ?? sum(items), mainSeconds: sum(main), napSeconds: sum(naps),
+      mainRecordedPeriodSeconds: period(main), napRecordedPeriodSeconds: period(naps),
+      mainHasIncompleteDuration: incomplete(main), napHasIncompleteDuration: incomplete(naps),
       usesCorosDailyTotal: dailyTotal !== null,
       recordedPeriodSeconds: items.reduce((total, row) => total + row.durationSeconds, 0),
       hasIncompleteDuration: hasConflictingDailyTotals || (dailyTotal === null && (hasOverlappingEpisodes || items.some((row) => row.asleepSeconds === null || !Number.isFinite(row.asleepSeconds) || row.asleepSeconds < 0))),
@@ -74,6 +83,17 @@ export function buildSleepCalendarDays(rows: SleepRecordRow[]): SleepCalendarDay
       mainStartAt: primaryMain?.startAt ?? null, mainTimezone: primaryMain?.timezone ?? null,
       hasDateCorrection: items.some((row) => Boolean(row.dateCorrection)), napCount: naps.length };
   }).sort((a, b) => a.date.localeCompare(b.date));
+}
+
+/** Show recorded episode windows when actual asleep breakdowns are unprovided. */
+export function formatSleepBreakdown(day: SleepCalendarDay, component: "main" | "nap"): string {
+  const label = component === "main" ? "夜间" : "小睡";
+  const seconds = component === "main" ? day.mainSeconds : day.napSeconds;
+  const incomplete = component === "main" ? day.mainHasIncompleteDuration : day.napHasIncompleteDuration;
+  const period = component === "main" ? day.mainRecordedPeriodSeconds : day.napRecordedPeriodSeconds;
+  if (seconds !== null) return `${label} ${formatSleepTime(seconds, incomplete)}`;
+  if (period !== null && Number.isFinite(period) && period > 0) return `${label}时段 ${formatSleepTime(period)}†`;
+  return `${label}时长缺失`;
 }
 
 /** Keep the stored sleep day and source timezone; details retain the actual local date. */
