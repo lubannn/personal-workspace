@@ -3,7 +3,7 @@ import type { SyncedHealthMetric } from "./page-model";
 import type { SleepCalendarDay } from "./sleep-calendar";
 
 /** Historical ratings use available measurements, retaining explicit missingness. */
-export const HEALTH_STATUS_RULE_VERSION = 4;
+export const HEALTH_STATUS_RULE_VERSION = 5;
 export const HEALTH_STATUSES = {
   good: { label: "状态不错", short: "不错" },
   steady: { label: "平稳", short: "平稳" },
@@ -59,6 +59,10 @@ export function classifyHealthDay(day: HealthStatusDay, baseline: HealthBaseline
   // COROS supplies current recovery only. Explicit local today is required:
   // missing recovery on a historical date is omitted, never filled or assumed normal.
   const recoveryNotIncluded = Boolean(historical && !hasRecovery && !day.partialSignals?.includes("recoveryPct"));
+  // Use a confirmed daily asleep total, never a partial lower bound or elapsed window.
+  const shortSleepWithoutOnset = Boolean(day.sleep && usable(day.sleep.asleepSeconds)
+    && day.sleep.asleepSeconds < 3 * 3600 && !day.sleep.hasIncompleteDuration
+    && !day.sleep.hasConflictingDailyTotals && (!day.sleep.mainStartAt || !day.sleep.mainTimezone));
   const hrvReference = usable(day.hrvBaselineMs) || enough(baseline.hrvMs);
   const hrvLow = usable(day.hrvMs) && (usable(day.hrvNormalRangeLowMs)
     ? day.hrvMs < day.hrvNormalRangeLowMs : enough(baseline.hrvMs) && day.hrvMs < baseline.hrvMs.p20!);
@@ -81,11 +85,11 @@ export function classifyHealthDay(day: HealthStatusDay, baseline: HealthBaseline
     else if (!enough(baseline[metric])) unavailable.push(`${label}基线（${baseline[metric].count}/21）`);
   }
   if (!day.dayComplete) missing.push(day.partialReason === "today" ? "当天尚未结束" : "来源部分日尚未完整");
-  const used = [hasSleep && "睡眠评分", hasRecovery && "恢复", usable(day.hrvMs) && "HRV", usable(day.restingBpm) && "静息心率",
+  const used = [shortSleepWithoutOnset && "总睡眠时长", hasSleep && "睡眠评分", hasRecovery && "恢复", usable(day.hrvMs) && "HRV", usable(day.restingBpm) && "静息心率",
     ...activityMetrics.map(metric => usable(day[metric]) && labels[metric])].filter((label): label is string => typeof label === "string");
   const limited = historical && Boolean(missing.length || unavailable.length || recoveryNotIncluded);
   const rating = (status: HealthStatus, reasons: string[]): HealthDayRating => ({ status, reasons: recoveryNotIncluded ? [...reasons, "未纳入恢复数据"] : reasons, missing, unavailable, used, limited, partial: !original.dayComplete || Boolean(original.partialSignals?.length), ...(day.recoveryObservedAt ? { recoveryObservedAt: day.recoveryObservedAt } : {}), ...(recoveryNotIncluded ? { recoveryNotIncluded: true } : {}) });
-  const low = [hasSleep && day.sleepScore! < 70 && "COROS 睡眠评分低于 70", hasRecovery && day.recoveryPct! < 70 && `${day.recoveryObservedAt ? "同步观测时" : "COROS "}恢复低于 70%`]
+  const low = [shortSleepWithoutOnset && "总睡眠低于 3 小时且主睡眠入睡时间缺失", hasSleep && day.sleepScore! < 70 && "COROS 睡眠评分低于 70", hasRecovery && day.recoveryPct! < 70 && `${day.recoveryObservedAt ? "同步观测时" : "COROS "}恢复低于 70%`]
     .filter((value): value is string => typeof value === "string");
   if (low.length) return rating("rest", low);
   const high = (metric: typeof activityMetrics[number], percentile: "p80" | "p90") => !day.partialSignals?.includes(metric) && usable(day[metric]) && enough(baseline[metric])

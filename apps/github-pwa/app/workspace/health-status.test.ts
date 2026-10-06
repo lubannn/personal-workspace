@@ -143,6 +143,32 @@ describe("health metric adaptation and calendar", () => {
   });
   const episode = (patch: Partial<SleepRecordRow> = {}): SleepRecordRow => ({ id: "synthetic_sleep", startAt: "2024-02-01T15:00:00Z", endAt: "2024-02-01T23:00:00Z", recordDate: "2024-02-02",
     timezone: "Asia/Shanghai", source: { kind: "coros_mcp", label: "COROS" }, category: "夜间睡眠", durationSeconds: 28800, asleepSeconds: 25200, awakeSeconds: 3600, score: 95, dateCorrection: null, ...patch });
+  it("prioritizes confirmed sleep below three hours without a main onset across months and on today", () => {
+    for (const date of ["2024-02-02", "2024-03-02", "2024-03-03"]) {
+      const sleep = buildSleepCalendarDays([episode({ recordDate: date, category: "小睡", asleepSeconds: 10799, score: null })])[0];
+      const adapted = buildHealthStatusDays([sleep], [], "2024-03-03")[0];
+      const rating = classifyHealthDay({ ...adapted, steps: 10000 }, baseline, "2024-03-03");
+      expect(rating).toMatchObject({ status: "rest", used: expect.arrayContaining(["总睡眠时长"]),
+        reasons: expect.arrayContaining(["总睡眠低于 3 小时且主睡眠入睡时间缺失"]) });
+    }
+  });
+  it("does not infer short total sleep from missing, partial, conflicting or elapsed-only durations", () => {
+    const nap = buildSleepCalendarDays([episode({ category: "小睡", asleepSeconds: 10799, score: null })])[0];
+    const check = (sleep: typeof nap) => classifyHealthDay(day({ sleep, steps: 10000 }), baseline, "2024-03-03");
+    for (const sleep of [
+      { ...nap, asleepSeconds: 10800 },
+      { ...nap, mainStartAt: timestamp, mainTimezone: "Asia/Shanghai" },
+      { ...nap, asleepSeconds: null, recordedPeriodSeconds: 1800 },
+      { ...nap, hasIncompleteDuration: true },
+      { ...nap, hasConflictingDailyTotals: true },
+      { ...nap, asleepSeconds: NaN },
+      { ...nap, asleepSeconds: -1 },
+    ]) expect(check(sleep).status).toBe("active");
+    expect(check({ ...nap, asleepSeconds: 0 }).status).toBe("rest");
+    // A COROS daily total is valid even when individual nap durations are absent.
+    const dailyTotal = buildSleepCalendarDays([episode({ category: "小睡", asleepSeconds: null, dailySleepSeconds: 1800, score: null })])[0];
+    expect(check(dailyTotal).status).toBe("rest");
+  });
   it("deduplicates daily totals, rejects wrong units/manual/instant/deleted/future values and retains zero", () => {
     const steps = syntheticMetric("steps", "steps", 0, "steps", "2024-02-02", true);
     const older = syntheticMetric("older", "steps", 1000, "steps", "2024-02-02", true); older.record.data.measured_at = "2024-03-02T00:00:00Z";
