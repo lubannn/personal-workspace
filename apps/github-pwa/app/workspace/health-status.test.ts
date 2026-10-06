@@ -167,12 +167,13 @@ describe("health metric adaptation and calendar", () => {
     try {
       const render = (score: number) => renderToStaticMarkup(createElement(SleepCalendarSection, { rows: [episode({ score })], timezone: "Asia/Shanghai" }));
       const before = render(84);
-      expect(before).toContain("平稳·暂定</strong>");
-      expect(before).toContain("2024-02-02，平稳（暂定）");
+      expect(before).toContain("平稳</strong>");
+      expect(before).toContain("2024-02-02，平稳，");
       expect(before).not.toContain("待补指标</strong>");
       const after = render(65);
-      expect(after).toContain("需休息·暂定</strong>");
-      expect(after).toContain("当天暂定评级，后续数据更新时重算");
+      expect(after).toContain("需休息</strong>");
+      expect(after).toContain("当天按当前数据评级，后续数据更新时重算");
+      expect(before).not.toContain("暂定"); expect(after).not.toContain("暂定");
     } finally { vi.useRealTimers(); }
   });
   it("prioritizes confirmed sleep below three hours without a main onset across months and on today", () => {
