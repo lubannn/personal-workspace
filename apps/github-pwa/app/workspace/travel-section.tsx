@@ -5,6 +5,7 @@ import { TRAVEL_PROVINCES, createTravelVisitData, isTravelDate, visitedTravelPro
 import { travelCitiesForProvince, retainedTravelCity, isTravelCitySelection, changeTravelProvince } from "../../../../src/lib/github-data/travel-cities";
 import type { SyncedTravelVisit } from "../../../../src/lib/github-data/travel-sync";
 import type { Connection } from "./page-model";
+import { TravelDateSelect } from "./travel-date-select";
 import boundaries from "./travel-map/provinces.json";
 import "./travel.css";
 
@@ -80,8 +81,8 @@ export function TravelSection({ connection, online, files, loading, ready, savin
       <fieldset disabled={disabled}>
         <label>所属省级区域<select aria-label="所属省级区域" required value={fields.province_id} onChange={event => setFields(changeTravelProvince(fields, event.target.value, editing?.record.data))}><option value="">请选择</option>{TRAVEL_PROVINCES.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}</select></label>
         <TravelCitySelect provinceId={fields.province_id} city={fields.city} original={editing?.record.data} selectRef={cityRef} onChange={city => setFields({ ...fields, city })} />
-        <label>开始日期<input required type="date" min="0001-01-01" max="9999-12-31" value={fields.start_date} onChange={event => { const startDate = event.target.value; setFields(previous => changeTravelStartDate(previous, startDate)); setFormError(""); }} /></label>
-        <label>结束日期<input required type="date" min={fields.start_date || "0001-01-01"} max="9999-12-31" value={fields.end_date} aria-invalid={dateError ? true : undefined} aria-describedby={dateError ? "travel-date-error" : undefined} onInvalid={() => setFormError("请选择有效的结束日期，且不得早于开始日期。")} onChange={event => { setFields({ ...fields, end_date: event.target.value }); setFormError(""); }} /></label>
+        <TravelDateSelect label="开始日期" value={fields.start_date} onInvalid={() => setFormError("请完整选择开始日期的年、月、日。")} onChange={startDate => { setFields(previous => changeTravelStartDate(previous, startDate)); setFormError(""); }} />
+        <TravelDateSelect label="结束日期" value={fields.end_date} min={fields.start_date} invalid={Boolean(dateError)} onInvalid={() => setFormError("请完整选择结束日期的年、月、日，且不得早于开始日期。")} onChange={endDate => { setFields({ ...fields, end_date: endDate }); setFormError(""); }} />
         <label className="travel-notes-field">备注（可选）<textarea aria-label="备注（可选）" rows={3} maxLength={2000} value={fields.notes ?? ""} placeholder="景点、到访提示等" onChange={event => setFields({ ...fields, notes: event.target.value })} /></label>
       </fieldset>
       {dateError && <p id="travel-date-error" role="alert">{dateError}</p>}

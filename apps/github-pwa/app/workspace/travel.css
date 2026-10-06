@@ -33,6 +33,10 @@
 .travel-form { margin-top: 16px; padding: 16px; background: #f5f6f0; border: 1px solid #dce3da; border-radius: 12px; }
 .travel-form fieldset { padding: 0; border: 0; margin: 12px 0; display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .travel-form label { display: grid; gap: 7px; font-size: 0.88rem; }
+.travel-date-control { display: grid; gap: 7px; min-width: 0; font-size: 0.88rem; }
+.travel-date-parts { display: grid; grid-template-columns: 1.2fr 1fr 1fr; gap: 6px; min-width: 0; }
+.travel-date-parts label { min-width: 0; }
+.travel-date-parts input, .travel-date-parts select { padding: 10px 6px; }
 .travel-form input, .travel-form select, .travel-form textarea { width: 100%; min-width: 0; min-height: 44px; }
 .travel-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .travel-records { list-style: none; margin: 12px 0 22px; padding: 0; }
