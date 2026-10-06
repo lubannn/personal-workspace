@@ -1,6 +1,6 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createAutomaticHealthMetricData, parseHealthMetricRecord } from "../../../../src/lib/github-data/health-metrics";
 import { createWorkspaceRecord, recordPath, serializeRecord } from "../../../../src/lib/github-data/protocol";
 import type { SyncedHealthMetric } from "./page-model";
@@ -120,6 +120,22 @@ describe("reviewed COROS health status rules", () => {
     expect(grade({ hrvMs: 20 }).status).toBe("rest");
     expect(grade({ sleepScore: 80 }).status).toBe("steady");
   });
+  it("grades today provisionally from current observations and recomputes after updates", () => {
+    const current = (patch: Partial<HealthStatusDay> = {}) => day({ dayComplete: false, partialReason: "today", ...patch });
+    const rate = (patch: Partial<HealthStatusDay> = {}) => classifyHealthDay(current(patch), baseline, "2024-02-02");
+    expect(rate({ sleepScore: 84 })).toMatchObject({ status: "steady", provisional: true, missing: [],
+      reasons: expect.arrayContaining(["当天暂定评级，后续数据更新时重算"]) });
+    expect(rate({ sleepScore: 96 }).status).toBe("good");
+    expect(rate({ sleepScore: 60, steps: 5000 }).status).toBe("rest");
+    expect(rate({ steps: 3000, partialSignals: ["steps"] })).toMatchObject({ status: "active", provisional: true, used: expect.arrayContaining(["步数"]) });
+    expect(rate({ recoveryPct: undefined })).toMatchObject({ status: "good", missing: ["恢复"], limited: true });
+    expect(rate({ partialReason: "source", partialSignals: ["steps"], steps: 5000 }).status).toBe("good");
+    expect(buildHealthBaseline([...baseDays, current({ restingBpm: 200, steps: 50000 })]).restingBpm).toEqual(baseline.restingBpm);
+    expect(buildHealthBaseline([...baseDays, current({ restingBpm: 200, steps: 50000 })]).steps).toEqual(baseline.steps);
+    const tomorrow = classifyHealthDay(day(), baseline, "2024-02-03");
+    expect(tomorrow.provisional).toBe(false);
+    expect(tomorrow.reasons).not.toContain("当天暂定评级，后续数据更新时重算");
+  });
   it("does not turn sleep-only, nap-only, or entirely absent signals into a combined positive label", () => {
     const empty = buildHealthBaseline([]);
     expect(classifyHealthDay({ date: "2024-02-02", dayComplete: false, partialReason: "today", sleep: knownSleep, sleepScore: 95 }, empty)).toMatchObject({ status: "insufficient", missing: expect.arrayContaining(["恢复", "HRV", "静息心率", "当天尚未结束"]) });
@@ -146,6 +162,19 @@ describe("health metric adaptation and calendar", () => {
   });
   const episode = (patch: Partial<SleepRecordRow> = {}): SleepRecordRow => ({ id: "synthetic_sleep", startAt: "2024-02-01T15:00:00Z", endAt: "2024-02-01T23:00:00Z", recordDate: "2024-02-02",
     timezone: "Asia/Shanghai", source: { kind: "coros_mcp", label: "COROS" }, category: "夜间睡眠", durationSeconds: 28800, asleepSeconds: 25200, awakeSeconds: 3600, score: 95, dateCorrection: null, ...patch });
+  it("renders today's current rating and recomputes its visible status when the sleep record changes", () => {
+    vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime("2024-02-02T04:00:00Z");
+    try {
+      const render = (score: number) => renderToStaticMarkup(createElement(SleepCalendarSection, { rows: [episode({ score })], timezone: "Asia/Shanghai" }));
+      const before = render(84);
+      expect(before).toContain("平稳·暂定</strong>");
+      expect(before).toContain("2024-02-02，平稳（暂定）");
+      expect(before).not.toContain("待补指标</strong>");
+      const after = render(65);
+      expect(after).toContain("需休息·暂定</strong>");
+      expect(after).toContain("当天暂定评级，后续数据更新时重算");
+    } finally { vi.useRealTimers(); }
+  });
   it("prioritizes confirmed sleep below three hours without a main onset across months and on today", () => {
     for (const date of ["2024-02-02", "2024-03-02", "2024-03-03"]) {
       const sleep = buildSleepCalendarDays([episode({ recordDate: date, category: "小睡", asleepSeconds: 10799, score: null })])[0];
@@ -240,7 +269,7 @@ describe("health metric adaptation and calendar", () => {
       syntheticMetric("day_hrv_reference", "sleep_hrv_baseline", 40, "ms")];
     const html = renderToStaticMarkup(createElement(SleepCalendarSection, { rows: [episode()], timezone: "Asia/Shanghai", healthMetrics: metrics, selectedMonth: "2024-02" }));
     expect(html).toContain("2024-02-02，状态不错");
-    expect(html).toContain("历史缺测项已跳过，按已有有效指标评级");
+    expect(html).toContain("缺测项已跳过，按已有有效指标评级");
     expect(html).toContain("已有睡眠或生理指标符合状态不错条件；缺测及参照不足的项已跳过；未纳入恢复数据");
     expect(html).not.toContain("；缺少恢复");
   });
@@ -276,6 +305,7 @@ describe("available historical indicators", () => {
     expect(historical({})).toMatchObject({ status: "empty", used: [] });
     expect(historical({ partialSignals: ["steps"], steps: 3000 }).status).toBe("empty");
     expect(historical({ sleep: undefined })).toMatchObject({ status: "rest", used: [] });
-    expect(classifyHealthDay({ date: "2024-02-03", dayComplete: false, partialReason: "today", sleep: knownSleep, steps: 3000 }, baseline, "2024-02-03").status).toBe("insufficient");
+    expect(classifyHealthDay({ date: "2024-02-03", dayComplete: false, partialReason: "today", sleep: knownSleep, steps: 3000 }, baseline, "2024-02-03"))
+      .toMatchObject({ status: "active", provisional: true });
   });
 });
