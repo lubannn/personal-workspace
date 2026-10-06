@@ -1,0 +1,43 @@
+.travel-section { min-width: 0; padding: 24px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+.travel-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.travel-heading h2 { margin: 0; font-size: 24px; letter-spacing: -0.03em; }
+.travel-section .muted { color: var(--soft); line-height: 1.6; }
+.travel-section h3 { font-size: 16px; margin: 24px 0 12px; }
+.travel-section button { border: 1px solid var(--line); border-radius: 8px; background: transparent; color: var(--ink); min-height: 36px; padding: 8px 12px; font-size: 13px; cursor: pointer; }
+.travel-section button:disabled { opacity: 0.45; cursor: default; }
+.travel-section button.primary-button { background: var(--ink); color: white; }
+.travel-section button:hover:not(:disabled) { border-color: #579184; }
+.travel-section .eyebrow { color: #426d60; }
+.travel-source a { color: #426d60; }
+.travel-form input, .travel-form select { border: 1px solid var(--line); border-radius: 8px; padding: 10px; background: white; color: var(--ink); }
+.travel-form h3 { margin: 0; }
+@media (max-width: 600px) { .travel-section { padding: 16px; } .travel-heading { flex-wrap: wrap; } .travel-section button { min-height: 44px; } .travel-form input, .travel-form select { font-size: 16px; } }
+.travel-stats { display: flex; align-items: baseline; gap: 24px; flex-wrap: wrap; margin: 22px 0 14px; color: #294e48; }
+.travel-stats strong { font-size: 1.7rem; }
+.travel-stats strong span { font-size: 0.9rem; font-weight: 500; }
+.travel-legend { display: flex; gap: 18px; font-size: 0.85rem; }
+.travel-legend span { display: flex; align-items: center; gap: 7px; }
+.travel-swatch { display: inline-block; width: 13px; height: 13px; border-radius: 3px; background: #e1e5df; border: 1px solid #83948c; }
+.travel-swatch.visited { background: #579184; }
+.travel-map { display: block; width: 100%; max-width: 850px; margin: 12px auto; height: auto; }
+.travel-region { fill: #e1e5df; stroke: #8e9f97; stroke-width: 0.7; cursor: pointer; vector-effect: non-scaling-stroke; }
+.travel-region.visited { fill: #579184; }
+.travel-region:hover, .travel-region:focus, .travel-region.selected { fill: #b9d2c8; stroke: #173e36; stroke-width: 2; outline: none; }
+.travel-region.visited:hover, .travel-region.visited:focus, .travel-region.visited.selected { fill: #377a68; }
+.travel-map text { font-size: 10px; fill: #183b33; text-anchor: middle; pointer-events: none; paint-order: stroke; stroke: #f8faf7; stroke-width: 2px; }
+.travel-map line { stroke: #5a756a; stroke-width: 0.8; }
+.travel-provinces { display: grid; grid-template-columns: repeat(auto-fit, minmax(76px, 1fr)); gap: 6px; }
+.travel-provinces button { min-height: 44px; padding: 7px 5px; font-size: 0.85rem; }
+.travel-provinces button.visited { background: #e1eee7; color: #245d4c; border-color: #579184; }
+.travel-source { font-size: 0.75rem; margin: 12px 0 24px; }
+.travel-form { margin-top: 16px; padding: 16px; background: #f5f6f0; border: 1px solid #dce3da; border-radius: 12px; }
+.travel-form fieldset { padding: 0; border: 0; margin: 12px 0; display: grid; gap: 12px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.travel-form label { display: grid; gap: 7px; font-size: 0.88rem; }
+.travel-form input, .travel-form select { width: 100%; min-width: 0; min-height: 44px; }
+.travel-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.travel-records { list-style: none; margin: 12px 0 22px; padding: 0; }
+.travel-records li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 0; border-bottom: 1px solid #e0e5dc; }
+.travel-records li > div:first-child { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; min-width: 0; overflow-wrap: anywhere; }
+.travel-records span, .travel-records time { font-size: 0.85rem; color: #5b685e; }
+.travel-trash summary { cursor: pointer; padding: 10px 0; }
+@media (max-width: 600px) { .travel-form fieldset { grid-template-columns: 1fr; } .travel-records li { align-items: flex-start; flex-direction: column; } .travel-provinces { grid-template-columns: repeat(4, minmax(0, 1fr)); } }

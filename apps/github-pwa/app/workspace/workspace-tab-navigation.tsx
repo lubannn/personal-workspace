@@ -13,6 +13,7 @@ export const WORKSPACE_TABS = [
   { id: "habits", label: "习惯" },
   { id: "learning", label: "学习" },
   { id: "journal", label: "日记" },
+  { id: "travel", label: "旅游" },
 ] as const;
 
 export type WorkspaceTabId = (typeof WORKSPACE_TABS)[number]["id"] | "data";
@@ -22,6 +23,7 @@ const SECTION_HASHES: Record<string, WorkspaceTabId> = {
   "recent-title": "overview",
   "ideas-title": "ideas",
   "journal-title": "journal",
+  "travel-title": "travel",
   "legacy-import-title": "journal",
   "legacy-commit-title": "journal",
   "legacy-checkpoint-history-title": "journal",

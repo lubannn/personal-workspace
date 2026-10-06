@@ -172,6 +172,10 @@ import { HabitsSection } from "./workspace/habits-section";
 import { HealthRecordsSection } from "./workspace/health-records-section";
 import { WorkspaceTabNavigation, WorkspaceTabPanel, workspaceTabFromHash, type WorkspaceTabId } from "./workspace/workspace-tab-navigation";
 
+import { readTravelVisits } from "../../../src/lib/github-data/travel-sync";
+import { TravelSection } from "./workspace/travel-section";
+import { useTravelVisits } from "./workspace/use-travel-visits";
+
 export default function GitHubWorkspacePage() {
   const adapterRef = useRef<GitHubContentsAdapter | null>(null);
   const restoreAdapterRef = useRef<GitHubContentsAdapter | null>(null);
@@ -386,6 +390,9 @@ export default function GitHubWorkspacePage() {
     setStatusMessage,
   });
 
+  const travel = useTravelVisits(adapterRef, connection, online);
+  const loadTravel = travel.load;
+
   const moduleLoaders = useMemo<WorkspaceCollectionLoaders<GitHubContentsAdapter>>(() => ({
     captures: loadRecentCaptures,
     dashboard: (adapter) => loadDashboardLayout(adapter, connection?.ownerId),
@@ -400,10 +407,11 @@ export default function GitHubWorkspacePage() {
     calendar: loadCalendarEvents,
     reports: loadReportDrafts,
     journal: loadJournalEntries,
+    travel: loadTravel,
     learning: loadLearningAreas,
     habits: loadHabitDomain,
     health: loadHealthDomain,
-  }), [connection?.ownerId, loadActivityEvents, loadCalendarEvents, loadDashboardLayout, loadHabitDomain, loadHealthDomain, loadJournalEntries, loadLearningAreas, loadMilestones, loadProjectFileReferences, loadProjectNotes, loadProjectPhases, loadProjects, loadRecentCaptures, loadReportDrafts, loadTasks, loadTimeEntries]);
+  }), [loadTravel, connection?.ownerId, loadActivityEvents, loadCalendarEvents, loadDashboardLayout, loadHabitDomain, loadHealthDomain, loadJournalEntries, loadLearningAreas, loadMilestones, loadProjectFileReferences, loadProjectNotes, loadProjectPhases, loadProjects, loadRecentCaptures, loadReportDrafts, loadTasks, loadTimeEntries]);
 
   useEffect(() => {
     const adapter = adapterRef.current;
@@ -615,6 +623,7 @@ export default function GitHubWorkspacePage() {
     clearCaptureDraft();
     captureSubmissionRef.current = null;
     clearCollections();
+    travel.clear();
     setTaskTitle("");
     setTaskProjectId("");
     setProjectName("");
@@ -2425,6 +2434,9 @@ export default function GitHubWorkspacePage() {
       const corosSyncConflictExportFiles = [];
       for (let index = 0; index < corosSyncConflictCandidates.length; index += batchSize) corosSyncConflictExportFiles.push(...await Promise.all(corosSyncConflictCandidates.slice(index, index + batchSize).map((item) => adapter.readText(item.path))));
 
+      const travelVisitExportFiles = [];
+      for (const file of await readTravelVisits(adapter, connection.ownerId)) travelVisitExportFiles.push(await adapter.readText(file.path));
+
       setExportProgress("正在生成 SHA-256 manifest…");
       const generatedAt = new Date().toISOString();
       const portableExport = await buildPortableWorkspaceExport({
@@ -2461,6 +2473,7 @@ export default function GitHubWorkspacePage() {
         sleepSessionFiles: sleepSessionExportFiles,
         workoutFiles: workoutExportFiles,
         corosSyncConflictFiles: corosSyncConflictExportFiles,
+        travelVisitFiles: travelVisitExportFiles,
         generatedAt,
       });
       const inspection = await inspectPortableWorkspaceExport(portableExport);
@@ -3132,6 +3145,10 @@ export default function GitHubWorkspacePage() {
       <CorosConnectionSection connectionMethod={connectionMethod} onClearHealthCache={clearHealthCache} cacheBusy={loadingHealth} />
       </WorkspaceTabPanel>
 
+
+      <WorkspaceTabPanel tab="travel" activeTab={activeWorkspaceTab} mounted={workspaceTabReady && (activeWorkspaceTab === "travel" || visitedWorkspaceTabs.has("travel"))} key={connection ? `travel:${connection.ownerId}:${connection.repository}` : "travel:disconnected"}>
+        <TravelSection connection={connection} online={online} files={travel.files} loading={travel.loading} ready={travel.ready} saving={travel.saving} error={travel.error} onRefresh={() => void travel.load()} onSave={travel.save} onDelete={travel.remove} onRestore={travel.restore} />
+      </WorkspaceTabPanel>
 
       <WorkspaceTabPanel tab="reports" activeTab={activeWorkspaceTab} mounted={workspaceTabReady && (activeWorkspaceTab === "reports" || visitedWorkspaceTabs.has("reports"))} key={connection ? `reports:${connection.ownerId}:${connection.repository}` : "reports:disconnected"}>
       <ReportsSection
