@@ -1,5 +1,6 @@
 import { GitHubContentsAdapter } from "../../../src/lib/github-data/github-contents";
 import { createDeadlineFetch } from "./http-deadline";
+import { CorosSyncBudgetExceeded } from "./coros-sync-budget";
 
 const GITHUB_API_ORIGIN = "https://api.github.com";
 const API_VERSION = "2026-03-10";
@@ -79,7 +80,16 @@ export async function createPrivateDataInstallationAdapter(
     throw new Error("INVALID_GITHUB_REPOSITORY");
   }
   const jwt = await signGitHubAppJwt(config);
-  const deadlineFetch = createDeadlineFetch(fetcher, "GITHUB_REQUEST_TIMEOUT");
+  const deadlineFetch = createDeadlineFetch(async (input, init) => {
+    try { return await fetcher(input, init); }
+    catch (error) {
+      // The shared adapter preserves AbortError before its browser network probe.
+      // Only our typed local budget cancellation takes that path; genuine
+      // transport/HTTP failures retain their existing diagnosis and retry policy.
+      if (error instanceof CorosSyncBudgetExceeded) error.name = "AbortError";
+      throw error;
+    }
+  }, "GITHUB_REQUEST_TIMEOUT");
   const response = await deadlineFetch(`${GITHUB_API_ORIGIN}/app/installations/${config.installationId}/access_tokens`, {
     method: "POST",
     cache: "no-store",

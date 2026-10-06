@@ -1,12 +1,13 @@
 import { parseCorosOAuthFailure } from "./coros-oauth-errors";
 import { corosSyncDependenciesWithFetch, runCorosSync, type CorosSyncDependencies, type CorosSyncRunResult } from "./coros-sync";
 import type { CorosSyncEnv } from "./coros-sync-state";
+import { CorosSyncBudgetExceeded } from "./coros-sync-budget";
 
 // Cron lasts at most 15 minutes; stop launching work at eight minutes. Existing
 // per-request deadlines allow at most one remaining 64-second MCP operation.
 // Keep below the next ten-minute trigger and the Free external-request cap.
 export const COROS_SCHEDULED_BUDGET = { wallTimeMs: 8 * 60_000, batches: 20, errors: 3, fetches: 40 } as const;
-const budgetError = () => new Error("COROS_SYNC_BUDGET_EXHAUSTED");
+const budgetError = () => new CorosSyncBudgetExceeded();
 
 /** Count actual transport calls, not tools: SDK initialization/cleanup count too. */
 export function scheduledCorosFetch(deadlineMs: number, fetcher: typeof fetch = globalThis.fetch.bind(globalThis)) {
