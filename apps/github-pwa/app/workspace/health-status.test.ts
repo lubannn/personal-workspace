@@ -270,7 +270,7 @@ describe("health metric adaptation and calendar", () => {
       syntheticMetric("day_hrv_reference", "sleep_hrv_baseline", 40, "ms")];
     const html = renderToStaticMarkup(createElement(SleepCalendarSection, { rows: [episode()], timezone: "Asia/Shanghai", healthMetrics: metrics, selectedMonth: "2024-02" }));
     expect(html).toContain("2024-02-02，状态不错");
-    expect(html).toContain("缺测项已跳过，按已有有效指标评级");
+    expect(html).not.toContain("缺测项已跳过，按已有有效指标评级");
     expect(html).toContain("已有睡眠或生理指标符合状态不错条件；缺测及参照不足的项已跳过；未纳入恢复数据");
     expect(html).not.toContain("；缺少恢复");
   });
