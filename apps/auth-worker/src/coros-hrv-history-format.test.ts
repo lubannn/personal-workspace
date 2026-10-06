@@ -42,7 +42,8 @@ describe("official historical HRV assessments", () => {
     expect(mapped[0].dayComplete).toBeUndefined();
     const rating = classifyHealthDay({ date: from, dayComplete: true, sleepScore: 95, hrvMs: mapped[0].candidate.value,
       hrvBaselineMs: null, hrvNormalRangeLowMs: null }, buildHealthBaseline([]), "2024-02-01");
-    expect(rating.status).toBe("insufficient"); expect(rating.missing).toContain("HRV 基线（0/21）");
+    expect(rating.status).toBe("good"); expect(rating.missing).toContain("HRV 基线（0/21）");
+    expect(rating.limited).toBe(true); // Sleep evidence remains usable without inventing an HRV reference.
   });
 
   it.each(["\n", "\n\n"])("parses date blocks separated by %j and keeps optional fields on their own day", separator => {
