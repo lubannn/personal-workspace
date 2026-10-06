@@ -64,6 +64,18 @@ describe("explicit COROS history continuation", () => {
     expect(fetcher).toHaveBeenCalledTimes(2);
     expect(vi.getTimerCount()).toBe(0);
   });
+  it("reports a source failure and continues other eligible sources without requesting a new observation", async () => {
+    const failure = { status: "error", errorCode: "COROS_SYNC_HEALTH_DETAIL_FORMAT_UNSUPPORTED", remainingWork: true };
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(response("requested"))
+      .mockResolvedValueOnce(Response.json(failure)).mockResolvedValueOnce(response("processed"))
+      .mockResolvedValueOnce(Response.json({ status: "deferred", retryAt: "2030-01-01T01:00:00Z" }));
+    const input = options(fetcher), run = drainCorosHistory(input);
+    await vi.advanceTimersByTimeAsync(500);
+    expect(await run).toMatchObject({ status: "deferred" });
+    expect(input.onUpdate).toHaveBeenNthCalledWith(1, failure, 0);
+    expect(input.onUpdate.mock.calls.map(call => call[1])).toEqual([0, 1, 1]);
+    expect(fetcher.mock.calls.map(call => call[0])).toEqual(["/coros/daily", "/coros/drain", "/coros/drain", "/coros/drain"]);
+  });
 
   it("aborts a pending delay on unmount and never starts another window", async () => {
     const controller = new AbortController();

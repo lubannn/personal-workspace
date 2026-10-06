@@ -79,7 +79,7 @@ export async function drainCorosHistory({ csrf, signal, onUpdate, fetcher = fetc
         && update.progress.health.bulk && Object.values(update.progress.health.bulk).every(source => source.recentRequestSequence === update.progress!.request!.sequence)))) {
       return { status: "complete", retryAt: null, progress: update.progress };
     }
-    if (update.status === "processed") {
+    if (update.status === "processed" || (update.status === "error" && update.remainingWork === true)) {
       busySince = null;
       if (processed < maxWindows) await abortableDelay(250, signal);
     } else if (update.status === "busy") {

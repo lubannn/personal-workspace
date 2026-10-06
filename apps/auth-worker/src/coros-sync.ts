@@ -36,6 +36,8 @@ export type CorosSyncRunResult = {
   errorCode?: string;
   madeProgress?: boolean;
   continuation?: { detailsRead: number };
+  /** A failed source is gated independently; another eligible source can proceed. */
+  remainingWork?: boolean;
 };
 export type CorosDrainResult = CorosSyncRunResult;
 
@@ -348,7 +350,8 @@ export async function runCorosSync(env: CorosSyncEnv, now = new Date(), deps: Co
     }
     await db.prepare("UPDATE coros_connections SET last_error_code = ?1 WHERE github_user_id = ?2 AND state = 'enabled'")
       .bind(code, userId).run();
-    return { status: "error", errorCode: code, retryAt: window ? (window.domain === "health" ? healthWindowProgress(progress, window) : progress.domains[window.domain]).retryAfter : null, progress };
+    return { status: "error", errorCode: code, retryAt: window ? (window.domain === "health" ? healthWindowProgress(progress, window) : progress.domains[window.domain]).retryAfter : null, progress,
+      remainingWork: Boolean(window && nextFairSyncWindow(progress, now, Boolean(deps.health && deps.writeMetrics), options.recentOnly)) };
   } finally {
     await db.prepare(`UPDATE coros_sync_jobs SET progress_json = ?1, next_run_at = CASE WHEN request_seq > ?6 THEN ?3 ELSE ?2 END,
       lease_token = NULL, lease_until = NULL, updated_at = ?3 WHERE github_user_id = ?4 AND lease_token = ?5`)
