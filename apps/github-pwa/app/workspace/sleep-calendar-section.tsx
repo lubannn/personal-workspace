@@ -54,7 +54,6 @@ export function SleepCalendarSection({ rows, workouts = [], healthMetrics = NO_H
         return <article className="sleep-calendar-month" key={value} aria-label={`${monthLabel(value)}综合健康月历`}>
           <header><h4><Moon size={17} aria-hidden="true" />综合健康月历</h4><span title={stats.averageSeconds !== null ? `平均总睡眠统计 ${stats.completeDays} 个时长完整的日期；缺测不按零计入` : stats.averageRecordedPeriodSeconds !== null ? `平均记录时段统计 ${stats.recordedPeriodDays} 个无重叠的日期，包含清醒，不是实睡平均值` : "没有可用于计算平均值的有效睡眠时长或记录时段"}>{stats.count} 天睡眠{stats.averageSeconds !== null ? ` · 平均 ${formatSleepTime(stats.averageSeconds)}` : stats.averageRecordedPeriodSeconds !== null ? ` · 平均时段 ${formatSleepTime(stats.averageRecordedPeriodSeconds)}†` : " · 平均—"}</span></header>
           <p className="sleep-calendar-month-counts">不错 {counts.good} · 平稳 {counts.steady} · 需休息 {counts.rest} · 活动多 {counts.active}{counts.insufficient ? ` · 待补 ${counts.insufficient}` : ""}{counts.empty ? ` · 无数据 ${counts.empty}` : ""}</p>
-          {[...ratings.values()].some(rating => rating.limited) ? <p className="sleep-calendar-note">缺测项已跳过，按已有有效指标评级；点选日期查看依据。</p> : null}
           <div className="sleep-calendar-weekdays" aria-hidden="true">{["一", "二", "三", "四", "五", "六", "日"].map((day) => <span key={day}>{day}</span>)}</div>
           <div className="sleep-calendar-grid">{sleepMonthCells(value).map((date, cellIndex) => {
             if (!date) return <span className="sleep-calendar-spacer" key={`empty-${cellIndex}`} aria-hidden="true" />;
