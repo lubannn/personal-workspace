@@ -7,7 +7,7 @@ import type { Connection } from "./page-model";
 import boundaries from "./travel-map/provinces.json";
 import "./travel.css";
 
-const emptyFields: TravelVisitFields = { province_id: "", city: "", visited_on: "" };
+const emptyFields: TravelVisitFields = { province_id: "", city: "", start_date: "", end_date: "", notes: "" };
 type Props = {
   connection: Connection | null; online: boolean | null; files: SyncedTravelVisit[];
   loading: boolean; ready: boolean; saving: boolean; error: string;
@@ -23,7 +23,7 @@ export function TravelSection({ connection, online, files, loading, ready, savin
   const submitRef = useRef(false);
   const cityRef = useRef<HTMLInputElement>(null);
   const visited = visitedTravelProvinces(files.map(item => item.record));
-  const active = files.filter(item => item.record.deleted_at === null).sort((a, b) => b.record.data.visited_on.localeCompare(a.record.data.visited_on) || b.record.id.localeCompare(a.record.id));
+  const active = files.filter(item => item.record.deleted_at === null).sort((a, b) => b.record.data.start_date.localeCompare(a.record.data.start_date) || b.record.id.localeCompare(a.record.id));
   const trash = files.filter(item => item.record.deleted_at !== null);
   const disabled = !connection || online === false || loading || saving || !ready;
   function cancel() { setFormOpen(false); setEditing(undefined); setFields(emptyFields); setFormError(""); }
@@ -36,7 +36,7 @@ export function TravelSection({ connection, online, files, loading, ready, savin
     event.preventDefault();
     if (disabled || submitRef.current) return;
     try { createTravelVisitData(fields); }
-    catch { setFormError("请选择省级区域，填写城市和有效的到访日期。"); return; }
+    catch { setFormError("请选择省级区域，填写城市及有效的开始、结束日期；结束日期不得早于开始日期。"); return; }
     submitRef.current = true; setFormError("");
     try { if (await onSave(fields, editing)) cancel(); }
     finally { submitRef.current = false; }
@@ -74,7 +74,9 @@ export function TravelSection({ connection, online, files, loading, ready, savin
       <fieldset disabled={disabled}>
         <label>所属省级区域<select aria-label="所属省级区域" required value={fields.province_id} onChange={event => setFields({ ...fields, province_id: event.target.value })}><option value="">请选择</option>{TRAVEL_PROVINCES.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}</select></label>
         <label>城市<input ref={cityRef} required maxLength={100} value={fields.city} placeholder="填写城市名称" onChange={event => setFields({ ...fields, city: event.target.value })} /></label>
-        <label>到访日期<input required type="date" min="0001-01-01" max="9999-12-31" value={fields.visited_on} onChange={event => setFields({ ...fields, visited_on: event.target.value })} /></label>
+        <label>开始日期<input required type="date" min="0001-01-01" max="9999-12-31" value={fields.start_date} onChange={event => setFields({ ...fields, start_date: event.target.value })} /></label>
+        <label>结束日期<input required type="date" min={fields.start_date || "0001-01-01"} max="9999-12-31" value={fields.end_date} onChange={event => setFields({ ...fields, end_date: event.target.value })} /></label>
+        <label className="travel-notes-field">备注（可选）<textarea aria-label="备注（可选）" rows={3} maxLength={2000} value={fields.notes ?? ""} placeholder="景点、到访提示等" onChange={event => setFields({ ...fields, notes: event.target.value })} /></label>
       </fieldset>
       {formError && <p role="alert">{formError}</p>}
       <div className="travel-actions"><button className="primary-button" type="submit" disabled={disabled}>{saving ? "保存中…" : "保存到访"}</button><button type="button" disabled={saving} onClick={cancel}>取消</button></div>
@@ -82,9 +84,17 @@ export function TravelSection({ connection, online, files, loading, ready, savin
     <h3>到访记录</h3>
     {!loading && ready && active.length === 0 && <p className="muted">还没有记录。新增一次到访，就会点亮所属省份。</p>}
     <ul className="travel-records">{active.map(item => <li key={item.record.id}>
-      <div><strong>{item.record.data.city}</strong><span>{TRAVEL_PROVINCES.find(p => p.id === item.record.data.province_id)!.label}</span><time dateTime={item.record.data.visited_on}>{item.record.data.visited_on}</time></div>
-      <div className="travel-actions"><button type="button" disabled={disabled} aria-label={`编辑${item.record.data.city} ${item.record.data.visited_on}`} onClick={() => { setEditing(item); setFields(item.record.data); setFormOpen(true); setFormError(""); }}>编辑</button><button type="button" disabled={disabled || editing?.record.id === item.record.id} aria-label={`删除${item.record.data.city} ${item.record.data.visited_on}`} onClick={() => void onDelete(item)}>删除</button></div>
+      <TravelVisitDetails item={item} />
+      <div className="travel-actions"><button type="button" disabled={disabled} aria-label={`编辑${item.record.data.city} ${item.record.data.start_date}`} onClick={() => { setEditing(item); setFields(item.record.data); setFormOpen(true); setFormError(""); }}>编辑</button><button type="button" disabled={disabled || editing?.record.id === item.record.id} aria-label={`删除${item.record.data.city} ${item.record.data.start_date}`} onClick={() => void onDelete(item)}>删除</button></div>
     </li>)}</ul>
-    <details className="travel-trash"><summary>回收站（{trash.length}）</summary><ul className="travel-records">{trash.map(item => <li key={item.record.id}><div><strong>{item.record.data.city}</strong><span>{TRAVEL_PROVINCES.find(p => p.id === item.record.data.province_id)!.label}</span><time dateTime={item.record.data.visited_on}>{item.record.data.visited_on}</time></div><button type="button" disabled={disabled} onClick={() => void onRestore(item)}>恢复</button></li>)}</ul></details>
+    <details className="travel-trash"><summary>回收站（{trash.length}）</summary><ul className="travel-records">{trash.map(item => <li key={item.record.id}><TravelVisitDetails item={item} /><button type="button" disabled={disabled} onClick={() => void onRestore(item)}>恢复</button></li>)}</ul></details>
   </section>;
+}
+
+function TravelVisitDetails({ item }: { item: SyncedTravelVisit }) {
+  const data = item.record.data;
+  return <div className="travel-record-content">
+    <div className="travel-record-meta"><strong>{data.city}</strong><span>{TRAVEL_PROVINCES.find(p => p.id === data.province_id)!.label}</span><span className="travel-dates"><time dateTime={data.start_date}>{data.start_date}</time>{data.end_date === data.start_date ? "（同日）" : <> 至 <time dateTime={data.end_date}>{data.end_date}</time></>}</span></div>
+    {data.notes && <p className="travel-notes">{data.notes}</p>}
+  </div>;
 }

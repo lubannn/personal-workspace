@@ -15,9 +15,9 @@ export const TRAVEL_PROVINCES = [
   ["810000", "香港", "香港特别行政区"], ["820000", "澳门", "澳门特别行政区"],
 ].map(([id, name, label]) => ({ id, name, label }));
 
-export type TravelVisitData = { travel_visit_version: 1; province_id: string; city: string; visited_on: string };
+export type TravelVisitData = { travel_visit_version: 2; province_id: string; city: string; start_date: string; end_date: string; notes: string };
 export type TravelVisitRecord = WorkspaceRecord<TravelVisitData>;
-export type TravelVisitFields = Omit<TravelVisitData, "travel_visit_version">;
+export type TravelVisitFields = Omit<TravelVisitData, "travel_visit_version" | "notes"> & { notes?: string };
 
 // Preserve a calendar date exactly. Never convert visit dates into UTC instants.
 export function isTravelDate(value: unknown): value is string {
@@ -29,26 +29,41 @@ export function isTravelDate(value: unknown): value is string {
 }
 
 export function createTravelVisitData(fields: TravelVisitFields): TravelVisitData {
-  const data: TravelVisitData = { travel_visit_version: 1, province_id: fields.province_id, city: typeof fields.city === "string" ? fields.city.trim() : "", visited_on: fields.visited_on };
-  validateData(data);
+  if (fields.notes !== undefined && typeof fields.notes !== "string") throw new Error("INVALID_TRAVEL_VISIT");
+  const data: TravelVisitData = {
+    travel_visit_version: 2,
+    province_id: fields.province_id,
+    city: typeof fields.city === "string" ? fields.city.trim() : "",
+    start_date: fields.start_date,
+    end_date: fields.end_date,
+    notes: fields.notes?.trim() ?? "",
+  };
+  if (!TRAVEL_PROVINCES.some(p => p.id === data.province_id)
+    || !data.city || data.city.length > 100
+    || !isTravelDate(data.start_date) || !isTravelDate(data.end_date) || data.end_date < data.start_date
+    || data.notes.length > 2000) throw new Error("INVALID_TRAVEL_VISIT");
   return data;
-}
-
-function validateData(data: TravelVisitData) {
-  if (data.travel_visit_version !== 1 || !TRAVEL_PROVINCES.some(p => p.id === data.province_id)
-    || typeof data.city !== "string" || !data.city.trim() || data.city.length > 100
-    || !isTravelDate(data.visited_on)) throw new Error("INVALID_TRAVEL_VISIT");
 }
 
 export function parseTravelVisitRecord(text: string): TravelVisitRecord {
   const record = parseRecord(text);
   if (record.entity_type !== "travel_visit") throw new Error("INVALID_TRAVEL_VISIT");
-  validateData(record.data as TravelVisitData);
+  const data = record.data;
+  if (data.travel_visit_version !== 1 && data.travel_visit_version !== 2) throw new Error("INVALID_TRAVEL_VISIT");
+  // Normalize legacy single dates in memory only. Reading never rewrites cloud files.
+  // A subsequent edit/delete/restore writes this record in the current format.
+  const normalized = createTravelVisitData({
+    province_id: data.province_id as string,
+    city: data.city as string,
+    start_date: (data.travel_visit_version === 1 ? data.visited_on : data.start_date) as string,
+    end_date: (data.travel_visit_version === 1 ? data.visited_on : data.end_date) as string,
+    notes: data.notes as string | undefined,
+  });
   if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/.test(record.id) || !Number.isSafeInteger(record.version)
     || typeof record.created_at !== "string" || Number.isNaN(Date.parse(record.created_at))
     || typeof record.updated_at !== "string" || Number.isNaN(Date.parse(record.updated_at))
     || !(record.deleted_at === null || (typeof record.deleted_at === "string" && !Number.isNaN(Date.parse(record.deleted_at))))) throw new Error("INVALID_TRAVEL_VISIT");
-  return record as TravelVisitRecord;
+  return { ...record, data: normalized } as TravelVisitRecord;
 }
 
 export function visitedTravelProvinces(records: TravelVisitRecord[]) {

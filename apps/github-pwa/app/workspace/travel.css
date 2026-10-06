@@ -9,9 +9,9 @@
 .travel-section button:hover:not(:disabled) { border-color: #579184; }
 .travel-section .eyebrow { color: #426d60; }
 .travel-source a { color: #426d60; }
-.travel-form input, .travel-form select { border: 1px solid var(--line); border-radius: 8px; padding: 10px; background: white; color: var(--ink); }
+.travel-form input, .travel-form select, .travel-form textarea { border: 1px solid var(--line); border-radius: 8px; padding: 10px; background: white; color: var(--ink); }
 .travel-form h3 { margin: 0; }
-@media (max-width: 600px) { .travel-section { padding: 16px; } .travel-heading { flex-wrap: wrap; } .travel-section button { min-height: 44px; } .travel-form input, .travel-form select { font-size: 16px; } }
+@media (max-width: 600px) { .travel-section { padding: 16px; } .travel-heading { flex-wrap: wrap; } .travel-section button { min-height: 44px; } .travel-form input, .travel-form select, .travel-form textarea { font-size: 16px; } }
 .travel-stats { display: flex; align-items: baseline; gap: 24px; flex-wrap: wrap; margin: 22px 0 14px; color: #294e48; }
 .travel-stats strong { font-size: 1.7rem; }
 .travel-stats strong span { font-size: 0.9rem; font-weight: 500; }
@@ -31,13 +31,17 @@
 .travel-provinces button.visited { background: #e1eee7; color: #245d4c; border-color: #579184; }
 .travel-source { font-size: 0.75rem; margin: 12px 0 24px; }
 .travel-form { margin-top: 16px; padding: 16px; background: #f5f6f0; border: 1px solid #dce3da; border-radius: 12px; }
-.travel-form fieldset { padding: 0; border: 0; margin: 12px 0; display: grid; gap: 12px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.travel-form fieldset { padding: 0; border: 0; margin: 12px 0; display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .travel-form label { display: grid; gap: 7px; font-size: 0.88rem; }
-.travel-form input, .travel-form select { width: 100%; min-width: 0; min-height: 44px; }
+.travel-form input, .travel-form select, .travel-form textarea { width: 100%; min-width: 0; min-height: 44px; }
 .travel-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .travel-records { list-style: none; margin: 12px 0 22px; padding: 0; }
 .travel-records li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 0; border-bottom: 1px solid #e0e5dc; }
-.travel-records li > div:first-child { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; min-width: 0; overflow-wrap: anywhere; }
+.travel-records li > .travel-record-content { min-width: 0; overflow-wrap: anywhere; }
+.travel-record-meta { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.travel-notes { margin: 8px 0 0; font-size: 0.88rem; color: var(--soft); line-height: 1.6; white-space: pre-wrap; }
+.travel-form .travel-notes-field { grid-column: 1 / -1; }
+.travel-form textarea { resize: vertical; }
 .travel-records span, .travel-records time { font-size: 0.85rem; color: #5b685e; }
 .travel-trash summary { cursor: pointer; padding: 10px 0; }
 @media (max-width: 600px) { .travel-form fieldset { grid-template-columns: 1fr; } .travel-records li { align-items: flex-start; flex-direction: column; } .travel-provinces { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
