@@ -32,7 +32,8 @@ export function mapCorosActivityDetail(result: CorosReadResult, workout: Workout
   // with the list's active time; never treat it as the elapsed epoch span.
   const sport = workout.candidate.metrics_json.coros_sport_type;
   const activeOnlyLayout = (sport === 900 && /^🚶 Walk Activity Details\n/u.test(text))
-    || (sport === 901 && /^🚶 Jump Rope Activity Details\n/u.test(text));
+    || (sport === 901 && /^🚶 Jump Rope Activity Details\n/u.test(text))
+    || (sport === 902 && /^🚶 Floor Climb Activity Details\n/u.test(text));
   if (totalTime === undefined && (!activeOnlyLayout || workout.candidate.metrics_json.moving_seconds === null)) fail();
   const elapsed = totalTime === undefined ? null : seconds(totalTime);
   if ((elapsed === null ? moving > workout.candidate.duration_seconds + 1

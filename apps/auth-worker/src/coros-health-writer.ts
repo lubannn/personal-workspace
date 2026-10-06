@@ -3,7 +3,8 @@ import { createAutomaticHealthMetricData, parseHealthMetricRecord } from "../../
 import { createWorkspaceRecord, recordPath, serializeRecord, updateWorkspaceRecord } from "../../../src/lib/github-data/protocol";
 import type { CorosHealthMetricItem } from "./coros-health-mapping";
 
-type Adapter = Pick<GitHubContentsAdapter, "readBranchSnapshot" | "listTreeFiles" | "readBlobTexts" | "writeAtomicFiles">;
+type Adapter = Pick<GitHubContentsAdapter, "readBranchSnapshot" | "listTreeFiles" | "readBlobTexts" | "writeAtomicFiles">
+  & Partial<Pick<GitHubContentsAdapter, "readTextsAtCommit">>;
 const stable = (value: unknown): string => value && typeof value === "object" && !Array.isArray(value)
   ? `{${Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => `${JSON.stringify(k)}:${stable(v)}`).join(",")}}` : JSON.stringify(value);
 async function hash(value: string) { return [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)))].map(b => b.toString(16).padStart(2, "0")).join(""); }
@@ -28,9 +29,13 @@ export async function writeCorosHealthMetrics(adapter: Adapter, input: { ownerId
   const unique = new Map<string, typeof prepared[number]>();
   for (const entry of prepared) { const old = unique.get(entry.path); if (old && old.fingerprint !== entry.fingerprint) throw new Error("COROS_SYNC_INCONSISTENT_BATCH"); unique.set(entry.path, entry); }
   for (let attempt = 0; attempt < 3; attempt++) {
-    const snapshot = await adapter.readBranchSnapshot(); const inventory = await adapter.listTreeFiles(snapshot.rootTreeSha);
-    const relevant = inventory.filter(file => unique.has(file.path));
-    const existing = new Map((await adapter.readBlobTexts(relevant)).map(file => [file.path, parseHealthMetricRecord(file.text)]));
+    const snapshot = await adapter.readBranchSnapshot();
+    let stored = await adapter.readTextsAtCommit?.(snapshot.headCommitSha, [...unique.keys()]);
+    if (!stored) {
+      const inventory = await adapter.listTreeFiles(snapshot.rootTreeSha);
+      stored = await adapter.readBlobTexts(inventory.filter(file => unique.has(file.path)));
+    }
+    const existing = new Map(stored.map(file => [file.path, parseHealthMetricRecord(file.text)]));
     const files: { path: string; text: string }[] = []; let created = 0, updated = 0, unchanged = prepared.length - unique.size;
     for (const entry of unique.values()) {
       const old = existing.get(entry.path);

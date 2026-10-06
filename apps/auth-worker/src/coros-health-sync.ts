@@ -1,12 +1,13 @@
 import type { CorosReadTool, CorosReadResult } from "./coros-read-client";
 import { corosResultText } from "./coros-sync-mapping";
 import { mapCorosRecovery, parseCorosSleepHrvAssessment, type CorosHealthMetricItem } from "./coros-health-mapping";
-import { closedHistoryThrough, initializeActivityProgress, shiftDate, todayInTimezone, type DomainProgress, type SyncProgress, type SyncWindowFilter } from "./coros-sync-state";
+import { historicalWindow, initializeActivityProgress, shiftDate, todayInTimezone, type DomainProgress, type SyncProgress, type SyncWindowFilter } from "./coros-sync-state";
 import { collectCorosActivityTotals } from "./coros-health-activity";
 import { collectBulkHealthHistory, nextBulkHealthWindow, type BulkHealthProgress, type BulkHealthSource, type BulkHealthWindow } from "./coros-health-history";
 
 export type HealthSyncProgress = DomainProgress & { recentDataThrough?: string; recentObservationSequence?: number; limitations?: string[]; encryptedActivityCache?: string; bulk?: BulkHealthProgress;
   activity?: DomainProgress;
+  activityDetailParserVersion?: number;
   lastAttemptSource?: "hrvActivity" | "hrv" | "activity" | BulkHealthSource; lastBulkAttemptSource?: BulkHealthSource };
 export type HealthSyncWindow = { domain: "health"; source?: undefined | "activity"; recent: boolean; from: string; through: string } | BulkHealthWindow;
 export function healthWindowProgress(progress: SyncProgress, window: HealthSyncWindow) {
@@ -28,16 +29,15 @@ export function nextHealthSyncWindow(progress: SyncProgress, now: Date, filter: 
   if (recent) return recent;
   if (bulk?.recent) return bulk;
   if (filter.recent === true) return null;
-  const historyThrough = closedHistoryThrough(progress, now);
-  const historical = available.filter(([, d]) => d.backfillNext <= historyThrough).sort((a, b) => a[1].backfillNext.localeCompare(b[1].backfillNext))[0];
+  const historical = available.filter(([, d]) => historicalWindow(progress, d, now, 7)).sort((a, b) => a[1].backfillNext.localeCompare(b[1].backfillNext))[0];
   const history: HealthSyncWindow | null = historical ? { domain: "health", ...(historical[0] === "activity" ? { source: "activity" as const } : {}), recent: false,
-    from: historical[1].backfillNext, through: [shiftDate(historical[1].backfillNext, 6), historyThrough].sort()[0] } : null;
+    ...historicalWindow(progress, historical[1], now, 7)! } : null;
   return bulk && (!history || bulk.from <= history.from) ? bulk : history;
 }
 
 type CollectedHealth = { items: CorosHealthMetricItem[]; through: string; observedAt: string; limitations: string[];
   activityError?: string; activityContinuation?: { detailsRead: number }; bulkSource?: BulkHealthSource;
-  observedDates: string[]; unconfirmedZeroDates: string[] };
+  observedDates: string[]; unconfirmedZeroDates: string[]; noDataDates?: string[] };
 
 type Read = (name: CorosReadTool, args: Record<string, unknown>) => Promise<CorosReadResult>;
 export async function collectCorosHealth(read: Read, window: HealthSyncWindow, progress: SyncProgress, assertActive: () => Promise<void>, now = new Date(), encryptionKey?: string, checkpoint?: () => Promise<void>): Promise<CollectedHealth> {
@@ -59,6 +59,7 @@ export async function collectCorosHealth(read: Read, window: HealthSyncWindow, p
     items.push(...mapCorosRecovery(recovery, options(window.from, todayInTimezone(now, progress.timezone))));
   }
   let through = window.through;
+  let confirmedNoDataDates: string[] = [];
   for (;;) {
     const response = await read("querySleepHrv", { days: 7, startDate: window.from.replaceAll("-", ""), endDate: through.replaceAll("-", "") }); await assertActive();
     const text = corosResultText(response);
@@ -75,7 +76,7 @@ export async function collectCorosHealth(read: Read, window: HealthSyncWindow, p
     }
     const dates = new Set([...hrv.map(item => item.candidate.local_date), ...noDataDates]);
     const expected = Math.round((Date.parse(through) - Date.parse(window.from)) / 86400000) + 1;
-    if (emptySingleDay || dates.size === expected) { items.push(...hrv); break; }
+    if (emptySingleDay || dates.size === expected) { items.push(...hrv); confirmedNoDataDates = noDataDates; break; }
     if (window.from === through) throw new Error("COROS_SYNC_HEALTH_WINDOW_INCOMPLETE");
     // Keep the already verified contiguous prefix instead of rereading its
     // first date. The next invocation checks the first omitted date singly.
@@ -84,10 +85,12 @@ export async function collectCorosHealth(read: Read, window: HealthSyncWindow, p
     if (firstMissing > window.from) {
       through = shiftDate(firstMissing, -1);
       items.push(...hrv.filter(item => item.candidate.local_date <= through));
+      confirmedNoDataDates = noDataDates.filter(date => date <= through);
       break;
     }
     through = window.from; // Omitted first date still needs explicit single-day evidence.
   }
   return { items: items.filter(item => item.candidate.local_date <= through || item.candidate.metric_type === "recovery_percentage"), through, observedAt: observedAt(), limitations,
-    bulkSource: undefined, observedDates: [], unconfirmedZeroDates: [] };
+    bulkSource: undefined, observedDates: [...new Set(items.filter(item => item.candidate.metric_type === "sleep_hrv_avg").map(item => item.candidate.local_date))],
+    noDataDates: confirmedNoDataDates, unconfirmedZeroDates: [] };
 }

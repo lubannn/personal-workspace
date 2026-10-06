@@ -29,10 +29,13 @@ export type DomainProgress = {
   failureCount?: number;
   /** Successful, persisted checks only; absent in legacy state. Never drives sync cursors. */
   checkedRanges?: CheckedRange[];
+  observedDates?: string[];
+  noDataDates?: string[];
 };
 export type SyncProgress = {
   version: 1; startDate: string; timezone: string;
   backfillEnd?: string;
+  verifyHistoricalCoverage?: boolean;
   scheduling?: { lastKind: "recent" | "history"; recentSource?: SyncSource; historySource?: SyncSource };
   request?: { sequence: number; through: string; historyThrough?: string };
   domains: Record<SyncDomain, DomainProgress>;
@@ -50,7 +53,7 @@ export function syncReadiness(env: CorosSyncEnv) {
   for (const key of ["GITHUB_APP_ID", "GITHUB_APP_INSTALLATION_ID", "GITHUB_APP_PRIVATE_KEY", "COROS_GITHUB_USER_ID", "COROS_WORKSPACE_OWNER_ID"] as const) {
     if (!env[key]?.trim()) missing.push(key);
   }
-  return { ready: missing.length === 0, missing, trigger: "daily_first_login" as const, backfillIntervalMinutes: 10 };
+  return { ready: missing.length === 0, missing, trigger: "daily_at_08" as const, backfillIntervalMinutes: 10 };
 }
 
 export function dateOnly(value: unknown): value is string {
@@ -118,6 +121,18 @@ export function advanceHistoricalCoverage(p: SyncProgress, domain: DomainProgres
     domain.backfillThrough = closedThrough; domain.backfillNext = shiftDate(closedThrough, 1);
   }
 }
+/** Audit only missing evidence intervals once; proven intervals are skipped forever. */
+export function historicalWindow(p: SyncProgress, domain: DomainProgress, now: Date, days: number) {
+  const end = closedHistoryThrough(p, now);
+  let from = p.verifyHistoricalCoverage ? p.startDate : domain.backfillNext;
+  if (p.verifyHistoricalCoverage) for (const range of domain.checkedRanges ?? []) {
+    if (range.from > from) break;
+    if (range.through >= from) from = shiftDate(range.through, 1);
+  }
+  if (from > end) return null;
+  const nextChecked = p.verifyHistoricalCoverage ? domain.checkedRanges?.find(range => range.from > from) : null;
+  return { from, through: [shiftDate(from, days - 1), end, ...(nextChecked ? [shiftDate(nextChecked.from, -1)] : [])].sort()[0] };
+}
 export function initialSyncProgress(startDate: string, timezone: string): SyncProgress {
   if (!dateOnly(startDate)) throw new Error("COROS_SYNC_INVALID_DATE");
   todayInTimezone(new Date(), timezone);
@@ -137,6 +152,7 @@ export function parseSyncProgress(text: string): SyncProgress {
   if (p.scheduling !== undefined && (!p.scheduling || typeof p.scheduling !== "object" || Array.isArray(p.scheduling) || !["recent", "history"].includes(p.scheduling.lastKind)
     || [p.scheduling.recentSource, p.scheduling.historySource].some(source => source !== undefined && !COROS_SYNC_SOURCES.includes(source)))) throw new Error("COROS_SYNC_STATE_INVALID");
   if (p.backfillEnd && !dateOnly(p.backfillEnd)) throw new Error("COROS_SYNC_STATE_INVALID");
+  if (p.verifyHistoricalCoverage !== undefined && typeof p.verifyHistoricalCoverage !== "boolean") throw new Error("COROS_SYNC_STATE_INVALID");
   if (p.request && (!Number.isSafeInteger(p.request.sequence) || p.request.sequence < 1 || !dateOnly(p.request.through))) throw new Error("COROS_SYNC_STATE_INVALID");
   if (p.request?.historyThrough && (!dateOnly(p.request.historyThrough) || p.request.historyThrough > p.request.through)) throw new Error("COROS_SYNC_STATE_INVALID");
   for (const domain of ["sleep", "workout"] as const) {
@@ -163,6 +179,8 @@ export function parseSyncProgress(text: string): SyncProgress {
     if (d.blockedCode && !["COROS_READ_RESULT_TOO_LARGE", "COROS_SYNC_HEALTH_RANGE_UNCONFIRMED"].includes(d.blockedCode)) throw new Error("COROS_SYNC_STATE_INVALID");
   }
   for (const d of syncProgressDomains(p)) {
+    for (const dates of [d.observedDates, d.noDataDates]) if (dates && (!Array.isArray(dates) || dates.length > 20_000
+      || dates.some(date => !dateOnly(date) || date < p.startDate) || new Set(dates).size !== dates.length)) throw new Error("COROS_SYNC_STATE_INVALID");
     if (d.failureCount !== undefined && (!Number.isSafeInteger(d.failureCount) || d.failureCount < 0)) throw new Error("COROS_SYNC_STATE_INVALID");
     if (d.checkedRanges !== undefined && (!Array.isArray(d.checkedRanges) || d.checkedRanges.length > 20_000
       || d.checkedRanges.some((range, index, ranges) => !range || !dateOnly(range.from) || !dateOnly(range.through)
@@ -231,13 +249,11 @@ export function nextSyncWindow(p: SyncProgress, now: Date, filter: SyncWindowFil
     }
   }
   if (filter.recent === true) return null;
-  const historyThrough = closedHistoryThrough(p, now);
-  const domain = (["sleep", "workout"] as const).filter((key) => (!filter.source || key === filter.source) && p.domains[key].backfillNext <= historyThrough
+  const domain = (["sleep", "workout"] as const).filter((key) => (!filter.source || key === filter.source) && historicalWindow(p, p.domains[key], now, 1)
     && (!p.domains[key].retryAfter || p.domains[key].retryAfter! <= now.toISOString()))
     .sort((a, b) => p.domains[a].backfillNext.localeCompare(p.domains[b].backfillNext))[0];
   if (!domain) return null;
-  const from = p.domains[domain].backfillNext;
   // Workout summaries are sparse and the caller halves windows that hit the result cap.
   // Sleep responses have an observed three-day cap and must keep their smaller window.
-  return { domain, recent: false, from, through: [shiftDate(from, domain === "workout" ? 29 : 2), historyThrough].sort()[0] };
+  return { domain, recent: false, ...historicalWindow(p, p.domains[domain], now, domain === "workout" ? 30 : 3)! };
 }

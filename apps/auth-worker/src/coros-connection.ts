@@ -9,7 +9,7 @@ import { refreshPausedCorosConnectionForPreview } from "./coros-credentials";
 import { summarizeCorosPreview } from "./coros-preview";
 import { callCorosReadTool } from "./coros-read-client";
 import { decryptRefreshToken, encryptRefreshToken, sha256Base64Url } from "./security";
-import { closedHistoryThrough, dateOnly, extendSyncHistory, initialSyncProgress, parseSyncProgress, readSyncJob, syncReadiness, syncProgressDomains, shiftDate, todayInTimezone, type CorosSyncEnv } from "./coros-sync-state";
+import { historicalWindow, dateOnly, extendSyncHistory, initialSyncProgress, parseSyncProgress, readSyncJob, syncReadiness, syncProgressDomains, shiftDate, todayInTimezone, type CorosSyncEnv } from "./coros-sync-state";
 import { readCorosConflictView } from "./coros-sync-conflict-view";
 import { runCorosSync } from "./coros-sync";
 import { clearRejectedCredentialBackoff } from "./coros-credential-backoff";
@@ -149,7 +149,7 @@ async function status(request: Request, env: CorosConnectionEnv, userId: string)
   const pending = Boolean(job && (job.request_seq > (progress?.request?.sequence ?? 0) ||
     (progress?.request && syncProgressDomains(progress).some(domain =>
       domain.recentRequestSequence !== progress.request!.sequence ||
-      domain.backfillNext <= closedHistoryThrough(progress, new Date())))));
+      Boolean(historicalWindow(progress, domain, new Date(), 1))))));
   return json({ connected: Boolean(row), state: row?.state ?? null,
     connectedAt: row?.connected_at ?? null, lastSyncAt: row?.last_sync_at ?? null,
     lastErrorCode: row?.last_error_code ?? null, sync: { readiness: syncReadiness(env), capabilities: { historyScope: true },
@@ -270,13 +270,16 @@ export async function handleCorosConnectionRequest(request: Request, env: CorosC
       if (!validAuthenticatedMutation(request)) return json({ error: "CSRF_VALIDATION_FAILED" }, 403);
       if (user.id !== env.COROS_GITHUB_USER_ID) return json({ error: "COROS_SYNC_ACCOUNT_NOT_CONFIGURED" }, 409);
       let recentOnly = false;
+      let verifyHistoricalCoverage = false;
       if (request.headers.get("content-type")?.startsWith("application/json")) {
         if (Number(request.headers.get("content-length")) > 1024) return json({ error: "COROS_SYNC_REQUEST_INVALID" }, 400);
-        const body = await request.json().catch(() => null) as { recentOnly?: unknown } | null;
+        const body = await request.json().catch(() => null) as { recentOnly?: unknown; verifyHistoricalCoverage?: unknown } | null;
         if (!body || typeof body !== "object" || Array.isArray(body) || typeof body.recentOnly !== "boolean") return json({ error: "COROS_SYNC_REQUEST_INVALID" }, 400);
+        if (body.verifyHistoricalCoverage !== undefined && typeof body.verifyHistoricalCoverage !== "boolean") return json({ error: "COROS_SYNC_REQUEST_INVALID" }, 400);
         recentOnly = body.recentOnly;
+        verifyHistoricalCoverage = body.verifyHistoricalCoverage === true && !recentOnly;
       }
-      return json(await runCorosSync(env, new Date(), undefined, { forceDue: true, ...(recentOnly ? { recentOnly } : {}) }));
+      return json(await runCorosSync(env, new Date(), undefined, { forceDue: true, ...(recentOnly ? { recentOnly } : {}), ...(verifyHistoricalCoverage ? { verifyHistoricalCoverage } : {}) }));
     }
     case "/coros/conflicts": {
       if (request.method !== "GET") return json({ error: "METHOD_NOT_ALLOWED" }, 405);

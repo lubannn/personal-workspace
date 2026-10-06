@@ -526,6 +526,43 @@ export class GitHubContentsAdapter {
   }
 
   /** Snapshot-pinned inventory without the Contents API's 1,000-file limit. */
+  async readTextsAtCommit(commitSha: string, paths: readonly string[]): Promise<GitHubStoredFile[] | null> {
+    if (!/^[a-f0-9]{40}$/u.test(commitSha) || paths.length > 500 || new Set(paths).size !== paths.length) throw new Error("INVALID_GITHUB_PINNED_READ");
+    paths.forEach(assertFilePath);
+    const records: GitHubStoredFile[] = [];
+    for (let offset = 0; offset < paths.length; offset += BLOB_QUERY_BATCH_SIZE) {
+      const batch = paths.slice(offset, offset + BLOB_QUERY_BATCH_SIZE);
+      const variables: Record<string, string> = { owner: this.config.owner, repository: this.config.repository };
+      batch.forEach((path, i) => { variables[`expression${i}`] = `${commitSha}:${path}`; });
+      const query = `query ReadPinnedWorkspacePaths($owner: String!, $repository: String!, ${batch.map((_, i) => `$expression${i}: String!`).join(", ")}) {
+        repository(owner: $owner, name: $repository) {
+          ${batch.map((_, i) => `blob${i}: object(expression: $expression${i}) { __typename oid ... on Blob { byteSize isTruncated text } }`).join("\n")}
+        }
+      }`;
+      let result: GitHubGraphQLBlobResponse;
+      try {
+        result = await this.request<GitHubGraphQLBlobResponse>("/graphql", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query, variables }) }, false);
+      } catch (error) {
+        if (error instanceof GitHubDataError && ["GITHUB_FORBIDDEN", "GITHUB_NOT_FOUND", "GITHUB_BAD_REQUEST"].includes(error.code)) return null;
+        throw error;
+      }
+      if (!result || (result.errors !== undefined && !Array.isArray(result.errors))) throw new GitHubDataError("Invalid pinned path response.", 500, "GITHUB_INVALID_RESPONSE");
+      if (result.errors?.length) { assertGraphQLAuthAndRate(result.errors); throw new GitHubDataError("Incomplete pinned path response.", 500, "GITHUB_GRAPHQL_ERROR"); }
+      const repository = result.data?.repository;
+      if (!repository) throw new GitHubDataError("Missing repository in pinned path response.", 500, "GITHUB_INVALID_RESPONSE");
+      for (const [i, path] of batch.entries()) {
+        if (!Object.hasOwn(repository, `blob${i}`)) throw new GitHubDataError("Missing pinned path result.", 500, "GITHUB_INVALID_RESPONSE");
+        const blob = repository[`blob${i}`];
+        if (blob === null) continue; // An explicit null at this immutable commit proves absence.
+        if (!blob || blob.__typename !== "Blob" || !/^[a-f0-9]{40}$/u.test(blob.oid ?? "") || !Number.isSafeInteger(blob.byteSize)
+          || blob.byteSize! < 0 || blob.isTruncated !== false || typeof blob.text !== "string"
+          || new TextEncoder().encode(blob.text).byteLength !== blob.byteSize) throw new GitHubDataError("Invalid pinned blob.", 500, "GITHUB_UNSUPPORTED_CONTENT");
+        records.push({ path, blobSha: blob.oid!, sizeBytes: blob.byteSize!, text: blob.text });
+      }
+    }
+    return records;
+  }
+
   async listTreeFiles(treeSha: string): Promise<GitHubDirectoryItem[]> {
     if (!/^[a-f0-9]{40}$/u.test(treeSha)) throw new Error("INVALID_GITHUB_TREE_SHA");
     const tree = await this.request<GitHubRecursiveTreeResponse>(

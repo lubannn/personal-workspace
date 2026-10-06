@@ -17,7 +17,7 @@ type CorosStatus = {
   lastErrorCode: string | null;
   sync?: {
     capabilities?: { historyScope?: boolean };
-    readiness: { ready: boolean; missing: string[]; trigger: "daily_first_login"; backfillIntervalMinutes: number };
+    readiness: { ready: boolean; missing: string[]; trigger: "daily_first_login" | "daily_at_08"; backfillIntervalMinutes: number };
     progress: SyncProgress | null;
     running: boolean;
     nextRunAt: string | null;
@@ -193,7 +193,7 @@ export function CorosConnectionSection({ connectionMethod, onClearHealthCache, c
       if (path === "/coros/disconnect") {
         setPreview(null); setConfirmDisconnect(false);
         setMessage("已断开工作台与 COROS 的连接，停止后续同步。已入库的记录仍保留。");
-      } else if (path === "/coros/enable") setMessage("已开启每日自动同步。每天首次登录或打开工作台时更新；首次会先读取最近记录，再分批补齐所选历史范围。");
+      } else if (path === "/coros/enable") setMessage("已开启每日自动同步。历史补齐后每天 08:00 自动更新；首次先读取最近记录，再沿保存进度补齐所选历史范围。");
       else if (path === "/coros/pause") setMessage("已暂停后台自动同步；已有记录与进度保留，恢复后接着已有进度继续。");
       await refresh();
     } catch { setMessage("操作结果暂时无法确认，请刷新状态后查看。已有记录仍保留。"); }
@@ -252,7 +252,7 @@ export function CorosConnectionSection({ connectionMethod, onClearHealthCache, c
           : !enabled ? <button className="secondary-button" type="button" disabled={busy || !ready || (!progress && !validStartDate(startDate)) || Boolean(progress && startDate !== progress.startDate)} onClick={() => void mutate("/coros/enable")}>{progress ? "恢复自动更新" : "开启自动更新"}</button> : null : null}
       </div>
     </div>
-    {view === "ready" && status?.connected ? <p className="coros-compact-meta">最近同步：{displayTime(status.lastSyncAt)} · 每天首次登录更新，以 COROS 最新数据为准</p> : null}
+    {view === "ready" && status?.connected ? <p className="coros-compact-meta">最近同步：{displayTime(status.lastSyncAt)} · 历史补齐后每日 08:00 更新 · 可手动额外更新</p> : null}
     {view === "unavailable" ? <p role="alert">后台连接服务暂时不可用，请稍后重试。</p> : null}
     {view === "login-required" ? <p>请先使用 GitHub App 登录工作台。</p> : null}
     {view === "error" ? <p role="alert">暂时无法确认同步状态，请在设置中重新检查。</p> : null}
@@ -275,6 +275,7 @@ export function CorosConnectionSection({ connectionMethod, onClearHealthCache, c
             <p><strong>{source.label}</strong>：{corosCheckedRangeText(source.progress).split(/(\d{4}-\d{2}-\d{2})/u).map((part, index) => /^\d{4}-\d{2}-\d{2}$/u.test(part)
               ? <time key={index} className="coros-checked-range-date" dateTime={part}>{part}</time> : part)}；最新记录 {source.progress?.latestRecordDate ?? "暂无"}。
               {source.progress?.observedDates ? ` 已保存有值日期 ${source.progress.observedDates.length} 天。` : ""}
+              {source.progress?.noDataDates?.length ? ` 来源明确缺测 ${source.progress.noDataDates.length} 天。` : ""}
               {source.progress?.unconfirmedZeroDates?.length ? ` 全零且采样未确认 ${source.progress.unconfirmedZeroDates.length} 天，保持缺测。` : ""}</p>
             {source.progress?.blockedCode ? <><p role="status">已停止自动重试：{errorMessage(source.progress.blockedCode)} 不会把此来源报告为历史完成。</p>
               <button className="secondary-button" type="button" disabled={!canSaveHistory} onClick={() => void saveHistoryRange(source.resetSource)}>已核对，恢复{source.label}来源</button>

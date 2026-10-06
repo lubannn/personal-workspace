@@ -11,7 +11,7 @@ import { writeCorosSyncBatch } from "./coros-sync-writer";
 import { collectCorosHealth, healthWindowProgress } from "./coros-health-sync";
 import { writeCorosHealthMetrics } from "./coros-health-writer";
 import { COROS_BULK_HEALTH_SOURCES } from "./coros-health-history";
-import { recordCheckedRange, advanceHistoricalCoverage, closedHistoryThrough, acceptSyncRequest, parseSyncProgress, readSyncJob, recentWindowStart, shiftDate, todayInTimezone, syncReadiness, syncProgressDomains, type CorosSyncEnv, type SyncProgress, type SyncErrorStage } from "./coros-sync-state";
+import { recordCheckedRange, advanceHistoricalCoverage, historicalWindow, acceptSyncRequest, parseSyncProgress, readSyncJob, recentWindowStart, shiftDate, todayInTimezone, syncReadiness, syncProgressDomains, type CorosSyncEnv, type SyncProgress, type SyncErrorStage } from "./coros-sync-state";
 
 const dependencies = { refresh: refreshEnabledCorosConnection, read: callCorosReadTool,
   adapter: createPrivateDataInstallationAdapter, write: writeCorosSyncBatch, health: collectCorosHealth, writeMetrics: writeCorosHealthMetrics };
@@ -45,15 +45,15 @@ function pendingRetry(progress: SyncProgress, now: Date, recentOnly = false): st
   if (!progress.request) return null;
   const retries = (["sleep", "workout"] as const).filter(domain =>
     progress.domains[domain].recentRequestSequence !== progress.request!.sequence
-    || (!recentOnly && progress.domains[domain].backfillNext <= closedHistoryThrough(progress, now)))
+    || (!recentOnly && Boolean(historicalWindow(progress, progress.domains[domain], now, 1))))
     .map(domain => progress.domains[domain].retryAfter ?? null)
     .filter((time): time is string => time !== null);
   for (const d of [progress.health, progress.health?.activity]) {
-    if (d?.retryAfter && (d.recentRequestSequence !== progress.request.sequence || (!recentOnly && d.backfillNext <= closedHistoryThrough(progress, now)))) retries.push(d.retryAfter);
+    if (d?.retryAfter && (d.recentRequestSequence !== progress.request.sequence || (!recentOnly && Boolean(historicalWindow(progress, d, now, 1))))) retries.push(d.retryAfter);
   }
   for (const source of COROS_BULK_HEALTH_SOURCES) {
     const d = progress.health?.bulk?.[source];
-    if (d?.retryAfter && (d.recentRequestSequence !== progress.request.sequence || (!recentOnly && d.backfillNext <= closedHistoryThrough(progress, now)))) retries.push(d.retryAfter);
+    if (d?.retryAfter && (d.recentRequestSequence !== progress.request.sequence || (!recentOnly && Boolean(historicalWindow(progress, d, now, 1))))) retries.push(d.retryAfter);
   }
   return retries.sort()[0] ?? null;
 }
@@ -61,7 +61,7 @@ function pendingRetry(progress: SyncProgress, now: Date, recentOnly = false): st
 /** One bounded window per invocation; authenticated drain skips queue delay, never leases or backoff. */
 export async function runCorosSync(env: CorosSyncEnv, now = new Date(), deps: CorosSyncDependencies = dependencies,
   options: { forceDue?: boolean; recentOnly?: boolean; deadlineMs?: number; budgetExhausted?: () => boolean;
-    expectedRequest?: { sequence: number; through: string } } = {}): Promise<CorosSyncRunResult> {
+    verifyHistoricalCoverage?: boolean; expectedRequest?: { sequence: number; through: string } } = {}): Promise<CorosSyncRunResult> {
   if (!env.DB || !env.TOKEN_ENCRYPTION_KEY || !syncReadiness(env).ready) return { status: "error", errorCode: "COROS_SYNC_NOT_CONFIGURED" };
   const db = env.DB; const userId = env.COROS_GITHUB_USER_ID!;
   const connection = await db.prepare("SELECT state, connected_at FROM coros_connections WHERE github_user_id = ?1")
@@ -95,6 +95,14 @@ export async function runCorosSync(env: CorosSyncEnv, now = new Date(), deps: Co
     await db.prepare("UPDATE coros_sync_jobs SET lease_token = NULL, lease_until = NULL WHERE github_user_id = ?1 AND lease_token = ?2").bind(userId, token).run();
     return { status: "error", errorCode: "COROS_SYNC_STATE_INVALID" };
   }
+  if (options.verifyHistoricalCoverage) progress.verifyHistoricalCoverage = true;
+  if (progress.health && progress.health.activityDetailParserVersion !== 3) {
+    const activity = progress.health.activity;
+    // Retry once after deploying the verified walk grammar, retaining diagnostics
+    // until its source succeeds. Unrelated failures and live leases stay gated.
+    if (activity?.lastErrorCode === "COROS_SYNC_HEALTH_DETAIL_FORMAT_UNSUPPORTED") { activity.retryAfter = null; activity.failureCount = 0; }
+    progress.health.activityDetailParserVersion = 3;
+  }
   // Migrate the previous normal-yield marker without clearing real failures.
   for (const domain of syncProgressDomains(progress)) if (domain.lastErrorCode === "COROS_SYNC_ACTIVITY_DETAILS_PENDING") {
     domain.retryAfter = null; domain.lastErrorCode = null; domain.lastErrorStage = null;
@@ -111,7 +119,7 @@ export async function runCorosSync(env: CorosSyncEnv, now = new Date(), deps: Co
   const domainPosition = () => {
     const domain = window?.domain === "health" ? healthWindowProgress(progress, window)
       : window ? progress.domains[window.domain] : undefined;
-    return JSON.stringify(domain && [domain.backfillNext, domain.backfillThrough, domain.recentNext, domain.recentThrough, domain.recentRequestSequence]);
+    return JSON.stringify(domain && [domain.backfillNext, domain.backfillThrough, domain.recentNext, domain.recentThrough, domain.recentRequestSequence, domain.checkedRanges]);
   };
   const positionBefore = domainPosition();
   let nextRunAt = nextSyncTick(now);
@@ -186,6 +194,11 @@ export async function runCorosSync(env: CorosSyncEnv, now = new Date(), deps: Co
       const health = progress.health!;
       const domain = healthWindowProgress(progress, window);
       if (!collected.activityError && !collected.activityContinuation) recordCheckedRange(domain, window.from, collected.through);
+      if (collected.observedDates.length || collected.noDataDates?.length) {
+        domain.observedDates = [...new Set([...(domain.observedDates ?? []), ...collected.observedDates])].sort();
+        const observed = new Set(domain.observedDates);
+        domain.noDataDates = [...new Set([...(domain.noDataDates ?? []), ...(collected.noDataDates ?? [])])].filter(date => !observed.has(date)).sort();
+      }
       if (collected.bulkSource) {
         const bulk = health.bulk![collected.bulkSource];
         bulk.observedDates = [...new Set([...(bulk.observedDates ?? []), ...collected.observedDates])].sort();
