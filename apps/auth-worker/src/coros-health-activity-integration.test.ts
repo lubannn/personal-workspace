@@ -54,12 +54,12 @@ function reader() {
 }
 function setup() {
   const db = syncTestDatabase(); db.connection(); db.env.TOKEN_ENCRYPTION_KEY = key;
-  const p = initialSyncProgress("2024-01-01", "Asia/Shanghai"); p.request = { sequence: 1, through: "2024-02-01" };
+  const p = initialSyncProgress("2024-01-01", "Asia/Shanghai"); p.request = { sequence: 1, through: "2024-02-01", historyThrough: "2024-01-07" };
   nextHealthSyncWindow(p, new Date());
   for (const d of [...Object.values(p.domains), ...Object.values(initializeBulkHealthProgress(p))]) {
     d.recentRequestSequence = 1; d.backfillNext = "2024-02-01"; d.backfillThrough = "2024-01-31";
   }
-  p.health!.recentRequestSequence = 1; db.job(p);
+  p.health!.recentRequestSequence = 1; p.health!.activity!.recentRequestSequence = 1; db.job(p);
   const files = new Map<string, string>(); let version = 1;
   const adapter = {
     readText: vi.fn(async () => ({ text: JSON.stringify({ schema_version: 1, workspace_id: "test-workspace", owner_id: "test-owner",
@@ -108,98 +108,102 @@ describe("historical jump-rope details and official HRV through persistence", ()
     expect(mapCorosActivityDetail(jumpDetail("101", "0"), workout)).toEqual({ elevationGainMeters: null, trainingLoad: 0 });
   });
 
-  it("persists 17 HRV facts, restarts SQLite after four details, commits seven loads, then replays and checks a nonempty increment", async () => {
+  it("commits HRV independently, resumes one encrypted detail after SQLite restart, and checks nonempty recent increments", async () => {
     const f = setup(); let db = f.db;
     try {
-      expect(await runCorosSync(db.env, new Date(), f.deps, { forceDue: true })).toMatchObject({ status: "processed",
-        progress: { lastErrorCode: null }, continuation: { detailsRead: 4 }, batch: { created: 17 } });
-      expect(db.saved()?.progress.health).toMatchObject({ backfillNext: "2024-01-01", backfillThrough: null });
-      expect(f.records()).toHaveLength(17); expect(f.records().some(r => r.data.metric_type === "elevation_gain" || r.data.metric_type === "training_load")).toBe(false);
-      const saved = db.saved()!;
-      expect(saved.progress_json).not.toMatch(/trainingLoad|elevationGainMeters|workout:10|synthetic-token/);
-      expect(JSON.parse(await decryptRefreshToken(saved.progress.health!.encryptedActivityCache!, key)).entries).toHaveLength(4);
-      expect(f.read.mock.calls.filter(([name]) => name === "getActivityDetail").map(([, args]) => args.labelId)).toEqual(["107", "106", "105", "104"]);
-      const snapshot = db.sqlite.serialize(); db.sqlite.close(); db = syncTestDatabase(snapshot); db.env.TOKEN_ENCRYPTION_KEY = key;
-      f.read.mockClear();
-      expect(await runCorosSync(db.env, new Date(), f.deps, { forceDue: true })).toMatchObject({ status: "processed", batch: { created: 7, unchanged: 17 } });
-      expect(f.read.mock.calls.filter(([name]) => name === "getActivityDetail").map(([, args]) => args.labelId)).toEqual(["103", "102", "101"]);
-      expect(db.saved()?.progress.health).toMatchObject({ backfillNext: "2024-01-08", backfillThrough: "2024-01-07", lastErrorCode: null });
-      expect(f.records().filter(r => r.data.metric_type === "training_load").map(r => [r.data.local_date, r.data.value]).sort())
-        .toEqual(activities.slice(0, 7).map(a => [a.date, a.load]));
+      expect(await runCorosSync(db.env, new Date(), f.deps, { forceDue: true })).toMatchObject({ status: "processed", batch: { created: 17 } });
+      expect(db.saved()?.progress.health).toMatchObject({ backfillNext: "2024-01-08", activity: { backfillNext: "2024-01-01", backfillThrough: null } });
+      expect(f.read.mock.calls.map(([name]) => name)).toEqual(["querySleepHrv"]);
+      for (let count = 1; count <= 7; count++) {
+        const result = await runCorosSync(db.env, new Date(), f.deps, { forceDue: true });
+        expect(result.status).toBe("processed");
+        expect(f.read.mock.calls.filter(([name]) => name === "querySleepHrv")).toHaveLength(1);
+        expect(f.read.mock.calls.filter(([name]) => name === "getActivityDetail")).toHaveLength(count);
+        if (count < 7) {
+          expect(result.continuation).toEqual({ detailsRead: 1 });
+          expect(db.saved()?.progress.health?.activity?.backfillThrough).toBeNull();
+          expect(db.saved()?.progress.health?.activity?.checkedRanges).toBeUndefined();
+          expect(f.adapter.writeAtomicFiles).toHaveBeenCalledTimes(1);
+        }
+        if (count === 3) {
+          const saved = db.saved()!;
+          expect(saved.progress_json).not.toMatch(/trainingLoad|elevationGainMeters|workout:10|synthetic-token/);
+          expect(JSON.parse(await decryptRefreshToken(saved.progress.health!.encryptedActivityCache!, key)).entries).toHaveLength(3);
+          const snapshot = db.sqlite.serialize(); db.sqlite.close(); db = syncTestDatabase(snapshot); db.env.TOKEN_ENCRYPTION_KEY = key;
+        }
+      }
+      expect(db.saved()?.progress.health?.activity).toMatchObject({ backfillNext: "2024-01-08", backfillThrough: "2024-01-07", checkedRanges: [{ from: "2024-01-01", through: "2024-01-07" }] });
+      expect(f.records()).toHaveLength(24);
+      expect(f.records().filter(r => r.data.metric_type === "training_load").map(r => [r.data.local_date, r.data.value]).sort()).toEqual(activities.slice(0, 7).map(a => [a.date, a.load]));
       expect(f.records().some(r => r.data.metric_type === "elevation_gain" || r.data.value === 999)).toBe(false);
       expect(f.adapter.writeAtomicFiles).toHaveBeenCalledTimes(2);
-      const before = new Map(f.files), replay = db.saved()!.progress;
-      const collected = await collectCorosHealth(f.read, { domain: "health", recent: false, from: "2024-01-01", through: "2024-01-07" }, replay, async () => {}, new Date(), key);
-      expect(await writeCorosHealthMetrics(f.adapter, { ownerId: "test-owner", items: collected.items, timestamp: collected.observedAt })).toEqual({ created: 0, updated: 0, unchanged: 24 });
-      expect(f.files).toEqual(before); expect(f.adapter.writeAtomicFiles).toHaveBeenCalledTimes(2);
-      // A new accepted request checks recent overlap without restarting old history.
+      f.read.mockClear(); expect((await runCorosSync(db.env, new Date(), f.deps, { forceDue: true })).status).toBe("complete"); expect(f.read).not.toHaveBeenCalled();
       db.sqlite.exec("UPDATE coros_sync_jobs SET request_seq = 2, requested_through = '2024-02-02'");
-      const p = db.saved()!.progress;
-      for (const d of [...Object.values(p.domains), ...Object.values(p.health!.bulk!)]) d.recentRequestSequence = 2;
-      db.saveProgress(p); vi.setSystemTime("2024-02-02T04:00:00Z"); f.read.mockClear();
+      const p = db.saved()!.progress; for (const d of [...Object.values(p.domains), ...Object.values(p.health!.bulk!)]) d.recentRequestSequence = 2;
+      db.saveProgress(p); vi.setSystemTime("2024-02-02T04:00:00Z");
+      expect((await runCorosSync(db.env, new Date(), f.deps, { forceDue: true })).status).toBe("processed");
+      expect(f.read.mock.calls.map(([name]) => name)).toEqual(["queryRecoveryStatus", "querySleepHrv"]);
+      f.read.mockClear(); const incrementProgress = db.saved()!.progress; incrementProgress.scheduling = { lastKind: "history", recentSource: "hrv" }; db.saveProgress(incrementProgress);
       expect(await runCorosSync(db.env, new Date(), f.deps, { forceDue: true })).toMatchObject({ status: "processed" });
-      expect(f.read.mock.calls.filter(([name]) => name === "getActivityDetail").map(([, args]) => args.labelId)).toEqual(["999"]);
-      expect(db.saved()?.progress.health).toMatchObject({ backfillNext: "2024-01-08", backfillThrough: "2024-01-07", recentRequestSequence: 2, recentThrough: "2024-02-02" });
+      expect(f.read.mock.calls.map(([name]) => name)).toEqual(["querySportRecords", "getActivityDetail"]);
       expect(f.records().find(r => r.data.local_date === increment.date && r.data.metric_type === "training_load")?.data.value).toBe(increment.load);
-      expect(db.saved()?.lease_token).toBeNull(); expect(f.deps.write).not.toHaveBeenCalled();
-    } finally { db.sqlite.close(); }
-  });
-
-  it("isolates an invalid detail, retains HRV and encrypted partial facts, and lets daily health commit", async () => {
-    const f = setup(), base = f.read.getMockImplementation()!;
-    try {
-      const p = f.db.saved()!.progress; p.health!.bulk!.dailyHealth.backfillNext = "2024-01-01"; f.db.saveProgress(p);
-      f.read.mockImplementation(async (name, args) => name === "getActivityDetail" && args.labelId === "105" ? text("unrecognized detail") : base(name, args));
-      expect(await runCorosSync(f.db.env, new Date(), f.deps, { forceDue: true })).toMatchObject({ status: "processed", progress: { lastErrorCode: "COROS_SYNC_HEALTH_DETAIL_FORMAT_UNSUPPORTED" } });
-      expect(f.db.saved()?.progress.health).toMatchObject({ backfillNext: "2024-01-01", backfillThrough: null });
-      expect(f.records()).toHaveLength(17);
-      expect(await runCorosSync(f.db.env, new Date(), f.deps, { forceDue: true })).toMatchObject({ status: "processed" });
-      expect(f.db.saved()?.progress.health?.bulk?.dailyHealth).toMatchObject({ backfillNext: "2024-01-29", observedDates: ["2024-01-01"] });
-      expect(f.db.saved()?.progress.health?.backfillNext).toBe("2024-01-01");
-      expect(f.records().filter(r => r.data.metric_type === "steps")).toHaveLength(1);
-      expect(f.records().some(r => r.data.metric_type === "training_load")).toBe(false);
-    } finally { f.db.sqlite.close(); }
-  });
-
-  it("replays a committed batch after a lost coverage checkpoint and an expired lease without another Git commit", async () => {
-    const f = setup(); let db = f.db;
-    try {
-      await runCorosSync(db.env, new Date(), f.deps, { forceDue: true });
-      const prepare = db.db.prepare.bind(db.db);
-      vi.spyOn(db.db, "prepare").mockImplementation(query => {
-        const statement = prepare(query);
-        if (query.includes("next_run_at = CASE")) statement.run = async () => { throw new Error("synthetic checkpoint interruption"); };
-        return statement;
-      });
-      vi.setSystemTime("2024-02-01T04:10:00Z");
-      await expect(runCorosSync(db.env, new Date(), f.deps, { forceDue: true })).rejects.toThrow("checkpoint interruption");
-      expect(f.records()).toHaveLength(24); expect(db.saved()?.progress.health?.backfillNext).toBe("2024-01-01");
-      const snapshot = db.sqlite.serialize(); db.sqlite.close(); db = syncTestDatabase(snapshot); db.env.TOKEN_ENCRYPTION_KEY = key;
-      vi.setSystemTime("2024-02-01T04:21:00Z"); f.read.mockClear();
-      expect(await runCorosSync(db.env, new Date(), f.deps, { forceDue: true })).toMatchObject({ status: "processed", batch: { created: 0, unchanged: 24 } });
-      expect(f.read.mock.calls.filter(([name]) => name === "getActivityDetail")).toHaveLength(0);
-      expect(f.adapter.writeAtomicFiles).toHaveBeenCalledTimes(2);
-      expect(db.saved()?.progress.health).toMatchObject({ backfillNext: "2024-01-08", backfillThrough: "2024-01-07" });
+      expect(db.saved()?.progress.health).toMatchObject({ backfillNext: "2024-01-08", recentRequestSequence: 2, activity: { backfillNext: "2024-01-08", recentRequestSequence: 2 } });
       expect(db.saved()?.lease_token).toBeNull();
     } finally { db.sqlite.close(); }
   });
 
-  it("holds coverage on failed atomic persistence and resumes cached details under CAS, tombstones and manual edits", async () => {
+  it("isolates a bad activity detail from committed HRV and an independent daily source", async () => {
+    const f = setup(), base = f.read.getMockImplementation()!;
+    try {
+      await runCorosSync(f.db.env, new Date(), f.deps, { forceDue: true });
+      f.read.mockImplementation(async (name, args) => name === "getActivityDetail" && args.labelId === "105" ? text("unrecognized detail") : base(name, args));
+      for (let i = 0; i < 2; i++) expect((await runCorosSync(f.db.env, new Date(), f.deps, { forceDue: true })).continuation).toEqual({ detailsRead: 1 });
+      expect(await runCorosSync(f.db.env, new Date(), f.deps, { forceDue: true })).toMatchObject({ status: "error", errorCode: "COROS_SYNC_HEALTH_DETAIL_FORMAT_UNSUPPORTED" });
+      expect(f.db.saved()?.progress.health).toMatchObject({ backfillNext: "2024-01-08", lastErrorCode: null, activity: { backfillNext: "2024-01-01", lastErrorCode: "COROS_SYNC_HEALTH_DETAIL_FORMAT_UNSUPPORTED" } });
+      expect(f.records()).toHaveLength(17);
+      const p = f.db.saved()!.progress; p.health!.bulk!.dailyHealth.backfillNext = "2024-01-01"; f.db.saveProgress(p);
+      expect((await runCorosSync(f.db.env, new Date(), f.deps, { forceDue: true })).status).toBe("processed");
+      expect(f.db.saved()?.progress.health?.bulk?.dailyHealth.backfillNext).toBe("2024-01-08");
+      expect(f.read.mock.calls.filter(([name]) => name === "querySleepHrv")).toHaveLength(1);
+      expect(f.records().some(r => r.data.metric_type === "training_load")).toBe(false);
+    } finally { f.db.sqlite.close(); }
+  });
+
+  it("replays a committed HRV window after lost coverage and expired lease without another commit", async () => {
+    const f = setup(); let db = f.db;
+    try {
+      const prepare = db.db.prepare.bind(db.db);
+      vi.spyOn(db.db, "prepare").mockImplementation(query => {
+        const statement = prepare(query); if (query.includes("next_run_at = CASE")) statement.run = async () => { throw new Error("synthetic checkpoint interruption"); }; return statement;
+      });
+      await expect(runCorosSync(db.env, new Date(), f.deps, { forceDue: true })).rejects.toThrow("checkpoint interruption");
+      expect(f.records()).toHaveLength(17); expect(db.saved()?.progress.health?.backfillNext).toBe("2024-01-01");
+      const snapshot = db.sqlite.serialize(); db.sqlite.close(); db = syncTestDatabase(snapshot); db.env.TOKEN_ENCRYPTION_KEY = key;
+      vi.setSystemTime("2024-02-01T04:11:00Z"); f.read.mockClear();
+      // The interrupted turn yielded fairly to activity. Complete that saved
+      // turn, then explicitly select the HRV replay without resetting its cursor.
+      const p = db.saved()!.progress; p.scheduling = { lastKind: "recent", historySource: "workout" }; db.saveProgress(p);
+      expect(await runCorosSync(db.env, new Date(), f.deps, { forceDue: true })).toMatchObject({ status: "processed", batch: { created: 0, unchanged: 17 } });
+      expect(f.read.mock.calls.map(([name]) => name)).toEqual(["querySleepHrv"]); expect(f.adapter.writeAtomicFiles).toHaveBeenCalledTimes(1);
+      expect(db.saved()?.progress.health?.backfillNext).toBe("2024-01-08");
+    } finally { db.sqlite.close(); }
+  });
+
+  it("holds the failed source cursor and preserves CAS, tombstones and manual edits", async () => {
     const f = setup();
     try {
       f.adapter.writeAtomicFiles.mockRejectedValueOnce(new Error("GITHUB_UNAVAILABLE"));
-      expect(await runCorosSync(f.db.env, new Date(), f.deps, { forceDue: true })).toMatchObject({ status: "error", errorCode: "GITHUB_UNAVAILABLE" });
-      expect(f.files.size).toBe(0); expect(f.db.saved()?.progress.health).toMatchObject({ backfillNext: "2024-01-01", backfillThrough: null });
-      vi.setSystemTime("2024-02-01T04:20:00Z"); f.adapter.writeAtomicFiles.mockRejectedValueOnce(new GitHubConflictError()); f.read.mockClear();
-      expect(await runCorosSync(f.db.env, new Date(), f.deps, { forceDue: true })).toMatchObject({ status: "processed", batch: { created: 24 } });
-      expect(f.read.mock.calls.filter(([name]) => name === "getActivityDetail")).toHaveLength(3);
-      expect(f.adapter.writeAtomicFiles).toHaveBeenCalledTimes(3); expect(f.records()).toHaveLength(24);
+      expect((await runCorosSync(f.db.env, new Date(), f.deps, { forceDue: true })).status).toBe("error");
+      expect(f.files.size).toBe(0); expect(f.db.saved()?.progress.health?.backfillNext).toBe("2024-01-01");
+      vi.setSystemTime("2024-02-01T04:20:00Z");
+      const p = f.db.saved()!.progress; p.scheduling = { lastKind: "recent", historySource: "workout" }; f.db.saveProgress(p);
+      f.adapter.writeAtomicFiles.mockRejectedValueOnce(new GitHubConflictError());
+      expect(await runCorosSync(f.db.env, new Date(), f.deps, { forceDue: true })).toMatchObject({ status: "processed", batch: { created: 17 } });
+      for (let i = 0; i < 7; i++) await runCorosSync(f.db.env, new Date(), f.deps, { forceDue: true });
       const result = await collectCorosActivityTotals(f.read, "2024-01-01", "2024-01-07", f.db.saved()!.progress, async () => {}, new Date().toISOString(), key);
-      const item = result.items[0], path = recordPath("health_metric", corosMetricId(item));
-      const old = parseHealthMetricRecord(f.files.get(path)!);
+      const item = result.items[0], path = recordPath("health_metric", corosMetricId(item)); const old = parseHealthMetricRecord(f.files.get(path)!);
       f.files.set(path, serializeRecord({ ...old, deleted_at: new Date().toISOString() }));
       expect(await writeCorosHealthMetrics(f.adapter, { ownerId: "test-owner", items: [item], timestamp: new Date().toISOString() })).toMatchObject({ unchanged: 1 });
-      expect(parseHealthMetricRecord(f.files.get(path)!).deleted_at).toBeTruthy();
       f.files.set(path, serializeRecord({ ...old, data: { ...old.data, value: 88 } })); const edited = f.files.get(path);
       await expect(writeCorosHealthMetrics(f.adapter, { ownerId: "test-owner", items: [{ ...item, candidate: { ...item.candidate, value: 99 } }], timestamp: new Date().toISOString() })).rejects.toThrow("STORED_RECORD_MODIFIED");
       expect(f.files.get(path)).toBe(edited); expect(f.db.saved()?.lease_token).toBeNull();

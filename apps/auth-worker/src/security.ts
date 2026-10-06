@@ -1,13 +1,10 @@
+import { Buffer } from "node:buffer";
+
 const TOKEN_VERSION = "v1";
 const AES_GCM_IV_BYTES = 12;
 
 function bytesToBase64Url(bytes: Uint8Array): string {
-  let binary = "";
-  for (const byte of bytes) {
-    binary += String.fromCharCode(byte);
-  }
-
-  return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/u, "");
+  return Buffer.from(bytes).toString("base64url");
 }
 
 function base64UrlToBytes(value: string): Uint8Array<ArrayBuffer> {

@@ -19,10 +19,10 @@ function fixture() {
   const p = initialSyncProgress("2024-01-01", "Asia/Shanghai");
   p.request = { sequence: 1, through: "2024-02-01", historyThrough: "2024-01-07" };
   nextHealthSyncWindow(p, new Date());
-  for (const d of [...Object.values(p.domains), p.health!, ...Object.values(p.health!.bulk!)]) {
+  for (const d of [...Object.values(p.domains), p.health!, p.health!.activity!, ...Object.values(p.health!.bulk!)]) {
     d.recentRequestSequence = 1; d.backfillNext = "2024-02-02";
   }
-  p.health!.backfillNext = "2024-01-01"; db.job(p);
+  p.health!.activity!.backfillNext = "2024-01-01"; db.job(p);
   const files = new Map<string, string>(), staged = new Map<string, string>(); let revision = 1;
   const tools: string[] = [];
   const network = vi.fn<typeof fetch>(async (input, init) => {
@@ -83,24 +83,24 @@ function fixture() {
 beforeEach(() => { vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(SYNC_TEST_NOW); });
 afterEach(() => vi.useRealTimers());
 describe("Worker GitHub transport under the scheduled budget", () => {
-  it.each([36, 35, 34])("yields after %s earlier calls, retaining details and resuming with real mapping/writing after restart", async earlierCalls => {
+  it.each([37, 36, 35])("yields after %s earlier calls, retaining details and resuming with real mapping/writing after restart", async earlierCalls => {
     const f = fixture();
     try {
-      const before = structuredClone(f.db.saved()!.progress.health!);
+      const before = structuredClone(f.db.saved()!.progress.health!.activity!);
       const budget = scheduledCorosFetch(Date.now() + 480_000, f.network);
       // Three nonempty source reads then Git calls exhaust the cap at repository
       // validation, workspace contents, or the writer's snapshot request.
       for (let i = 0; i < earlierCalls; i++) await budget.fetch(resource);
       expect(await runCorosSync(f.db.env, new Date(), f.dependencies(budget.fetch), { budgetExhausted: budget.denied })).toMatchObject({ status: "deferred", errorCode: "COROS_SYNC_BUDGET_EXHAUSTED" });
       expect(f.network).toHaveBeenCalledTimes(40); expect(budget.denied()).toBe(true);
-      expect(f.network.mock.calls.at(-1)?.[0]).toBe(`${api}${earlierCalls === 36 ? "/app/installations/456/access_tokens"
-        : earlierCalls === 35 ? "/repos/example-owner/private-data" : "/repos/example-owner/private-data/contents/workspace.json"}`);
+      expect(f.network.mock.calls.at(-1)?.[0]).toBe(`${api}${earlierCalls === 37 ? "/app/installations/456/access_tokens"
+        : earlierCalls === 36 ? "/repos/example-owner/private-data" : "/repos/example-owner/private-data/contents/workspace.json"}`);
       expect(f.network.mock.calls.some(([url]) => String(url).endsWith("/rate_limit"))).toBe(false);
       const saved = f.db.saved()!;
       expect(saved.progress.failureCount).toBe(0); expect(saved.progress.lastErrorCode).toBeNull();
-      expect(saved.progress.health).toMatchObject({ backfillNext: before.backfillNext, backfillThrough: before.backfillThrough, recentRequestSequence: before.recentRequestSequence });
-      expect(saved.progress.health!.checkedRanges).toEqual(before.checkedRanges);
-      expect(saved.progress.health!.retryAfter).toBeUndefined(); expect(saved.progress.health!.lastErrorCode).toBeUndefined();
+      expect(saved.progress.health?.activity).toMatchObject({ backfillNext: before.backfillNext, backfillThrough: before.backfillThrough, recentRequestSequence: before.recentRequestSequence });
+      expect(saved.progress.health!.activity!.checkedRanges).toEqual(before.checkedRanges);
+      expect(saved.progress.health!.activity!.retryAfter).toBeUndefined(); expect(saved.progress.health!.activity!.lastErrorCode).toBeUndefined();
       expect(saved.progress.health!.encryptedActivityCache).toBeTruthy(); expect(saved.lease_token).toBeNull(); expect(f.files.size).toBe(0);
       const encrypted = saved.progress.health!.encryptedActivityCache; f.restart();
       expect(f.db.saved()!.progress.health!.encryptedActivityCache).toBe(encrypted);
@@ -110,10 +110,10 @@ describe("Worker GitHub transport under the scheduled budget", () => {
       expect(f.network.mock.calls.length - oldCalls).toBeLessThanOrEqual(40); expect(next.denied()).toBe(false);
       expect(f.tools.filter(tool => tool === "getActivityDetail")).toHaveLength(1);
       const records = [...f.files.values()].map(parseHealthMetricRecord);
-      expect(records.filter(record => record.data.metric_type === "sleep_hrv_avg")).toHaveLength(7);
+      expect(records.filter(record => record.data.metric_type === "sleep_hrv_avg")).toHaveLength(0);
       expect(records.some(record => record.data.metric_type === "training_load" && record.data.value > 0)).toBe(true);
       expect(records.some(record => record.data.metric_type === "elevation_gain" && record.data.local_date === "2024-01-03")).toBe(false);
-      expect(f.db.saved()!.progress.health).toMatchObject({ backfillNext: "2024-01-08", backfillThrough: "2024-01-07", checkedRanges: [{ from: "2024-01-01", through: "2024-01-07" }], retryAfter: null });
+      expect(f.db.saved()!.progress.health?.activity).toMatchObject({ backfillNext: "2024-01-08", backfillThrough: "2024-01-07", checkedRanges: [{ from: "2024-01-01", through: "2024-01-07" }], retryAfter: null });
       expect(f.db.saved()!.progress.failureCount).toBe(0); expect(f.db.saved()!.lease_token).toBeNull();
     } finally { f.db.sqlite.close(); }
   });
@@ -124,14 +124,14 @@ describe("Worker GitHub transport under the scheduled budget", () => {
       ? Promise.reject(new TypeError(message)) : good(input, init));
     try {
       const budget = scheduledCorosFetch(Date.now() + 480_000, f.network);
-      for (let i = 0; i < 35; i++) await budget.fetch(resource);
+      for (let i = 0; i < 36; i++) await budget.fetch(resource);
       expect(await runCorosSync(f.db.env, new Date(), f.dependencies(budget.fetch), { budgetExhausted: budget.denied })).toMatchObject({
         status: "error", errorCode: "GITHUB_CROSS_ORIGIN_BLOCKED", progress: { failureCount: 1, lastErrorStage: "github_adapter" },
       });
       expect(budget.denied()).toBe(true); expect(f.network).toHaveBeenCalledTimes(40);
       expect(f.network.mock.calls.at(-1)?.[0]).toBe(`${api}/repos/example-owner/private-data`);
-      expect(f.db.saved()!.progress.health).toMatchObject({ backfillNext: "2024-01-01", retryAfter: "2024-02-01T04:20:00.000Z" });
-      expect(f.db.saved()!.progress.health!.checkedRanges).toBeUndefined(); expect(f.files.size).toBe(0); expect(f.db.saved()!.lease_token).toBeNull();
+      expect(f.db.saved()!.progress.health?.activity).toMatchObject({ backfillNext: "2024-01-01", retryAfter: "2024-02-01T04:20:00.000Z" });
+      expect(f.db.saved()!.progress.health!.activity!.checkedRanges).toBeUndefined(); expect(f.files.size).toBe(0); expect(f.db.saved()!.lease_token).toBeNull();
     } finally { f.db.sqlite.close(); }
   });
 });

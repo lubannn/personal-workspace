@@ -75,6 +75,7 @@ export async function drainCorosHistory({ csrf, signal, onUpdate, fetcher = fetc
     if (recentOnly && update.status === "processed" && update.progress?.request && (["sleep", "workout"] as const).every(domain =>
       update.progress!.domains[domain].recentRequestSequence === update.progress!.request!.sequence)
       && (!update.progress.health || (update.progress.health.recentRequestSequence === update.progress.request.sequence
+        && update.progress.health.activity?.recentRequestSequence === update.progress.request.sequence
         && update.progress.health.bulk && Object.values(update.progress.health.bulk).every(source => source.recentRequestSequence === update.progress!.request!.sequence)))) {
       return { status: "complete", retryAt: null, progress: update.progress };
     }

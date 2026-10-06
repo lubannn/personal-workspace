@@ -28,7 +28,7 @@ function progress() {
   const p = initialSyncProgress("2023-10-01", "Asia/Shanghai");
   acceptSyncRequest(p, { request_seq: 1, requested_through: "2024-02-01" });
   nextHealthSyncWindow(p, new Date(SYNC_TEST_NOW));
-  p.health!.recentRequestSequence = 1;
+  p.health!.recentRequestSequence = 1; p.health!.activity!.recentRequestSequence = 1;
   const bulk = initializeBulkHealthProgress(p);
   for (const source of Object.values(bulk)) source.recentRequestSequence = 1;
   return p;
@@ -40,7 +40,7 @@ describe("resumable full-scope relative COROS health history", () => {
 
   it("excludes today from all historical source planners but permits recent observations", () => {
     const p = progress();
-    p.health!.backfillNext = "2024-02-01";
+    p.health!.backfillNext = "2024-02-01"; p.health!.activity!.backfillNext = "2024-02-01";
     for (const d of Object.values(p.health!.bulk!)) d.backfillNext = "2024-02-01";
     expect(nextHealthSyncWindow(p, new Date())).toBeNull();
     expect(nextBulkHealthWindow(p, new Date())).toBeNull();
@@ -92,7 +92,7 @@ describe("resumable full-scope relative COROS health history", () => {
   it("does not reread an oversized relative prefix on automatic retries or mark blocked history complete", async () => {
     const fixture = syncTestDatabase(); fixture.connection(); const p = progress();
     for (const domain of Object.values(p.domains)) { domain.recentRequestSequence = 1; domain.backfillNext = "2024-02-02"; }
-    p.health!.backfillNext = "2024-02-02"; p.health!.bulk!.restingHeartRate.backfillNext = "2024-02-02";
+    p.health!.backfillNext = "2024-02-02"; p.health!.activity!.backfillNext = "2024-02-02"; p.health!.bulk!.restingHeartRate.backfillNext = "2024-02-02";
     fixture.job(p);
     const reader = vi.fn(async () => { throw new Error("COROS_READ_RESULT_TOO_LARGE"); });
     const deps: CorosSyncDependencies = {
@@ -142,7 +142,7 @@ describe("resumable full-scope relative COROS health history", () => {
     const fixture = syncTestDatabase(); fixture.connection();
     const p = progress();
     p.domains.sleep.recentRequestSequence = 1; p.domains.workout.recentRequestSequence = 1;
-    p.health!.backfillNext = "2024-02-02";
+    p.health!.backfillNext = "2024-02-02"; p.health!.activity!.backfillNext = "2024-02-02";
     for (const d of Object.values(p.domains)) d.backfillNext = "2024-02-01";
     fixture.job(p);
     const reader = read(), write = vi.fn<typeof writeCorosHealthMetrics>().mockResolvedValue({ created: 3, updated: 0, unchanged: 0 });

@@ -181,7 +181,9 @@ describe("COROS scheduled synchronization", () => {
     expect(fixture.saved()?.progress.domains.sleep.retryAfter).toBe("2024-02-01T04:20:00.000Z");
     vi.setSystemTime("2024-02-01T04:20:00.000Z"); await runCorosSync(fixture.env, new Date(), deps);
     saved = fixture.saved()!; expect(saved.progress.failureCount).toBe(3); expect(saved.next_run_at).toBe("2024-02-01T04:30:00.000Z");
-    expect(saved.progress.domains.sleep.retryAfter).toBe("2024-02-01T05:40:00.000Z");
+    expect(saved.progress.domains.sleep.retryAfter).toBe("2024-02-01T05:00:00.000Z");
+    expect(saved.progress.domains.sleep.failureCount).toBe(2);
+    expect(saved.progress.domains.workout.failureCount).toBe(1);
   });
 
   it.each([

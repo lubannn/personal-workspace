@@ -1,5 +1,6 @@
 import { parseRecord, updateWorkspaceRecord, type WorkspaceRecord } from "./protocol";
 import { COROS_ACTIVITY_MAPPING_VERSION, type CorosWorkoutProposal } from "./coros-activity-mapping";
+import { healthTimezoneFormatter } from "./health-timezone";
 
 export const HEALTH_STAGING_VERSION = 1 as const;
 export const HEALTH_STAGING_STATUSES = ["pending", "confirmed", "rejected", "superseded"] as const;
@@ -244,7 +245,7 @@ export function validWorkoutCandidate(value: CorosWorkoutCandidate) {
     || Number.isNaN(Date.parse(value.start_at)) || Number.isNaN(Date.parse(value.end_at)) || Date.parse(value.end_at) <= Date.parse(value.start_at)
     || !Number.isInteger(value.duration_seconds) || value.duration_seconds <= 0 || value.duration_seconds > 7 * 24 * 60 * 60
     || !(value.distance === null || (Number.isFinite(value.distance) && value.distance >= 0)) || value.distance_unit !== "m" || value.training_load !== null) return false;
-  try { new Intl.DateTimeFormat("en", { timeZone: value.timezone }).format(); } catch { return false; }
+  try { healthTimezoneFormatter(value.timezone).format(); } catch { return false; }
   const metrics = value.metrics_json;
   if (!metrics || Object.keys(metrics).filter(key => !["coros_sport_type", "coros_sport_name"].includes(key)).sort().join(",") !== "average_cadence_rpm,average_heart_rate_bpm,average_power_watts,calories,elapsed_seconds,maximum_heart_rate_bpm,moving_seconds,trackpoints") return false;
   if (metrics.coros_sport_type !== undefined && (!Number.isInteger(metrics.coros_sport_type) || metrics.coros_sport_type < 0 || metrics.coros_sport_type > 65535)) return false;
@@ -265,9 +266,9 @@ function validCandidate(value: HealthMetricCandidate) {
   if (!value || Object.keys(value).sort().join(",") !== "aggregation_period,local_date,measured_at,metric_type,timezone,unit,value") return false;
   if (!/^[a-z0-9][a-z0-9_-]{0,63}$/u.test(value.metric_type) || !value.unit || value.unit.length > 64 || !Number.isFinite(value.value)) return false;
   if (!isDateOnly(value.local_date) || Number.isNaN(Date.parse(value.measured_at)) || !["instant", "daily"].includes(value.aggregation_period)) return false;
-  try { new Intl.DateTimeFormat("en", { timeZone: value.timezone }).format(); return true; } catch { return false; }
+  try { healthTimezoneFormatter(value.timezone).format(); return true; } catch { return false; }
 }
 
 function assertInstant(value: string) { if (Number.isNaN(Date.parse(value))) throw new Error("INVALID_HEALTH_TIMESTAMP"); }
 function isDateOnly(value: string) { const parsed = /^\d{4}-\d{2}-\d{2}$/u.test(value) ? new Date(`${value}T00:00:00Z`) : null; return Boolean(parsed && !Number.isNaN(parsed.valueOf()) && parsed.toISOString().slice(0, 10) === value); }
-function localDateForInstant(value: string, timezone: string) { const parts = new Intl.DateTimeFormat("en", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date(value)); const pick = (type: string) => parts.find((part) => part.type === type)?.value; return `${pick("year")}-${pick("month")}-${pick("day")}`; }
+function localDateForInstant(value: string, timezone: string) { const parts = healthTimezoneFormatter(timezone, true).formatToParts(new Date(value)); const pick = (type: string) => parts.find((part) => part.type === type)?.value; return `${pick("year")}-${pick("month")}-${pick("day")}`; }

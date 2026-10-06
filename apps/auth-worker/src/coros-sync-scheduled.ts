@@ -6,7 +6,9 @@ import { CorosSyncBudgetExceeded } from "./coros-sync-budget";
 // Cron lasts at most 15 minutes; stop launching work at eight minutes. Existing
 // per-request deadlines allow at most one remaining 64-second MCP operation.
 // Keep below the next ten-minute trigger and the Free external-request cap.
-export const COROS_SCHEDULED_BUDGET = { wallTimeMs: 8 * 60_000, batches: 20, errors: 3, fetches: 40 } as const;
+// CPU budgets apply to the whole invocation, not to each network request.
+// Each source commits its own checkpoint before the next cron invocation.
+export const COROS_SCHEDULED_BUDGET = { wallTimeMs: 8 * 60_000, batches: 1, errors: 3, fetches: 40 } as const;
 const budgetError = () => new CorosSyncBudgetExceeded();
 
 /** Count actual transport calls, not tools: SDK initialization/cleanup count too. */

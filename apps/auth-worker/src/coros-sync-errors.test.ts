@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GitHubConflictError, GitHubDataError } from "../../../src/lib/github-data/github-contents";
-import type { collectCorosHealth } from "./coros-health-sync";
+import { nextHealthSyncWindow, type collectCorosHealth } from "./coros-health-sync";
 import { runCorosSync, type CorosSyncDependencies } from "./coros-sync";
 import { initialSyncProgress } from "./coros-sync-state";
 import { SYNC_TEST_NOW, syncTestDatabase } from "./coros-sync-test-helpers";
@@ -18,13 +18,13 @@ describe("bounded synchronization error diagnostics", () => {
 
   function dependencies() {
     const health = vi.fn<typeof collectCorosHealth>().mockImplementation(async (_read, window) => ({
-      items: [], through: window.through, observedAt: SYNC_TEST_NOW, limitations: [],
+      items: [{ sourceId: "health:2024-02-01:sleep_hrv_avg:daily", measurementTimeKind: "observed_at", candidate: { metric_type: "sleep_hrv_avg", value: 42, unit: "ms", local_date: "2024-02-01", timezone: "Asia/Shanghai", measured_at: SYNC_TEST_NOW, aggregation_period: "daily" } }], through: window.through, observedAt: SYNC_TEST_NOW, limitations: [],
       activityError: undefined, bulkSource: undefined, observedDates: [], unconfirmedZeroDates: [],
     }));
     const readText = vi.fn().mockResolvedValue({ text: JSON.stringify({ schema_version: 1, workspace_id: "synthetic",
       owner_id: "test-owner", owner_login: "example-owner", locale: "zh-CN", timezone: "Asia/Shanghai" }) });
     const deps: CorosSyncDependencies = { refresh: vi.fn().mockResolvedValue({ resourceUrl: "https://mcpcn.coros.com/mcp", accessToken: "synthetic-token" }),
-      read: vi.fn(), health, write: vi.fn(), writeMetrics: vi.fn(), adapter: vi.fn().mockResolvedValue({ readText }) };
+      read: vi.fn(), health, write: vi.fn(), writeMetrics: vi.fn().mockResolvedValue({ created: 1, updated: 0, unchanged: 0 }), adapter: vi.fn().mockResolvedValue({ readText }) };
     return { deps, health, readText };
   }
 
@@ -99,6 +99,8 @@ describe("bounded synchronization error diagnostics", () => {
     const { deps, health } = dependencies();
     const progress = fixture.saved()!.progress;
     for (const d of Object.values(progress.domains)) d.backfillNext = "2024-02-01";
+    nextHealthSyncWindow(progress, new Date());
+    progress.health!.activity!.retryAfter = "2024-02-01T04:30:00Z";
     fixture.saveProgress(progress);
     health.mockImplementationOnce(async read => { await read("querySleepHrv", { days: 1 }); throw new Error("unreachable"); });
     vi.mocked(deps.read).mockRejectedValue(new Error("synthetic-private-read-failure"));
@@ -106,7 +108,7 @@ describe("bounded synchronization error diagnostics", () => {
     health.mockImplementation(async (_read, window) => {
       const result = { items: [], through: window.through, observedAt: SYNC_TEST_NOW, limitations: [], activityError: undefined,
         observedDates: [], unconfirmedZeroDates: [] };
-      return window.source ? { ...result, bulkSource: window.source } : { ...result, bulkSource: undefined };
+      return window.source && window.source !== "activity" ? { ...result, bulkSource: window.source } : { ...result, bulkSource: undefined };
     });
     expect((await runCorosSync(fixture.env, new Date(), deps, { forceDue: true })).status).toBe("processed");
     expect(fixture.saved()?.progress).toMatchObject({ lastErrorCode: null, lastErrorStage: null,

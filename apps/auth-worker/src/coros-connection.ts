@@ -9,7 +9,7 @@ import { refreshPausedCorosConnectionForPreview } from "./coros-credentials";
 import { summarizeCorosPreview } from "./coros-preview";
 import { callCorosReadTool } from "./coros-read-client";
 import { decryptRefreshToken, encryptRefreshToken, sha256Base64Url } from "./security";
-import { closedHistoryThrough, dateOnly, extendSyncHistory, initialSyncProgress, parseSyncProgress, readSyncJob, syncReadiness, shiftDate, todayInTimezone, type CorosSyncEnv } from "./coros-sync-state";
+import { closedHistoryThrough, dateOnly, extendSyncHistory, initialSyncProgress, parseSyncProgress, readSyncJob, syncReadiness, syncProgressDomains, shiftDate, todayInTimezone, type CorosSyncEnv } from "./coros-sync-state";
 import { readCorosConflictView } from "./coros-sync-conflict-view";
 import { runCorosSync } from "./coros-sync";
 import { clearRejectedCredentialBackoff } from "./coros-credential-backoff";
@@ -147,7 +147,7 @@ async function status(request: Request, env: CorosConnectionEnv, userId: string)
   const job = await readSyncJob(env.DB!, userId);
   const progress = job ? parseSyncProgress(job.progress_json) : null;
   const pending = Boolean(job && (job.request_seq > (progress?.request?.sequence ?? 0) ||
-    (progress?.request && [...Object.values(progress.domains), ...(progress.health ? [progress.health] : []), ...Object.values(progress.health?.bulk ?? {})].some(domain =>
+    (progress?.request && syncProgressDomains(progress).some(domain =>
       domain.recentRequestSequence !== progress.request!.sequence ||
       domain.backfillNext <= closedHistoryThrough(progress, new Date())))));
   return json({ connected: Boolean(row), state: row?.state ?? null,

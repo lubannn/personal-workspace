@@ -1,6 +1,7 @@
 import { parseRecord, type WorkspaceRecord } from "./protocol";
 import type { HealthMetricCandidate } from "./health-staging-records";
 import { validAutomaticCorosFields, type AutomaticCorosFields, type CorosProvenance } from "./coros-sync-types";
+import { healthTimezoneFormatter } from "./health-timezone";
 
 export const HEALTH_METRIC_VERSION = 1 as const;
 export type ConfirmedHealthMetricData = HealthMetricCandidate & {
@@ -56,7 +57,7 @@ function validateData(data: HealthMetricData) {
   if (!validOrigin || !/^[a-z0-9][a-z0-9_-]{0,63}$/u.test(data.metric_type) || !data.unit || data.unit.length > 64
     || !Number.isFinite(data.value) || !isDateOnly(data.local_date) || Number.isNaN(Date.parse(data.measured_at))
     || !["instant", "daily"].includes(data.aggregation_period)) throw new Error("INVALID_HEALTH_METRIC_DETAILS");
-  try { new Intl.DateTimeFormat("en", { timeZone: data.timezone }).format(); } catch { throw new Error("INVALID_HEALTH_METRIC_DETAILS"); }
+  try { healthTimezoneFormatter(data.timezone).format(); } catch { throw new Error("INVALID_HEALTH_METRIC_DETAILS"); }
   return data;
 }
 

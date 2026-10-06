@@ -19,7 +19,7 @@ describe("independent health sources during pending activity detail batches", ()
     const health = vi.fn<typeof collectCorosHealth>().mockImplementation(async (_read, window) => {
       const result = { items: [], through: window.through, observedAt: new Date().toISOString(), limitations: [], activityError: undefined,
         observedDates: [], unconfirmedZeroDates: [] };
-      return window.source ? { ...result, bulkSource: window.source } : { ...result, bulkSource: undefined };
+      return window.source && window.source !== "activity" ? { ...result, bulkSource: window.source } : { ...result, bulkSource: undefined };
     });
     const deps: CorosSyncDependencies = { refresh, read: vi.fn(), write: vi.fn(), health, writeMetrics: vi.fn(),
       adapter: vi.fn().mockResolvedValue({ readText: async () => ({ text: JSON.stringify({ schema_version: 1,
@@ -32,13 +32,13 @@ describe("independent health sources during pending activity detail batches", ()
       const started = fixture.saved()!;
       expect(started.lease_token).toBeTruthy();
       expect(started.progress.lastAttemptAt).toBe(SYNC_TEST_NOW);
-      expect(started.progress.health).toMatchObject({ lastAttemptSource: "hrvActivity", backfillNext: "2024-01-01", backfillThrough: null });
+      expect(started.progress.health).toMatchObject({ lastAttemptSource: "hrv", backfillNext: "2024-01-01", backfillThrough: null });
       expect(started.progress.health?.bulk?.dailyHealth.backfillNext).toBe("2024-01-01");
       expect(started.progress.lastSuccessAt).toBeNull();
       vi.setSystemTime(Date.parse(SYNC_TEST_NOW) + 600_000);
       expect((await runCorosSync(fixture.env, new Date(), deps)).status).toBe("processed");
       expect(health.mock.calls[0][1]).toMatchObject({ recent: false, from: "2024-01-01" });
-      expect(started.progress.scheduling).toMatchObject({ lastKind: "recent", recentSource: "hrvActivity" });
+      expect(started.progress.scheduling).toMatchObject({ lastKind: "recent", recentSource: "hrv" });
       expect(started.progress.health?.backfillThrough).toBeNull();
     } finally { fixture.sqlite.close(); }
   });
@@ -50,11 +50,11 @@ describe("independent health sources during pending activity detail batches", ()
     for (const d of Object.values(p.domains)) d.backfillNext = "2024-02-01"; fixture.job(p);
     const sources: string[] = [];
     const health = vi.fn<typeof collectCorosHealth>().mockImplementation(async (_read, window) => {
-      sources.push(window.source ?? "hrvActivity");
+      sources.push(window.source ?? "hrv");
       const result = { items: [], through: window.through, observedAt: new Date().toISOString(), limitations: [],
         observedDates: [], unconfirmedZeroDates: [] };
-      return window.source ? { ...result, bulkSource: window.source, activityError: undefined }
-        : { ...result, bulkSource: undefined, activityError: undefined, activityContinuation: { detailsRead: 4 } };
+      return window.source === "activity" ? { ...result, activityContinuation: { detailsRead: 1 } }
+        : { ...result, bulkSource: window.source, activityError: undefined };
     });
     const deps: CorosSyncDependencies = {
       refresh: vi.fn().mockResolvedValue({ resourceUrl: "https://mcpcn.coros.com/mcp", accessToken: "synthetic-token" }),
@@ -62,14 +62,14 @@ describe("independent health sources during pending activity detail batches", ()
       adapter: vi.fn().mockResolvedValue({ readText: async () => ({ text: JSON.stringify({ schema_version: 1, workspace_id: "synthetic", owner_id: "test-owner", owner_login: "example-owner", locale: "zh-CN", timezone: "Asia/Shanghai" }) }) }),
     };
     try {
-      for (let tick = 0; tick < 6; tick++) {
+      for (let tick = 0; tick < 8; tick++) {
         vi.setSystemTime(Date.parse(SYNC_TEST_NOW) + tick * 600_000);
         expect((await runCorosSync(fixture.env, new Date(), deps)).status).toBe("processed");
         expect(fixture.saved()?.lease_token).toBeNull();
       }
-      expect(sources).toEqual(["hrvActivity", "hrvActivity", "dailyHealth", "dailyHealth", "restingHeartRate", "restingHeartRate"]);
+      expect(sources).toEqual(["hrv", "hrv", "activity", "activity", "dailyHealth", "dailyHealth", "restingHeartRate", "restingHeartRate"]);
       const saved = fixture.saved()!.progress;
-      expect(saved.health?.backfillNext).toBe("2024-01-01"); // Pending details never become coverage.
+      expect(saved.health?.activity?.backfillNext).toBe("2024-01-01"); // Pending details never become coverage.
       expect(saved.health?.bulk?.dailyHealth.backfillThrough).toBe("2024-01-28");
       expect(saved.health?.bulk?.restingHeartRate.recentRequestSequence).toBe(1);
       expect(saved.health?.lastAttemptSource).toBe("restingHeartRate");
@@ -81,7 +81,7 @@ describe("independent health sources during pending activity detail batches", ()
     const p = initialSyncProgress("2024-01-01", "Asia/Shanghai");
     p.request = { sequence: 1, through: "2024-02-01" };
     nextHealthSyncWindow(p, new Date());
-    p.health!.lastAttemptSource = "hrvActivity";
+    p.health!.lastAttemptSource = "hrv";
     const bulk = initializeBulkHealthProgress(p);
     bulk.dailyHealth.blockedCode = "COROS_READ_RESULT_TOO_LARGE";
     bulk.restingHeartRate.retryAfter = "2024-02-01T04:10:00.000Z";
@@ -96,7 +96,7 @@ describe("independent health sources during pending activity detail batches", ()
     const p = initialSyncProgress("2024-01-01", "Asia/Shanghai");
     p.request = { sequence: 1, through: "2024-02-01" };
     nextHealthSyncWindow(p, new Date());
-    p.health!.lastAttemptSource = "hrvActivity";
+    p.health!.lastAttemptSource = "hrv";
     p.health!.lastBulkAttemptSource = "dailyHealth";
     p.health!.bulk!.dailyHealth.retryAfter = "2024-02-01T04:20:00.000Z";
     vi.setSystemTime("2024-02-01T04:20:00.000Z");
@@ -104,7 +104,7 @@ describe("independent health sources during pending activity detail batches", ()
     p.health!.lastAttemptSource = "restingHeartRate";
     p.health!.lastBulkAttemptSource = "restingHeartRate";
     expect(nextHealthSyncWindow(p, new Date())?.source).toBeUndefined();
-    p.health!.lastAttemptSource = "hrvActivity";
+    p.health!.lastAttemptSource = "hrv";
     expect(nextHealthSyncWindow(p, new Date())).toMatchObject({ source: "dailyHealth" });
   });
 });
