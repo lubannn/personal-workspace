@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { TravelCitySelect, TravelSection } from "./travel-section";
+import { changeTravelStartDate, travelDateError, TravelCitySelect, TravelSection } from "./travel-section";
 import boundaries from "./travel-map/provinces.json";
 import { createWorkspaceRecord } from "../../../../src/lib/github-data/protocol";
 import { createTravelVisitData, TRAVEL_PROVINCES } from "../../../../src/lib/github-data/travel-visits";
@@ -61,5 +61,32 @@ describe("travel UI registration and geography", () => {
     const empty = renderToStaticMarkup(createElement(TravelCitySelect, { ...props, provinceId: "", city: "" }));
     expect(empty).toContain('disabled=""');
     expect(empty).toContain('请先选择省级区域');
+  });
+});
+
+describe("travel date editing", () => {
+  const fields = { province_id: "330000", city: "杭州市", start_date: "", end_date: "2026-10-05", notes: "原备注\n保持原样" };
+  it("moves a previously entered end date to the later start date without changing other fields or the original", () => {
+    expect(changeTravelStartDate(fields, "2026-10-06")).toEqual({ ...fields, start_date: "2026-10-06", end_date: "2026-10-06" });
+    expect(fields.start_date).toBe("");
+    expect(fields.end_date).toBe("2026-10-05");
+  });
+  it("keeps same-day, later, and empty end dates unchanged", () => {
+    expect(changeTravelStartDate(fields, "2026-10-05")).toEqual({ ...fields, start_date: "2026-10-05" });
+    expect(changeTravelStartDate(fields, "2026-10-04")).toEqual({ ...fields, start_date: "2026-10-04" });
+    expect(changeTravelStartDate({ ...fields, end_date: "" }, "2026-10-06")).toEqual({ ...fields, start_date: "2026-10-06", end_date: "" });
+  });
+  it("does not silently replace an invalid endpoint or an empty start", () => {
+    expect(changeTravelStartDate({ ...fields, end_date: "2026-02-30" }, "2026-10-06").end_date).toBe("2026-02-30");
+    expect(changeTravelStartDate(fields, "").end_date).toBe(fields.end_date);
+    expect(changeTravelStartDate(fields, "2026-02-30").end_date).toBe(fields.end_date);
+  });
+  it("reports invalid or reversed dates, while allowing same-day and incomplete fields for editing", () => {
+    expect(travelDateError({ start_date: "2026-10-06", end_date: "2026-10-05" })).toBe("结束日期不得早于开始日期。");
+    expect(travelDateError({ start_date: "2026-10-06", end_date: "2026-02-30" })).toBe("请输入有效的结束日期。");
+    expect(travelDateError({ start_date: "2026-02-30", end_date: "2026-10-06" })).toBe("请输入有效的开始日期。");
+    expect(travelDateError({ start_date: "2026-10-06", end_date: "2026-10-06" })).toBe("");
+    expect(travelDateError({ start_date: "2026-10-06", end_date: "" })).toBe("");
+    expect(travelDateError({ start_date: "", end_date: "2026-10-05" })).toBe("");
   });
 });
