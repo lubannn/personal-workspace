@@ -11,12 +11,15 @@ import type { SleepRecordRow } from "./health-records";
 
 const timestamp = "2024-03-03T00:00:00Z";
 const source = { kind: "coros_mcp" as const, source_id: "synthetic", source_sha256: "a".repeat(64), mapping_version: 1 as const, retrieved_at: timestamp };
+const knownSleep = buildSleepCalendarDays([{ id: "known_sleep", startAt: "2024-02-01T15:00:00Z", endAt: "2024-02-01T23:00:00Z", recordDate: "2024-02-02",
+  timezone: "Asia/Shanghai", source: { kind: "coros_mcp", label: "COROS" }, category: "夜间睡眠", durationSeconds: 28800,
+  asleepSeconds: 25200, awakeSeconds: 3600, score: 90, dateCorrection: null }])[0];
 export function syntheticMetric(id: string, type: string, value: number, unit: string, date = "2024-02-02", complete?: boolean): SyncedHealthMetric {
   const record = createWorkspaceRecord({ entityType: "health_metric", id, ownerId: "synthetic_owner", timestamp,
     data: createAutomaticHealthMetricData({ metric_type: type, value, unit, local_date: date, measured_at: timestamp, timezone: "Asia/Shanghai", aggregation_period: "daily" }, source, complete) });
   return { record, path: recordPath("health_metric", id), blobSha: "a".repeat(40) };
 }
-const day = (patch: Partial<HealthStatusDay> = {}): HealthStatusDay => ({ date: "2024-02-02", dayComplete: true, sleepScore: 90,
+const day = (patch: Partial<HealthStatusDay> = {}): HealthStatusDay => ({ date: "2024-02-02", dayComplete: true, sleep: knownSleep, sleepScore: 90,
   steps: 2000, exerciseMinutes: 20, activeCalories: 200, elevationGainMeters: 10, trainingLoad: 10, recoveryPct: 90, hrvMs: 40, hrvBaselineMs: 40, hrvNormalRangeLowMs: 30, restingBpm: 50, ...patch });
 const baseDays = Array.from({ length: 21 }, (_, index) => day({ date: `2024-01-${String(index + 1).padStart(2, "0")}`, steps: 1000 + index * 100, exerciseMinutes: 10 + index, activeCalories: 100 + index * 10, elevationGainMeters: index, trainingLoad: index }));
 const baseline = buildHealthBaseline(baseDays);
@@ -119,9 +122,9 @@ describe("reviewed COROS health status rules", () => {
   });
   it("does not turn sleep-only, nap-only, or entirely absent signals into a combined positive label", () => {
     const empty = buildHealthBaseline([]);
-    expect(classifyHealthDay({ date: "2024-02-02", dayComplete: false, partialReason: "today", sleepScore: 95 }, empty)).toMatchObject({ status: "insufficient", missing: expect.arrayContaining(["恢复", "HRV", "静息心率", "当天尚未结束"]) });
+    expect(classifyHealthDay({ date: "2024-02-02", dayComplete: false, partialReason: "today", sleep: knownSleep, sleepScore: 95 }, empty)).toMatchObject({ status: "insufficient", missing: expect.arrayContaining(["恢复", "HRV", "静息心率", "当天尚未结束"]) });
     expect(classifyHealthDay({ date: "2024-02-02", dayComplete: false, sleepScore: 60 }, empty).status).toBe("rest");
-    expect(classifyHealthDay({ date: "2024-02-02", dayComplete: false }, empty).status).toBe("insufficient");
+    expect(classifyHealthDay({ date: "2024-02-02", dayComplete: false }, empty).status).toBe("rest");
   });
 });
 
@@ -152,18 +155,26 @@ describe("health metric adaptation and calendar", () => {
         reasons: expect.arrayContaining(["总睡眠低于 3 小时且主睡眠入睡时间缺失"]) });
     }
   });
-  it("does not infer short total sleep from missing, partial, conflicting or elapsed-only durations", () => {
+  it("rates an unavailable total as zero only for the user rule, retaining source missingness", () => {
     const nap = buildSleepCalendarDays([episode({ category: "小睡", asleepSeconds: 10799, score: null })])[0];
     const check = (sleep: typeof nap) => classifyHealthDay(day({ sleep, steps: 10000 }), baseline, "2024-03-03");
     for (const sleep of [
       { ...nap, asleepSeconds: 10800 },
       { ...nap, mainStartAt: timestamp, mainTimezone: "Asia/Shanghai" },
+    ]) expect(check(sleep).status).toBe("active");
+    for (const sleep of [
       { ...nap, asleepSeconds: null, recordedPeriodSeconds: 1800 },
       { ...nap, hasIncompleteDuration: true },
       { ...nap, hasConflictingDailyTotals: true },
       { ...nap, asleepSeconds: NaN },
       { ...nap, asleepSeconds: -1 },
-    ]) expect(check(sleep).status).toBe("active");
+    ]) {
+      expect(check(sleep)).toMatchObject({ status: "rest", reasons: expect.arrayContaining(["总睡眠数据不可用，按用户规则视为 0 小时，且主睡眠入睡时间缺失"]) });
+      expect(check(sleep).used).not.toContain("总睡眠时长");
+      expect(check({ ...sleep, mainStartAt: timestamp, mainTimezone: "Asia/Shanghai" }).status).toBe("active");
+    }
+    expect(classifyHealthDay(day({ sleep: undefined, steps: 10000 }), baseline, "2024-03-03").status).toBe("rest");
+    expect(nap.asleepSeconds).toBe(10799);
     expect(check({ ...nap, asleepSeconds: 0 }).status).toBe("rest");
     // A COROS daily total is valid even when individual nap durations are absent.
     const dailyTotal = buildSleepCalendarDays([episode({ category: "小睡", asleepSeconds: null, dailySleepSeconds: 1800, score: null })])[0];
@@ -196,7 +207,7 @@ describe("health metric adaptation and calendar", () => {
     if (archived.record.data.health_metric_version !== 2) throw new Error(); archived.record.data.revision_of = "point";
     const days = buildHealthStatusDays([], [recovery, archived], "2024-03-03");
     expect(days).toHaveLength(1); expect(days[0]).toMatchObject({ date: "2024-03-03", dayComplete: false, recoveryPct: 60, recoveryObservedAt: timestamp });
-    expect(classifyHealthDay(days[0], buildHealthBaseline([]))).toMatchObject({ status: "rest", reasons: ["同步观测时恢复低于 70%"], recoveryObservedAt: timestamp });
+    expect(classifyHealthDay(days[0], buildHealthBaseline([]))).toMatchObject({ status: "rest", reasons: expect.arrayContaining(["同步观测时恢复低于 70%"]), recoveryObservedAt: timestamp });
     recovery.record.data.local_date = "2024-03-02"; expect(buildHealthStatusDays([], [recovery], "2024-03-03")).toEqual([]);
   });
   it("keeps completeness evidence optional and rejects it on instant records", () => {
@@ -236,7 +247,7 @@ describe("health metric adaptation and calendar", () => {
 });
 
 describe("available historical indicators", () => {
-  const historical = (patch: Partial<HealthStatusDay>) => classifyHealthDay({ date: "2024-02-02", dayComplete: true, ...patch }, baseline, "2024-02-03");
+  const historical = (patch: Partial<HealthStatusDay>) => classifyHealthDay({ date: "2024-02-02", dayComplete: true, sleep: { ...knownSleep, mainStartAt: null, mainTimezone: null }, ...patch }, baseline, "2024-02-03");
   it("grades nap-only dates from measured activity without manufacturing sleep or physiology", () => {
     expect(historical({ steps: 2000, trainingLoad: 0 })).toMatchObject({ status: "steady", used: ["步数", "训练负荷"], limited: true,
       missing: expect.arrayContaining(["睡眠评分", "HRV", "静息心率"]), reasons: expect.arrayContaining(["仅依据已有活动指标，未触发高活动条件；不代表睡眠或生理状态正常"]) });
@@ -255,7 +266,7 @@ describe("available historical indicators", () => {
   });
   it("skips unsupported references and partial source fields, using other complete measurements", () => {
     const sparse = buildHealthBaseline([]);
-    expect(classifyHealthDay({ date: "2024-02-02", dayComplete: true, sleepScore: 95, restingBpm: 50 }, sparse, "2024-02-03"))
+    expect(classifyHealthDay({ date: "2024-02-02", dayComplete: true, sleep: knownSleep, sleepScore: 95, restingBpm: 50 }, sparse, "2024-02-03"))
       .toMatchObject({ status: "good", missing: expect.arrayContaining(["静息心率基线（0/21）"]) });
     expect(historical({ dayComplete: false, partialReason: "source", partialSignals: ["steps", "hrvMs"], steps: 5000, hrvMs: 10, sleepScore: 95 }))
       .toMatchObject({ status: "good", used: ["睡眠评分"], unavailable: expect.arrayContaining(["步数尚未完整"]) });
@@ -264,6 +275,7 @@ describe("available historical indicators", () => {
   it("distinguishes no usable data from an unfinished current date", () => {
     expect(historical({})).toMatchObject({ status: "empty", used: [] });
     expect(historical({ partialSignals: ["steps"], steps: 3000 }).status).toBe("empty");
-    expect(classifyHealthDay({ date: "2024-02-03", dayComplete: false, partialReason: "today", steps: 3000 }, baseline, "2024-02-03").status).toBe("insufficient");
+    expect(historical({ sleep: undefined })).toMatchObject({ status: "rest", used: [] });
+    expect(classifyHealthDay({ date: "2024-02-03", dayComplete: false, partialReason: "today", sleep: knownSleep, steps: 3000 }, baseline, "2024-02-03").status).toBe("insufficient");
   });
 });
