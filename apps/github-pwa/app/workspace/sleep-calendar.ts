@@ -118,8 +118,14 @@ export function summarizeSleepDays(days: SleepCalendarDay[]) {
   const grades = { excellent: 0, good: 0, fair: 0, poor: 0, unscored: 0 };
   for (const day of days) grades[day.grade]++;
   const complete = days.filter((day) => !day.hasIncompleteDuration && day.asleepSeconds !== null);
+  // Keep elapsed-window averages separate from actual asleep averages.
+  const periodDays = days.filter(day => !day.hasConflictingDailyTotals && !day.hasOverlappingEpisodes
+    && (day.hasIncompleteDuration || day.asleepSeconds === null)
+    && Number.isFinite(day.recordedPeriodSeconds) && day.recordedPeriodSeconds > 0);
   return { count: days.length, grades, completeDays: complete.length,
-    averageSeconds: complete.length ? complete.reduce((total, day) => total + day.asleepSeconds!, 0) / complete.length : null };
+    averageSeconds: complete.length ? complete.reduce((total, day) => total + day.asleepSeconds!, 0) / complete.length : null,
+    recordedPeriodDays: periodDays.length,
+    averageRecordedPeriodSeconds: periodDays.length ? periodDays.reduce((total, day) => total + day.recordedPeriodSeconds, 0) / periodDays.length : null };
 }
 
 export function formatSleepTime(seconds: number | null, incomplete = false, compact = false): string {

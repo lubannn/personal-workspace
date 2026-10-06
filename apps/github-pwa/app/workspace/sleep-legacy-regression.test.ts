@@ -49,7 +49,7 @@ describe("legacy sleep archive display regression", () => {
     const rows = archivedRows(body, "2024-03-31");
     const days = buildSleepCalendarDays(rows);
     expect(days).toHaveLength(31);
-    expect(summarizeSleepDays(days)).toMatchObject({ completeDays: 0, averageSeconds: null });
+    expect(summarizeSleepDays(days)).toMatchObject({ completeDays: 0, averageSeconds: null, recordedPeriodDays: 31, averageRecordedPeriodSeconds: 525 * 60 });
     const html = renderToStaticMarkup(createElement(SleepCalendarSection, { rows, timezone: "Asia/Shanghai", selectedMonth: "2024-03" }));
     expect(html.match(/class="sleep-calendar-onset">入睡23:00<\/span>/gu)).toHaveLength(31);
     expect(html.match(/class="sleep-calendar-duration">时段8:45†<\/span>/gu)).toHaveLength(31);
@@ -57,6 +57,7 @@ describe("legacy sleep archive display regression", () => {
     expect(html.match(/平稳<\/strong>/gu)).toHaveLength(18);
     expect(html).not.toContain("总计—</span>");
     expect(html).not.toContain("总计8:45");
+    expect(html).toContain("31 天睡眠 · 平均时段 8时45分†");
   });
 
   it("retains elapsed windows through archived body round-trips and row conversion without inventing net or daily sleep", () => {

@@ -164,6 +164,17 @@ describe("monthly sleep calendar", () => {
     expect(html).not.toContain("总计8:00");
     expect(html).toContain("记录时段8时00分（含清醒）");
     expect(html).not.toContain("平均睡眠");
+    expect(html).toContain("平均时段 8时00分†");
+    expect(html).toContain("包含清醒，不是实睡平均值");
+  });
+  it("averages legacy periods separately from actual totals, excluding conflicts, overlaps and missing dates", () => {
+    const legacy = buildSleepCalendarDays([episode("legacy", { asleepSeconds: null })])[0];
+    const shorter = { ...legacy, date: "2024-02-03", recordedPeriodSeconds: 6 * 3600 };
+    const complete = buildSleepCalendarDays([episode("actual", { recordDate: "2024-02-04", asleepSeconds: 5 * 3600 })])[0];
+    expect(summarizeSleepDays([legacy, shorter])).toMatchObject({ averageSeconds: null, completeDays: 0, averageRecordedPeriodSeconds: 7 * 3600, recordedPeriodDays: 2 });
+    expect(summarizeSleepDays([legacy, shorter, complete])).toMatchObject({ averageSeconds: 5 * 3600, completeDays: 1, averageRecordedPeriodSeconds: 7 * 3600, recordedPeriodDays: 2 });
+    expect(summarizeSleepDays([{ ...legacy, hasOverlappingEpisodes: true }, { ...legacy, hasConflictingDailyTotals: true }, { ...legacy, recordedPeriodSeconds: NaN }]))
+      .toMatchObject({ averageSeconds: null, averageRecordedPeriodSeconds: null, recordedPeriodDays: 0 });
   });
   it("keeps all archive months selectable and does not label an unread month as having no records", () => {
     const html = renderToStaticMarkup(createElement(SleepCalendarSection, { rows: [episode("recent")], timezone: "Asia/Shanghai",

@@ -3,7 +3,7 @@ import type { SyncedHealthMetric } from "./page-model";
 import type { SleepCalendarDay } from "./sleep-calendar";
 
 /** Historical ratings use available measurements, retaining explicit missingness. */
-export const HEALTH_STATUS_RULE_VERSION = 6;
+export const HEALTH_STATUS_RULE_VERSION = 7;
 export const HEALTH_STATUSES = {
   good: { label: "状态不错", short: "不错" },
   steady: { label: "平稳", short: "平稳" },
@@ -19,7 +19,7 @@ export type HealthSignal = "sleepScore" | "recoveryPct" | "hrvMs" | "hrvBaseline
 export type HealthStatusDay = { date: string; dayComplete: boolean; partialReason?: "today" | "source"; partialSignals?: HealthSignal[]; sleep?: SleepCalendarDay; recoveryObservedAt?: string } & Partial<Record<HealthSignal, number | null>>;
 type Distribution = { count: number; median: number | null; p20: number | null; p80: number | null; p90: number | null };
 export type HealthBaseline = Record<typeof baselineMetrics[number], Distribution>;
-export type HealthDayRating = { status: HealthStatus; reasons: string[]; missing: string[]; unavailable: string[]; used: string[]; limited: boolean; partial: boolean; recoveryObservedAt?: string; recoveryNotIncluded?: boolean };
+export type HealthDayRating = { status: HealthStatus; reasons: string[]; missing: string[]; unavailable: string[]; used: string[]; limited: boolean; partial: boolean; provisional: boolean; recoveryObservedAt?: string; recoveryNotIncluded?: boolean };
 const usable = (value: number | null | undefined): value is number => typeof value === "number" && Number.isFinite(value) && value >= 0;
 
 export function healthQuantile(values: number[], probability: number): number | null {
@@ -50,9 +50,13 @@ const enough = (stat: Distribution) => stat.count >= 21 && stat.median !== null;
 
 export function classifyHealthDay(day: HealthStatusDay, baseline: HealthBaseline, today?: string): HealthDayRating {
   const historical = Boolean(today && day.date < today);
+  const provisional = Boolean(today && day.date === today);
   // An incomplete source total excludes its own signal, not the other daily measurements.
   const original = day;
   day = { ...day };
+  // An unfinished current-day cumulative value is valid as of the observation.
+  // Explicitly unreliable source partials remain excluded, and today never enters baselines.
+  if (provisional && day.partialReason !== "source") day.partialSignals = [];
   for (const signal of day.partialSignals ?? []) day[signal] = undefined;
   const hasSleep = usable(day.sleepScore) && day.sleepScore <= 100;
   const hasRecovery = usable(day.recoveryPct) && day.recoveryPct <= 100;
@@ -89,23 +93,25 @@ export function classifyHealthDay(day: HealthStatusDay, baseline: HealthBaseline
     else if (!usable(day[metric])) unavailable.push(label);
     else if (!enough(baseline[metric])) unavailable.push(`${label}基线（${baseline[metric].count}/21）`);
   }
-  if (!day.dayComplete) missing.push(day.partialReason === "today" ? "当天尚未结束" : "来源部分日尚未完整");
+  if (!day.dayComplete && !provisional) missing.push(day.partialReason === "today" ? "当天尚未结束" : "来源部分日尚未完整");
   const used = [shortSleepWithoutOnset && confirmedSleepSeconds !== null && "总睡眠时长", hasSleep && "睡眠评分", hasRecovery && "恢复", usable(day.hrvMs) && "HRV", usable(day.restingBpm) && "静息心率",
     ...activityMetrics.map(metric => usable(day[metric]) && labels[metric])].filter((label): label is string => typeof label === "string");
-  const limited = historical && Boolean(missing.length || unavailable.length || recoveryNotIncluded);
-  const rating = (status: HealthStatus, reasons: string[]): HealthDayRating => ({ status, reasons: recoveryNotIncluded ? [...reasons, "未纳入恢复数据"] : reasons, missing, unavailable, used, limited, partial: !original.dayComplete || Boolean(original.partialSignals?.length), ...(day.recoveryObservedAt ? { recoveryObservedAt: day.recoveryObservedAt } : {}), ...(recoveryNotIncluded ? { recoveryNotIncluded: true } : {}) });
+  const limited = (historical || provisional) && Boolean(missing.length || unavailable.length || recoveryNotIncluded);
+  const rating = (status: HealthStatus, reasons: string[]): HealthDayRating => ({ status, reasons: [...reasons,
+    ...(recoveryNotIncluded ? ["未纳入恢复数据"] : []), ...(provisional ? ["当天暂定评级，后续数据更新时重算"] : [])],
+    missing, unavailable, used, limited, provisional, partial: !original.dayComplete || Boolean(original.partialSignals?.length), ...(day.recoveryObservedAt ? { recoveryObservedAt: day.recoveryObservedAt } : {}), ...(recoveryNotIncluded ? { recoveryNotIncluded: true } : {}) });
   const low = [shortSleepWithoutOnset && shortSleepReason, hasSleep && day.sleepScore! < 70 && "COROS 睡眠评分低于 70", hasRecovery && day.recoveryPct! < 70 && `${day.recoveryObservedAt ? "同步观测时" : "COROS "}恢复低于 70%`]
     .filter((value): value is string => typeof value === "string");
   if (low.length) return rating("rest", low);
   const high = (metric: typeof activityMetrics[number], percentile: "p80" | "p90") => !day.partialSignals?.includes(metric) && usable(day[metric]) && enough(baseline[metric])
     && day[metric]! > baseline[metric].median! && day[metric]! >= baseline[metric][percentile]!;
-  if ((day.dayComplete || historical) && (activityMetrics.some(metric => high(metric, "p90")) || activityMetrics.filter(metric => high(metric, "p80")).length >= 2)) {
-    return rating("active", ["完整日活动量达到个人 p90，或至少两项达到 p80"]);
+  if ((day.dayComplete || historical || provisional) && (activityMetrics.some(metric => high(metric, "p90")) || activityMetrics.filter(metric => high(metric, "p80")).length >= 2)) {
+    return rating("active", [provisional ? "截至当前活动量达到个人 p90，或至少两项达到 p80" : "完整日活动量达到个人 p90，或至少两项达到 p80"]);
   }
   const pressure = [hrvLow && "HRV 低于 COROS 正常范围下限或个人 p20", restingHigh && "静息心率达到个人 p80 与中位数 +5 的较高值"]
     .filter((value): value is string => typeof value === "string");
   if (pressure.length) return rating("rest", pressure);
-  if (historical) {
+  if (historical || provisional) {
     // Missing values and unsupported baselines are omitted, never treated as normal.
     // A good rating needs actual positive physiological evidence; activity zeros alone cannot produce it.
     const positive = [hasSleep ? day.sleepScore! >= 90 : null, hasRecovery ? day.recoveryPct! >= 90 : null,
