@@ -1,6 +1,6 @@
 import type { CorosReadTool, CorosReadResult } from "./coros-read-client";
 import { corosResultText } from "./coros-sync-mapping";
-import { mapCorosRecovery, mapCorosSleepHrv, type CorosHealthMetricItem } from "./coros-health-mapping";
+import { mapCorosRecovery, parseCorosSleepHrvAssessment, type CorosHealthMetricItem } from "./coros-health-mapping";
 import { closedHistoryThrough, initializeActivityProgress, shiftDate, todayInTimezone, type DomainProgress, type SyncProgress, type SyncWindowFilter } from "./coros-sync-state";
 import { collectCorosActivityTotals } from "./coros-health-activity";
 import { collectBulkHealthHistory, nextBulkHealthWindow, type BulkHealthProgress, type BulkHealthSource, type BulkHealthWindow } from "./coros-health-history";
@@ -64,12 +64,16 @@ export async function collectCorosHealth(read: Read, window: HealthSyncWindow, p
     const text = corosResultText(response);
     const emptySingleDay = window.from === through && new RegExp(`^Sleep HRV — ${through}\\n=+\\nNote: dates are wake-up days \\(each value comes from the night that ended that morning\\)\\.\\n\\nNo data found in the last 1 days\\.\\n\\nNo sleep HRV time series data found in the last 1 days\\.$`, "u").test(text);
     let hrv: CorosHealthMetricItem[];
-    try { hrv = emptySingleDay ? [] : mapCorosSleepHrv(response, options(window.from, through)); }
+    let noDataDates: string[];
+    try {
+      const assessment = emptySingleDay ? { items: [], noDataDates: [through] } : parseCorosSleepHrvAssessment(response, options(window.from, through));
+      hrv = assessment.items; noDataDates = assessment.noDataDates;
+    }
     catch (error) {
       if (window.from === through || !(error instanceof Error) || error.message !== "COROS_SYNC_HEALTH_FORMAT_UNSUPPORTED") throw error;
       through = window.from; continue;
     }
-    const dates = new Set(hrv.map(item => item.candidate.local_date));
+    const dates = new Set([...hrv.map(item => item.candidate.local_date), ...noDataDates]);
     const expected = Math.round((Date.parse(through) - Date.parse(window.from)) / 86400000) + 1;
     if (emptySingleDay || dates.size === expected) { items.push(...hrv); break; }
     if (window.from === through) throw new Error("COROS_SYNC_HEALTH_WINDOW_INCOMPLETE");

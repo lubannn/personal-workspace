@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GitHubConflictError, type GitHubContentsAdapter } from "../../../src/lib/github-data/github-contents";
 import { parseHealthMetricRecord } from "../../../src/lib/github-data/health-metrics";
-import { mapCorosSleepHrv } from "./coros-health-mapping";
+import { mapCorosSleepHrv, parseCorosSleepHrvAssessment } from "./coros-health-mapping";
 import { collectCorosHealth } from "./coros-health-sync";
 import { initializeBulkHealthProgress } from "./coros-health-history";
 import { writeCorosHealthMetrics } from "./coros-health-writer";
@@ -12,16 +12,21 @@ import { buildHealthBaseline, classifyHealthDay } from "../../github-pwa/app/wor
 import { SYNC_TEST_NOW, syncTestDatabase } from "./coros-sync-test-helpers";
 
 // Independently checked live shapes: adjacent date blocks; early single-day
-// average only; early multi-day range without baseline. All dates and values here
+// average only; early multi-day range without baseline; dated No data assessments. All dates and values here
 // are synthetic, and raw time-series points intentionally differ from assessments.
 const from = "2024-01-02", through = "2024-01-08";
 const options = { startDate: from, endDate: through, timezone: "Asia/Shanghai", observedAt: SYNC_TEST_NOW };
 const text = (value: string): CorosReadResult => ({ format: "content", payload: [{ type: "text", text: JSON.stringify(value) }] });
 const iso = (value: unknown) => String(value).replace(/^(\d{4})(\d{2})(\d{2})$/u, "$1-$2-$3");
-function response(blocks: string[], separator = "\n") {
-  return text(`Sleep HRV — ${from} to ${through}\n========================\nNote: dates are wake-up days (each value comes from the night that ended that morning).\n\nHRV Assessment — Last ${blocks.length} days\n========================\n\n${blocks.join(separator)}\n\nSleep HRV Time Series — Last ${blocks.length} days\n========================\n\n${from}:\n  timestamp=1, timezone=32, hrv=999 ms, status=4, confidence=1000`);
+function response(blocks: string[], separator = "\n", label = `${from} to ${through}`) {
+  const raw = blocks.some(block => block.includes("HRV Avg:")) ? `${from}:\n  timestamp=1, timezone=32, hrv=999 ms, status=4, confidence=1000` : "No official sleep HRV available; raw omitted.";
+  return text(`Sleep HRV — ${label}\n========================\nNote: dates are wake-up days (each value comes from the night that ended that morning).\n\nHRV Assessment — Last ${blocks.length} days\n========================\n\n${blocks.join(separator)}\n\nSleep HRV Time Series — Last ${blocks.length} days\n========================\n\n${raw}`);
 }
 const averageOnly = (date = from) => `${date}:\n  HRV Avg: 42 ms`;
+const noData = (date: string) => `${date}:\n  No data`;
+const allNoData = () => response(Array.from({ length: 7 }, (_, index) => noData(shiftDate(from, index))));
+const mixedDays = () => response(Array.from({ length: 7 }, (_, index) => index === 4 ? noData(shiftDate(from, index))
+  : `${shiftDate(from, index)}:\n  HRV Avg: 42 ms — Normal\n  Normal Range: 30 - 60 ms\n  Baseline: 40 ms`));
 function sevenDays(separator = "\n") {
   return response(Array.from({ length: 7 }, (_, index) => {
     const date = shiftDate(from, index);
@@ -59,6 +64,34 @@ describe("official historical HRV assessments", () => {
       ["2024-01-03", "sleep_hrv_avg"], ["2024-01-03", "sleep_hrv_baseline"],
       ["2024-01-04", "sleep_hrv_avg"], ["2024-01-04", "sleep_hrv_normal_range_low"], ["2024-01-04", "sleep_hrv_baseline"],
     ]);
+  });
+
+  it("recognizes a dated missing day without creating a health metric", () => {
+    const result = response([noData(from)], "\n", from);
+    expect(parseCorosSleepHrvAssessment(result, { ...options, endDate: from })).toEqual({ items: [], noDataDates: [from] });
+    expect(mapCorosSleepHrv(result, options)).toEqual([]);
+  });
+
+  it("keeps dated missing assessments separate from official values in mixed and entirely empty windows", () => {
+    const mixed = parseCorosSleepHrvAssessment(mixedDays(), options);
+    expect(mixed.noDataDates).toEqual(["2024-01-06"]); expect(mixed.items).toHaveLength(18);
+    expect(mixed.items.some(item => item.candidate.local_date === "2024-01-06" || item.candidate.value === 0 || item.candidate.value === 999)).toBe(false);
+    expect(parseCorosSleepHrvAssessment(allNoData(), options)).toEqual({ items: [], noDataDates: Array.from({ length: 7 }, (_, index) => shiftDate(from, index)) });
+  });
+
+  it.each([
+    [noData(from), noData(from)],
+    [noData(from), averageOnly()],
+    [averageOnly(), noData(from)],
+    [noData("2024-01-01")],
+    [noData("2024-01-09")],
+    [noData("2024-02-30")],
+    [`${from}:\n  No data available`],
+    [`${from}:\n  No data\n  Baseline: 40 ms`],
+    [`${from}:\n  Unknown`],
+    ["No data"],
+  ])("rejects duplicate, conflicting, out-of-range or unknown missing-day blocks %j", (...blocks) => {
+    expect(() => parseCorosSleepHrvAssessment(response(blocks), options)).toThrow("COROS_SYNC_HEALTH_FORMAT_UNSUPPORTED");
   });
 
   it.each([
@@ -114,6 +147,72 @@ function pipeline() {
 describe("historical source shape through persistence and coverage", () => {
   beforeEach(() => { vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(SYNC_TEST_NOW); });
   afterEach(() => vi.useRealTimers());
+
+  it("checks a single explicitly missing day and proceeds to the following date without writing a metric", async () => {
+    const h = pipeline(); const p = h.f.saved()!.progress; p.request!.historyThrough = from; h.f.saveProgress(p);
+    h.read.mockResolvedValue(response([noData(from)], "\n", from));
+    try {
+      expect(await runCorosSync(h.f.env, new Date(), h.deps, { forceDue: true })).toMatchObject({ status: "processed", batch: { from, through: from, created: 0 } });
+      expect(h.read).toHaveBeenCalledTimes(1); expect(h.files.size).toBe(0); expect(h.deps.adapter).not.toHaveBeenCalled();
+      expect(h.f.saved()?.progress.health).toMatchObject({ backfillNext: "2024-01-03", backfillThrough: from, latestRecordDate: null, checkedRanges: [{ from, through: from }] });
+    } finally { h.f.sqlite.close(); }
+  });
+
+  it("commits mixed-day values before checking every explicitly represented date, including the missing day", async () => {
+    const h = pipeline(); h.read.mockResolvedValue(mixedDays());
+    const write = h.adapter.writeAtomicFiles.getMockImplementation()!;
+    h.adapter.writeAtomicFiles.mockImplementation(async input => {
+      expect(h.f.saved()?.progress.health).toMatchObject({ backfillNext: from, backfillThrough: null });
+      expect(h.f.saved()?.progress.health?.checkedRanges).toBeUndefined();
+      return write(input);
+    });
+    try {
+      expect(await runCorosSync(h.f.env, new Date(), h.deps, { forceDue: true })).toMatchObject({ status: "processed", batch: { from, through, created: 18 } });
+      expect(h.read).toHaveBeenCalledTimes(1); expect(h.adapter.writeAtomicFiles).toHaveBeenCalledTimes(1);
+      expect(h.records()).toHaveLength(18); expect(h.records().some(record => record.data.local_date === "2024-01-06" || record.data.value === 0)).toBe(false);
+      expect(h.f.saved()?.progress.health).toMatchObject({ backfillNext: "2024-01-09", backfillThrough: through, checkedRanges: [{ from, through }] });
+      expect((await runCorosSync(h.f.env, new Date(), h.deps, { forceDue: true })).status).toBe("complete");
+    } finally { h.f.sqlite.close(); }
+  });
+
+  it("checks an entirely explicitly empty window without accessing Git or inventing a latest record date", async () => {
+    const h = pipeline(); h.read.mockResolvedValue(allNoData());
+    try {
+      expect(await runCorosSync(h.f.env, new Date(), h.deps, { forceDue: true })).toMatchObject({ status: "processed", batch: { from, through, created: 0 } });
+      expect(h.read).toHaveBeenCalledTimes(1); expect(h.files.size).toBe(0); expect(h.deps.adapter).not.toHaveBeenCalled();
+      expect(h.f.saved()?.progress.health).toMatchObject({ backfillNext: "2024-01-09", backfillThrough: through, created: 0, latestRecordDate: null, checkedRanges: [{ from, through }] });
+    } finally { h.f.sqlite.close(); }
+  });
+
+  it("does not advance mixed-day coverage on a failed write and resumes from persisted progress", async () => {
+    const h = pipeline(); h.read.mockResolvedValue(mixedDays()); h.adapter.writeAtomicFiles.mockRejectedValueOnce(new Error("GITHUB_WRITE_FAILED"));
+    try {
+      expect(await runCorosSync(h.f.env, new Date(), h.deps, { forceDue: true })).toMatchObject({ status: "error", errorCode: "GITHUB_WRITE_FAILED" });
+      expect(h.files.size).toBe(0); expect(h.f.saved()?.progress.health).toMatchObject({ backfillNext: from, backfillThrough: null });
+      expect(h.f.saved()?.progress.health?.checkedRanges).toBeUndefined();
+      vi.setSystemTime("2024-02-01T04:20:00.000Z");
+      expect(await runCorosSync(h.f.env, new Date(), h.deps, { forceDue: true })).toMatchObject({ status: "processed", batch: { created: 18 } });
+      expect(h.f.saved()?.progress.health).toMatchObject({ backfillNext: "2024-01-09", backfillThrough: through, checkedRanges: [{ from, through }] });
+    } finally { h.f.sqlite.close(); }
+  });
+
+  it("rechecks omitted dates singly rather than treating a sparse No data response as a checked window", async () => {
+    const h = pipeline(); h.read.mockResolvedValue(response([noData(from)]));
+    try {
+      expect(await runCorosSync(h.f.env, new Date(), h.deps, { forceDue: true })).toMatchObject({ status: "processed", batch: { from, through: from, created: 0 } });
+      expect(h.read.mock.calls.map(call => call[3].endDate)).toEqual(["20240108", "20240102"]);
+      expect(h.f.saved()?.progress.health).toMatchObject({ backfillNext: "2024-01-03", checkedRanges: [{ from, through: from }] });
+    } finally { h.f.sqlite.close(); }
+  });
+
+  it("does not check an unreturned day when a single-day recheck still only identifies another date", async () => {
+    const h = pipeline(); h.read.mockResolvedValue(response([noData(through)]));
+    try {
+      expect(await runCorosSync(h.f.env, new Date(), h.deps, { forceDue: true })).toMatchObject({ status: "error", errorCode: "COROS_SYNC_HEALTH_FORMAT_UNSUPPORTED" });
+      expect(h.f.saved()?.progress.health).toMatchObject({ backfillNext: from, backfillThrough: null });
+      expect(h.f.saved()?.progress.health?.checkedRanges).toBeUndefined(); expect(h.files.size).toBe(0);
+    } finally { h.f.sqlite.close(); }
+  });
 
   it("commits all seven checked days, leaves absent baselines absent, then reports the bounded scope complete", async () => {
     const h = pipeline();
