@@ -12,6 +12,7 @@ import { decryptRefreshToken, encryptRefreshToken, sha256Base64Url } from "./sec
 import { closedHistoryThrough, dateOnly, extendSyncHistory, initialSyncProgress, parseSyncProgress, readSyncJob, syncReadiness, shiftDate, todayInTimezone, type CorosSyncEnv } from "./coros-sync-state";
 import { readCorosConflictView } from "./coros-sync-conflict-view";
 import { runCorosSync } from "./coros-sync";
+import { clearRejectedCredentialBackoff } from "./coros-credential-backoff";
 
 const OAUTH_ATTEMPT_SECONDS = 10 * 60;
 const RESPONSE_HEADERS = {
@@ -123,6 +124,17 @@ async function callback(request: Request, env: CorosConnectionEnv, userId: strin
   if (!saved.success) throw new Error("COROS_CONNECTION_SAVE_FAILED");
   await env.DB!.prepare("UPDATE coros_sync_jobs SET lease_token = NULL, lease_until = NULL WHERE github_user_id = ?1")
     .bind(userId).run();
+  const job = await readSyncJob(env.DB!, userId);
+  if (job) {
+    let progress: ReturnType<typeof parseSyncProgress> | null = null;
+    try { progress = parseSyncProgress(job.progress_json); } catch { /* Preserve invalid state for the existing sync validation. */ }
+    if (progress && clearRejectedCredentialBackoff(progress)) {
+      await env.DB!.prepare(`UPDATE coros_sync_jobs SET progress_json = ?1, updated_at = ?2
+        WHERE github_user_id = ?3 AND progress_json = ?4 AND lease_token IS NULL
+        AND EXISTS (SELECT 1 FROM coros_connections WHERE github_user_id = ?3 AND state = 'paused' AND connected_at = ?2)`)
+        .bind(JSON.stringify(progress), now, userId, job.progress_json).run();
+    }
+  }
   return new Response(null, { status: 303, headers: { ...RESPONSE_HEADERS,
     location: `${url.origin}/?coros=connected` } });
 }

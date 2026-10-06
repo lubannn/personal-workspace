@@ -57,6 +57,79 @@ describe("COROS scheduled synchronization", () => {
     expect(fixture.saved()?.lease_token).toBeNull();
   });
 
+  it("clears residual credential rejection after refresh succeeds without another authorization", async () => {
+    fixture.connection();
+    const p = initialSyncProgress("2024-01-01", "Asia/Shanghai");
+    p.lastAttemptAt = SYNC_TEST_NOW; p.lastErrorCode = "COROS_OAUTH_REFRESH_HTTP_400_INVALID_GRANT";
+    p.lastErrorStage = "credentials_refresh"; p.failureCount = 4;
+    Object.assign(p.domains.sleep, { retryAfter: "2099-01-01T00:00:00.000Z", lastErrorCode: p.lastErrorCode, lastErrorStage: "credentials_refresh" });
+    fixture.job(p); const { deps } = dependencies();
+    expect((await runCorosSync(fixture.env, new Date(), deps)).status).toBe("processed");
+    expect(deps.refresh).toHaveBeenCalledTimes(1);
+    expect(deps.read).toHaveBeenCalledWith(expect.any(String), expect.any(String), "querySportRecords", expect.any(Object));
+    expect(deps.write.mock.calls[0][1].items.length).toBeGreaterThan(0);
+    expect(fixture.saved()?.progress.domains.sleep).toEqual({ ...p.domains.sleep, retryAfter: null, lastErrorCode: null, lastErrorStage: null });
+  });
+
+  it("uses a newer authorization to recover credential gates before window selection", async () => {
+    fixture.connection();
+    const p = initialSyncProgress("2024-01-01", "Asia/Shanghai"); p.lastAttemptAt = "2024-01-31T00:00:00.000Z";
+    for (const d of Object.values(p.domains)) Object.assign(d, { retryAfter: "2099-01-01T00:00:00.000Z",
+      lastErrorCode: "COROS_OAUTH_REFRESH_HTTP_400_INVALID_GRANT", lastErrorStage: "credentials_refresh" });
+    fixture.job(p); const { deps } = dependencies();
+    expect((await runCorosSync(fixture.env, new Date(), deps)).status).toBe("processed");
+    expect(deps.refresh).toHaveBeenCalledTimes(1); expect(deps.write.mock.calls[0][1].items.length).toBeGreaterThan(0);
+    expect(fixture.saved()?.progress.domains.workout.retryAfter).toBeNull();
+  });
+
+  it("recovers remaining old gates when the latest attempt already succeeded after reauthorization", async () => {
+    fixture.connection();
+    fixture.sqlite.prepare("UPDATE coros_connections SET connected_at = '2024-01-31T00:00:00.000Z'").run();
+    const p = initialSyncProgress("2024-01-01", "Asia/Shanghai");
+    p.lastAttemptAt = SYNC_TEST_NOW; p.lastSuccessAt = SYNC_TEST_NOW;
+    for (const d of Object.values(p.domains)) Object.assign(d, { retryAfter: "2099-01-01T00:00:00.000Z",
+      lastErrorCode: "COROS_OAUTH_REFRESH_HTTP_400_INVALID_GRANT", lastErrorStage: "credentials_refresh" });
+    fixture.job(p); const { deps } = dependencies();
+    expect((await runCorosSync(fixture.env, new Date(), deps)).status).toBe("processed");
+    expect(deps.refresh).toHaveBeenCalledTimes(1); expect(deps.write.mock.calls[0][1].items.length).toBeGreaterThan(0);
+    expect(fixture.saved()?.progress.domains.workout.retryAfter).toBeNull();
+  });
+
+  it("retains old credential gates if the new refresh fails", async () => {
+    fixture.connection(); const p = initialSyncProgress("2024-01-01", "Asia/Shanghai");
+    p.lastAttemptAt = SYNC_TEST_NOW;
+    Object.assign(p.domains.sleep, { retryAfter: "2099-01-01T00:00:00.000Z",
+      lastErrorCode: "COROS_OAUTH_REFRESH_HTTP_400_INVALID_GRANT", lastErrorStage: "credentials_refresh" });
+    fixture.job(p); const { deps } = dependencies();
+    deps.refresh.mockRejectedValue(new Error("COROS_OAUTH_REFRESH_HTTP_400_INVALID_GRANT"));
+    expect((await runCorosSync(fixture.env, new Date(), deps)).status).toBe("error");
+    expect(fixture.saved()?.progress.domains.sleep).toEqual(p.domains.sleep);
+    expect(deps.read).not.toHaveBeenCalled(); expect(deps.write).not.toHaveBeenCalled();
+  });
+
+  it("does not confuse a failed attempt with a same-timestamp successful refresh", async () => {
+    fixture.connection(); fixture.sqlite.prepare("UPDATE coros_connections SET connected_at = '2024-01-31T00:00:00.000Z'").run();
+    const p = initialSyncProgress("2024-01-01", "Asia/Shanghai");
+    p.lastAttemptAt = SYNC_TEST_NOW; p.lastSuccessAt = SYNC_TEST_NOW;
+    p.lastErrorCode = "COROS_OAUTH_REFRESH_HTTP_400_INVALID_GRANT"; p.lastErrorStage = "credentials_refresh";
+    for (const d of Object.values(p.domains)) Object.assign(d, { retryAfter: "2099-01-01T00:00:00.000Z",
+      lastErrorCode: p.lastErrorCode, lastErrorStage: "credentials_refresh" });
+    fixture.job(p); const { deps } = dependencies();
+    expect((await runCorosSync(fixture.env, new Date(), deps)).status).toBe("deferred");
+    expect(deps.refresh).not.toHaveBeenCalled(); expect(fixture.saved()?.progress.domains.sleep).toEqual(p.domains.sleep);
+  });
+
+  it("does not bypass credential gates without a newer grant or successful refresh", async () => {
+    fixture.connection();
+    const p = initialSyncProgress("2024-01-01", "Asia/Shanghai"); p.lastAttemptAt = SYNC_TEST_NOW;
+    for (const d of Object.values(p.domains)) Object.assign(d, { retryAfter: "2099-01-01T00:00:00.000Z",
+      lastErrorCode: "COROS_OAUTH_REFRESH_HTTP_400_INVALID_GRANT", lastErrorStage: "credentials_refresh" });
+    fixture.job(p); const { deps } = dependencies();
+    expect((await runCorosSync(fixture.env, new Date(), deps)).status).toBe("deferred");
+    expect(deps.refresh).not.toHaveBeenCalled();
+    expect(fixture.saved()?.progress.domains.sleep.retryAfter).toBe("2099-01-01T00:00:00.000Z");
+  });
+
   it("claims one lease before refresh-token rotation even when scheduler invocations overlap", async () => {
     fixture.connection(); fixture.job(); const { deps } = dependencies();
     let entered!: () => void; const enteredPromise = new Promise<void>(resolve => { entered = resolve; });
