@@ -6,7 +6,7 @@ import { readCookie, type ConnectionMethod } from "./page-model";
 import "./health-records.css";
 import { CorosConflicts } from "./coros-conflicts";
 import { COROS_BUSY_POLL_MS, drainCorosHistory } from "./coros-history-client";
-import { corosCheckedRangeText, corosHistorySources, corosSyncErrorMessage as errorMessage, saveCorosHistorySettings } from "./coros-history-settings";
+import { corosCheckedRangeText, corosHistorySources, corosNeedsReauthorization, corosSyncErrorMessage as errorMessage, saveCorosHistorySettings } from "./coros-history-settings";
 import type { BulkHealthSource } from "../../../auth-worker/src/coros-health-history";
 
 type CorosStatus = {
@@ -172,6 +172,9 @@ export function CorosConnectionSection({ connectionMethod, onClearHealthCache, c
 
   async function mutate(path: Mutation) {
     if (busyRef.current) return;
+    if (path === "/coros/start" && status?.connected && status.state !== "paused") {
+      setMessage("请先暂停自动更新，再重新授权。已有记录与进度保留。"); return;
+    }
     const csrf = readCookie("__Host-pw_csrf");
     if (!csrf) { setMessage("GitHub 登录会话已失效，请重新登录。"); return; }
     const syncStart = status?.sync?.progress?.startDate ?? startDate;
@@ -236,6 +239,8 @@ export function CorosConnectionSection({ connectionMethod, onClearHealthCache, c
   const historyScopeSupported = status?.sync?.capabilities?.historyScope === true;
   const canSaveHistory = status?.state === "paused" && !status.sync?.running && historyScopeSupported && !busy && !refreshing;
   const lastError = errorMessage(status?.lastErrorCode ?? progress?.lastErrorCode);
+  const showReauthorization = status?.connected && (status.state === "paused"
+    || corosNeedsReauthorization(status.lastErrorCode ?? progress?.lastErrorCode));
 
   return <section ref={section} className="learning-card health-card coros-compact" aria-labelledby="coros-connection-title" aria-busy={busy || refreshing}>
     <div className="coros-compact-heading">
@@ -253,6 +258,7 @@ export function CorosConnectionSection({ connectionMethod, onClearHealthCache, c
     {view === "error" ? <p role="alert">暂时无法确认同步状态，请在设置中重新检查。</p> : null}
     {status?.connected && !ready ? <p role="status">后台同步服务尚未准备好。</p> : null}
     {lastError ? <p role="alert">{lastError}</p> : null}
+    {showReauthorization ? <p>请先暂停自动更新，再点击「重新授权（保留进度）」并在 COROS 完成授权。授权成功后仍保持暂停，点击「恢复自动更新」接着已保存进度继续；已有记录与历史范围保留。</p> : null}
     {historyRunning ? <p role="status">{historyWaiting ? "等待同步任务释放租约" : "正在补齐历史"} · 本页面已完成 {historyBatches} 批。
       {historyWaiting ? <> 每 {COROS_BUSY_POLL_MS / 1000} 秒检查是否可继续。{historyRetryAt ? <>当前租约到期：{displayTime(historyRetryAt)}；提前释放即可继续。</> : null}</> : null}
       <button className="secondary-button" type="button" onClick={stopHistoryBackfill}>停止本次补齐</button><span>仅停止本页面连续处理；后台仍会继续。停止后可点击「暂停自动更新」暂停后台。</span>
@@ -290,7 +296,7 @@ export function CorosConnectionSection({ connectionMethod, onClearHealthCache, c
           <button className="secondary-button" type="button" onClick={() => void refresh()} disabled={busy || refreshing || connectionMethod !== "github-app"}>{refreshing ? "检查中…" : "检查状态"}</button>
           {status?.connected ? <>
             {enabled ? <><button className="secondary-button" type="button" disabled={busy || !ready} onClick={() => void backfillHistory()}>开始/继续补齐历史</button><button className="secondary-button" type="button" disabled={busy} onClick={() => void mutate("/coros/pause")}>暂停自动更新</button></> : <button className="secondary-button" type="button" disabled={busy} onClick={() => void previewOneDay()}>检查读取连接</button>}
-            {lastError?.includes("重新连接") ? <button className="secondary-button" type="button" disabled={busy} onClick={() => void mutate("/coros/start")}>重新连接</button> : null}
+            {showReauthorization ? <button className="secondary-button" type="button" disabled={busy || refreshing || status.state !== "paused"} onClick={() => void mutate("/coros/start")}>重新授权（保留进度）</button> : null}
             {onClearHealthCache ? <button className="secondary-button" type="button" disabled={busy || clearingCache || cacheBusy} onClick={() => {
               setClearingCache(true);
               void onClearHealthCache().then(() => setMessage("已清除本机月历缓存，GitHub 中的记录仍保留。")).catch(() => setMessage("本机缓存暂未清除，请稍后重试。")).finally(() => setClearingCache(false));

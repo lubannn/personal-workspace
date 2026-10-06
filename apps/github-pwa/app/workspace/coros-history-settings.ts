@@ -2,6 +2,12 @@ import { parseCorosOAuthFailure } from "../../../auth-worker/src/coros-oauth-err
 import type { DomainProgress, SyncProgress } from "../../../auth-worker/src/coros-sync-state";
 import type { BulkHealthSource, BulkHealthSourceProgress } from "../../../auth-worker/src/coros-health-history";
 
+export function corosNeedsReauthorization(code: string | null | undefined): boolean {
+  const oauth = parseCorosOAuthFailure(code);
+  return (oauth?.phase === "REFRESH" && oauth.oauthError === "invalid_grant")
+    || ["COROS_READ_UNAUTHORIZED", "COROS_TOKEN_INVALID", "COROS_MCP_CONNECTION_INVALID"].includes(code ?? "");
+}
+
 export function corosSyncErrorMessage(code: string | null | undefined): string | null {
   if (!code) return null;
   const oauth = parseCorosOAuthFailure(code);
