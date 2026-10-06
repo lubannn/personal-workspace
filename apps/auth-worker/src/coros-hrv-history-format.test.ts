@@ -5,7 +5,7 @@ import { mapCorosSleepHrv } from "./coros-health-mapping";
 import { collectCorosHealth } from "./coros-health-sync";
 import { initializeBulkHealthProgress } from "./coros-health-history";
 import { writeCorosHealthMetrics } from "./coros-health-writer";
-import { initialSyncProgress, shiftDate } from "./coros-sync-state";
+import { initializeActivityProgress, initialSyncProgress, shiftDate } from "./coros-sync-state";
 import { runCorosSync, type CorosSyncDependencies } from "./coros-sync";
 import type { CorosReadResult } from "./coros-read-client";
 import { buildHealthBaseline, classifyHealthDay } from "../../github-pwa/app/workspace/health-status";
@@ -83,6 +83,7 @@ function pipeline() {
   for (const d of Object.values(p.domains)) { d.recentRequestSequence = 1; d.backfillNext = "2024-01-09"; }
   p.health = { ...initialSyncProgress(from, p.timezone).domains.sleep, recentRequestSequence: 1 };
   for (const d of Object.values(initializeBulkHealthProgress(p))) { d.recentRequestSequence = 1; d.backfillNext = "2024-01-09"; }
+  initializeActivityProgress(p).backfillNext = "2024-01-09";
   f.job(p);
   const files = new Map<string, string>(); let version = 1;
   const adapter = {
@@ -118,8 +119,8 @@ describe("historical source shape through persistence and coverage", () => {
     const h = pipeline();
     try {
       const result = await runCorosSync(h.f.env, new Date(), h.deps, { forceDue: true });
-      expect(result).toMatchObject({ status: "processed", batch: { domain: "health", from, through, created: 31 } });
-      expect(h.read.mock.calls.map(call => call[2])).toEqual(["querySleepHrv", "querySportRecords"]);
+      expect(result).toMatchObject({ status: "processed", batch: { domain: "health", from, through, created: 17 } });
+      expect(h.read.mock.calls.map(call => call[2])).toEqual(["querySleepHrv"]);
       expect(h.adapter.writeAtomicFiles).toHaveBeenCalledTimes(1);
       expect(h.f.saved()?.progress.health).toMatchObject({ backfillNext: "2024-01-09", backfillThrough: through, lastErrorCode: null });
       expect(h.records().filter(record => record.data.metric_type === "sleep_hrv_avg")).toHaveLength(7);
@@ -137,10 +138,10 @@ describe("historical source shape through persistence and coverage", () => {
       ? response(args.startDate === args.endDate ? [averageOnly()] : [averageOnly(), averageOnly(through)])
       : text(`No sport records found from ${iso(args.startDate)} to ${iso(args.endDate)}.`));
     try {
-      expect(await runCorosSync(h.f.env, new Date(), h.deps, { forceDue: true })).toMatchObject({ status: "processed", batch: { from, through: from, created: 3 } });
-      expect(h.read.mock.calls.map(call => call[2])).toEqual(["querySleepHrv", "querySleepHrv", "querySportRecords"]);
+      expect(await runCorosSync(h.f.env, new Date(), h.deps, { forceDue: true })).toMatchObject({ status: "processed", batch: { from, through: from, created: 1 } });
+      expect(h.read.mock.calls.map(call => call[2])).toEqual(["querySleepHrv", "querySleepHrv"]);
       expect(h.f.saved()?.progress.health).toMatchObject({ backfillNext: "2024-01-03", backfillThrough: from });
-      expect(h.records().map(record => record.data.metric_type).sort()).toEqual(["elevation_gain", "sleep_hrv_avg", "training_load"]);
+      expect(h.records().map(record => record.data.metric_type).sort()).toEqual(["sleep_hrv_avg"]);
       expect(h.records().find(record => record.data.metric_type === "sleep_hrv_avg")?.data.value).toBe(42);
     } finally { h.f.sqlite.close(); }
   });
@@ -153,9 +154,9 @@ describe("historical source shape through persistence and coverage", () => {
       expect((await runCorosSync(h.f.env, new Date(), h.deps, { forceDue: true })).status).toBe("deferred");
       vi.setSystemTime("2024-02-01T04:20:00.000Z");
       // Each call parses committed D1 state again; no process-local progress is carried forward.
-      expect(await runCorosSync(h.f.env, new Date(), h.deps, { forceDue: true })).toMatchObject({ status: "processed", batch: { created: 31 } });
+      expect(await runCorosSync(h.f.env, new Date(), h.deps, { forceDue: true })).toMatchObject({ status: "processed", batch: { created: 17 } });
       expect(h.f.saved()?.progress.health).toMatchObject({ backfillNext: "2024-01-09", backfillThrough: through });
-      expect(h.files.size).toBe(31);
+      expect(h.files.size).toBe(17);
     } finally { h.f.sqlite.close(); }
   });
 
@@ -168,11 +169,11 @@ describe("historical source shape through persistence and coverage", () => {
     };
     try {
       expect((await runCorosSync(h.f.env, new Date(), h.deps, { forceDue: true })).status).toBe("error");
-      expect(h.files.size).toBe(31); expect(h.f.saved()?.progress.health?.backfillNext).toBe(from);
+      expect(h.files.size).toBe(17); expect(h.f.saved()?.progress.health?.backfillNext).toBe(from);
       vi.setSystemTime("2024-02-01T04:20:00.000Z");
-      expect(await runCorosSync(h.f.env, new Date(), h.deps, { forceDue: true })).toMatchObject({ status: "processed", batch: { created: 0, updated: 0, unchanged: 31 } });
+      expect(await runCorosSync(h.f.env, new Date(), h.deps, { forceDue: true })).toMatchObject({ status: "processed", batch: { created: 0, updated: 0, unchanged: 17 } });
       expect(h.adapter.writeAtomicFiles).toHaveBeenCalledTimes(1);
-      expect(h.files.size).toBe(31); expect(h.f.saved()?.progress.health?.backfillNext).toBe("2024-01-09");
+      expect(h.files.size).toBe(17); expect(h.f.saved()?.progress.health?.backfillNext).toBe("2024-01-09");
     } finally { h.f.sqlite.close(); }
   });
 

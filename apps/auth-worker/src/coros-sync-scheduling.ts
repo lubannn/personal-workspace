@@ -27,7 +27,7 @@ export function nextFairSyncWindow(progress: SyncProgress, now: Date, healthEnab
 /** Save before I/O so failure, pending details or lease expiry still yield the next turn. */
 export function recordSyncTurn(progress: SyncProgress, window: Window) {
   const kind = window.recent ? "recent" : "history";
-  const source: SyncSource = window.domain === "health" ? window.source ?? "hrvActivity" : window.domain;
+  const source: SyncSource = window.domain === "health" ? window.source ?? "hrv" : window.domain;
   progress.scheduling = { ...progress.scheduling, lastKind: kind, [kind === "recent" ? "recentSource" : "historySource"]: source };
 }
 

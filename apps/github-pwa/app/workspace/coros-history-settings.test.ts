@@ -85,10 +85,10 @@ describe("explicit COROS history settings", () => {
       restingHeartRate: { ...p.domains.workout, lastErrorCode: "COROS_READ_TIMEOUT", retryAfter: "2024-03-01T01:00:00Z" },
     } };
     const sources = corosHistorySources(p);
-    expect(sources.map(source => source.label)).toEqual(["睡眠", "运动", "HRV与活动指标", "日健康", "静息心率"]);
+    expect(sources.map(source => source.label)).toEqual(["睡眠", "运动", "HRV", "爬升与训练负荷", "日健康", "静息心率"]);
     expect(sources[0].progress?.retryAfter).toBe("2024-03-01T00:00:00Z");
-    expect(sources[3]).toMatchObject({ resetSource: "dailyHealth", progress: { blockedCode: "COROS_READ_RESULT_TOO_LARGE" } });
-    expect(corosSyncErrorMessage(sources[3].progress?.blockedCode)).toContain("已停止自动重试");
+    expect(sources[4]).toMatchObject({ resetSource: "dailyHealth", progress: { blockedCode: "COROS_READ_RESULT_TOO_LARGE" } });
+    expect(corosSyncErrorMessage(sources[4].progress?.blockedCode)).toContain("已停止自动重试");
     expect(sources[4].progress?.backfillThrough).toBeNull();
   });
 });

@@ -8,10 +8,10 @@ import { callCorosReadTool, type CorosReadTool } from "./coros-read-client";
 import { mapCorosSleep, mapCorosWorkouts } from "./coros-sync-mapping";
 import { createPrivateDataInstallationAdapter } from "./github-installation";
 import { writeCorosSyncBatch } from "./coros-sync-writer";
-import { collectCorosHealth } from "./coros-health-sync";
+import { collectCorosHealth, healthWindowProgress } from "./coros-health-sync";
 import { writeCorosHealthMetrics } from "./coros-health-writer";
 import { COROS_BULK_HEALTH_SOURCES } from "./coros-health-history";
-import { recordCheckedRange, advanceHistoricalCoverage, closedHistoryThrough, acceptSyncRequest, parseSyncProgress, readSyncJob, recentWindowStart, shiftDate, todayInTimezone, syncReadiness, type CorosSyncEnv, type SyncProgress, type SyncErrorStage } from "./coros-sync-state";
+import { recordCheckedRange, advanceHistoricalCoverage, closedHistoryThrough, acceptSyncRequest, parseSyncProgress, readSyncJob, recentWindowStart, shiftDate, todayInTimezone, syncReadiness, syncProgressDomains, type CorosSyncEnv, type SyncProgress, type SyncErrorStage } from "./coros-sync-state";
 
 const dependencies = { refresh: refreshEnabledCorosConnection, read: callCorosReadTool,
   adapter: createPrivateDataInstallationAdapter, write: writeCorosSyncBatch, health: collectCorosHealth, writeMetrics: writeCorosHealthMetrics };
@@ -46,7 +46,9 @@ function pendingRetry(progress: SyncProgress, now: Date, recentOnly = false): st
     || (!recentOnly && progress.domains[domain].backfillNext <= closedHistoryThrough(progress, now)))
     .map(domain => progress.domains[domain].retryAfter ?? null)
     .filter((time): time is string => time !== null);
-  if (progress.health?.retryAfter && (progress.health.recentRequestSequence !== progress.request.sequence || (!recentOnly && progress.health.backfillNext <= closedHistoryThrough(progress, now)))) retries.push(progress.health.retryAfter);
+  for (const d of [progress.health, progress.health?.activity]) {
+    if (d?.retryAfter && (d.recentRequestSequence !== progress.request.sequence || (!recentOnly && d.backfillNext <= closedHistoryThrough(progress, now)))) retries.push(d.retryAfter);
+  }
   for (const source of COROS_BULK_HEALTH_SOURCES) {
     const d = progress.health?.bulk?.[source];
     if (d?.retryAfter && (d.recentRequestSequence !== progress.request.sequence || (!recentOnly && d.backfillNext <= closedHistoryThrough(progress, now)))) retries.push(d.retryAfter);
@@ -92,8 +94,8 @@ export async function runCorosSync(env: CorosSyncEnv, now = new Date(), deps: Co
     return { status: "error", errorCode: "COROS_SYNC_STATE_INVALID" };
   }
   // Migrate the previous normal-yield marker without clearing real failures.
-  if (progress.health?.lastErrorCode === "COROS_SYNC_ACTIVITY_DETAILS_PENDING") {
-    progress.health.retryAfter = null; progress.health.lastErrorCode = null; progress.health.lastErrorStage = null;
+  for (const domain of syncProgressDomains(progress)) if (domain.lastErrorCode === "COROS_SYNC_ACTIVITY_DETAILS_PENDING") {
+    domain.retryAfter = null; domain.lastErrorCode = null; domain.lastErrorStage = null;
   }
   if (progress.lastErrorCode === "COROS_SYNC_ACTIVITY_DETAILS_PENDING") {
     progress.lastErrorCode = null; progress.lastErrorStage = null;
@@ -105,7 +107,7 @@ export async function runCorosSync(env: CorosSyncEnv, now = new Date(), deps: Co
     || (progress.lastErrorCode === null && succeededAt > grantAt && succeededAt >= attemptedAt))) clearRejectedCredentialBackoff(progress);
   const window = nextFairSyncWindow(progress, now, Boolean(deps.health && deps.writeMetrics), options.recentOnly);
   const domainPosition = () => {
-    const domain = window?.domain === "health" ? window.source ? progress.health!.bulk![window.source] : progress.health!
+    const domain = window?.domain === "health" ? healthWindowProgress(progress, window)
       : window ? progress.domains[window.domain] : undefined;
     return JSON.stringify(domain && [domain.backfillNext, domain.backfillThrough, domain.recentNext, domain.recentThrough, domain.recentRequestSequence]);
   };
@@ -144,8 +146,8 @@ export async function runCorosSync(env: CorosSyncEnv, now = new Date(), deps: Co
     progress.lastAttemptAt = now.toISOString();
     recordSyncTurn(progress, window);
     if (window.domain === "health") {
-      progress.health!.lastAttemptSource = window.source ?? "hrvActivity";
-      if (window.source) progress.health!.lastBulkAttemptSource = window.source;
+      progress.health!.lastAttemptSource = window.source ?? "hrv";
+      if (window.source && window.source !== "activity") progress.health!.lastBulkAttemptSource = window.source;
     }
     await checkpoint();
     stage = "credentials_refresh";
@@ -165,20 +167,23 @@ export async function runCorosSync(env: CorosSyncEnv, now = new Date(), deps: Co
       stage = "health_collect";
       const collected = await deps.health!(read, window, progress, assertActive, now, env.TOKEN_ENCRYPTION_KEY, checkpoint);
       await assertActive();
-      stage = "github_adapter";
-      const adapter = await deps.adapter({ appId: env.GITHUB_APP_ID!, installationId: env.GITHUB_APP_INSTALLATION_ID!, privateKeyPem: env.GITHUB_APP_PRIVATE_KEY!, owner: env.ALLOWED_REPO_OWNER!, repository: env.ALLOWED_REPO_NAME! });
-      stage = "workspace_read";
-      const descriptorText = (await adapter.readText("workspace.json")).text;
-      stage = "workspace_validate";
-      const descriptor = parseWorkspaceDescriptor(descriptorText);
-      if (descriptor.owner_login !== env.ALLOWED_GITHUB_LOGIN || descriptor.owner_id !== env.COROS_WORKSPACE_OWNER_ID || descriptor.timezone !== progress.timezone) throw new Error("COROS_SYNC_WORKSPACE_MISMATCH");
-      stage = "health_write";
-      const outcome = collected.items.length ? await deps.writeMetrics!(adapter, { ownerId: descriptor.owner_id, items: collected.items, timestamp: collected.observedAt, beforeCommit: assertActive }) : { created: 0, updated: 0, unchanged: 0 };
+      let outcome = { created: 0, updated: 0, unchanged: 0 };
+      if (collected.items.length) {
+        stage = "github_adapter";
+        const adapter = await deps.adapter({ appId: env.GITHUB_APP_ID!, installationId: env.GITHUB_APP_INSTALLATION_ID!, privateKeyPem: env.GITHUB_APP_PRIVATE_KEY!, owner: env.ALLOWED_REPO_OWNER!, repository: env.ALLOWED_REPO_NAME! });
+        stage = "workspace_read";
+        const descriptorText = (await adapter.readText("workspace.json")).text;
+        stage = "workspace_validate";
+        const descriptor = parseWorkspaceDescriptor(descriptorText);
+        if (descriptor.owner_login !== env.ALLOWED_GITHUB_LOGIN || descriptor.owner_id !== env.COROS_WORKSPACE_OWNER_ID || descriptor.timezone !== progress.timezone) throw new Error("COROS_SYNC_WORKSPACE_MISMATCH");
+        stage = "health_write";
+        outcome = await deps.writeMetrics!(adapter, { ownerId: descriptor.owner_id, items: collected.items, timestamp: collected.observedAt, beforeCommit: assertActive });
+      }
       await assertActive();
       stage = "coverage_checkpoint";
       const health = progress.health!;
-      const domain = collected.bulkSource ? health.bulk![collected.bulkSource] : health;
-      if (!collected.activityError) recordCheckedRange(domain, window.from, collected.through);
+      const domain = healthWindowProgress(progress, window);
+      if (!collected.activityError && !collected.activityContinuation) recordCheckedRange(domain, window.from, collected.through);
       if (collected.bulkSource) {
         const bulk = health.bulk![collected.bulkSource];
         bulk.observedDates = [...new Set([...(bulk.observedDates ?? []), ...collected.observedDates])].sort();
@@ -191,17 +196,18 @@ export async function runCorosSync(env: CorosSyncEnv, now = new Date(), deps: Co
           advanceHistoricalCoverage(progress, domain, window.from, collected.through, now);
         } else { advanceHistoricalCoverage(progress, domain, window.from, collected.through, now); }
       } else if (collected.activityError || collected.activityContinuation) {
-        // A pending activity source never discards verified bulk/HRV facts or
-        // advances the common coverage checkpoint. Encrypted details resume later.
-        if (window.recent) { health.recentDataThrough = todayInTimezone(new Date(collected.observedAt), progress.timezone); domain.recentNext = window.from; }
+        // Encrypted activity details resume without advancing that source's
+        // coverage or repeating already committed HRV reads.
+        if (window.recent) domain.recentNext = window.from;
       } else if (window.recent) {
-        health.recentDataThrough = todayInTimezone(new Date(collected.observedAt), progress.timezone);
+        if (window.source !== "activity") health.recentDataThrough = todayInTimezone(new Date(collected.observedAt), progress.timezone);
         domain.recentThrough = collected.through;
         domain.recentNext = collected.through < progress.request!.through ? shiftDate(collected.through, 1) : null;
         if (!domain.recentNext) { domain.recentRequestSequence = progress.request!.sequence; domain.lastRecentAt = collected.observedAt; }
         advanceHistoricalCoverage(progress, domain, window.from, collected.through, now);
       } else { advanceHistoricalCoverage(progress, domain, window.from, collected.through, now); }
       domain.created += outcome.created; health.limitations = collected.limitations;
+      if (domain.failureCount !== undefined && !collected.activityError) domain.failureCount = 0;
       domain.retryAfter = collected.activityError ? isoAfter(now, 10 * 60000) : null; domain.lastErrorCode = collected.activityError ?? null;
       domain.lastErrorStage = collected.activityError ? "health_collect" : null;
       domain.latestRecordDate = [domain.latestRecordDate, ...collected.items.map(item => item.candidate.local_date)].filter((value): value is string => value !== null).sort().at(-1) ?? null;
@@ -292,6 +298,7 @@ export async function runCorosSync(env: CorosSyncEnv, now = new Date(), deps: Co
     if (latest && (!domain.latestRecordDate || latest > domain.latestRecordDate)) domain.latestRecordDate = latest;
     domain.created += outcome.created;
     domain.retryAfter = null; domain.lastErrorCode = null; domain.lastErrorStage = null;
+    if (domain.failureCount !== undefined) domain.failureCount = 0;
     progress.conflicts = outcome.totalPendingConflicts;
     progress.lastSuccessAt = now.toISOString(); progress.lastErrorCode = null; progress.lastErrorStage = null; progress.failureCount = 0;
     progress.lastBatch = { domain: window.domain, from: window.from, through: window.through,
@@ -318,21 +325,30 @@ export async function runCorosSync(env: CorosSyncEnv, now = new Date(), deps: Co
     const code = parseCorosOAuthFailure(message) || (!phasedOAuth && /^(?:COROS|GITHUB)_[A-Z_]{1,80}$/u.test(message)) ? message : "COROS_SYNC_FAILED";
     progress.lastErrorCode = code; progress.lastErrorStage = stage; progress.failureCount += 1;
     if (window) {
-      const domain = window.domain === "health" ? window.source ? progress.health!.bulk![window.source] : progress.health! : progress.domains[window.domain];
-      domain.retryAfter = isoAfter(now, Math.min(120, 10 * 2 ** Math.min(progress.failureCount, 4)) * 60000);
+      const domain = window.domain === "health" ? healthWindowProgress(progress, window) : progress.domains[window.domain];
+      domain.failureCount = (domain.failureCount ?? 0) + 1;
+      domain.retryAfter = isoAfter(now, Math.min(120, 10 * 2 ** Math.min(domain.failureCount, 4)) * 60000);
       domain.lastErrorCode = code;
       domain.lastErrorStage = stage;
-      if (window.domain === "health" && window.source && ["COROS_READ_RESULT_TOO_LARGE", "COROS_SYNC_HEALTH_RANGE_UNCONFIRMED"].includes(code)) {
+      if (window.domain === "health" && window.source && window.source !== "activity" && ["COROS_READ_RESULT_TOO_LARGE", "COROS_SYNC_HEALTH_RANGE_UNCONFIRMED"].includes(code)) {
         // Repeating the same relative prefix cannot repair a capacity/range
         // boundary. Stop this source until an explicit paused history reset.
         const bulk = progress.health!.bulk![window.source];
         bulk.blockedCode = code as NonNullable<typeof bulk.blockedCode>;
         bulk.retryAfter = null;
       }
+      const oauth = parseCorosOAuthFailure(code);
+      const sharedCredentials = ["COROS_READ_UNAUTHORIZED", "COROS_READ_FORBIDDEN"].includes(code)
+        || (stage === "credentials_refresh" && oauth && !["TRANSPORT_FAILED", "BODY_READ_FAILED", "JSON_INVALID", "RESPONSE_TOO_LARGE"].includes(oauth.reason ?? ""));
+      if (sharedCredentials) for (const source of syncProgressDomains(progress)) {
+        if ("blockedCode" in source && source.blockedCode) continue;
+        source.retryAfter = [source.retryAfter, domain.retryAfter].filter((time): time is string => Boolean(time)).sort().at(-1) ?? null;
+        source.lastErrorCode = code; source.lastErrorStage = stage;
+      }
     }
     await db.prepare("UPDATE coros_connections SET last_error_code = ?1 WHERE github_user_id = ?2 AND state = 'enabled'")
       .bind(code, userId).run();
-    return { status: "error", errorCode: code, retryAt: window ? (window.domain === "health" ? window.source ? progress.health!.bulk![window.source] : progress.health! : progress.domains[window.domain]).retryAfter : null, progress };
+    return { status: "error", errorCode: code, retryAt: window ? (window.domain === "health" ? healthWindowProgress(progress, window) : progress.domains[window.domain]).retryAfter : null, progress };
   } finally {
     await db.prepare(`UPDATE coros_sync_jobs SET progress_json = ?1, next_run_at = CASE WHEN request_seq > ?6 THEN ?3 ELSE ?2 END,
       lease_token = NULL, lease_until = NULL, updated_at = ?3 WHERE github_user_id = ?4 AND lease_token = ?5`)

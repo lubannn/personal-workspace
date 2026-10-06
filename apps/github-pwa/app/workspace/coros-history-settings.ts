@@ -44,7 +44,8 @@ export function corosHistorySources(progress: SyncProgress) {
   const sources: { id: string; label: string; progress?: BulkHealthSourceProgress; resetSource?: BulkHealthSource }[] = [
     { id: "sleep", label: "睡眠", progress: progress.domains.sleep },
     { id: "workout", label: "运动", progress: progress.domains.workout },
-    { id: "health", label: "HRV与活动指标", progress: progress.health },
+    { id: "health", label: "HRV", progress: progress.health },
+    { id: "activity", label: "爬升与训练负荷", progress: progress.health?.activity },
     { id: "dailyHealth", label: "日健康", progress: progress.health?.bulk?.dailyHealth, resetSource: "dailyHealth" },
     { id: "restingHeartRate", label: "静息心率", progress: progress.health?.bulk?.restingHeartRate, resetSource: "restingHeartRate" },
   ];

@@ -1,5 +1,5 @@
 import { parseCorosOAuthFailure } from "./coros-oauth-errors";
-import type { DomainProgress, SyncProgress } from "./coros-sync-state";
+import { syncProgressDomains, type DomainProgress, type SyncProgress } from "./coros-sync-state";
 
 function rejectedRefresh(value: Pick<DomainProgress, "lastErrorCode" | "lastErrorStage">) {
   const error = parseCorosOAuthFailure(value.lastErrorCode);
@@ -9,10 +9,11 @@ function rejectedRefresh(value: Pick<DomainProgress, "lastErrorCode" | "lastErro
 /** Only after a new authorization or a proven successful credential refresh. */
 export function clearRejectedCredentialBackoff(progress: SyncProgress): boolean {
   let changed = false;
-  const sources = [...Object.values(progress.domains), ...(progress.health ? [progress.health] : []), ...Object.values(progress.health?.bulk ?? {})];
+  const sources = syncProgressDomains(progress);
   for (const source of sources) {
     if (!("blockedCode" in source && source.blockedCode) && rejectedRefresh(source)) {
       source.retryAfter = null; source.lastErrorCode = null; source.lastErrorStage = null; changed = true;
+      if (source.failureCount !== undefined) source.failureCount = 0;
     }
   }
   if (rejectedRefresh(progress)) {

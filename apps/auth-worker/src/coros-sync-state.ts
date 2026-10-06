@@ -1,6 +1,7 @@
 import type { AuthEnv, D1DatabaseLike } from "./auth";
 import type { HealthSyncProgress } from "./coros-health-sync";
 import type { BulkHealthSource } from "./coros-health-history";
+import { healthTimezoneFormatter } from "../../../src/lib/github-data/health-timezone";
 
 export type CorosSyncEnv = AuthEnv & {
   GITHUB_APP_ID?: string;
@@ -11,7 +12,7 @@ export type CorosSyncEnv = AuthEnv & {
   COROS_WORKSPACE_OWNER_ID?: string;
 };
 export type SyncDomain = "sleep" | "workout";
-export const COROS_SYNC_SOURCES = ["sleep", "workout", "hrvActivity", "dailyHealth", "restingHeartRate"] as const;
+export const COROS_SYNC_SOURCES = ["sleep", "workout", "hrv", "activity", "dailyHealth", "restingHeartRate"] as const;
 export type SyncSource = typeof COROS_SYNC_SOURCES[number];
 export type SyncWindowFilter = { recent?: boolean; source?: SyncSource };
 export const COROS_SYNC_ERROR_STAGES = ["progress_checkpoint", "credentials_refresh", "health_collect", "records_collect",
@@ -25,6 +26,7 @@ export type DomainProgress = {
   lastRecentAt: string | null; latestRecordDate: string | null; created: number;
   recentNext?: string | null; retryAfter?: string | null; lastErrorCode?: string | null; lastErrorStage?: SyncErrorStage | null;
   recentRequestSequence?: number;
+  failureCount?: number;
   /** Successful, persisted checks only; absent in legacy state. Never drives sync cursors. */
   checkedRanges?: CheckedRange[];
 };
@@ -74,9 +76,37 @@ export function recordCheckedRange(domain: DomainProgress, from: string, through
   domain.checkedRanges = merged;
 }
 export function todayInTimezone(now: Date, timezone: string): string {
-  const parts = new Intl.DateTimeFormat("en", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(now);
+  const parts = healthTimezoneFormatter(timezone, true).formatToParts(now);
   const get = (type: string) => parts.find((part) => part.type === type)!.value;
   return `${get("year")}-${get("month")}-${get("day")}`;
+}
+
+/** The old common cursor proves success for both sources. Pending list checks
+ * and stored metric counts do not prove completed activity coverage. */
+export function initializeActivityProgress(p: SyncProgress): DomainProgress {
+  const health = p.health!;
+  if (!health.activity) {
+    health.activity = { backfillNext: health.backfillNext, backfillThrough: health.backfillThrough,
+      recentThrough: health.recentThrough, recentNext: health.recentNext,
+      recentRequestSequence: health.recentRequestSequence, lastRecentAt: health.lastRecentAt,
+      latestRecordDate: null, created: 0, retryAfter: health.retryAfter,
+      lastErrorCode: health.lastErrorCode, lastErrorStage: health.lastErrorStage };
+    // Only errors proved to be activity-specific leave the HRV gate behind.
+    if (["COROS_SYNC_HEALTH_DETAIL_FORMAT_UNSUPPORTED", "COROS_SYNC_HEALTH_DETAIL_MISMATCH",
+      "COROS_SYNC_WINDOW_TRUNCATED", "COROS_SYNC_ACTIVITY_DETAILS_PENDING"].includes(health.lastErrorCode ?? "")
+      || health.lastErrorStage === "getActivityDetail" || health.lastErrorStage === "querySportRecords") {
+      health.retryAfter = null; health.lastErrorCode = null; health.lastErrorStage = null;
+    } else if (["COROS_SYNC_HEALTH_FORMAT_UNSUPPORTED", "COROS_SYNC_HEALTH_WINDOW_INCOMPLETE"].includes(health.lastErrorCode ?? "")
+      || health.lastErrorStage === "querySleepHrv" || health.lastErrorStage === "queryRecoveryStatus") {
+      health.activity.retryAfter = null; health.activity.lastErrorCode = null; health.activity.lastErrorStage = null;
+    }
+  }
+  return health.activity;
+}
+
+export function syncProgressDomains(p: SyncProgress): DomainProgress[] {
+  return [...Object.values(p.domains), ...(p.health ? [p.health] : []),
+    ...(p.health?.activity ? [p.health.activity] : []), ...Object.values(p.health?.bulk ?? {})];
 }
 /** Historical coverage ends at the last finished local date; recent observations may include today. */
 export function closedHistoryThrough(p: SyncProgress, now: Date): string {
@@ -101,6 +131,9 @@ export function parseSyncProgress(text: string): SyncProgress {
   if (p.version !== 1 || !dateOnly(p.startDate) || !p.domains || !Number.isInteger(p.failureCount)) throw new Error("COROS_SYNC_STATE_INVALID");
   if (p.lastErrorStage !== undefined && p.lastErrorStage !== null && !COROS_SYNC_ERROR_STAGES.includes(p.lastErrorStage)) throw new Error("COROS_SYNC_STATE_INVALID");
   todayInTimezone(new Date(), p.timezone);
+  if (p.scheduling) for (const key of ["recentSource", "historySource"] as const) {
+    if ((p.scheduling[key] as string) === "hrvActivity") p.scheduling[key] = "activity";
+  }
   if (p.scheduling !== undefined && (!p.scheduling || typeof p.scheduling !== "object" || Array.isArray(p.scheduling) || !["recent", "history"].includes(p.scheduling.lastKind)
     || [p.scheduling.recentSource, p.scheduling.historySource].some(source => source !== undefined && !COROS_SYNC_SOURCES.includes(source)))) throw new Error("COROS_SYNC_STATE_INVALID");
   if (p.backfillEnd && !dateOnly(p.backfillEnd)) throw new Error("COROS_SYNC_STATE_INVALID");
@@ -111,7 +144,15 @@ export function parseSyncProgress(text: string): SyncProgress {
   }
   if (p.health && (!dateOnly(p.health.backfillNext) || (p.health.recentDataThrough && !dateOnly(p.health.recentDataThrough)))) throw new Error("COROS_SYNC_STATE_INVALID");
   if (p.health?.recentObservationSequence !== undefined && (!Number.isSafeInteger(p.health.recentObservationSequence) || p.health.recentObservationSequence < 1)) throw new Error("COROS_SYNC_STATE_INVALID");
-  if (p.health?.lastAttemptSource && !["hrvActivity", "dailyHealth", "restingHeartRate"].includes(p.health.lastAttemptSource)) throw new Error("COROS_SYNC_STATE_INVALID");
+  if (p.health?.lastAttemptSource && !["hrvActivity", "hrv", "activity", "dailyHealth", "restingHeartRate"].includes(p.health.lastAttemptSource)) throw new Error("COROS_SYNC_STATE_INVALID");
+  const activity = p.health?.activity;
+  if (p.health && Object.hasOwn(p.health, "activity") && (!activity || typeof activity !== "object" || Array.isArray(activity))) throw new Error("COROS_SYNC_STATE_INVALID");
+  if (activity && (!dateOnly(activity.backfillNext) || activity.backfillNext < p.startDate
+    || (activity.backfillThrough !== null && !dateOnly(activity.backfillThrough))
+    || (activity.recentThrough !== null && !dateOnly(activity.recentThrough))
+    || (activity.recentNext != null && !dateOnly(activity.recentNext))
+    || (activity.recentRequestSequence !== undefined && (!Number.isSafeInteger(activity.recentRequestSequence) || activity.recentRequestSequence < 1))
+    || !Number.isSafeInteger(activity.created) || activity.created < 0)) throw new Error("COROS_SYNC_STATE_INVALID");
   if (p.health?.lastBulkAttemptSource && !["dailyHealth", "restingHeartRate"].includes(p.health.lastBulkAttemptSource)) throw new Error("COROS_SYNC_STATE_INVALID");
   if (p.health?.bulk) for (const source of ["dailyHealth", "restingHeartRate"] as const) {
     const d = p.health.bulk[source];
@@ -121,12 +162,14 @@ export function parseSyncProgress(text: string): SyncProgress {
       || dates.some(date => !dateOnly(date) || date < p.startDate) || new Set(dates).size !== dates.length)) throw new Error("COROS_SYNC_STATE_INVALID");
     if (d.blockedCode && !["COROS_READ_RESULT_TOO_LARGE", "COROS_SYNC_HEALTH_RANGE_UNCONFIRMED"].includes(d.blockedCode)) throw new Error("COROS_SYNC_STATE_INVALID");
   }
-  for (const d of [...Object.values(p.domains), ...(p.health ? [p.health] : []), ...Object.values(p.health?.bulk ?? {})]) {
+  for (const d of syncProgressDomains(p)) {
+    if (d.failureCount !== undefined && (!Number.isSafeInteger(d.failureCount) || d.failureCount < 0)) throw new Error("COROS_SYNC_STATE_INVALID");
     if (d.checkedRanges !== undefined && (!Array.isArray(d.checkedRanges) || d.checkedRanges.length > 20_000
       || d.checkedRanges.some((range, index, ranges) => !range || !dateOnly(range.from) || !dateOnly(range.through)
         || range.from > range.through || (index > 0 && range.from <= shiftDate(ranges[index - 1].through, 1))))) throw new Error("COROS_SYNC_STATE_INVALID");
     if (d.lastErrorStage !== undefined && d.lastErrorStage !== null && !COROS_SYNC_ERROR_STAGES.includes(d.lastErrorStage)) throw new Error("COROS_SYNC_STATE_INVALID");
   }
+  if (p.health) initializeActivityProgress(p);
   return p;
 }
 export async function readSyncJob(db: D1DatabaseLike, userId: string) {
@@ -142,12 +185,12 @@ export function acceptSyncRequest(p: SyncProgress, job: Pick<SyncJob, "request_s
   if (p.request && p.request.sequence >= job.request_seq) return;
   const previous = p.request;
   if (p.health) {
-    const resuming = previous?.through === job.requested_through && p.health.recentRequestSequence !== previous.sequence;
+    const resuming = previous?.through === job.requested_through && (p.health.activity ?? p.health).recentRequestSequence !== previous.sequence;
     p.health.recentObservationSequence = resuming ? p.health.recentObservationSequence ?? previous.sequence : job.request_seq;
   }
   p.request = { sequence: job.request_seq, through: job.requested_through,
     historyThrough: [job.requested_through, shiftDate(todayInTimezone(now, p.timezone), -1)].sort()[0] };
-  for (const d of [...Object.values(p.domains), ...(p.health ? [p.health] : []), ...Object.values(p.health?.bulk ?? {})]) {
+  for (const d of syncProgressDomains(p)) {
     // A same-day refresh must resume unfinished recent work, including source
     // backoff. Completed sources may refresh; a new date rechecks recent overlap.
     if (previous?.through !== job.requested_through || d.recentRequestSequence === previous.sequence) d.recentNext = null;
@@ -164,7 +207,7 @@ export function extendSyncHistory(p: SyncProgress, startDate: string, retryBlock
   }
   if (startDate === p.startDate) return;
   p.startDate = startDate;
-  const domains: DomainProgress[] = [...Object.values(p.domains), ...(p.health ? [p.health] : []), ...Object.values(p.health?.bulk ?? {})];
+  const domains = syncProgressDomains(p);
   for (const d of domains) {
     d.backfillNext = startDate; d.backfillThrough = null; d.retryAfter = null;
     // New scope does not erase committed records, provenance, counters or recent checkpoints.

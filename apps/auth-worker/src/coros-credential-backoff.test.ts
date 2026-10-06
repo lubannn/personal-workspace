@@ -9,7 +9,7 @@ function fixture() {
   const p = initialSyncProgress("2024-01-01", "Asia/Shanghai");
   p.request = { sequence: 1, through: "2024-02-01" }; p.backfillEnd = "2024-02-01";
   nextHealthSyncWindow(p, new Date("2024-02-01T04:00:00Z")); initializeBulkHealthProgress(p);
-  for (const d of [p.domains.sleep, p.domains.workout, p.health!, ...Object.values(p.health!.bulk!)]) {
+  for (const d of [p.domains.sleep, p.domains.workout, p.health!, p.health!.activity!, ...Object.values(p.health!.bulk!)]) {
     d.backfillNext = "2024-01-08"; d.backfillThrough = "2024-01-07"; d.recentNext = "2024-01-29";
     d.checkedRanges = [{ from: "2024-01-01", through: "2024-01-07" }, { from: "2024-01-22", through: "2024-01-28" }];
     d.retryAfter = "2099-01-01T00:00:00.000Z"; d.lastErrorCode = code; d.lastErrorStage = "credentials_refresh";
@@ -19,9 +19,9 @@ function fixture() {
   return p;
 }
 describe("superseded rejected credential backoff", () => {
-  it("clears all five sources and the matching shared failure without changing data checkpoints", () => {
+  it("clears all six sources and the matching shared failure without changing data checkpoints", () => {
     const p = fixture(); const expected = structuredClone(p);
-    for (const d of [expected.domains.sleep, expected.domains.workout, expected.health!, ...Object.values(expected.health!.bulk!)]) {
+    for (const d of [expected.domains.sleep, expected.domains.workout, expected.health!, expected.health!.activity!, ...Object.values(expected.health!.bulk!)]) {
       d.retryAfter = null; d.lastErrorCode = null; d.lastErrorStage = null;
     }
     expected.lastErrorCode = null; expected.lastErrorStage = null; expected.failureCount = 0;

@@ -10,7 +10,7 @@ function requested() {
   const p = initialSyncProgress("2025-05-01", "Asia/Shanghai");
   acceptSyncRequest(p, { request_seq: 1, requested_through: "2026-10-05" }, now);
   p.health ??= { ...initialSyncProgress(p.startDate, p.timezone).domains.sleep };
-  initializeBulkHealthProgress(p);
+  initializeBulkHealthProgress(p); nextFairSyncWindow(p, now, true);
   return p;
 }
 
@@ -24,13 +24,13 @@ describe("bounded COROS source and history scheduling", () => {
     expect(p.health?.bulk?.restingHeartRate.recentRequestSequence).toBeUndefined();
   });
 
-  it("gives all five historical sources a turn even when recent work stays unfinished and requests repeat", () => {
+  it("gives all six historical sources a turn even when recent work stays unfinished and requests repeat", () => {
     const p = requested();
     const histories: string[] = [], recents: string[] = [];
-    for (let turn = 0; turn < 20; turn++) {
+    for (let turn = 0; turn < 24; turn++) {
       acceptSyncRequest(p, { request_seq: turn + 2, requested_through: "2026-10-05" }, now);
       const window = nextFairSyncWindow(p, now, true)!;
-      const source = window.domain === "health" ? window.source ?? "hrvActivity" : window.domain;
+      const source = window.domain === "health" ? window.source ?? "hrv" : window.domain;
       (window.recent ? recents : histories).push(source);
       const maximum = window.domain === "sleep" ? 3 : window.domain === "workout" ? (window.recent ? 7 : 30) : window.domain === "health" && window.source && !window.recent ? 28 : 7;
       expect(window.from >= p.startDate).toBe(true);
@@ -41,7 +41,7 @@ describe("bounded COROS source and history scheduling", () => {
     }
     expect(histories).toEqual([...COROS_SYNC_SOURCES, ...COROS_SYNC_SOURCES]);
     expect(recents).toEqual([...COROS_SYNC_SOURCES, ...COROS_SYNC_SOURCES]);
-    for (const d of [...Object.values(p.domains), p.health!, ...Object.values(p.health!.bulk!)]) {
+    for (const d of [...Object.values(p.domains), p.health!, p.health!.activity!, ...Object.values(p.health!.bulk!)]) {
       expect(d.backfillNext).toBe(p.startDate); expect(d.backfillThrough).toBeNull();
     }
     expect(parseSyncProgress(JSON.stringify(p))).toEqual(p);
@@ -55,26 +55,26 @@ describe("bounded COROS source and history scheduling", () => {
     const chosen = [];
     for (let turn = 0; turn < 8; turn++) {
       const window = nextFairSyncWindow(p, now, true)!;
-      chosen.push(window.domain === "health" ? window.source ?? "hrvActivity" : window.domain);
+      chosen.push(window.domain === "health" ? window.source ?? "hrv" : window.domain);
       recordSyncTurn(p, window);
     }
-    expect(chosen).toEqual(["workout", "workout", "hrvActivity", "hrvActivity", "workout", "workout", "hrvActivity", "hrvActivity"]);
+    expect(chosen).toEqual(["workout", "workout", "hrv", "hrv", "activity", "activity", "workout", "workout"]);
   });
 
   it("uses all turns for remaining history when recent observations are complete", () => {
     const p = requested();
-    for (const d of [...Object.values(p.domains), p.health!, ...Object.values(p.health!.bulk!)]) d.recentRequestSequence = 1;
+    for (const d of [...Object.values(p.domains), p.health!, p.health!.activity!, ...Object.values(p.health!.bulk!)]) d.recentRequestSequence = 1;
     for (const source of COROS_SYNC_SOURCES) {
       const window = nextFairSyncWindow(p, now, true)!;
       expect(window.recent).toBe(false);
-      expect(window.domain === "health" ? window.source ?? "hrvActivity" : window.domain).toBe(source);
+      expect(window.domain === "health" ? window.source ?? "hrv" : window.domain).toBe(source);
       recordSyncTurn(p, window);
     }
     expect(nextFairSyncWindow(p, now, true, true)).toBeNull();
   });
 
   it("preserves partial recent cursors and rate-limit backoff across same-day extra updates", () => {
-    const p = requested(), domains = [...Object.values(p.domains), p.health!, ...Object.values(p.health!.bulk!)];
+    const p = requested(), domains = [...Object.values(p.domains), p.health!, p.health!.activity!, ...Object.values(p.health!.bulk!)];
     for (const d of domains) {
       d.recentNext = "2026-10-03"; d.retryAfter = "2026-10-05T10:20:00Z";
       d.backfillNext = "2025-06-26"; d.backfillThrough = "2025-06-25";

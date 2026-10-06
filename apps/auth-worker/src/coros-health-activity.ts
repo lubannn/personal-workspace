@@ -48,7 +48,7 @@ export function mapCorosActivityDetail(result: CorosReadResult, workout: Workout
 
 /** A complete list plus every unique detail establishes a daily sum, independently per metric. */
 export async function collectCorosActivityTotals(read: Read, from: string, requestedThrough: string, progress: SyncProgress,
-  assertActive: () => Promise<void>, observedAt: string, encryptionKey?: string, checkpoint?: () => Promise<void>) {
+  assertActive: () => Promise<void>, observedAt: string, encryptionKey?: string, checkpoint?: () => Promise<void>, detailLimit = 4) {
   let through = requestedThrough;
   let mapped;
   for (;;) {
@@ -62,7 +62,9 @@ export async function collectCorosActivityTotals(read: Read, from: string, reque
     if (span === 0) throw new Error("COROS_SYNC_WINDOW_TRUNCATED");
     through = shiftDate(from, Math.floor(span / 2));
   }
-  const localDate = (workout: Workout) => todayInTimezone(new Date(workout.candidate.start_at), progress.timezone);
+  const localDates = new Map(mapped.items.map(workout => [workout.sourceId, todayInTimezone(new Date(workout.candidate.start_at), progress.timezone)]));
+  const localDate = (workout: Workout) => localDates.get(workout.sourceId)!;
+  const today = todayInTimezone(new Date(observedAt), progress.timezone);
   const workouts = mapped.items.filter(workout => localDate(workout) >= from && localDate(workout) <= through);
   let cache: Record<string, Cached> = {};
   let pendingWindows: PendingWindow[] = [];
@@ -102,8 +104,8 @@ export async function collectCorosActivityTotals(read: Read, from: string, reque
     const cached = cache[workout.sourceId];
     // Today's mutable activities refresh for a new observation, while partial
     // same-day continuation and historical identities reuse encrypted facts.
-    if (cached?.signature === signature && (cached.date < todayInTimezone(new Date(observedAt), progress.timezone) || cached.requestSequence === observationSequence)) continue;
-    if (reads === 4) {
+    if (cached?.signature === signature && (cached.date < today || cached.requestSequence === observationSequence)) continue;
+    if (reads === detailLimit) {
       // A bounded batch with saved, validated details is normal continuation.
       // It cannot establish a daily total until every listed detail is known.
       return { items: [] as CorosHealthMetricItem[], through,
