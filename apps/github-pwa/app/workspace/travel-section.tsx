@@ -1,7 +1,8 @@
 "use client";
 
-import { useRef, useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent, type Ref } from "react";
 import { TRAVEL_PROVINCES, createTravelVisitData, visitedTravelProvinces, type TravelVisitFields } from "../../../../src/lib/github-data/travel-visits";
+import { travelCitiesForProvince, retainedTravelCity, isTravelCitySelection, changeTravelProvince } from "../../../../src/lib/github-data/travel-cities";
 import type { SyncedTravelVisit } from "../../../../src/lib/github-data/travel-sync";
 import type { Connection } from "./page-model";
 import boundaries from "./travel-map/provinces.json";
@@ -21,7 +22,7 @@ export function TravelSection({ connection, online, files, loading, ready, savin
   const [editing, setEditing] = useState<SyncedTravelVisit | undefined>();
   const [formError, setFormError] = useState("");
   const submitRef = useRef(false);
-  const cityRef = useRef<HTMLInputElement>(null);
+  const cityRef = useRef<HTMLSelectElement>(null);
   const visited = visitedTravelProvinces(files.map(item => item.record));
   const active = files.filter(item => item.record.deleted_at === null).sort((a, b) => b.record.data.start_date.localeCompare(a.record.data.start_date) || b.record.id.localeCompare(a.record.id));
   const trash = files.filter(item => item.record.deleted_at !== null);
@@ -29,14 +30,17 @@ export function TravelSection({ connection, online, files, loading, ready, savin
   function cancel() { setFormOpen(false); setEditing(undefined); setFields(emptyFields); setFormError(""); }
   function selectProvince(id: string) {
     if (saving) return;
-    setFields(previous => ({ ...previous, province_id: id })); setFormOpen(true); setFormError("");
+    setFields(previous => changeTravelProvince(previous, id, editing?.record.data)); setFormOpen(true); setFormError("");
     cityRef.current?.focus();
   }
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (disabled || submitRef.current) return;
+    if (!isTravelCitySelection(fields.province_id, fields.city, editing?.record.data)) {
+      setFormError("请选择该省的城市，或明确保留原记录的城市。"); return;
+    }
     try { createTravelVisitData(fields); }
-    catch { setFormError("请选择省级区域，填写城市及有效的开始、结束日期；结束日期不得早于开始日期。"); return; }
+    catch { setFormError("请选择省级区域，选择城市及有效的开始、结束日期；结束日期不得早于开始日期。"); return; }
     submitRef.current = true; setFormError("");
     try { if (await onSave(fields, editing)) cancel(); }
     finally { submitRef.current = false; }
@@ -72,8 +76,8 @@ export function TravelSection({ connection, online, files, loading, ready, savin
     {formOpen && <form className="travel-form" onSubmit={submit}>
       <h3>{editing ? "编辑到访" : "新增到访"}</h3>
       <fieldset disabled={disabled}>
-        <label>所属省级区域<select aria-label="所属省级区域" required value={fields.province_id} onChange={event => setFields({ ...fields, province_id: event.target.value })}><option value="">请选择</option>{TRAVEL_PROVINCES.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}</select></label>
-        <label>城市<input ref={cityRef} required maxLength={100} value={fields.city} placeholder="填写城市名称" onChange={event => setFields({ ...fields, city: event.target.value })} /></label>
+        <label>所属省级区域<select aria-label="所属省级区域" required value={fields.province_id} onChange={event => setFields(changeTravelProvince(fields, event.target.value, editing?.record.data))}><option value="">请选择</option>{TRAVEL_PROVINCES.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}</select></label>
+        <TravelCitySelect provinceId={fields.province_id} city={fields.city} original={editing?.record.data} selectRef={cityRef} onChange={city => setFields({ ...fields, city })} />
         <label>开始日期<input required type="date" min="0001-01-01" max="9999-12-31" value={fields.start_date} onChange={event => setFields({ ...fields, start_date: event.target.value })} /></label>
         <label>结束日期<input required type="date" min={fields.start_date || "0001-01-01"} max="9999-12-31" value={fields.end_date} onChange={event => setFields({ ...fields, end_date: event.target.value })} /></label>
         <label className="travel-notes-field">备注（可选）<textarea aria-label="备注（可选）" rows={3} maxLength={2000} value={fields.notes ?? ""} placeholder="景点、到访提示等" onChange={event => setFields({ ...fields, notes: event.target.value })} /></label>
@@ -97,4 +101,17 @@ function TravelVisitDetails({ item }: { item: SyncedTravelVisit }) {
     <div className="travel-record-meta"><strong>{data.city}</strong><span>{TRAVEL_PROVINCES.find(p => p.id === data.province_id)!.label}</span><span className="travel-dates"><time dateTime={data.start_date}>{data.start_date}</time>{data.end_date === data.start_date ? "（同日）" : <> 至 <time dateTime={data.end_date}>{data.end_date}</time></>}</span></div>
     {data.notes && <p className="travel-notes">{data.notes}</p>}
   </div>;
+}
+
+export function TravelCitySelect({ provinceId, city, original, selectRef, onChange }: {
+  provinceId: string; city: string; original?: Pick<TravelVisitFields, "province_id" | "city">;
+  selectRef?: Ref<HTMLSelectElement>; onChange: (city: string) => void;
+}) {
+  const options = travelCitiesForProvince(provinceId);
+  const retained = retainedTravelCity(provinceId, original);
+  return <label>城市<select aria-label="城市" ref={selectRef} required disabled={!options.length} value={city} onChange={event => onChange(event.target.value)}>
+    <option value="">{provinceId ? "请选择城市" : "请先选择省级区域"}</option>
+    {retained && <option value={retained}>保留原记录：{retained}</option>}
+    {options.map(name => <option value={name} key={name}>{name}</option>)}
+  </select></label>;
 }
