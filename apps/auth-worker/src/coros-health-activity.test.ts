@@ -48,14 +48,14 @@ describe("complete daily activity evidence", () => {
     expect(() => mapCorosActivityDetail(text(String(detail().payload).replace("7 m / 8 m", "7 ft / 8 ft")), workout)).toThrow("FORMAT_UNSUPPORTED");
     expect(() => mapCorosActivityDetail(text(String(detail().payload).replace("Total Time: 10:00", "Total Time: 15:00")), workout)).toThrow("MISMATCH");
   });
-  it("accepts verified walking active time and standalone ascent without inventing elapsed time", () => {
-    const row = text(String(list("2024-01-01", "2024-01-03").payload).replace("Hike", "Walk").replace("SportType: 104", "SportType: 900"));
+  it.each([[900, "Walk"], [902, "Floor Climb"]] as const)("accepts verified active-only layout %s %s and standalone ascent", (sport, name) => {
+    const row = text(String(list("2024-01-01", "2024-01-03").payload).replace("Hike", name).replace("SportType: 104", `SportType: ${sport}`));
     const workout = mapCorosWorkouts(row, { startDate: "2024-01-01", endDate: "2024-01-03", timezone: "Asia/Shanghai" }).items[0];
-    const body = String(detail().payload).replace("🏃 Hike", "🚶 Walk").replace("Total Time: 10:00\n", "").replace("Elevation Gain / Loss: 7 m / 8 m", "Elevation Gain: 7 m");
+    const body = String(detail().payload).replace("🏃 Hike", `🚶 ${name}`).replace("Total Time: 10:00\n", "").replace("Elevation Gain / Loss: 7 m / 8 m", "Elevation Gain: 7 m");
     expect(mapCorosActivityDetail(text(body), workout)).toEqual({ elevationGainMeters: 7, trainingLoad: 10 });
     expect(() => mapCorosActivityDetail(text(body.replace("10:00", "11:00")), workout)).toThrow("MISMATCH");
     expect(() => mapCorosActivityDetail(text(body.replace("7 m", "7 ft")), workout)).toThrow("FORMAT_UNSUPPORTED");
-    expect(() => mapCorosActivityDetail(text(body.replace("🚶 Walk", "🏃 Hike")), workout)).toThrow("FORMAT_UNSUPPORTED");
+    expect(() => mapCorosActivityDetail(text(body.replace(`🚶 ${name}`, "🏃 Hike")), workout)).toThrow("FORMAT_UNSUPPORTED");
     expect(() => mapCorosActivityDetail(text(`${body}\nElevation Gain / Loss: 8 m / 2 m`), workout)).toThrow("MISMATCH");
     expect(mapCorosActivityDetail(text(body.replace("Elevation Gain: 7 m\n", "")), workout).elevationGainMeters).toBeNull();
     workout.candidate.metrics_json.moving_seconds = null;

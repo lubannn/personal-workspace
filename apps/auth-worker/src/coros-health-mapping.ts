@@ -68,7 +68,7 @@ export function mapCorosSleepHrv(result: CorosReadResult, options: Context): Cor
 export function parseCorosSleepHrvAssessment(result: CorosReadResult, options: Context): { items: CorosHealthMetricItem[]; noDataDates: string[] } {
   context(options); const text = corosResultText(result);
   if (!/^Sleep HRV — .+\n=+\n/u.test(text)) fail();
-  const assessment = /HRV Assessment — Last \d+ days\n=+\n+([\s\S]*?)\n\nSleep HRV Time Series — Last \d+ days\n/u.exec(text)?.[1];
+  const assessment = /HRV Assessment — Last \d+ days\n=+\n+([\s\S]*?)\n\n(?:Sleep HRV Time Series — Last \d+ days\n|No sleep HRV time series data found in the last \d+ days\.$)/u.exec(text)?.[1];
   if (!assessment) fail(); const sections = assessment.trim().split(/\n+(?=\d{4}-\d{2}-\d{2}:\n)/u); const seen = new Set<string>(); const items: CorosHealthMetricItem[] = []; const noDataDates: string[] = [];
   for (const section of sections) {
     const missing = /^(\d{4}-\d{2}-\d{2}):\n  No data$/u.exec(section);
@@ -84,6 +84,9 @@ export function parseCorosSleepHrvAssessment(result: CorosReadResult, options: C
     if (match[3] !== undefined) items.push(item(local, "sleep_hrv_normal_range_low", numeric(match[3]), "ms", options));
     if (match[5] !== undefined) items.push(item(local, "sleep_hrv_baseline", numeric(match[5]), "ms", options));
   }
+  // Verified missing-day layout omits the time-series heading entirely.
+  // This alternative is evidence of dated No data only, never numeric values.
+  if (!text.includes("Sleep HRV Time Series — Last ") && items.length) fail();
   return { items, noDataDates };
 }
 

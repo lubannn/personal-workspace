@@ -1,7 +1,7 @@
 import { mapCorosDailyHealth, mapCorosRestingHeartRate } from "./coros-health-mapping";
 import { corosResultText } from "./coros-sync-mapping";
 import type { CorosReadResult, CorosReadTool } from "./coros-read-client";
-import { closedHistoryThrough, shiftDate, todayInTimezone, type DomainProgress, type SyncProgress, type SyncWindowFilter } from "./coros-sync-state";
+import { historicalWindow, shiftDate, todayInTimezone, type DomainProgress, type SyncProgress, type SyncWindowFilter } from "./coros-sync-state";
 
 export const COROS_BULK_HEALTH_SOURCES = ["dailyHealth", "restingHeartRate"] as const;
 export type BulkHealthSource = typeof COROS_BULK_HEALTH_SOURCES[number];
@@ -29,12 +29,10 @@ export function nextBulkHealthWindow(progress: SyncProgress, now: Date, filter: 
       from: d.recentNext ?? [progress.startDate, shiftDate(through, -6)].sort()[1], through };
   }
   if (filter.recent === true) return null;
-  const historyThrough = closedHistoryThrough(progress, now);
-  const source = available.filter(source => bulk[source].backfillNext <= historyThrough)
+  const source = available.filter(source => historicalWindow(progress, bulk[source], now, 28))
     .sort((a, b) => bulk[a].backfillNext.localeCompare(bulk[b].backfillNext))[0];
   if (!source) return null;
-  const from = bulk[source].backfillNext;
-  return { domain: "health", source, recent: false, from, through: [shiftDate(from, 27), historyThrough].sort()[0] };
+  return { domain: "health", source, recent: false, ...historicalWindow(progress, bulk[source], now, 28)! };
 }
 
 export async function collectBulkHealthHistory(read: (name: CorosReadTool, args: Record<string, unknown>) => Promise<CorosReadResult>,
@@ -59,6 +57,8 @@ export async function collectBulkHealthHistory(read: (name: CorosReadTool, args:
     .filter(date => date >= window.from && date <= window.through) : [];
   // Empty/sparse windows are checked intervals, never evidence of the account's
   // earliest possible date. The planner continues to the explicit scope end.
-  return { items, through: window.through, observedAt, bulkSource: window.source, observedDates, unconfirmedZeroDates,
+  const noDataDates = window.source === "restingHeartRate" ? [...text.matchAll(/^(\d{4}-\d{2}-\d{2}): No data$/gmu)].map(match => match[1])
+    .filter(date => date >= window.from && date <= window.through) : [];
+  return { items, through: window.through, observedAt, bulkSource: window.source, observedDates, unconfirmedZeroDates, noDataDates,
     limitations: ["日健康与静息心率按各自游标检查全部指定历史范围，90日仅用于评分参照；缺测不补值", "日健康三项均为零时无法证明设备有采样，保持缺测；已检查区间与有证据日期分别记录", "接口仅支持距今N日，已检查区间不等于已证明账号最早日期；接口错误、响应过大或范围不符时保留游标"] };
 }

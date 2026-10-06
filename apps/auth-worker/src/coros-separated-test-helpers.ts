@@ -72,6 +72,13 @@ export async function separatedSyncFixture() {
     if (route.endsWith("/git/ref/heads/main")) return Response.json({ object: { type: "commit", sha: sha(`commit-${revision}`) } });
     if (route.includes("/git/commits/") && init?.method !== "POST") return Response.json({ tree: { sha: sha(`tree-${revision}`) } });
     if (route.includes("/git/trees/") && init?.method !== "POST") return Response.json({ truncated: false, tree: [...files].map(([path, value]) => ({ path, type: "blob", sha: sha(value), size: Buffer.byteLength(value) })) });
+    if (route === "/graphql" && Object.keys(JSON.parse(String(init?.body)).variables).some(key => key.startsWith("expression"))) {
+      const { variables } = JSON.parse(String(init?.body)) as { variables: Record<string, string> };
+      return Response.json({ data: { repository: Object.fromEntries(Object.entries(variables).filter(([key]) => key.startsWith("expression")).map(([key, expression]) => {
+        const value = files.get(expression.slice(41));
+        return [`blob${key.slice(10)}`, value === undefined ? null : { __typename: "Blob", oid: sha(value), byteSize: Buffer.byteLength(value), isTruncated: false, text: value }];
+      })) } });
+    }
     if (route === "/graphql") {
       const { variables } = JSON.parse(String(init!.body));
       return Response.json({ data: { repository: Object.fromEntries(Object.entries(variables).filter(([key]) => key.startsWith("oid")).map(([key, oid]) => {

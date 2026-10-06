@@ -71,6 +71,14 @@ describe("official historical HRV assessments", () => {
     expect(parseCorosSleepHrvAssessment(result, { ...options, endDate: from })).toEqual({ items: [], noDataDates: [from] });
     expect(mapCorosSleepHrv(result, options)).toEqual([]);
   });
+  it("accepts a dated No data assessment with the verified no-time-series tail", () => {
+    const source = response([noData(from)], "\n", from);
+    const value = JSON.parse((source.payload as { text: string }[])[0].text) as string;
+    const body = value.slice(0, value.indexOf("Sleep HRV Time Series")) + "No sleep HRV time series data found in the last 1 days.";
+    expect(parseCorosSleepHrvAssessment(text(body), { ...options, endDate: from })).toEqual({ items: [], noDataDates: [from] });
+    expect(() => parseCorosSleepHrvAssessment(text(body.replace("  No data", "  HRV Avg: 42 ms")), options)).toThrow("FORMAT_UNSUPPORTED");
+    expect(() => parseCorosSleepHrvAssessment(text(body.replace("No sleep HRV time series data found", "Time series unavailable")), options)).toThrow("FORMAT_UNSUPPORTED");
+  });
 
   it("keeps dated missing assessments separate from official values in mixed and entirely empty windows", () => {
     const mixed = parseCorosSleepHrvAssessment(mixedDays(), options);

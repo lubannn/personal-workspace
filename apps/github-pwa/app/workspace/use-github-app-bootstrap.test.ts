@@ -47,23 +47,21 @@ describe("daily COROS update request", () => {
 });
 
 describe("workspace login and COROS daily update", () => {
-  it("only requests an update after the repository has opened, without delaying successful login", async () => {
+  it("opens the repository without requesting another COROS observation on login", async () => {
     const options = callbacks(); const opened = { adapter: { test: true }, connection: { owner: "example-owner" } };
     let finishOpen!: (value: unknown) => void;
     vi.mocked(openPrivateRepository).mockImplementation(() => new Promise(resolve => { finishOpen = resolve as (value: unknown) => void; }));
-    let finishDaily!: () => void;
     const fetcher = vi.fn<typeof fetch>().mockImplementation(async input => {
       if (input === "/auth/status") return Response.json({ configured: true, authenticated: true, login: "example-owner" });
       if (input === "/auth/token") return Response.json({ accessToken: "test-access" });
-      if (input === "/coros/daily") return new Promise(resolve => { finishDaily = () => resolve(new Response(null, { status: 202 })); });
       throw new Error("Unexpected route");
     });
     vi.stubGlobal("fetch", fetcher); useGitHubAppBootstrap(options); hook.effect?.(); await tick();
     expect(openPrivateRepository).toHaveBeenCalled(); expect(fetcher.mock.calls.map(call => call[0])).not.toContain("/coros/daily");
     finishOpen(opened); await tick();
     expect(options.setConnection).toHaveBeenCalledWith(opened.connection); expect(options.setConnectionMethod).toHaveBeenCalledWith("github-app");
-    expect(options.setConnecting).toHaveBeenLastCalledWith(false); expect(fetcher.mock.calls.map(call => call[0])).toEqual(["/auth/status", "/auth/token", "/coros/daily"]);
-    expect(options.setErrorMessage).not.toHaveBeenCalled(); finishDaily(); await tick();
+    expect(options.setConnecting).toHaveBeenLastCalledWith(false); expect(fetcher.mock.calls.map(call => call[0])).toEqual(["/auth/status", "/auth/token"]);
+    expect(options.setErrorMessage).not.toHaveBeenCalled(); await tick();
   });
   it("a failed daily update does not undo the authenticated repository", async () => {
     const options = callbacks();

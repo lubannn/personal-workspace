@@ -57,6 +57,13 @@ function fixture() {
     if (route.endsWith("/git/ref/heads/main")) return Response.json({ ref: "refs/heads/main", object: { type: "commit", sha: sha(`commit-${revision}`) } });
     if (route.includes("/git/commits/") && init?.method !== "POST") return Response.json({ sha: sha(`commit-${revision}`), tree: { sha: sha(`tree-${revision}`) } });
     if (route.includes("/git/trees/") && init?.method !== "POST") return Response.json({ truncated: false, tree: [...files].map(([path, text]) => ({ path, type: "blob", sha: sha(text), size: Buffer.byteLength(text) })) });
+    if (route === "/graphql" && Object.keys(JSON.parse(String(init?.body)).variables).some(key => key.startsWith("expression"))) {
+      const { variables } = JSON.parse(String(init?.body)) as { variables: Record<string, string> };
+      return Response.json({ data: { repository: Object.fromEntries(Object.entries(variables).filter(([key]) => key.startsWith("expression")).map(([key, expression]) => {
+        const value = files.get(expression.slice(41));
+        return [`blob${key.slice(10)}`, value === undefined ? null : { __typename: "Blob", oid: sha(value), byteSize: Buffer.byteLength(value), isTruncated: false, text: value }];
+      })) } });
+    }
     if (route.endsWith("/git/trees") && init?.method === "POST") {
       const body = JSON.parse(String(init.body)); for (const entry of body.tree) staged.set(entry.path, entry.content);
       return Response.json({ sha: sha("new-tree") }, { status: 201 });

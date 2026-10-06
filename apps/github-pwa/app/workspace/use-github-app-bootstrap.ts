@@ -75,7 +75,7 @@ export function useGitHubAppBootstrap(options: Options) {
         adapterRef.current = opened.adapter;
         setConnection(opened.connection);
         setConnectionMethod("github-app");
-        void requestCorosDailySync(csrf);
+        // Regular COROS observations are queued by the daily server schedule.
         setStatusMessage(`已通过 GitHub App 登录${status.login ? `（${status.login}）` : ""}，访问令牌仅保留在当前页面内存中。`);
       } catch (error) {
         adapterRef.current = null;

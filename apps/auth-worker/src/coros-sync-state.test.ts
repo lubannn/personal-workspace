@@ -1,9 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { acceptSyncRequest, advanceHistoricalCoverage, extendSyncHistory, initialSyncProgress, nextSyncWindow, parseSyncProgress, recordCheckedRange, shiftDate, todayInTimezone, type SyncProgress } from "./coros-sync-state";
+import { acceptSyncRequest, advanceHistoricalCoverage, extendSyncHistory, historicalWindow, initialSyncProgress, nextSyncWindow, parseSyncProgress, recordCheckedRange, shiftDate, todayInTimezone, type SyncProgress } from "./coros-sync-state";
 
 const now = new Date("2024-02-01T16:30:00.000Z");
 const domains = ["sleep", "workout"] as const;
 describe("proven COROS checked ranges", () => {
+  it("audits only missing evidence, skips verified ranges and returns to increments after completion", () => {
+    const p = initialSyncProgress("2024-01-01", "Asia/Shanghai"), d = p.domains.sleep;
+    p.request = { sequence: 1, through: "2024-02-01" }; p.verifyHistoricalCoverage = true;
+    d.backfillNext = "2024-02-02";
+    recordCheckedRange(d, "2024-01-04", "2024-02-01");
+    expect(historicalWindow(p, d, now, 7)).toEqual({ from: "2024-01-01", through: "2024-01-03" });
+    recordCheckedRange(d, "2024-01-01", "2024-01-03");
+    expect(historicalWindow(p, d, now, 7)).toBeNull();
+    acceptSyncRequest(p, { request_seq: 2, requested_through: "2024-02-03" }, new Date("2024-02-03T04:00:00Z"));
+    expect(historicalWindow(p, d, new Date("2024-02-03T04:00:00Z"), 7)).toEqual({ from: "2024-02-02", through: "2024-02-02" });
+    expect(d.backfillNext).toBe("2024-02-02");
+  });
   it("keeps history and recent gaps until every intervening day is checked, without changing cursors", () => {
     const p = initialSyncProgress("2024-01-01", "Asia/Shanghai"), d = p.domains.sleep;
     const before = structuredClone(d);

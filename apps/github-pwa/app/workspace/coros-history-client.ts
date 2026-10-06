@@ -34,8 +34,8 @@ export async function drainCorosHistory({ csrf, signal, onUpdate, fetcher = fetc
       let response: Response;
       try {
         response = await fetcher(path, { method: "POST", credentials: "same-origin", cache: "no-store",
-          headers: { accept: "application/json", "x-pw-csrf": csrf, ...(path === "/coros/drain" && recentOnly ? { "content-type": "application/json" } : {}) },
-          ...(path === "/coros/drain" && recentOnly ? { body: JSON.stringify({ recentOnly: true }) } : {}), signal });
+          headers: { accept: "application/json", "x-pw-csrf": csrf, ...(path === "/coros/drain" ? { "content-type": "application/json" } : {}) },
+          ...(path === "/coros/drain" ? { body: JSON.stringify({ recentOnly, ...(!recentOnly ? { verifyHistoricalCoverage: true } : {}) }) } : {}), signal });
       } catch (error) {
         signal.throwIfAborted();
         if (!canRetry) throw error;
