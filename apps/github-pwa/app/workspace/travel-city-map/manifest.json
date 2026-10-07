@@ -1,0 +1,390 @@
+{
+  "110000": {
+    "source": "map/json/china.json",
+    "source_sha256": "d392f651a48e6213c9bfc83f406711069de296c17f426cffc0ad1148078ee226",
+    "output_sha256": "c06ee7ef6317eafafce355099b353c937dbf3f53b50276cfd4db5e60ea3d422e",
+    "bytes": 1645,
+    "catalog_count": 1,
+    "mapped_count": 1,
+    "missing": [],
+    "unmatched_source": [],
+    "empty_source_features": []
+  },
+  "120000": {
+    "source": "map/json/china.json",
+    "source_sha256": "d392f651a48e6213c9bfc83f406711069de296c17f426cffc0ad1148078ee226",
+    "output_sha256": "91a4c64ae49a77dbeb17ef2f77bc697e4dc9d6c17c56fa7f4e5676f3d109a2eb",
+    "bytes": 1609,
+    "catalog_count": 1,
+    "mapped_count": 1,
+    "missing": [],
+    "unmatched_source": [],
+    "empty_source_features": []
+  },
+  "130000": {
+    "source": "map/json/province/hebei.json",
+    "source_sha256": "86a192c5dfd3e5631d8c7e9677b15a4f81fac602cbcd94ea4c83d74b04562987",
+    "output_sha256": "2c166f8ab9fd88ce4ff98a664d9c72a828d8b494adc111550254e0b800885a5d",
+    "bytes": 42261,
+    "catalog_count": 11,
+    "mapped_count": 11,
+    "missing": [],
+    "unmatched_source": [],
+    "empty_source_features": []
+  },
+  "140000": {
+    "source": "map/json/province/shanxi.json",
+    "source_sha256": "fee25227f736ccd87d462506e9a743cdaafc2f5680b9c3913011dd988a0354a3",
+    "output_sha256": "cc63fa1d1e64dc73273bc4de26a84d230e346751c834d065fa291e4a0427f4ba",
+    "bytes": 31504,
+    "catalog_count": 11,
+    "mapped_count": 11,
+    "missing": [],
+    "unmatched_source": [],
+    "empty_source_features": []
+  },
+  "150000": {
+    "source": "map/json/province/neimenggu.json",
+    "source_sha256": "60b7ad14d11a80022fb2032dc65a58edd4170a7459b21a67e08cf30ebc406815",
+    "output_sha256": "038fcb5c90350ab937cd14d31ef6cd94a49cf677f237cb6a6ce78062f430ba88",
+    "bytes": 34339,
+    "catalog_count": 12,
+    "mapped_count": 12,
+    "missing": [],
+    "unmatched_source": [],
+    "empty_source_features": []
+  },
+  "210000": {
+    "source": "map/json/province/liaoning.json",
+    "source_sha256": "68101b704d3ba14e1926ee93a922e320606837d21a9c071888422e3ec200a53e",
+    "output_sha256": "276fad39ccb3a23423fcfa1a2a1f53c15339e3eecfbd0ee00e238620a42f4b14",
+    "bytes": 69425,
+    "catalog_count": 14,
+    "mapped_count": 14,
+    "missing": [],
+    "unmatched_source": [],
+    "empty_source_features": []
+  },
+  "220000": {
+    "source": "map/json/province/jilin.json",
+    "source_sha256": "d413b982b394385562bfbbf54d4b4db5ed4e1bc9802c90ced26879ac95038629",
+    "output_sha256": "ff354ce359f5a81a7921ccf6d2a2cc4cbcfb3f82397c35a9541e657655e0d381",
+    "bytes": 47877,
+    "catalog_count": 9,
+    "mapped_count": 9,
+    "missing": [],
+    "unmatched_source": [],
+    "empty_source_features": []
+  },
+  "230000": {
+    "source": "map/json/province/heilongjiang.json",
+    "source_sha256": "a00903dddd72ebdd43486bbe4c4a936eaf17c310ac06d251302606325a8e2da9",
+    "output_sha256": "214175b75c2aeff3a59f0219c0bea3850508dbba19038ff260e2f575b6c07e89",
+    "bytes": 49230,
+    "catalog_count": 13,
+    "mapped_count": 13,
+    "missing": [],
+    "unmatched_source": [],
+    "empty_source_features": []
+  },
+  "310000": {
+    "source": "map/json/china.json",
+    "source_sha256": "d392f651a48e6213c9bfc83f406711069de296c17f426cffc0ad1148078ee226",
+    "output_sha256": "bddf4b09526bc87e0b0a30e3743beb94f22f880d60782eae18fa877cedc9c76d",
+    "bytes": 1047,
+    "catalog_count": 1,
+    "mapped_count": 1,
+    "missing": [],
+    "unmatched_source": [],
+    "empty_source_features": []
+  },
+  "320000": {
+    "source": "map/json/province/jiangsu.json",
+    "source_sha256": "1513bc7d7411e6df7d1caf38d5e5d8d3e314ce005762abb4b923126e6d5adae6",
+    "output_sha256": "745984ab103108cdf040b6a254cf430313ea78ebd58444d576a6c1b3bc7327a9",
+    "bytes": 41912,
+    "catalog_count": 13,
+    "mapped_count": 13,
+    "missing": [],
+    "unmatched_source": [],
+    "empty_source_features": []
+  },
+  "330000": {
+    "source": "map/json/province/zhejiang.json",
+    "source_sha256": "af5af3b80ef1ea026f09b57a64b148ddaddfee671d93152d77cd9b81c1e5a2cd",
+    "output_sha256": "667871be3cc96f8cee68097f08da6586a24bc2a59a01d897875b42e0a9689be7",
+    "bytes": 84347,
+    "catalog_count": 11,
+    "mapped_count": 11,
+    "missing": [],
+    "unmatched_source": [],
+    "empty_source_features": []
+  },
+  "340000": {
+    "source": "map/json/province/anhui.json",
+    "source_sha256": "2ff5f7c32944594633709b9e5423bae1c896acb8cc4755b4e69e90be5c98c55e",
+    "output_sha256": "323f97c6c22fc2bc1b9511b8c607c897e50034dbbf15bd7d5bf2e8bf26a094e1",
+    "bytes": 47465,
+    "catalog_count": 16,
+    "mapped_count": 16,
+    "missing": [],
+    "unmatched_source": [],
+    "empty_source_features": []
+  },
+  "350000": {
+    "source": "map/json/province/fujian.json",
+    "source_sha256": "87d15eb633b9da22d88455367447b164d23ff6799a1696901e5fe005b705cd04",
+    "output_sha256": "d96c02b122885bf01306b73f1b23f630ee6da73807fde966d3217a1923b91f2a",
+    "bytes": 72226,
+    "catalog_count": 9,
+    "mapped_count": 9,
+    "missing": [],
+    "unmatched_source": [],
+    "empty_source_features": []
+  },
+  "360000": {
+    "source": "map/json/province/jiangxi.json",
+    "source_sha256": "0b32ae6f4f362b8bf94c8e9de6bbd890dc361f29efca2624c7cfa47005e608de",
+    "output_sha256": "ccd4cb007435dd1f60f559a692c39651edeb4cb28c3b059224a18e00fe1355b5",
+    "bytes": 44649,
+    "catalog_count": 11,
+    "mapped_count": 11,
+    "missing": [],
+    "unmatched_source": [],
+    "empty_source_features": []
+  },
+  "370000": {
+    "source": "map/json/province/shandong.json",
+    "source_sha256": "958e41a1710de862c13ea9b1463d17885344166bfff39efd6fc43c9704fb120c",
+    "output_sha256": "59d52189e21fd5c6793ddc7569da11a2000dfc3731ddd523114deb8bdbae1013",
+    "bytes": 82456,
+    "catalog_count": 16,
+    "mapped_count": 16,
+    "missing": [],
+    "unmatched_source": [
+      "莱芜市"
+    ],
+    "empty_source_features": []
+  },
+  "410000": {
+    "source": "map/json/province/henan.json",
+    "source_sha256": "80a79f25bf330c3a6f8bf9c65f629b169d9d1ba11dfda0efb13885e2b40bc1b6",
+    "output_sha256": "7321f20a26b60431aef3c72a548ab9d776b567b9b09798bb7f653074dea74b14",
+    "bytes": 56193,
+    "catalog_count": 18,
+    "mapped_count": 18,
+    "missing": [],
+    "unmatched_source": [],
+    "empty_source_features": []
+  },
+  "420000": {
+    "source": "map/json/province/hubei.json",
+    "source_sha256": "96ef7cb154bb370a460a3f89521b396a9f0f537d136058a5f716aa4259c78987",
+    "output_sha256": "5fb1e2e7b1dae39b73d5f382ee9648f330b4a63872445f73e8fa8e2a7dff8c0c",
+    "bytes": 65745,
+    "catalog_count": 17,
+    "mapped_count": 17,
+    "missing": [],
+    "unmatched_source": [],
+    "empty_source_features": []
+  },
+  "430000": {
+    "source": "map/json/province/hunan.json",
+    "source_sha256": "ffaa44ddd9bd361cf23cc002b0ae595a4b446c49f4b67a3f6ef7395c2b39f426",
+    "output_sha256": "e1f4c5cace4fcea0c659403915a755df6ae56723fd0b637a227b443cd8ae2012",
+    "bytes": 67961,
+    "catalog_count": 14,
+    "mapped_count": 14,
+    "missing": [],
+    "unmatched_source": [],
+    "empty_source_features": []
+  },
+  "440000": {
+    "source": "map/json/province/guangdong.json",
+    "source_sha256": "e53cd42dfa62a36b1b4db89ea9920c253b6211f25f379cfe5e189bfbcc43813c",
+    "output_sha256": "3ed393208b85e691aa94f29a1f37f1633b2ef7b260242eef5cb2e92a7f251b4b",
+    "bytes": 95835,
+    "catalog_count": 21,
+    "mapped_count": 21,
+    "missing": [],
+    "unmatched_source": [],
+    "empty_source_features": []
+  },
+  "450000": {
+    "source": "map/json/province/guangxi.json",
+    "source_sha256": "d5531decbfbb50d0421efb4255cdab5a16950fe6c3b185be66a538983779ce2b",
+    "output_sha256": "b50c658e343cfa3a26a6af675dd4374c0dfb207e426d499697ff6ece203e2be8",
+    "bytes": 67847,
+    "catalog_count": 14,
+    "mapped_count": 14,
+    "missing": [],
+    "unmatched_source": [],
+    "empty_source_features": []
+  },
+  "460000": {
+    "source": "map/json/province/hainan.json",
+    "source_sha256": "74cb50c43a41b8498294f5206d5e907ce5f3e9783a3654ff6ec2f1809f09b2d5",
+    "output_sha256": "4368cfe850fc11fe7a219b17c1cf991fd99bcb94d9e459ba3f97549d8e28d5e4",
+    "bytes": 27789,
+    "catalog_count": 19,
+    "mapped_count": 19,
+    "missing": [],
+    "unmatched_source": [],
+    "empty_source_features": []
+  },
+  "500000": {
+    "source": "map/json/china.json",
+    "source_sha256": "d392f651a48e6213c9bfc83f406711069de296c17f426cffc0ad1148078ee226",
+    "output_sha256": "6807d01bbb44ef361c42f2ddf5bedce1f0c46de832819f17e0005e2834c36726",
+    "bytes": 5377,
+    "catalog_count": 1,
+    "mapped_count": 1,
+    "missing": [],
+    "unmatched_source": [],
+    "empty_source_features": []
+  },
+  "510000": {
+    "source": "map/json/province/sichuan.json",
+    "source_sha256": "03d2adccf58a1f529e7dd6703397755b9e62839807cf46060f12b659f5e98600",
+    "output_sha256": "0124a6604a07bd7b5ae9180242b80b62f834b729914647d420d36d137fed7d3b",
+    "bytes": 86548,
+    "catalog_count": 21,
+    "mapped_count": 21,
+    "missing": [],
+    "unmatched_source": [],
+    "empty_source_features": []
+  },
+  "520000": {
+    "source": "map/json/province/guizhou.json",
+    "source_sha256": "0c2d2bd3946371978c88eb371efa498c8760acad5f70ed6259f3ff8342d017a4",
+    "output_sha256": "117e3bfd368bc7a91ccbca18363b427b1ebf3f172465206f52f09f45828bd820",
+    "bytes": 56753,
+    "catalog_count": 9,
+    "mapped_count": 9,
+    "missing": [],
+    "unmatched_source": [],
+    "empty_source_features": []
+  },
+  "530000": {
+    "source": "map/json/province/yunnan.json",
+    "source_sha256": "91e152e8f6be83ffeff241df10f72351d3788c4dfdbb79380643f72f82cb818b",
+    "output_sha256": "abf280ff2a6427d231b30d48314acfda11d1300d375bb93216faa6e8d21458e0",
+    "bytes": 65638,
+    "catalog_count": 16,
+    "mapped_count": 16,
+    "missing": [],
+    "unmatched_source": [],
+    "empty_source_features": []
+  },
+  "540000": {
+    "source": "map/json/province/xizang.json",
+    "source_sha256": "da44a86244250904acc3f8bc3c9b83b040b99929ee428fbd8e363da1034faa98",
+    "output_sha256": "22eb93e3727dcb6fad50006e45c6f8943c26431792ff290646a1f29f109ab368",
+    "bytes": 46910,
+    "catalog_count": 7,
+    "mapped_count": 6,
+    "missing": [
+      "那曲市"
+    ],
+    "unmatched_source": [
+      "那曲地区"
+    ],
+    "empty_source_features": [
+      "山南市"
+    ]
+  },
+  "610000": {
+    "source": "map/json/province/shanxi1.json",
+    "source_sha256": "f7eb3a981fdd30fbc3abab438fad68584fa879e3fe1fd2774613ec550e319643",
+    "output_sha256": "44c2d98a0a7adc39ceb4dc843b882c24f054e4142aa274fc659daec5ab9aed7b",
+    "bytes": 33898,
+    "catalog_count": 10,
+    "mapped_count": 10,
+    "missing": [],
+    "unmatched_source": [],
+    "empty_source_features": []
+  },
+  "620000": {
+    "source": "map/json/province/gansu.json",
+    "source_sha256": "a19b416b3d7ab64b7a9d8d8982a35caa457b41a2ee8b72559fcda88af30441ed",
+    "output_sha256": "983e8f498f6b119c4cc82bbe36a456daa28b3b7869df5f47e62a4438b5b82f1e",
+    "bytes": 40208,
+    "catalog_count": 14,
+    "mapped_count": 14,
+    "missing": [],
+    "unmatched_source": [],
+    "empty_source_features": []
+  },
+  "630000": {
+    "source": "map/json/province/qinghai.json",
+    "source_sha256": "8d246edf17b2733a0c5a8501048bbdfcf66377b9bff834ce51e1a9fd5e58a191",
+    "output_sha256": "dd50b0cc4cc630a05be29addda530732f93aa275fabc893a1047532e7065c19f",
+    "bytes": 45785,
+    "catalog_count": 8,
+    "mapped_count": 8,
+    "missing": [],
+    "unmatched_source": [],
+    "empty_source_features": []
+  },
+  "640000": {
+    "source": "map/json/province/ningxia.json",
+    "source_sha256": "c55a2b4daf7e6526a972f103d4780e0d657669dc1a25277fc7f7f5cb64cf2ecb",
+    "output_sha256": "34a7c568774b777d86416b2e1267bfe4befe04ff693e3ce0601853075120b011",
+    "bytes": 21482,
+    "catalog_count": 5,
+    "mapped_count": 5,
+    "missing": [],
+    "unmatched_source": [],
+    "empty_source_features": []
+  },
+  "650000": {
+    "source": "map/json/province/xinjiang.json",
+    "source_sha256": "8f1f2bad34ae9561763ffe915e174cc926abf1be6b6fa007c808503791022350",
+    "output_sha256": "e76a770606a21808e4cca03922adc5a2fc7b38a215b567cd3dda2891d614f04f",
+    "bytes": 51382,
+    "catalog_count": 26,
+    "mapped_count": 23,
+    "missing": [
+      "胡杨河市",
+      "新星市",
+      "白杨市"
+    ],
+    "unmatched_source": [],
+    "empty_source_features": []
+  },
+  "710000": {
+    "source": "map/json/province/taiwan.json",
+    "source_sha256": "9dcfc112c7a63537580def0469bd330b5293336cd64c58eb23cb9f8e2608b6a8",
+    "output_sha256": "1c5773049219f2bff67c6ac427ccfde8111bbdcb74d61dcb12f388ed4696f295",
+    "bytes": 18733,
+    "catalog_count": 22,
+    "mapped_count": 22,
+    "missing": [],
+    "unmatched_source": [
+      "中国属钓鱼岛"
+    ],
+    "empty_source_features": []
+  },
+  "810000": {
+    "source": "map/json/china.json",
+    "source_sha256": "d392f651a48e6213c9bfc83f406711069de296c17f426cffc0ad1148078ee226",
+    "output_sha256": "91a23193df48387af2bb3495008af2adc892d58f7eb6fd811e130bad9c03a577",
+    "bytes": 953,
+    "catalog_count": 1,
+    "mapped_count": 1,
+    "missing": [],
+    "unmatched_source": [],
+    "empty_source_features": []
+  },
+  "820000": {
+    "source": "map/json/china.json",
+    "source_sha256": "d392f651a48e6213c9bfc83f406711069de296c17f426cffc0ad1148078ee226",
+    "output_sha256": "0463624a27354135123af982525111bd48f969f62d142e9eae2bf156118a3b26",
+    "bytes": 191,
+    "catalog_count": 1,
+    "mapped_count": 1,
+    "missing": [],
+    "unmatched_source": [],
+    "empty_source_features": []
+  }
+}

@@ -5,6 +5,8 @@ import { TRAVEL_PROVINCES, createTravelVisitData, isTravelDate, visitedTravelPro
 import { travelCitiesForProvince, retainedTravelCity, isTravelCitySelection, changeTravelProvince } from "../../../../src/lib/github-data/travel-cities";
 import type { SyncedTravelVisit } from "../../../../src/lib/github-data/travel-sync";
 import type { Connection } from "./page-model";
+import { travelProvinceVisits, travelVisitsForDisplay, type TravelSortOrder } from "./travel-list-view";
+import { TravelProvinceMap } from "./travel-province-map";
 import boundaries from "./travel-map/provinces.json";
 import "./travel.css";
 
@@ -21,17 +23,25 @@ export function TravelSection({ connection, online, files, loading, ready, savin
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<SyncedTravelVisit | undefined>();
   const [formError, setFormError] = useState("");
+  const [view, setView] = useState<"time" | "province">("time");
+  const [sortOrder, setSortOrder] = useState<TravelSortOrder>("desc");
+  const [mapProvince, setMapProvince] = useState("");
   const submitRef = useRef(false);
   const cityRef = useRef<HTMLSelectElement>(null);
   const visited = visitedTravelProvinces(files.map(item => item.record));
-  const active = files.filter(item => item.record.deleted_at === null).sort((a, b) => b.record.data.start_date.localeCompare(a.record.data.start_date) || b.record.id.localeCompare(a.record.id));
+  const active = travelVisitsForDisplay(files, sortOrder);
+  const province = TRAVEL_PROVINCES.find(province => province.id === mapProvince);
+  const provinceVisits = travelProvinceVisits(active, mapProvince);
   const trash = files.filter(item => item.record.deleted_at !== null);
   const disabled = !connection || online === false || loading || saving || !ready;
   const dateError = travelDateError(fields);
   function cancel() { setFormOpen(false); setEditing(undefined); setFields(emptyFields); setFormError(""); }
   function selectProvince(id: string) {
+    setView("province"); setMapProvince(id);
+  }
+  function selectCity(city: string) {
     if (saving) return;
-    setFields(previous => changeTravelProvince(previous, id, editing?.record.data)); setFormOpen(true); setFormError("");
+    setFields(previous => ({ ...changeTravelProvince(previous, mapProvince, editing?.record.data), city })); setFormOpen(true); setFormError("");
     cityRef.current?.focus();
   }
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -47,14 +57,21 @@ export function TravelSection({ connection, online, files, loading, ready, savin
     try { if (await onSave(fields, editing)) cancel(); }
     finally { submitRef.current = false; }
   }
+  function visitRow(item: SyncedTravelVisit) {
+    return <li key={item.record.id}>
+      <TravelVisitDetails item={item} />
+      <div className="travel-actions"><button type="button" disabled={disabled} aria-label={`编辑${item.record.data.city} ${item.record.data.start_date}`} onClick={() => { setEditing(item); setFields(item.record.data); setFormOpen(true); setFormError(""); }}>编辑</button><button type="button" disabled={disabled || editing?.record.id === item.record.id} aria-label={`删除${item.record.data.city} ${item.record.data.start_date}`} onClick={() => void onDelete(item)}>删除</button></div>
+    </li>;
+  }
   return <section className="travel-section" aria-labelledby="travel-title">
-    <div className="travel-heading"><div><p className="eyebrow">TRAVEL</p><h2 id="travel-title">旅游</h2><p className="muted">记下去过的城市，点亮走过的省份。</p></div>
+    <div className="travel-heading"><div><p className="eyebrow">TRAVEL</p><h2 id="travel-title">旅行</h2><p className="muted">记下去过的城市，点亮走过的省份。</p></div>
       <button type="button" onClick={onRefresh} disabled={!connection || online === false || loading || saving}>{loading ? "读取中…" : "刷新记录"}</button></div>
-    {!connection && <p className="muted">连接私人数据仓库后，可保存和同步旅游记录。</p>}
+    {!connection && <p className="muted">连接私人数据仓库后，可保存和同步旅行记录。</p>}
     {online === false && <p role="status">当前离线，连接网络后可保存。</p>}
     {error && <p role="alert">{error}</p>}
     <div className="travel-stats" aria-live="polite"><strong>{!connection || !ready ? "—" : visited.size} / 34 <span>省级区域</span></strong><span>{!connection || !ready ? "—" : active.length} 条到访记录</span></div>
     <div className="travel-legend"><span><i className="travel-swatch visited" />已去</span><span><i className="travel-swatch" />未去</span></div>
+    <div className="travel-national-map" hidden={view === "province" && Boolean(mapProvince)}>
     <svg className="travel-map" viewBox="0 0 790 540" role="group" aria-label="中国省级到访地图；可选择区域或使用下方省份列表">
       {boundaries.map(region => <g key={region.id}>
         <path d={region.path} fillRule="evenodd" className={`travel-region${visited.has(region.id) ? " visited" : ""}${fields.province_id === region.id && formOpen ? " selected" : ""}`}
@@ -74,6 +91,7 @@ export function TravelSection({ connection, online, files, loading, ready, savin
       {TRAVEL_PROVINCES.map(province => <button type="button" key={province.id} className={visited.has(province.id) ? "visited" : ""} aria-label={`${province.label}，${visited.has(province.id) ? "已去" : "未去"}`} aria-pressed={visited.has(province.id)} onClick={() => selectProvince(province.id)} disabled={saving}><span aria-hidden="true">{visited.has(province.id) ? "✓ " : ""}</span>{province.name}</button>)}
     </div>
     <p className="travel-source muted">示意地图 · <a href="https://github.com/apache/echarts/tree/4.9.0/map" target="_blank" rel="noreferrer">Apache ECharts 4.9.0</a>（Apache-2.0），边界经投影简化；小区域也可在省份列表选择。</p>
+    </div>
     {!formOpen && <button type="button" className="primary-button" disabled={disabled} onClick={() => { setFields(emptyFields); setFormOpen(true); }}>新增到访</button>}
     {formOpen && <form className="travel-form" onSubmit={submit}>
       <h3>{editing ? "编辑到访" : "新增到访"}</h3>
@@ -88,12 +106,29 @@ export function TravelSection({ connection, online, files, loading, ready, savin
       {formError && <p role="alert">{formError}</p>}
       <div className="travel-actions"><button className="primary-button" type="submit" disabled={disabled || Boolean(dateError)}>{saving ? "保存中…" : "保存到访"}</button><button type="button" disabled={saving} onClick={cancel}>取消</button></div>
     </form>}
-    <h3>到访记录</h3>
-    {!loading && ready && active.length === 0 && <p className="muted">还没有记录。新增一次到访，就会点亮所属省份。</p>}
-    <ul className="travel-records">{active.map(item => <li key={item.record.id}>
-      <TravelVisitDetails item={item} />
-      <div className="travel-actions"><button type="button" disabled={disabled} aria-label={`编辑${item.record.data.city} ${item.record.data.start_date}`} onClick={() => { setEditing(item); setFields(item.record.data); setFormOpen(true); setFormError(""); }}>编辑</button><button type="button" disabled={disabled || editing?.record.id === item.record.id} aria-label={`删除${item.record.data.city} ${item.record.data.start_date}`} onClick={() => void onDelete(item)}>删除</button></div>
-    </li>)}</ul>
+    <div className="travel-visit-list">
+      <h3>到访记录</h3>
+      <div className="travel-list-controls">
+        <label>查看方式<select aria-label="到访记录查看方式" value={view} onChange={event => setView(event.target.value as "time" | "province")}><option value="time">按时间查看（全部城市）</option><option value="province">按省份查看（城市地图）</option></select></label>
+        <label>时间顺序<select aria-label="到访记录时间顺序" value={sortOrder} onChange={event => setSortOrder(event.target.value as TravelSortOrder)}><option value="desc">时间倒序（新到旧）</option><option value="asc">时间正序（旧到新）</option></select></label>
+      </div>
+      <p className="travel-list-order muted">{view === "time" ? "所有城市的每次到访完整显示，" : "所选省份的每次到访完整显示，"}按开始日期{sortOrder === "desc" ? "从新到旧" : "从旧到新"}；同日记录顺序固定。</p>
+      {view === "time" ? <>
+        {!loading && ready && active.length === 0 && <p className="muted">还没有记录。新增一次到访，就会点亮所属省份。</p>}
+        <ul className="travel-records">{active.map(visitRow)}</ul>
+      </> : <>
+        <div className="travel-province-navigation">
+          <label>查看省份<select aria-label="查看省份" value={mapProvince} onChange={event => setMapProvince(event.target.value)}><option value="">请选择省份</option>{TRAVEL_PROVINCES.map(province => <option key={province.id} value={province.id}>{province.label}</option>)}</select></label>
+          <button type="button" onClick={() => { setMapProvince(""); setView("time"); }}>返回全国</button>
+        </div>
+        {province ? <>
+          <TravelProvinceMap key={province.id} provinceId={province.id} label={province.label} files={files} selectedCity={fields.province_id === province.id && formOpen ? fields.city : ""} saving={saving} onSelectCity={selectCity} />
+          <h4>{province.label}到访记录（{provinceVisits.length} 条）</h4>
+          {!loading && ready && provinceVisits.length === 0 && <p className="muted">该省还没有到访记录。</p>}
+          <ul className="travel-records">{provinceVisits.map(visitRow)}</ul>
+        </> : <p className="muted">从全国地图或省份下拉选择一个省份，查看城市已去与未去。</p>}
+      </>}
+    </div>
     <details className="travel-trash"><summary>回收站（{trash.length}）</summary><ul className="travel-records">{trash.map(item => <li key={item.record.id}><TravelVisitDetails item={item} /><button type="button" disabled={disabled} onClick={() => void onRestore(item)}>恢复</button></li>)}</ul></details>
   </section>;
 }
