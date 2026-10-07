@@ -8,6 +8,12 @@ export function nextFairSyncWindow(progress: SyncProgress, now: Date, healthEnab
   // Include all enabled sources in checkpoints even when a record wins the
   // first turn; clients must not mistake absent health state for completion.
   if (healthEnabled) nextHealthSyncWindow(progress, now);
+  // Manual updates publish sleep/workout promptly, then rotate the remaining
+  // metric sources fairly even when activity details need several turns.
+  if (recentOnly) for (const source of ["sleep", "workout"] as const) {
+    const window = nextSyncWindow(progress, now, { source, recent: true });
+    if (window) return window;
+  }
   const firstKind = recentOnly || progress.scheduling?.lastKind !== "recent" ? "recent" : "history";
   const kinds = recentOnly ? ["recent" as const] : [firstKind, firstKind === "recent" ? "history" as const : "recent" as const];
   for (const kind of kinds) {

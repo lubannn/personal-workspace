@@ -3,8 +3,8 @@ import { clearRejectedCredentialBackoff } from "./coros-credential-backoff";
 import { nextFairSyncWindow, nextSyncTick, recordSyncTurn } from "./coros-sync-scheduling";
 import { parseWorkspaceDescriptor } from "../../../src/lib/github-data/workspace";
 import { GitHubDataError } from "../../../src/lib/github-data/github-contents";
-import { refreshEnabledCorosConnection } from "./coros-credentials";
-import { callCorosReadTool, type CorosReadTool } from "./coros-read-client";
+import { invalidateCorosAccessCache, refreshEnabledCorosConnection } from "./coros-credentials";
+import { callCorosReadTool, createCorosReadSession, type CorosReadTool } from "./coros-read-client";
 import { mapCorosSleep, mapCorosWorkouts } from "./coros-sync-mapping";
 import { createPrivateDataInstallationAdapter } from "./github-installation";
 import { writeCorosSyncBatch } from "./coros-sync-writer";
@@ -13,14 +13,15 @@ import { writeCorosHealthMetrics } from "./coros-health-writer";
 import { COROS_BULK_HEALTH_SOURCES } from "./coros-health-history";
 import { recordCheckedRange, advanceHistoricalCoverage, historicalWindow, acceptSyncRequest, parseSyncProgress, readSyncJob, recentWindowStart, shiftDate, todayInTimezone, syncReadiness, syncProgressDomains, type CorosSyncEnv, type SyncProgress, type SyncErrorStage } from "./coros-sync-state";
 
-const dependencies = { refresh: refreshEnabledCorosConnection, read: callCorosReadTool,
+const dependencies = { refresh: refreshEnabledCorosConnection, read: callCorosReadTool, session: createCorosReadSession,
   adapter: createPrivateDataInstallationAdapter, write: writeCorosSyncBatch, health: collectCorosHealth, writeMetrics: writeCorosHealthMetrics };
-export type CorosSyncDependencies = Omit<typeof dependencies, "health" | "writeMetrics"> & Partial<Pick<typeof dependencies, "health" | "writeMetrics">>;
+export type CorosSyncDependencies = Omit<typeof dependencies, "health" | "writeMetrics" | "session"> & Partial<Pick<typeof dependencies, "health" | "writeMetrics" | "session">>;
 /** Scope transport budgets to this invocation, including OAuth, MCP and GitHub. */
 export function corosSyncDependenciesWithFetch(fetcher: typeof fetch): CorosSyncDependencies {
   return { ...dependencies,
     refresh: (db, userId, key) => refreshEnabledCorosConnection(db, userId, key, fetcher),
     read: (url, token, name, args) => callCorosReadTool(url, token, name, args, fetcher),
+    session: (url, token) => createCorosReadSession(url, token, fetcher),
     adapter: config => createPrivateDataInstallationAdapter(config, fetcher) };
 }
 const isoAfter = (now: Date, milliseconds: number) => new Date(now.getTime() + milliseconds).toISOString();
@@ -124,6 +125,7 @@ export async function runCorosSync(env: CorosSyncEnv, now = new Date(), deps: Co
   const positionBefore = domainPosition();
   let nextRunAt = nextSyncTick(now);
   let stage: SyncErrorStage = "progress_checkpoint";
+  let readSession: ReturnType<typeof createCorosReadSession> | undefined;
   async function assertActive() {
     if (options.deadlineMs !== undefined && Date.now() >= options.deadlineMs) throw new Error("COROS_SYNC_BUDGET_EXHAUSTED");
     const row = await db.prepare(`SELECT j.lease_token FROM coros_sync_jobs j JOIN coros_connections c
@@ -166,10 +168,11 @@ export async function runCorosSync(env: CorosSyncEnv, now = new Date(), deps: Co
     await assertActive();
     // Also recover residual gates when another source already ran after reauth.
     if (clearRejectedCredentialBackoff(progress)) await checkpoint();
+    readSession = deps.session?.(ready.resourceUrl, ready.accessToken);
     const read = async (name: CorosReadTool, args: Record<string, unknown>) => {
       await assertActive();
       const previousStage = stage; stage = name;
-      const result = await deps.read(ready.resourceUrl, ready.accessToken, name, args);
+      const result = readSession ? await readSession.read(name, args) : await deps.read(ready.resourceUrl, ready.accessToken, name, args);
       stage = previousStage;
       return result;
     };
@@ -338,6 +341,7 @@ export async function runCorosSync(env: CorosSyncEnv, now = new Date(), deps: Co
     // Store only bounded internal codes, never exception payloads, credentials or health bodies.
     const phasedOAuth = COROS_OAUTH_PHASES.some(phase => message.startsWith(`COROS_OAUTH_${phase}_`));
     const code = parseCorosOAuthFailure(message) || (!phasedOAuth && /^(?:COROS|GITHUB)_[A-Z_]{1,80}$/u.test(message)) ? message : "COROS_SYNC_FAILED";
+    if (["COROS_READ_UNAUTHORIZED", "COROS_READ_FORBIDDEN"].includes(code)) invalidateCorosAccessCache(userId);
     progress.lastErrorCode = code; progress.lastErrorStage = stage; progress.failureCount += 1;
     if (window) {
       const domain = window.domain === "health" ? healthWindowProgress(progress, window) : progress.domains[window.domain];
@@ -366,6 +370,7 @@ export async function runCorosSync(env: CorosSyncEnv, now = new Date(), deps: Co
     return { status: "error", errorCode: code, retryAt: window ? (window.domain === "health" ? healthWindowProgress(progress, window) : progress.domains[window.domain]).retryAfter : null, progress,
       remainingWork: Boolean(window && nextFairSyncWindow(progress, now, Boolean(deps.health && deps.writeMetrics), options.recentOnly)) };
   } finally {
+    await readSession?.close();
     await db.prepare(`UPDATE coros_sync_jobs SET progress_json = ?1, next_run_at = CASE WHEN request_seq > ?6 THEN ?3 ELSE ?2 END,
       lease_token = NULL, lease_until = NULL, updated_at = ?3 WHERE github_user_id = ?4 AND lease_token = ?5`)
       .bind(JSON.stringify(progress), nextRunAt, now.toISOString(), userId, token, job.request_seq).run();

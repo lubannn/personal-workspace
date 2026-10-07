@@ -44,7 +44,10 @@ type ConnectionRow = {
 };
 
 function json(body: unknown, status = 200): Response {
-  return Response.json(body, { status, headers: RESPONSE_HEADERS });
+  // The encrypted continuation cache is server-only. Sending it with every
+  // status/drain response adds a large payload without helping the calendar.
+  return new Response(JSON.stringify(body, (key, value) => key === "encryptedActivityCache" ? undefined : value),
+    { status, headers: { ...RESPONSE_HEADERS, "content-type": "application/json" } });
 }
 
 function configured(env: CorosConnectionEnv, request: Request): boolean {

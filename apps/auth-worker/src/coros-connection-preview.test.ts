@@ -4,8 +4,8 @@ import { refreshEnabledCorosConnection, refreshPausedCorosConnectionForPreview }
 import { callCorosReadTool } from "./coros-read-client";
 import { randomToken } from "./security";
 
-vi.mock("./coros-credentials", () => ({ refreshPausedCorosConnectionForPreview: vi.fn(), refreshEnabledCorosConnection: vi.fn() }));
-vi.mock("./coros-read-client", () => ({ callCorosReadTool: vi.fn() }));
+vi.mock("./coros-credentials", () => ({ refreshPausedCorosConnectionForPreview: vi.fn(), refreshEnabledCorosConnection: vi.fn(), invalidateCorosAccessCache: vi.fn() }));
+vi.mock("./coros-read-client", async importOriginal => ({ ...await importOriginal<typeof import("./coros-read-client")>(), callCorosReadTool: vi.fn() }));
 
 const origin = "https://nexus.lubannn.workers.dev";
 const session = { github_user_id: "12345", github_login: "lubannn", expires_at: "2099-01-01T00:00:00.000Z" };

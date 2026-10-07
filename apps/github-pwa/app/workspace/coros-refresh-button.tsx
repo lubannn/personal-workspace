@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { readCookie, type ConnectionMethod } from "./page-model";
 import { drainCorosHistory } from "./coros-history-client";
+import { createCorosRefreshUpdates } from "./coros-refresh-updates";
 
 function friendlyError(code: string) {
   if (/PAUSED/u.test(code)) return "请先在 COROS 连接设置中恢复自动更新。";
@@ -25,11 +26,18 @@ export function CorosRefreshButton({ connectionMethod, disabled = false }: { con
     if (!csrf) { setMessage("GitHub 登录已失效，请重新登录后更新。"); return; }
     const current = new AbortController(); controller.current = current;
     setBusy(true); setMessage("正在从 COROS 读取近期睡眠与运动…");
-    let processed = 0;
+    window.dispatchEvent(new CustomEvent("coros-sync-running", { detail: { running: true } }));
+    const updates = createCorosRefreshUpdates(detail => window.dispatchEvent(new CustomEvent("coros-sync-updated", { detail })));
     try {
-      const result = await drainCorosHistory({ csrf, signal: current.signal, recentOnly: true, onUpdate: (update, count) => {
-        processed = count;
+      const result = await drainCorosHistory({ csrf, signal: current.signal, recentOnly: true, onUpdate: update => {
+        updates.update(update);
         if (update.status === "busy") setMessage("后台已有更新正在进行，正在等待完成…");
+        else if (update.status === "processed") {
+          const request = update.progress?.request?.sequence;
+          const recordsReady = request !== undefined && ["sleep", "workout"].every(domain =>
+            update.progress?.domains[domain as "sleep" | "workout"].recentRequestSequence === request);
+          setMessage(recordsReady ? "睡眠与运动已检查，正在更新健康指标…" : "正在更新近期睡眠与运动…");
+        }
       } });
       if (current.signal.aborted) return;
       if (result.status === "complete") setMessage("近期睡眠与运动已更新。");
@@ -37,13 +45,13 @@ export function CorosRefreshButton({ connectionMethod, disabled = false }: { con
       else if (result.status === "deferred") setMessage("COROS 暂时需要等待，后台会继续处理已提交的更新。");
       else if (result.status === "limit") setMessage("近期记录已分批更新，剩余部分会在后台继续。");
       else setMessage(friendlyError(result.errorCode ?? ""));
-      if (processed || result.status === "complete" || result.status === "busy") window.dispatchEvent(new CustomEvent("coros-sync-updated"));
     } catch (error) {
       if (!current.signal.aborted) {
         setMessage(friendlyError(error instanceof Error ? error.message : ""));
-        if (processed) window.dispatchEvent(new CustomEvent("coros-sync-updated"));
       }
     } finally {
+      if (!current.signal.aborted) updates.finish();
+      window.dispatchEvent(new CustomEvent("coros-sync-running", { detail: { running: false } }));
       if (controller.current === current) { controller.current = null; setBusy(false); }
     }
   }

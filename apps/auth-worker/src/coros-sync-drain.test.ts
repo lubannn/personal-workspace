@@ -3,6 +3,7 @@ import { authenticatedGitHubUser } from "./auth";
 import { handleCorosConnectionRequest } from "./coros-connection";
 import { runCorosSync } from "./coros-sync";
 import { SYNC_TEST_NOW, SYNC_TEST_ORIGIN, SYNC_TEST_USER, syncTestDatabase } from "./coros-sync-test-helpers";
+import { initialSyncProgress } from "./coros-sync-state";
 
 vi.mock("./auth", async importOriginal => ({ ...await importOriginal<typeof import("./auth")>(), authenticatedGitHubUser: vi.fn() }));
 vi.mock("./coros-sync", () => ({ runCorosSync: vi.fn() }));
@@ -34,6 +35,18 @@ describe("authenticated COROS drain route", () => {
     const response = await handleCorosConnectionRequest(new Request(input, { body: JSON.stringify({ recentOnly: true }) }), fixture.env);
     expect(response.status).toBe(200);
     expect(runCorosSync).toHaveBeenCalledExactlyOnceWith(fixture.env, new Date(SYNC_TEST_NOW), undefined, { forceDue: true, recentOnly: true });
+  });
+
+  it("omits the large server continuation cache without mutating persisted progress", async () => {
+    const progress = initialSyncProgress("2024-01-01", "Asia/Shanghai");
+    progress.health = { ...progress.domains.sleep, encryptedActivityCache: "synthetic-encrypted-".repeat(10_000) };
+    vi.mocked(runCorosSync).mockResolvedValue({ status: "processed", progress });
+    const response = await handleCorosConnectionRequest(request(), fixture.env);
+    const text = await response.text();
+    expect(text).not.toContain("encryptedActivityCache");
+    expect(text.length).toBeLessThan(5_000);
+    expect(JSON.parse(text).progress.domains.sleep).toEqual(progress.domains.sleep);
+    expect(progress.health.encryptedActivityCache?.length).toBeGreaterThan(100_000);
   });
 
   it.each(["null", "[]", "{}", '{"recentOnly":"true"}', "invalid"])("rejects invalid drain options %s before execution", async body => {

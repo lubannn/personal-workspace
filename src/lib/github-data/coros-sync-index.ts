@@ -16,7 +16,8 @@ export type CorosSyncIndexEntry = {
   deleted_at: string | null;
   latest_date: string;
 };
-export type CorosSyncIndexData = { index_version: 1; records: CorosSyncIndexEntry[] };
+export type CorosSyncConflictIndexEntry = { id: string; path: string; blob_sha: string; status: "pending" | "resolved" };
+export type CorosSyncIndexData = { index_version: 1; records: CorosSyncIndexEntry[]; conflicts?: CorosSyncConflictIndexEntry[] };
 export type CorosSyncIndexRecord = WorkspaceRecord<CorosSyncIndexData>;
 export const COROS_SYNC_INDEX_ID = "index";
 export const COROS_SYNC_INDEX_PATH = recordPath("coros_sync_index", COROS_SYNC_INDEX_ID);
@@ -59,7 +60,7 @@ export function parseCorosSyncIndexRecord(text: string): CorosSyncIndexRecord {
   if (record.entity_type !== "coros_sync_index" || record.id !== COROS_SYNC_INDEX_ID || !id(record.owner_id)
     || !Number.isInteger(record.version) || record.version < 1 || record.deleted_at !== null
     || !instant(record.created_at) || !instant(record.updated_at)
-    || Object.keys(data).sort().join(",") !== "index_version,records" || data.index_version !== 1 || !Array.isArray(data.records)) throw new Error("INVALID_COROS_SYNC_INDEX");
+    || !["index_version,records", "conflicts,index_version,records"].includes(Object.keys(data).sort().join(",")) || data.index_version !== 1 || !Array.isArray(data.records)) throw new Error("INVALID_COROS_SYNC_INDEX");
   const paths = new Set<string>();
   for (const entry of data.records) {
     if (!entry || Object.keys(entry).sort().join(",") !== "blob_sha,deleted_at,end_at,id,kind,latest_date,owner_id,path,session_type,source,start_at"
@@ -75,6 +76,15 @@ export function parseCorosSyncIndexRecord(text: string): CorosSyncIndexRecord {
       || typeof entry.source.source_id !== "string" || entry.source.source_id.length === 0 || entry.source.source_id.length > 256
       || /[\u0000-\u001f\u007f]/u.test(entry.source.source_id) || !/^[a-f0-9]{64}$/u.test(entry.source.source_sha256))) throw new Error("INVALID_COROS_SYNC_INDEX");
     paths.add(entry.path);
+  }
+  if (data.conflicts !== undefined) {
+    if (!Array.isArray(data.conflicts)) throw new Error("INVALID_COROS_SYNC_INDEX");
+    for (const entry of data.conflicts) {
+      if (!entry || Object.keys(entry).sort().join(",") !== "blob_sha,id,path,status" || !id(entry.id)
+        || entry.path !== recordPath("coros_sync_conflict", entry.id) || paths.has(entry.path)
+        || !/^[a-f0-9]{40}$/u.test(entry.blob_sha) || !["pending", "resolved"].includes(entry.status)) throw new Error("INVALID_COROS_SYNC_INDEX");
+      paths.add(entry.path);
+    }
   }
   return record as CorosSyncIndexRecord;
 }

@@ -81,7 +81,7 @@ export async function drainCorosHistory({ csrf, signal, onUpdate, fetcher = fetc
     }
     if (update.status === "processed" || (update.status === "error" && update.remainingWork === true)) {
       busySince = null;
-      if (processed < maxWindows) await abortableDelay(250, signal);
+      if (!recentOnly && processed < maxWindows) await abortableDelay(250, signal);
     } else if (update.status === "busy") {
       busySince ??= Date.now();
       const remaining = maxBusyWait - (Date.now() - busySince);

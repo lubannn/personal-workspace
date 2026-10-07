@@ -10,7 +10,18 @@ type StoredConnection = {
   encrypted_refresh_token: string;
   scope: string;
   state: "paused" | "enabled";
+  connected_at?: string;
+  last_error_code?: string | null;
 };
+
+// Best-effort isolate cache only: encrypted token, unchanged grant, <= 5 minutes
+// and never beyond the server's expiry minus a one-minute safety margin.
+const accessCache = new Map<string, { binding: string; encryptedAccess: string; expiresAt: number }>();
+export function invalidateCorosAccessCache(githubUserId: string) { accessCache.delete(githubUserId); }
+function grantBinding(connection: StoredConnection) {
+  return JSON.stringify([connection.github_user_id, connection.resource_url, connection.client_id,
+    connection.redirect_uri, connection.scope, connection.connected_at, connection.encrypted_refresh_token]);
+}
 
 export type ReadyCorosConnection = {
   resourceUrl: string;
@@ -46,10 +57,19 @@ async function refreshCorosConnectionInState(
   fetcher: typeof fetch,
 ): Promise<ReadyCorosConnection | null> {
   const connection = await db.prepare(
-    `SELECT github_user_id, client_id, redirect_uri, resource_url, encrypted_refresh_token, scope, state
+    `SELECT github_user_id, client_id, redirect_uri, resource_url, encrypted_refresh_token, scope, state, connected_at, last_error_code
        FROM coros_connections WHERE github_user_id = ?1`,
   ).bind(githubUserId).first<StoredConnection>();
-  if (!connection || connection.state !== requiredState || connection.github_user_id !== githubUserId) return null;
+  if (!connection || connection.state !== requiredState || connection.github_user_id !== githubUserId) {
+    invalidateCorosAccessCache(githubUserId); return null;
+  }
+  for (const [id, cached] of accessCache) if (cached.expiresAt <= Date.now()) accessCache.delete(id);
+  const cached = accessCache.get(githubUserId);
+  if (requiredState === "enabled" && !connection.last_error_code && cached?.binding === grantBinding(connection)) {
+    return { resourceUrl: connection.resource_url, accessToken: await decryptRefreshToken(cached.encryptedAccess, encryptionKey), githubUserId };
+  }
+  invalidateCorosAccessCache(githubUserId);
+  const startedAt = Date.now();
   const endpoints = await discoverCorosOAuth(connection.resource_url, fetcher);
   const oldRefreshToken = await decryptRefreshToken(connection.encrypted_refresh_token, encryptionKey);
   const renewed = await refreshCorosToken(endpoints, {
@@ -68,5 +88,11 @@ async function refreshCorosConnectionInState(
   const current = await db.prepare("SELECT state FROM coros_connections WHERE github_user_id = ?1")
     .bind(githubUserId).first<{ state: string }>();
   if (current?.state !== requiredState) return null;
+  const expiresAt = startedAt + Math.min(5 * 60_000, Math.max(0, renewed.expiresIn * 1_000 - 60_000));
+  if (requiredState === "enabled" && expiresAt > Date.now()) {
+    if (accessCache.size >= 2) accessCache.delete(accessCache.keys().next().value!);
+    accessCache.set(githubUserId, { binding: grantBinding({ ...connection, encrypted_refresh_token: encryptedNext, scope: renewed.scope }),
+      encryptedAccess: await encryptRefreshToken(renewed.accessToken, encryptionKey), expiresAt });
+  }
   return { resourceUrl: endpoints.resource, accessToken: renewed.accessToken, githubUserId };
 }

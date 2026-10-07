@@ -4,7 +4,7 @@ import { createWorkspaceRecord, recordPath, serializeRecord, updateWorkspaceReco
 import { createAutomaticSleepSessionData, parseSleepSessionRecord, type SleepSessionRecord } from "../../../src/lib/github-data/sleep-sessions";
 import { createAutomaticWorkoutData, parseWorkoutRecord, type WorkoutRecord } from "../../../src/lib/github-data/workouts";
 import type { CorosProvenance } from "../../../src/lib/github-data/coros-sync-types";
-import { COROS_SYNC_INDEX_ID, COROS_SYNC_INDEX_PATH, corosCanonicalBlobSha, corosSyncIndexEntry, parseCorosSyncIndexRecord, type CorosSyncIndexEntry, type CorosSyncIndexRecord } from "../../../src/lib/github-data/coros-sync-index";
+import { COROS_SYNC_INDEX_ID, COROS_SYNC_INDEX_PATH, corosCanonicalBlobSha, corosSyncIndexEntry, parseCorosSyncIndexRecord, type CorosSyncConflictIndexEntry, type CorosSyncIndexEntry, type CorosSyncIndexRecord } from "../../../src/lib/github-data/coros-sync-index";
 import type { CorosSyncCandidate } from "./coros-sync-mapping";
 
 type SyncAdapter = Pick<GitHubContentsAdapter, "readBranchSnapshot" | "listTreeFiles" | "readBlobTexts" | "writeAtomicFiles">;
@@ -113,14 +113,29 @@ export async function writeCorosSyncBatch(adapter: SyncAdapter, input: {
       if (entry?.blob_sha === file.blobSha) { records.push(entry); return false; }
       return true;
     });
-    selected.push(...inventory.filter((file) => /^data\/coros-sync-conflicts\/[^/]+\.json$/u.test(file.path)));
+    const cachedConflicts = new Map(previousIndex?.data.conflicts?.map(entry => [entry.path, entry]));
+    const conflictIndex = new Map<string, CorosSyncConflictIndexEntry>();
+    const conflictFiles = inventory.filter(file => /^data\/coros-sync-conflicts\/[^/]+\.json$/u.test(file.path));
+    selected.push(...conflictFiles.filter(file => {
+      const cached = cachedConflicts.get(file.path);
+      // Immutable blob identity validates the cached status. Pending and changed
+      // audits are still read so source revisions and external reviews reconcile.
+      if (cached && cached.blob_sha === file.blobSha && cached.status !== "pending") {
+        conflictIndex.set(cached.id, cached); return false;
+      }
+      return true;
+    }));
     const stored = await adapter.readBlobTexts(selected);
     const existingConflicts = new Map<string, CorosSyncConflictRecord>();
     for (const file of stored) {
       const record = file.path.startsWith("data/coros-sync-conflicts/") ? parseCorosSyncConflictRecord(file.text)
         : file.path.startsWith("data/sleep-sessions/") ? parseSleepSessionRecord(file.text) : parseWorkoutRecord(file.text);
       if (record.owner_id !== input.ownerId || recordPath(record.entity_type, record.id) !== file.path) throw new Error("COROS_SYNC_RECORD_IDENTITY_MISMATCH");
-      if (record.entity_type === "coros_sync_conflict") existingConflicts.set(record.id, record as CorosSyncConflictRecord);
+      if (record.entity_type === "coros_sync_conflict") {
+        const audit = record as CorosSyncConflictRecord;
+        existingConflicts.set(record.id, audit);
+        conflictIndex.set(audit.id, { id: audit.id, path: file.path, blob_sha: file.blobSha, status: audit.data.status });
+      }
       else records.push(corosSyncIndexEntry(record as CanonicalRecord, file.blobSha));
     }
     const sourceIndex = new Map<string, CorosSyncIndexEntry>();
@@ -220,7 +235,7 @@ export async function writeCorosSyncBatch(adapter: SyncAdapter, input: {
           reason, existing_record_id: duplicate.id, existing_source_sha256: oldSource?.source_sha256 ?? null, candidate: entry.payload,
         } });
         const path = recordPath("coros_sync_conflict", id);
-        if (!existingConflicts.has(id)) {
+        if (!existingConflicts.has(id) && !conflictIndex.has(id)) {
           if (paths.has(path)) throw new Error("COROS_SYNC_PATH_COLLISION");
           files.push({ path, text: serializeRecord(conflict) });
           paths.add(path);
@@ -243,8 +258,14 @@ export async function writeCorosSyncBatch(adapter: SyncAdapter, input: {
     }
     Object.assign(result, latestDates(records));
     records.sort((a, b) => a.path.localeCompare(b.path));
-    if (!previousIndex || stableJson(previousIndex.data.records) !== stableJson(records)) {
-      const data = { index_version: 1 as const, records };
+    for (const file of files.filter(file => file.path.startsWith("data/coros-sync-conflicts/"))) {
+      const audit = parseCorosSyncConflictRecord(file.text);
+      conflictIndex.set(audit.id, { id: audit.id, path: file.path, blob_sha: await corosCanonicalBlobSha(file.text), status: audit.data.status });
+    }
+    const conflicts = [...conflictIndex.values()].sort((a, b) => a.path.localeCompare(b.path));
+    if (!previousIndex || stableJson(previousIndex.data.records) !== stableJson(records)
+      || stableJson(previousIndex.data.conflicts ?? null) !== stableJson(conflicts)) {
+      const data = { index_version: 1 as const, records, conflicts };
       const index = previousIndex ? updateWorkspaceRecord(previousIndex, data, input.timestamp)
         : createWorkspaceRecord({ entityType: "coros_sync_index", id: COROS_SYNC_INDEX_ID, ownerId: input.ownerId, timestamp: input.timestamp, data });
       const text = serializeRecord(index);

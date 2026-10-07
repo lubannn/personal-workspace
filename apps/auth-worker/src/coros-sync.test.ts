@@ -351,9 +351,9 @@ describe("COROS scheduled synchronization", () => {
     expect(fixture.saved()).toMatchObject({ request_seq: 2, requested_through: "2024-02-02", next_run_at: SYNC_TEST_NOW,
       progress: { request: { sequence: 1, through: "2024-02-01" }, domains: { sleep: { recentRequestSequence: 1 } } } });
     await runCorosSync(fixture.env, new Date(), deps, { recentOnly: true });
-    expect(deps.read).toHaveBeenLastCalledWith(expect.any(String), expect.any(String), "querySportRecords", expect.objectContaining({ startDate: "20240127", endDate: "20240202" }));
-    await runCorosSync(fixture.env, new Date(), deps, { forceDue: true, recentOnly: true });
     expect(deps.read).toHaveBeenLastCalledWith(expect.any(String), expect.any(String), "querySleepOverview", { startDate: "20240131", endDate: "20240202" });
+    await runCorosSync(fixture.env, new Date(), deps, { forceDue: true, recentOnly: true });
+    expect(deps.read).toHaveBeenLastCalledWith(expect.any(String), expect.any(String), "querySportRecords", expect.objectContaining({ startDate: "20240127", endDate: "20240202" }));
     expect(fixture.saved()?.progress.request).toMatchObject({ sequence: 2, through: "2024-02-02", historyThrough: "2024-01-31" });
   });
 

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SdkError, SdkErrorCode, SdkHttpError, ProtocolError } from "@modelcontextprotocol/client";
-import { COROS_READ_TOOL_ALLOWLIST, callCorosReadTool, isAllowedCorosReadTool } from "./coros-read-client";
+import { COROS_READ_TOOL_ALLOWLIST, callCorosReadTool, createCorosReadSession, isAllowedCorosReadTool } from "./coros-read-client";
 
 const mcp = vi.hoisted(() => ({ connect: vi.fn(), listTools: vi.fn(), callTool: vi.fn(), close: vi.fn(), terminateSession: vi.fn(), transportOptions: vi.fn() }));
 vi.mock("@modelcontextprotocol/client", async importOriginal => ({
@@ -27,6 +27,36 @@ describe("COROS read-only tool boundary", () => {
     mcp.close.mockResolvedValue(undefined);
   });
   afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
+  it("reuses one connection and discovery for serial reads, including an unavailable-tool fallback", async () => {
+    mcp.listTools.mockResolvedValue({ tools: [{ name: "querySleepHrv" }, { name: "queryRecoveryStatus" }] });
+    const session = createCorosReadSession("https://mcpcn.coros.com/mcp", "synthetic-token");
+    await expect(session.read("querySleepOverview", {})).rejects.toThrow("COROS_READ_TOOL_UNAVAILABLE");
+    await session.read("queryRecoveryStatus", {});
+    await session.read("querySleepHrv", { startDate: "20261001" });
+    expect(mcp.connect).toHaveBeenCalledTimes(1);
+    expect(mcp.listTools).toHaveBeenCalledTimes(1);
+    expect(mcp.callTool).toHaveBeenCalledTimes(2);
+    expect(mcp.close).not.toHaveBeenCalled();
+    expect(mcp.connect.mock.calls[0][1].signal.aborted).toBe(false);
+    await session.close(); await session.close();
+    expect(mcp.connect.mock.calls[0][1].signal.aborted).toBe(true);
+    expect(mcp.terminateSession).toHaveBeenCalledTimes(1);
+    expect(mcp.close).toHaveBeenCalledTimes(1);
+    await expect(session.read("querySleepHrv", {})).rejects.toThrow("COROS_READ_TRANSPORT_FAILED");
+  });
+
+  it("applies a fresh bounded deadline to a later read on the shared connection", async () => {
+    vi.useFakeTimers();
+    const session = createCorosReadSession("https://mcpcn.coros.com/mcp", "synthetic-token");
+    await session.read("querySleepOverview", {});
+    mcp.callTool.mockImplementation(() => new Promise(() => {}));
+    const failed = expect(session.read("querySleepOverview", {})).rejects.toThrow("COROS_READ_TIMEOUT");
+    await vi.advanceTimersByTimeAsync(60_000); await failed;
+    await session.close();
+    expect(mcp.connect).toHaveBeenCalledTimes(1);
+    expect(mcp.callTool.mock.calls[1][1].signal.aborted).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+  });
   it("allows only the planned activity, sleep and daily metric reads", () => {
     expect(COROS_READ_TOOL_ALLOWLIST).toContain("querySportRecords");
     expect(COROS_READ_TOOL_ALLOWLIST).toContain("querySleepData");
