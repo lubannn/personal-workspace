@@ -78,7 +78,6 @@ import {
   type TaskEditableFields,
   type TaskPriority,
 } from "../../../src/lib/github-data/tasks";
-import { createTimeEntryData } from "../../../src/lib/github-data/time-entries";
 import {
   createLearningAreaData,
   parseLearningAreaRecord,
@@ -138,7 +137,6 @@ import {
   type SyncedReportDraft,
   type SyncedSleepSession,
   type SyncedTask,
-  type SyncedTimeEntry,
 } from "./workspace/page-model";
 import { useOnlineStatus } from "./workspace/use-online-status";
 import { useWorkspaceCollections } from "./workspace/use-workspace-collections";
@@ -165,7 +163,6 @@ import { CalendarSection, type CalendarEventFields } from "./workspace/calendar-
 import { ReadinessSection } from "./workspace/readiness-section";
 import { ReportsSection } from "./workspace/reports-section";
 import { TasksSection } from "./workspace/tasks-section";
-import { TimeEntriesSection } from "./workspace/time-entries-section";
 import { JournalSection } from "./workspace/journal-section";
 import { LearningSection } from "./workspace/learning-section";
 import { HabitsSection } from "./workspace/habits-section";
@@ -212,8 +209,6 @@ export default function GitHubWorkspacePage() {
   const [taskDueDateOverride, setTaskDueDate] = useState<string | null>(null);
   const [taskView, setTaskView] = useState<"open" | "done" | "cancelled" | "archived" | "trash">("open");
   const [savingTask, setSavingTask] = useState(false);
-  const [savingTimeEntry, setSavingTimeEntry] = useState(false);
-  const [savingTimeEntryId, setSavingTimeEntryId] = useState<string | null>(null);
   const [savingReportDraft, setSavingReportDraft] = useState(false);
   const [savingTaskId, setSavingTaskId] = useState<string | null>(null);
   const [projectName, setProjectName] = useState("");
@@ -294,7 +289,6 @@ export default function GitHubWorkspacePage() {
     taskFiles,
     setTaskFiles,
     timeEntryFiles,
-    setTimeEntryFiles,
     projectFiles,
     setProjectFiles,
     projectPhaseFiles,
@@ -1585,40 +1579,6 @@ export default function GitHubWorkspacePage() {
     } finally {
       setSavingReportDraft(false);
     }
-  }
-
-  async function saveTimeEntry(fields: { taskId: string; localDate: string; durationMinutes: number; notesMarkdown: string }) {
-    const adapter = adapterRef.current;
-    if (!adapter || !connection || savingTimeEntry || online === false) return false;
-    const task = taskFiles.find((item) => item.record.id === fields.taskId && item.record.deleted_at === null);
-    if (!task) { setErrorMessage("关联 Task 已不可用，请刷新后重新选择；未写入 Time Entry。"); return false; }
-    setSavingTimeEntry(true); setErrorMessage(""); setStatusMessage("");
-    const timestamp = new Date().toISOString();
-    const id = `time_entry_${timestamp.replaceAll(/\D/g, "").slice(0, 17)}_${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`;
-    try {
-      const record = createWorkspaceRecord({ entityType: "time_entry", id, ownerId: connection.ownerId, timestamp, data: createTimeEntryData({ taskId: task.record.id, projectId: task.record.data.project_id, localDate: fields.localDate, timezone: connection.timezone, durationMinutes: fields.durationMinutes, notesMarkdown: fields.notesMarkdown }) });
-      const result = await adapter.writeText({ path: recordPath("time_entry", id), text: serializeRecord(record), message: `time: create ${id}` });
-      setTimeEntryFiles((current) => [{ record, path: result.path, blobSha: result.blobSha }, ...current]);
-      setStatusMessage("Time Entry 已保存；Task 的人工实际耗时未被改写，报告会单独汇总可追溯时长。");
-      return true;
-    } catch (error) {
-      setErrorMessage(error instanceof Error && error.message.startsWith("INVALID_TIME_ENTRY") ? "日期、时长或关联无效，未写入 Time Entry。" : friendlyError(error));
-      return false;
-    } finally { setSavingTimeEntry(false); }
-  }
-
-  async function updateTimeEntryDeletion(item: SyncedTimeEntry, operation: "trash" | "restore") {
-    const adapter = adapterRef.current;
-    if (!adapter || !connection || savingTimeEntryId || online === false) return;
-    setSavingTimeEntryId(item.record.id); setErrorMessage(""); setStatusMessage("");
-    const timestamp = new Date().toISOString();
-    const updated = setWorkspaceRecordDeleted(item.record, operation === "trash" ? timestamp : null, timestamp);
-    try {
-      const result = await adapter.writeText({ path: item.path, text: serializeRecord(updated), message: `time: ${operation} ${item.record.id}`, expectedBlobSha: item.blobSha });
-      setTimeEntryFiles((current) => current.map((candidate) => candidate.record.id === item.record.id ? { record: updated, path: result.path, blobSha: result.blobSha } : candidate));
-      setStatusMessage(operation === "trash" ? "Time Entry 已移到回收站；报告不再计入，可随时恢复。" : "Time Entry 已恢复；报告会重新计入该条事实。");
-    } catch (error) { setErrorMessage(friendlyError(error)); }
-    finally { setSavingTimeEntryId(null); }
   }
 
   async function saveJournalEntry(fields: { journalDate: string; dateChoice?: JournalDateChoice; bodyMarkdown: string }) {
@@ -3055,20 +3015,6 @@ export default function GitHubWorkspacePage() {
       />
 
 
-      <TimeEntriesSection
-        connection={connection}
-        online={online}
-        todayDate={currentTaskDate}
-        taskFiles={taskFiles}
-        projectFiles={projectFiles}
-        timeEntryFiles={timeEntryFiles}
-        loading={loadingTimeEntries}
-        saving={savingTimeEntry}
-        savingId={savingTimeEntryId}
-        onCreate={saveTimeEntry}
-        onDeletionChange={updateTimeEntryDeletion}
-        onRefresh={() => loadTimeEntries()}
-      />
       </WorkspaceTabPanel>
 
 
