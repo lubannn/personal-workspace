@@ -184,6 +184,11 @@ export function TasksSection(props: Props) {
                       <label className="task-edit-title">任务标题
                         <input value={editTitle} onChange={(event) => setEditTitle(event.target.value)} maxLength={300} autoFocus disabled={savingTaskId === item.record.id} />
                       </label>
+                      <label>分类
+                        <select value={editCategory} onChange={(event) => setEditCategory(event.target.value as TaskCategory)} disabled={savingTaskId === item.record.id}>
+                          {Object.entries(TASK_CATEGORY_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                        </select>
+                      </label>
                       <label>优先级
                         <select value={editPriority} onChange={(event) => setEditPriority(event.target.value as TaskPriority)} disabled={savingTaskId === item.record.id}>
                           {Object.entries(TASK_PRIORITY_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
@@ -198,12 +203,7 @@ export function TasksSection(props: Props) {
                       <label>截止日期
                         <input type="date" value={editDueDate} onChange={(event) => setEditDueDate(event.target.value)} onInput={(event) => setEditDueDate(event.currentTarget.value)} disabled={savingTaskId === item.record.id} />
                       </label>
-                      <details className="task-edit-options"><summary>分类、标签、耗时与备注</summary><div className="task-options-grid">
-                      <label>分类
-                        <select value={editCategory} onChange={(event) => setEditCategory(event.target.value as TaskCategory)} disabled={savingTaskId === item.record.id}>
-                          {Object.entries(TASK_CATEGORY_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-                        </select>
-                      </label>
+                      <details className="task-edit-options"><summary>标签、耗时与备注</summary><div className="task-options-grid">
                       <label className="task-edit-tags">标签（逗号分隔）
                         <input value={editTags} onChange={(event) => setEditTags(event.target.value)} maxLength={1020} placeholder="周报, 等待反馈" disabled={savingTaskId === item.record.id} />
                       </label>

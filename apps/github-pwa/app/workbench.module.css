@@ -19,7 +19,7 @@
 .scope :global(.task-options-grid) { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 8px; }
 .scope :global(.task-options-grid label) { display: grid; gap: 5px; }
 .scope :global(.task-edit-options) { grid-column: 1 / -1; border-top: 1px solid var(--line); padding-top: 5px; }
-.scope :global(.task-edit-form) { padding: 12px; gap: 10px; border-radius: 10px; }
+.scope :global(.task-edit-form) { grid-template-columns: minmax(180px, 1.4fr) repeat(4, minmax(96px, .6fr)); padding: 12px; gap: 10px; border-radius: 10px; }
 .scope :global(.task-edit-form textarea) { min-height: 90px; }
 .scope :global(.task-list) { margin-top: 12px; }
 .scope :global(.task-list > li) { gap: 10px; padding: 11px 0; align-items: start; }
@@ -78,6 +78,8 @@
   .scope :global(.task-create-form > .task-title-field) { grid-column: 1 / -1; }
   .scope :global(.task-create-form > label:not(.task-title-field)) { grid-row: auto; }
   .scope :global(.task-create-form > button) { grid-column: 1 / -1; grid-row: auto; }
+  .scope :global(.task-edit-form) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .scope :global(.task-edit-title) { grid-column: 1 / -1; }
   .scope :global(.calendar-grid) { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 600px) {
