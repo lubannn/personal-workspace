@@ -4,6 +4,7 @@ import type { DashboardLayout, DashboardWidgetConfig, DashboardWidgetSize } from
 import { isTodayDashboardWidget } from "./dashboard-presentation";
 import { calendarEventsForDate } from "../../../../src/lib/github-data/calendar-events";
 import { formatTaskDue, type Connection, type SyncedCalendarEvent, type SyncedTask } from "./page-model";
+import { CalendarCompletionCheckbox } from "./calendar-completion-checkbox";
 
 
 type WidgetDefinition = { eyebrow: string; title: string; empty: string };
@@ -34,6 +35,8 @@ type Props = {
   loadingTasks: boolean;
   loadingCalendarEvents: boolean;
   savingTaskId: string | null;
+  savingCalendarEvent: boolean;
+  savingCalendarEventId: string | null;
   currentTaskDate: string;
   onToggleEditing: () => void;
   onRefresh: () => void;
@@ -42,14 +45,16 @@ type Props = {
   onWidgetResize: (widget: DashboardWidgetConfig, size: DashboardWidgetSize) => void;
   onReset: () => void;
   onCompleteTask: (item: SyncedTask) => void;
+  onCalendarCompletionChange: (item: SyncedCalendarEvent, completed: boolean) => void;
 };
 
 export function DashboardSection(props: Props) {
-  const { connection, online, dashboardLayout, dashboardBlobSha, dashboardDirty, editingDashboard, loadingDashboard, savingDashboard, visibleWidgets, hiddenWidgets, todayTasks, calendarEvents, loadingTasks, loadingCalendarEvents, savingTaskId, currentTaskDate, onToggleEditing, onRefresh, onSaveLayout, onWidgetChange, onWidgetResize, onReset, onCompleteTask } = props;
+  const { connection, online, dashboardLayout, dashboardBlobSha, dashboardDirty, editingDashboard, loadingDashboard, savingDashboard, visibleWidgets, hiddenWidgets, todayTasks, calendarEvents, loadingTasks, loadingCalendarEvents, savingTaskId, savingCalendarEvent, savingCalendarEventId, currentTaskDate, onToggleEditing, onRefresh, onSaveLayout, onWidgetChange, onWidgetResize, onReset, onCompleteTask, onCalendarCompletionChange } = props;
   const todayCalendarEvents = currentTaskDate
     ? calendarEventsForDate(calendarEvents.map((item) => item.record), currentTaskDate)
     : [];
   const todayWidgets = visibleWidgets.filter(isTodayDashboardWidget);
+  const eventItems = new Map(calendarEvents.map((item) => [item.record.id, item]));
   const hiddenTodayWidgets = hiddenWidgets.filter(isTodayDashboardWidget);
   return (
     <section className="dashboard-card" aria-labelledby="dashboard-title">
@@ -93,7 +98,11 @@ export function DashboardSection(props: Props) {
                   {!connection ? <p className="widget-empty">连接 Private 数据仓库后显示今日日程。</p>
                     : loadingCalendarEvents ? <p className="widget-empty">正在读取今日日程…</p>
                       : todayCalendarEvents.length === 0 ? <p className="widget-empty">今天还没有日程或时间块。</p>
-                        : <ul>{todayCalendarEvents.slice(0, 4).map((event) => <li key={event.id}><span>{event.data.title}</span><small>{(event.data.all_day ? "全天" : formatScheduleTime(event.data.start_at, event.data.end_at, event.data.timezone))}</small></li>)}</ul>}
+                        : <ul>{todayCalendarEvents.slice(0, 4).map((event) => <li key={event.id} className={event.data.completed ? "calendar-event-completed" : undefined}>
+                          <CalendarCompletionCheckbox event={event} disabled={!connection || online === false || savingCalendarEvent || Boolean(savingCalendarEventId)} onChange={(completed) => onCalendarCompletionChange(eventItems.get(event.id)!, completed)} />
+                          <span className="calendar-event-title">{event.data.title}</span>
+                          <small>{event.data.completed ? "已完成 · " : ""}{event.data.all_day ? "全天" : formatScheduleTime(event.data.start_at, event.data.end_at, event.data.timezone)}</small>
+                        </li>)}</ul>}
                   {todayCalendarEvents.length > 4 ? <p className="task-overflow-note">另有 {todayCalendarEvents.length - 4} 项，请在 Calendar 查看。</p> : null}
                 </div>
               ) : widget.widget_type === "today_tasks" ? (

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { calendarDateRange, calendarEventsForDate, calendarEventsForRange, cancelledCalendarEventsForDate, createCalendarEventData, dueCalendarReminders, localDateTimeToIso, parseCalendarEventRecord, setCalendarEventStatus, trashedCalendarEventsForDate, updateCalendarEventDetails } from "./calendar-events";
+import { calendarDateRange, calendarEventsForDate, calendarEventsForRange, cancelledCalendarEventsForDate, createCalendarEventData, dueCalendarReminders, localDateTimeToIso, parseCalendarEventRecord, setCalendarEventCompleted, setCalendarEventStatus, trashedCalendarEventsForDate, updateCalendarEventDetails } from "./calendar-events";
 import { createWorkspaceRecord, serializeRecord, setWorkspaceRecordDeleted } from "./protocol";
 
 function event(id: string, localDate = "2026-08-29", startTime = "09:00") {
@@ -35,6 +35,56 @@ describe("GitHub calendar event records", () => {
         linked_entity_id: "task_pwa",
       },
     });
+  });
+
+  it("reads old records as incomplete without changing their stored text", () => {
+    const legacy = JSON.parse(serializeRecord(event("calendar_event_legacy_completion")));
+    delete legacy.data.completed;
+    const text = JSON.stringify(legacy);
+    expect(parseCalendarEventRecord(text).data.completed).toBe(false);
+    expect(JSON.stringify(legacy)).toBe(text);
+    expect(event("calendar_event_new_completion").data.completed).toBe(false);
+  });
+
+  it.each([null, 1, "true"])("rejects a non-boolean completion flag: %s", (completed) => {
+    const invalid = event("calendar_event_invalid_completion");
+    expect(() => parseCalendarEventRecord(JSON.stringify({ ...invalid, data: { ...invalid.data, completed } }))).toThrow("INVALID_CALENDAR_EVENT_RECORD");
+  });
+
+  it("completes and uncompletes only the event, preserving all other facts and visibility", () => {
+    const initial = event("calendar_event_completion");
+    initial.data.description_markdown = "保留备注";
+    initial.data.location = "合成会议室";
+    initial.data.reminder_offsets_minutes = [15];
+    const done = setCalendarEventCompleted(initial, true, "2026-08-29T08:00:00.000Z");
+    expect(done).toMatchObject({ version: 2, data: { completed: true, status: "confirmed", linked_entity_id: "task_pwa" } });
+    expect(done.data).toEqual({ ...initial.data, completed: true });
+    expect(initial.data.completed).toBe(false);
+    expect(parseCalendarEventRecord(serializeRecord(done))).toEqual(done);
+    for (const view of ["day", "week", "month"] as const) {
+      const range = calendarDateRange("2026-08-29", view);
+      expect(calendarEventsForRange([done], range.startDate, range.endDate)).toEqual([done]);
+    }
+    const reopened = setCalendarEventCompleted(done, false, "2026-08-29T09:00:00.000Z");
+    expect(reopened).toMatchObject({ version: 3, data: { completed: false } });
+    expect(reopened.data).toEqual(initial.data);
+  });
+
+  it("preserves completion across edits, cancellation, and trash/restore", () => {
+    const done = setCalendarEventCompleted(event("calendar_event_preserve_completion"), true);
+    const edited = updateCalendarEventDetails(done, {
+      title: "修改标题", eventType: "event", startAt: done.data.start_at, endAt: done.data.end_at,
+      timezone: done.data.timezone, localDate: done.data.local_start_date, linkedTaskId: done.data.linked_entity_id,
+    });
+    expect(edited.data.completed).toBe(true);
+    const cancelled = setCalendarEventStatus(edited, "cancelled");
+    expect(cancelled.data.completed).toBe(true);
+    expect(() => setCalendarEventCompleted(cancelled, false)).toThrow("INVALID_CALENDAR_EVENT_COMPLETION");
+    const active = setCalendarEventStatus(cancelled, "confirmed");
+    const trashed = setWorkspaceRecordDeleted(active, "2026-08-29T10:00:00.000Z");
+    expect(() => setCalendarEventCompleted(trashed, false)).toThrow("INVALID_CALENDAR_EVENT_COMPLETION");
+    const restored = setWorkspaceRecordDeleted(trashed, null);
+    expect(restored.data.completed).toBe(true);
   });
 
   it("converts local wall time with the declared timezone", () => {

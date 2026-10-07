@@ -18,6 +18,7 @@ export type CalendarEventData = {
   local_end_date: string;
   location: string;
   status: "confirmed" | "cancelled";
+  completed: boolean;
   linked_entity_type: "task" | null;
   linked_entity_id: string | null;
   external_uid: null;
@@ -91,6 +92,7 @@ function isValidData(data: Record<string, unknown>): data is CalendarEventData {
     && typeof data.location === "string"
     && data.location.length <= 1_000
     && (data.status === "confirmed" || data.status === "cancelled")
+    && (data.completed === undefined || typeof data.completed === "boolean")
     && linkedPairValid
     && data.external_uid === null
     && data.external_etag === null
@@ -114,6 +116,7 @@ export function parseCalendarEventRecord(value: string): CalendarEventRecord {
     ...record,
     data: {
       ...record.data,
+      completed: record.data.completed ?? false,
       reminder_offsets_minutes: [...((record.data.reminder_offsets_minutes ?? []) as CalendarReminderOffset[])].sort((left, right) => left - right),
       reminder_delivery: "foreground_notification",
     },
@@ -144,6 +147,7 @@ export function createCalendarEventData(input: {
     local_end_date: input.localDate,
     location: "",
     status: "confirmed",
+    completed: false,
     linked_entity_type: linkedTaskId ? "task" : null,
     linked_entity_id: linkedTaskId,
     external_uid: null,
@@ -230,6 +234,18 @@ export function setCalendarEventStatus(
 ) {
   if (Number.isNaN(Date.parse(timestamp))) throw new Error("INVALID_CALENDAR_EVENT_STATUS");
   return updateWorkspaceRecord(current, { ...current.data, status }, timestamp);
+}
+
+export function setCalendarEventCompleted(
+  current: CalendarEventRecord,
+  completed: boolean,
+  timestamp = new Date().toISOString(),
+) {
+  if (typeof completed !== "boolean" || Number.isNaN(Date.parse(timestamp))
+    || current.deleted_at !== null || current.data.status !== "confirmed") {
+    throw new Error("INVALID_CALENDAR_EVENT_COMPLETION");
+  }
+  return updateWorkspaceRecord(current, { ...current.data, completed }, timestamp);
 }
 
 export function calendarEventsForDate(records: CalendarEventRecord[], localDate: string) {

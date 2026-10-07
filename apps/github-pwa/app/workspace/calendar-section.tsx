@@ -18,6 +18,7 @@ import { formatWorkspaceDate } from "./workspace-date";
 import { openTasks } from "../../../../src/lib/github-data/tasks";
 import type { Connection, SyncedCalendarEvent, SyncedTask } from "./page-model";
 import { useCalendarReminders } from "./use-calendar-reminders";
+import { CalendarCompletionCheckbox } from "./calendar-completion-checkbox";
 
 export type CalendarEventFields = {
   allDay?: boolean;
@@ -43,10 +44,11 @@ type Props = {
   onEdit: (item: SyncedCalendarEvent, fields: CalendarEventFields) => Promise<boolean>;
   onLifecycleChange: (item: SyncedCalendarEvent, operation: "cancel" | "reopen") => void;
   onDeletionChange: (item: SyncedCalendarEvent, operation: "trash" | "restore") => void;
+  onCompletionChange: (item: SyncedCalendarEvent, completed: boolean) => void;
   onRefresh: () => void;
 };
 
-export function CalendarSection({ connection, online, todayDate, eventFiles, taskFiles, loading, saving, savingEventId, onCreate, onEdit, onLifecycleChange, onDeletionChange, onRefresh }: Props) {
+export function CalendarSection({ connection, online, todayDate, eventFiles, taskFiles, loading, saving, savingEventId, onCreate, onEdit, onLifecycleChange, onDeletionChange, onCompletionChange, onRefresh }: Props) {
   const [selectedDateOverride, setSelectedDate] = useState<string | null>(null);
   const selectedDate = selectedDateOverride ?? todayDate;
   const [eventView, setEventView] = useState<"scheduled" | "cancelled" | "trash">("scheduled");
@@ -229,9 +231,13 @@ export function CalendarSection({ connection, online, todayDate, eventFiles, tas
                       </form>
                     </li>
                   ) : (
-                    <li key={record.id}>
+                    <li key={record.id} className={record.data.completed ? "calendar-event-completed" : undefined}>
                       <time>{periodView === "day" ? "" : `${record.data.local_start_date.slice(5)} · `}{record.data.all_day ? "全天" : formatCalendarTime(record.data.start_at, record.data.end_at, record.data.timezone)}</time>
-                      <div className="calendar-event-copy"><strong>{record.data.title}</strong><small>{record.data.event_type === "time_block" ? "时间块" : "日程"}{linkedTask ? ` · Task：${linkedTask}` : record.data.linked_entity_id ? " · Task 引用当前不可用" : ""}{record.data.reminder_offsets_minutes[0] === undefined ? "" : ` · ${reminderLabel(record.data.reminder_offsets_minutes[0])}`}</small></div>
+                      <div className="calendar-event-copy"><div className="calendar-event-heading">
+                        <CalendarCompletionCheckbox event={record} disabled={!connection || loading || calendarBusy || online === false || eventView !== "scheduled"} onChange={(completed) => onCompletionChange(item, completed)} />
+                        <strong className="calendar-event-title">{record.data.title}</strong>
+                        {record.data.completed ? <small className="calendar-completion-status">已完成</small> : null}
+                      </div><small>{record.data.event_type === "time_block" ? "时间块" : "日程"}{linkedTask ? ` · Task：${linkedTask}` : record.data.linked_entity_id ? " · Task 引用当前不可用" : ""}{record.data.reminder_offsets_minutes[0] === undefined ? "" : ` · ${reminderLabel(record.data.reminder_offsets_minutes[0])}`}</small></div>
                       <div className="calendar-event-actions">
 
                         {eventView === "scheduled" ? <>

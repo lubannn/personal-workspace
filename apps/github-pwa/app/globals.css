@@ -114,7 +114,17 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .today-task-widget li button:disabled { opacity: .4; cursor: default; }
 .today-task-widget li span { min-width: 0; overflow: hidden; color: var(--soft); font: 12px/1.4 ui-serif, Georgia, "Songti SC", serif; text-overflow: ellipsis; white-space: nowrap; }
 .today-task-widget li small { color: var(--muted); font-size: 8px; white-space: nowrap; }
-.today-schedule-widget li { grid-template-columns: minmax(0, 1fr) auto; }
+.today-schedule-widget li { grid-template-columns: auto minmax(0, 1fr) auto; }
+.calendar-completion-control { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; min-width: 36px; min-height: 36px; cursor: pointer; }
+.calendar-completion-control:has(input:disabled) { cursor: default; opacity: .55; }
+.calendar-completion-control .calendar-completion-checkbox[type="checkbox"] { width: 18px; height: 18px; min-height: 18px; margin: 0; accent-color: var(--accent); cursor: inherit; }
+.calendar-completion-checkbox:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.calendar-day-list li .calendar-event-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.calendar-event-completed .calendar-event-title { text-decoration: line-through; color: var(--muted); }
+.calendar-day-list .calendar-completion-status { color: var(--accent); white-space: nowrap; }
+@media (max-width: 600px) {
+  .calendar-completion-control { min-width: 44px; min-height: 44px; }
+}
 .task-overflow-note { margin: 10px 0 0; color: var(--muted); font-size: 9px; }
 .dashboard-project-widget { margin-top: 22px; }
 .dashboard-project-widget .widget-empty { margin-top: 38px; }
