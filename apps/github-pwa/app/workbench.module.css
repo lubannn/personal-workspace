@@ -11,12 +11,11 @@
 .scope:global(:is(.tasks-card, .calendar-card, .capture-inbox, .capture-composer) :is(input, select, textarea)) { font-size: 13px; }
 .scope:global(:is(.tasks-card, .calendar-card) label) { font-size: 11px; letter-spacing: 0; text-transform: none; }
 .scope :global(.task-view-actions) { gap: 5px; }
-.scope :global(.task-create-form) { grid-template-columns: minmax(200px, 2fr) minmax(120px, 1fr) minmax(145px, 1fr) auto; gap: 10px; margin-top: 16px; padding: 12px; border-radius: 10px; background: #f6f8f5; }
+.scope :global(.task-create-form) { grid-template-columns: minmax(200px, 2fr) repeat(3, minmax(100px, 1fr)) minmax(145px, 1fr) auto; gap: 10px; margin-top: 16px; padding: 12px; border-radius: 10px; background: #f6f8f5; }
 .scope :global(.task-create-form > .task-title-field) { grid-column: 1; grid-row: 1; }
 .scope :global(.task-create-form > label:not(.task-title-field)) { grid-row: 1; }
-.scope :global(.task-create-form > button) { grid-column: 4; grid-row: 1; min-height: 42px; }
-.scope :global(.task-create-options) { grid-column: 1 / -1; grid-row: 2; }
-.scope :global(:is(.task-create-options, .task-edit-options) summary) { width: fit-content; color: var(--soft); cursor: pointer; padding: 5px 0; }
+.scope :global(.task-create-form > button) { grid-column: 6; grid-row: 1; min-height: 42px; }
+.scope :global(.task-edit-options summary) { width: fit-content; color: var(--soft); cursor: pointer; padding: 5px 0; }
 .scope :global(.task-options-grid) { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 8px; }
 .scope :global(.task-options-grid label) { display: grid; gap: 5px; }
 .scope :global(.task-edit-options) { grid-column: 1 / -1; border-top: 1px solid var(--line); padding-top: 5px; }
@@ -77,9 +76,8 @@
   .scope :global(.task-view-actions) { justify-content: start; }
   .scope :global(.task-create-form) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .scope :global(.task-create-form > .task-title-field) { grid-column: 1 / -1; }
-  .scope :global(.task-create-form > label:not(.task-title-field)) { grid-row: 2; }
-  .scope :global(.task-create-form > button) { grid-column: 2; grid-row: 3; }
-  .scope :global(.task-create-options) { grid-column: 1; grid-row: 3; }
+  .scope :global(.task-create-form > label:not(.task-title-field)) { grid-row: auto; }
+  .scope :global(.task-create-form > button) { grid-column: 1 / -1; grid-row: auto; }
   .scope :global(.calendar-grid) { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 600px) {
@@ -91,8 +89,7 @@
   .scope :global(.task-row-actions) { grid-column: 2; }
   .scope :global(.task-edit-form), .scope :global(.task-options-grid) { grid-template-columns: minmax(0, 1fr); }
   .scope :global(.task-options-grid > label), .scope :global(.task-edit-form > label) { grid-column: 1; }
-  .scope :global(.task-create-options) { grid-column: 1 / -1; grid-row: 3; }
-  .scope :global(.task-create-form > button) { grid-column: 1 / -1; grid-row: 4; }
+  .scope :global(.task-create-form) { grid-template-columns: minmax(0, 1fr); }
   .scope :global(.calendar-heading) { align-items: start; flex-direction: column; }
   .scope :global(.calendar-header-actions) { flex-wrap: wrap; }
   .scope :global(.calendar-day-list li), .scope :global(.calendar-range-list li) { grid-template-columns: minmax(0, 1fr); gap: 5px; }

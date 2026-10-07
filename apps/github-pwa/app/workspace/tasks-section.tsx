@@ -142,7 +142,6 @@ export function TasksSection(props: Props) {
         <label className="task-title-field">任务标题
           <input value={taskTitle} onChange={(event) => onTaskTitleChange(event.target.value)} maxLength={300} placeholder={connection ? "今天要推进什么？" : "连接 Private 数据仓库后创建任务"} disabled={!connection || savingTask || taskFormActive} />
         </label>
-        <details className="task-create-options"><summary>分类与优先级 · {TASK_CATEGORY_LABELS[taskCategory]} / {TASK_PRIORITY_LABELS[taskPriority]}</summary><div className="task-options-grid">
         <label>分类
           <select value={taskCategory} onChange={(event) => onTaskCategoryChange(event.target.value as TaskCategory)} disabled={!connection || savingTask || taskFormActive}>
             {Object.entries(TASK_CATEGORY_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
@@ -153,7 +152,6 @@ export function TasksSection(props: Props) {
             {Object.entries(TASK_PRIORITY_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
           </select>
         </label>
-        </div></details>
         <label>项目
           <select value={taskProjectId} onChange={(event) => onTaskProjectIdChange(event.target.value)} disabled={!connection || savingTask || taskFormActive}>
             <option value="">无项目</option>

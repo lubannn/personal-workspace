@@ -17,6 +17,18 @@ describe("workspace module data loading", () => {
     }
   });
 
+  it("opens tasks without reading historical time entries, which remain available to reports", async () => {
+    const coordinator = new WorkspaceModuleLoader<object>();
+    const adapter = {};
+    const loaders = createLoaders();
+    await coordinator.load(adapter, "tasks", loaders);
+    expect(loaders.tasks).toHaveBeenCalledOnce();
+    expect(loaders.projects).toHaveBeenCalledOnce();
+    expect(loaders.timeEntries).not.toHaveBeenCalled();
+    await coordinator.load(adapter, "reports", loaders);
+    expect(loaders.timeEntries).toHaveBeenCalledOnce();
+  });
+
   it("shares pending and completed dependencies when switching tabs", async () => {
     const coordinator = new WorkspaceModuleLoader<object>();
     const adapter = {};
@@ -39,7 +51,7 @@ describe("workspace module data loading", () => {
   it("loads collection dependencies needed by linked forms and reports", () => {
     expect(WORKSPACE_MODULE_COLLECTIONS.calendar).toContain("tasks");
     expect(WORKSPACE_MODULE_COLLECTIONS.projects).toContain("tasks");
-    expect(WORKSPACE_MODULE_COLLECTIONS.tasks).toEqual(expect.arrayContaining(["tasks", "projects", "timeEntries"]));
+    expect(WORKSPACE_MODULE_COLLECTIONS.tasks).toEqual(["tasks", "projects"]);
     expect(WORKSPACE_MODULE_COLLECTIONS.habits).toEqual(["habits", "health"]);
     expect(WORKSPACE_MODULE_COLLECTIONS.overview).toEqual(["dashboard", "captures", "tasks", "calendar"]);
     expect(WORKSPACE_MODULE_COLLECTIONS.reports).toEqual(["tasks", "timeEntries", "projects", "milestones", "calendar", "activity", "reports"]);
