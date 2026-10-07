@@ -75,7 +75,13 @@ describe("existing COROS connection reauthorization", () => {
       const restarted = syncTestDatabase(f.sqlite.serialize());
       try { expect(restarted.saved()?.progress_json).toBe(before.progress_json); } finally { restarted.sqlite.close(); }
       const statusResponse = await f.request("/coros/status");
-      expect(await statusResponse.json()).toMatchObject({ connected: true, state: "paused", sync: { progress: before.progress } });
+      const publicProgress = structuredClone(before.progress);
+      delete publicProgress.health!.encryptedActivityCache;
+      const status = await statusResponse.json();
+      expect(status).toMatchObject({ connected: true, state: "paused", sync: { progress: publicProgress } });
+      expect(JSON.stringify(status)).not.toContain("opaque-synthetic-cache");
+      // The small public response never removes the encrypted D1 checkpoint.
+      expect(f.saved()?.progress.health?.encryptedActivityCache).toBe("opaque-synthetic-cache");
       expect((await f.request("/coros/enable", { startDate: "2024-01-02" })).status).toBe(409);
       expect(f.saved()?.progress_json).toBe(before.progress_json);
       expect((await f.request("/coros/enable", { startDate: before.progress.startDate })).status).toBe(200);
