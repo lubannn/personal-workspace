@@ -13,7 +13,7 @@ export const WORKSPACE_TABS = [
   { id: "habits", label: "习惯" },
   { id: "learning", label: "学习" },
   { id: "journal", label: "日记" },
-  { id: "travel", label: "旅游" },
+  { id: "travel", label: "旅行" },
 ] as const;
 
 export type WorkspaceTabId = (typeof WORKSPACE_TABS)[number]["id"] | "data";

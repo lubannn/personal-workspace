@@ -10,7 +10,7 @@ import { WORKSPACE_TABS, workspaceTabFromHash } from "./workspace-tab-navigation
 
 describe("travel UI registration and geography", () => {
   it("registers a sibling tab and loads only travel", () => {
-    expect(WORKSPACE_TABS.find(t => t.id === "travel")?.label).toBe("旅游");
+    expect(WORKSPACE_TABS.find(t => t.id === "travel")?.label).toBe("旅行");
     expect(workspaceTabFromHash("#travel-title")).toBe("travel");
     expect(WORKSPACE_MODULE_COLLECTIONS.travel).toEqual(["travel"]);
   });
@@ -33,6 +33,9 @@ describe("travel UI registration and geography", () => {
     expect(html).toContain('aria-label="澳门特别行政区，未去"');
     expect(html).toContain('disabled="">新增到访');
     expect(html).toContain("Apache-2.0");
+    expect(html).toContain('<h2 id="travel-title">旅行</h2>');
+    expect(html).toContain('aria-label="到访记录查看方式"');
+    expect(html).toContain('value="desc" selected="">时间倒序（新到旧）');
   });
   it("renders ranges, same-day visits and escaped multiline notes in active/trash lists", () => {
     const files = [

@@ -35,6 +35,13 @@
 .travel-form label { display: grid; gap: 7px; font-size: 0.88rem; }
 .travel-form input, .travel-form select, .travel-form textarea { width: 100%; min-width: 0; min-height: 44px; }
 .travel-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.travel-list-controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; max-width: 480px; }
+.travel-list-controls label { display: grid; gap: 7px; min-width: 0; font-size: 0.88rem; }
+.travel-list-controls select { width: 100%; min-width: 0; min-height: 44px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: white; color: var(--ink); font-size: 16px; }
+.travel-list-order { font-size: 0.8rem; }
+.travel-province-group h4 { margin: 24px 0 0; font-size: 1rem; }
+.travel-province-group h4 span { font-weight: 400; color: var(--soft); }
+@media (max-width: 600px) { .travel-list-controls { grid-template-columns: 1fr; } }
 .travel-records { list-style: none; margin: 12px 0 22px; padding: 0; }
 .travel-records li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 0; border-bottom: 1px solid #e0e5dc; }
 .travel-records li > .travel-record-content { min-width: 0; overflow-wrap: anywhere; }

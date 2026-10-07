@@ -5,6 +5,7 @@ import { TRAVEL_PROVINCES, createTravelVisitData, isTravelDate, visitedTravelPro
 import { travelCitiesForProvince, retainedTravelCity, isTravelCitySelection, changeTravelProvince } from "../../../../src/lib/github-data/travel-cities";
 import type { SyncedTravelVisit } from "../../../../src/lib/github-data/travel-sync";
 import type { Connection } from "./page-model";
+import { groupTravelVisitsByProvince, travelVisitsForDisplay, type TravelSortOrder } from "./travel-list-view";
 import boundaries from "./travel-map/provinces.json";
 import "./travel.css";
 
@@ -21,10 +22,13 @@ export function TravelSection({ connection, online, files, loading, ready, savin
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<SyncedTravelVisit | undefined>();
   const [formError, setFormError] = useState("");
+  const [view, setView] = useState<"time" | "province">("time");
+  const [sortOrder, setSortOrder] = useState<TravelSortOrder>("desc");
   const submitRef = useRef(false);
   const cityRef = useRef<HTMLSelectElement>(null);
   const visited = visitedTravelProvinces(files.map(item => item.record));
-  const active = files.filter(item => item.record.deleted_at === null).sort((a, b) => b.record.data.start_date.localeCompare(a.record.data.start_date) || b.record.id.localeCompare(a.record.id));
+  const active = travelVisitsForDisplay(files, sortOrder);
+  const groups = view === "province" ? groupTravelVisitsByProvince(active) : [];
   const trash = files.filter(item => item.record.deleted_at !== null);
   const disabled = !connection || online === false || loading || saving || !ready;
   const dateError = travelDateError(fields);
@@ -47,10 +51,16 @@ export function TravelSection({ connection, online, files, loading, ready, savin
     try { if (await onSave(fields, editing)) cancel(); }
     finally { submitRef.current = false; }
   }
+  function visitRow(item: SyncedTravelVisit) {
+    return <li key={item.record.id}>
+      <TravelVisitDetails item={item} />
+      <div className="travel-actions"><button type="button" disabled={disabled} aria-label={`编辑${item.record.data.city} ${item.record.data.start_date}`} onClick={() => { setEditing(item); setFields(item.record.data); setFormOpen(true); setFormError(""); }}>编辑</button><button type="button" disabled={disabled || editing?.record.id === item.record.id} aria-label={`删除${item.record.data.city} ${item.record.data.start_date}`} onClick={() => void onDelete(item)}>删除</button></div>
+    </li>;
+  }
   return <section className="travel-section" aria-labelledby="travel-title">
-    <div className="travel-heading"><div><p className="eyebrow">TRAVEL</p><h2 id="travel-title">旅游</h2><p className="muted">记下去过的城市，点亮走过的省份。</p></div>
+    <div className="travel-heading"><div><p className="eyebrow">TRAVEL</p><h2 id="travel-title">旅行</h2><p className="muted">记下去过的城市，点亮走过的省份。</p></div>
       <button type="button" onClick={onRefresh} disabled={!connection || online === false || loading || saving}>{loading ? "读取中…" : "刷新记录"}</button></div>
-    {!connection && <p className="muted">连接私人数据仓库后，可保存和同步旅游记录。</p>}
+    {!connection && <p className="muted">连接私人数据仓库后，可保存和同步旅行记录。</p>}
     {online === false && <p role="status">当前离线，连接网络后可保存。</p>}
     {error && <p role="alert">{error}</p>}
     <div className="travel-stats" aria-live="polite"><strong>{!connection || !ready ? "—" : visited.size} / 34 <span>省级区域</span></strong><span>{!connection || !ready ? "—" : active.length} 条到访记录</span></div>
@@ -88,12 +98,19 @@ export function TravelSection({ connection, online, files, loading, ready, savin
       {formError && <p role="alert">{formError}</p>}
       <div className="travel-actions"><button className="primary-button" type="submit" disabled={disabled || Boolean(dateError)}>{saving ? "保存中…" : "保存到访"}</button><button type="button" disabled={saving} onClick={cancel}>取消</button></div>
     </form>}
-    <h3>到访记录</h3>
-    {!loading && ready && active.length === 0 && <p className="muted">还没有记录。新增一次到访，就会点亮所属省份。</p>}
-    <ul className="travel-records">{active.map(item => <li key={item.record.id}>
-      <TravelVisitDetails item={item} />
-      <div className="travel-actions"><button type="button" disabled={disabled} aria-label={`编辑${item.record.data.city} ${item.record.data.start_date}`} onClick={() => { setEditing(item); setFields(item.record.data); setFormOpen(true); setFormError(""); }}>编辑</button><button type="button" disabled={disabled || editing?.record.id === item.record.id} aria-label={`删除${item.record.data.city} ${item.record.data.start_date}`} onClick={() => void onDelete(item)}>删除</button></div>
-    </li>)}</ul>
+    <div className="travel-visit-list">
+      <h3>到访记录</h3>
+      <div className="travel-list-controls">
+        <label>查看方式<select aria-label="到访记录查看方式" value={view} onChange={event => setView(event.target.value as "time" | "province")}><option value="time">按时间查看</option><option value="province">按省份查看</option></select></label>
+        <label>时间顺序<select aria-label="到访记录时间顺序" value={sortOrder} onChange={event => setSortOrder(event.target.value as TravelSortOrder)}><option value="desc">时间倒序（新到旧）</option><option value="asc">时间正序（旧到新）</option></select></label>
+      </div>
+      <p className="travel-list-order muted">{view === "province" ? "省份按省份列表顺序，组内" : ""}按开始日期{sortOrder === "desc" ? "从新到旧" : "从旧到新"}；同日记录顺序固定。</p>
+      {!loading && ready && active.length === 0 && <p className="muted">还没有记录。新增一次到访，就会点亮所属省份。</p>}
+      {view === "time" ? <ul className="travel-records">{active.map(visitRow)}</ul> : groups.map(({ province, visits }) => <section className="travel-province-group" aria-labelledby={`travel-group-${province.id}`} key={province.id}>
+        <h4 id={`travel-group-${province.id}`}>{province.label} <span>（{visits.length} 条）</span></h4>
+        <ul className="travel-records">{visits.map(visitRow)}</ul>
+      </section>)}
+    </div>
     <details className="travel-trash"><summary>回收站（{trash.length}）</summary><ul className="travel-records">{trash.map(item => <li key={item.record.id}><TravelVisitDetails item={item} /><button type="button" disabled={disabled} onClick={() => void onRestore(item)}>恢复</button></li>)}</ul></details>
   </section>;
 }
