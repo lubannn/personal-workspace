@@ -1,6 +1,6 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { D1DatabaseLike, D1PreparedStatementLike } from "./auth";
-import { refreshEnabledCorosConnection, refreshPausedCorosConnectionForPreview } from "./coros-credentials";
+import { invalidateCorosAccessCache, refreshEnabledCorosConnection, refreshPausedCorosConnectionForPreview } from "./coros-credentials";
 import { decryptRefreshToken, encryptRefreshToken } from "./security";
 
 const resource = "https://mcpcn.coros.com/mcp";
@@ -32,6 +32,8 @@ function fakeDatabase(row: Record<string, unknown> | null, changes = 1) {
 }
 
 describe("COROS background credential rotation", () => {
+  beforeEach(() => invalidateCorosAccessCache("1"));
+  afterEach(() => vi.useRealTimers());
   it("does not fetch data or rotate credentials while paused", async () => {
     const { db, queries } = fakeDatabase({ github_user_id: "1", state: "paused" });
     const fetcher = vi.fn<typeof fetch>();
@@ -63,6 +65,40 @@ describe("COROS background credential rotation", () => {
     expect(queries[1].bindings).toHaveLength(5);
     expect(queries[2].sql).toBe("SELECT state FROM coros_connections WHERE github_user_id = ?1");
     expect(queries[2].bindings).toEqual(["1"]);
+    // The next batch validates D1 state/grant and decrypts its short-lived cache,
+    // without repeating two metadata calls and a token rotation.
+    fetcher.mockClear();
+    expect(await refreshEnabledCorosConnection(db, "1", key, fetcher)).toMatchObject({ accessToken: "short-lived-access" });
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(queries).toHaveLength(4);
+  });
+
+  it.each(["expired", "paused", "reconnected", "scope_changed", "source_failure", "encryption_key_changed"] as const)
+  ("invalidates cached access when %s", async reason => {
+    vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime("2026-10-07T04:00:00Z");
+    const row = { github_user_id: "1", client_id: "client-1", connected_at: "2026-10-06T00:00:00Z",
+      redirect_uri: "https://nexus.lubannn.workers.dev/coros/callback", resource_url: resource,
+      encrypted_refresh_token: await encryptRefreshToken("refresh", key), scope: "mcp.tools offline_access", state: "enabled", last_error_code: null as string | null };
+    const { db } = fakeDatabase(row);
+    const fetcher = vi.fn<typeof fetch>(async input => {
+      const url = String(input);
+      if (url.includes("protected-resource")) return Response.json({ resource, authorization_servers: [origin], scopes_supported: ["mcp.tools", "offline_access"] });
+      if (url.includes("authorization-server")) return Response.json({ issuer: origin, authorization_endpoint: `${origin}/oauth2/authorize`, token_endpoint: `${origin}/oauth2/token`, registration_endpoint: `${origin}/connect/register`, code_challenge_methods_supported: ["S256"], grant_types_supported: ["authorization_code", "refresh_token"], token_endpoint_auth_methods_supported: ["none"] });
+      return Response.json({ access_token: "synthetic-access", refresh_token: "synthetic-refresh", expires_in: 180, token_type: "Bearer", scope: "mcp.tools offline_access" });
+    });
+    await refreshEnabledCorosConnection(db, "1", key, fetcher); fetcher.mockClear();
+    if (reason === "expired") vi.setSystemTime("2026-10-07T04:02:00Z"); // expiry - safety margin
+    if (reason === "paused") row.state = "paused";
+    if (reason === "reconnected") row.connected_at = "2026-10-07T04:01:00Z";
+    if (reason === "scope_changed") row.scope = "openid mcp.tools offline_access";
+    if (reason === "source_failure") row.last_error_code = "COROS_READ_UNAUTHORIZED";
+    if (reason === "encryption_key_changed") {
+      await expect(refreshEnabledCorosConnection(db, "1", Buffer.alloc(32, 8).toString("base64url"), fetcher)).rejects.toThrow();
+      expect(fetcher).not.toHaveBeenCalled(); return;
+    }
+    const result = await refreshEnabledCorosConnection(db, "1", key, fetcher);
+    if (reason === "paused") { expect(result).toBeNull(); expect(fetcher).not.toHaveBeenCalled(); }
+    else { expect(result?.accessToken).toBe("synthetic-access"); expect(fetcher).toHaveBeenCalledTimes(3); }
   });
 
   it("permits explicit preview while paused without enabling background sync", async () => {

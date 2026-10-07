@@ -44,6 +44,33 @@ function fakeAdapter(initial: WorkspaceRecord[] = []) {
 }
 
 describe("atomic COROS synchronization writer", () => {
+  it("reads only the index when 30 resolved audits and the source facts are unchanged", async () => {
+    const fake = fakeAdapter();
+    await writeCorosSyncBatch(fake.adapter, { ownerId, items: [sleep], timestamp });
+    for (let score = 65; score < 95; score++) {
+      await writeCorosSyncBatch(fake.adapter, { ownerId, items: [{ ...sleep, metrics: { ...sleep.metrics, score } }], timestamp });
+    }
+    const audits = [...fake.files].filter(([path]) => path.startsWith("data/coros-sync-conflicts/"));
+    expect(audits).toHaveLength(30);
+    const before = new Map(audits);
+    fake.adapter.readBlobTexts.mockClear(); fake.adapter.writeAtomicFiles.mockClear();
+    expect(await writeCorosSyncBatch(fake.adapter, { ownerId, items: [{ ...sleep, metrics: { ...sleep.metrics, score: 94 } }], timestamp }))
+      .toMatchObject({ unchanged: 1, updated: 0, totalPendingConflicts: 0 });
+    expect(fake.adapter.readBlobTexts.mock.calls.flatMap(call => call[0]).map(file => file.path)).toEqual([COROS_SYNC_INDEX_PATH]);
+    expect(fake.adapter.writeAtomicFiles).not.toHaveBeenCalled();
+    for (const [path, text] of before) expect(fake.files.get(path)).toBe(text);
+
+    // A changed immutable blob invalidates the cached resolved status.
+    const [path, text] = audits[0];
+    const audit = parseCorosSyncConflictRecord(text);
+    const data = { ...audit.data }; delete data.resolution;
+    fake.files.set(path, serializeRecord({ ...audit, version: 1, data: { ...data, status: "pending" } }));
+    fake.adapter.readBlobTexts.mockClear();
+    expect(await writeCorosSyncBatch(fake.adapter, { ownerId, items: [{ ...sleep, metrics: { ...sleep.metrics, score: 94 } }], timestamp }))
+      .toMatchObject({ unchanged: 1, totalPendingConflicts: 0 });
+    expect(fake.adapter.readBlobTexts.mock.calls.flatMap(call => call[0]).map(file => file.path)).toContain(path);
+    expect(parseCorosSyncConflictRecord(fake.files.get(path)!).data.status).toBe("resolved");
+  });
   it("holds a locally modified sleep fact rather than replacing it during historical refresh", async () => {
     const fake = fakeAdapter(); await writeCorosSyncBatch(fake.adapter, { ownerId, items: [sleep], timestamp });
     const path = [...fake.files.keys()].find(path => path.startsWith("data/sleep-sessions/"))!;

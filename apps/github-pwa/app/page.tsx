@@ -422,7 +422,8 @@ export default function GitHubWorkspacePage() {
   }, [activeWorkspaceTab, connection, moduleLoaders, online, workspaceTabReady]);
 
   useEffect(() => {
-    const refreshSyncedHealth = () => {
+    const refreshSyncedHealth = (event: Event) => {
+      if ((event as CustomEvent<{ recordsChanged?: boolean }>).detail?.recordsChanged === false) return;
       if (connection && online !== false) void loadHealthDomain();
     };
     window.addEventListener("coros-sync-updated", refreshSyncedHealth);

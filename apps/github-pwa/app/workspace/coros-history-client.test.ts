@@ -217,8 +217,8 @@ describe("immediate recent COROS update", () => {
       .mockResolvedValueOnce(Response.json({ status: "processed", progress: complete }));
     const run = drainCorosHistory({ ...options(fetcher), recentOnly: true });
     await vi.advanceTimersByTimeAsync(0);
-    expect(fetcher.mock.calls.map(call => call[0])).toEqual(["/coros/sync", "/coros/drain"]);
-    await vi.advanceTimersByTimeAsync(250);
+    expect(fetcher.mock.calls.map(call => call[0])).toEqual(["/coros/sync", "/coros/drain", "/coros/drain"]);
+    expect(vi.getTimerCount()).toBe(0);
     await expect(run).resolves.toMatchObject({ status: "complete" });
     expect(fetcher).toHaveBeenCalledTimes(3);
     expect(fetcher.mock.calls[1][1]).toMatchObject({ body: JSON.stringify({ recentOnly: true }), headers: { "content-type": "application/json" } });

@@ -15,6 +15,15 @@ function requested() {
 }
 
 describe("bounded COROS source and history scheduling", () => {
+  it("checks manual sleep/workout before metrics while respecting completed sources and backoff", () => {
+    const p = requested();
+    p.scheduling = { lastKind: "recent", recentSource: "workout" };
+    expect(nextFairSyncWindow(p, now, true, true)?.domain).toBe("sleep");
+    p.domains.sleep.recentRequestSequence = 1;
+    expect(nextFairSyncWindow(p, now, true, true)?.domain).toBe("workout");
+    p.domains.workout.retryAfter = "2026-10-05T10:20:00Z";
+    expect(nextFairSyncWindow(p, now, true, true)).toMatchObject({ domain: "health", recent: true });
+  });
   it("includes pending health sources in the first record checkpoint", () => {
     const p = initialSyncProgress("2025-05-01", "Asia/Shanghai");
     acceptSyncRequest(p, { request_seq: 1, requested_through: "2026-10-05" }, now);

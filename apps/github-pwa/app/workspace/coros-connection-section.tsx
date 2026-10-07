@@ -66,6 +66,7 @@ export function CorosConnectionSection({ connectionMethod, onClearHealthCache, c
   const historyController = useRef<AbortController | null>(null);
   const inFlight = useRef<AbortController | null>(null);
   const busyRef = useRef(false);
+  const manualRunning = useRef(false);
   const lastSyncAt = useRef<string | null | undefined>(undefined);
   const section = useRef<HTMLElement | null>(null);
 
@@ -115,7 +116,7 @@ export function CorosConnectionSection({ connectionMethod, onClearHealthCache, c
   useEffect(() => {
     if (!status?.connected || status.state !== "enabled") return;
     const poll = () => {
-      if (document.visibilityState === "visible" && section.current?.getClientRects().length && !busyRef.current) void refresh(true);
+      if (document.visibilityState === "visible" && section.current?.getClientRects().length && !busyRef.current && !manualRunning.current) void refresh(true);
     };
     const timer = window.setInterval(poll, 30_000);
     document.addEventListener("visibilitychange", poll);
@@ -123,9 +124,18 @@ export function CorosConnectionSection({ connectionMethod, onClearHealthCache, c
   }, [refresh, status?.connected, status?.state]);
 
   useEffect(() => {
-    const updated = () => { lastSyncAt.current = undefined; void refresh(true); };
+    const updated = (event: Event) => {
+      const detail = (event as CustomEvent<{ lastSyncAt?: string | null; refreshStatus?: boolean }>).detail;
+      lastSyncAt.current = detail?.lastSyncAt ?? undefined;
+      if (detail?.refreshStatus !== false) void refresh(true);
+    };
+    const running = (event: Event) => {
+      manualRunning.current = Boolean((event as CustomEvent<{ running: boolean }>).detail?.running);
+      if (manualRunning.current) { inFlight.current?.abort(); inFlight.current = null; setRefreshing(false); }
+    };
     window.addEventListener("coros-sync-updated", updated);
-    return () => window.removeEventListener("coros-sync-updated", updated);
+    window.addEventListener("coros-sync-running", running);
+    return () => { window.removeEventListener("coros-sync-updated", updated); window.removeEventListener("coros-sync-running", running); };
   }, [refresh]);
 
   async function backfillHistory() {
