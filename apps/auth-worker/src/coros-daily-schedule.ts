@@ -1,12 +1,12 @@
 import { historicalWindow, parseSyncProgress, readSyncJob, syncProgressDomains, todayInTimezone, type CorosSyncEnv } from "./coros-sync-state";
 
-/** One regular observation at 08:00 local time after the initial backfill.
+/** One regular observation at 09:00 local time after the initial backfill.
  * The ten-minute dispatcher only continues an existing request between observations. */
 export async function queueScheduledCorosDailySync(env: CorosSyncEnv, now = new Date()) {
   if (!env.DB || !env.COROS_GITHUB_USER_ID) return false;
   const timezone = env.COROS_SYNC_TIMEZONE ?? "Asia/Shanghai";
   const hour = Number(new Intl.DateTimeFormat("en", { timeZone: timezone, hour: "2-digit", hourCycle: "h23" }).format(now));
-  if (hour < 8) return false;
+  if (hour < 9) return false;
   const job = await readSyncJob(env.DB, env.COROS_GITHUB_USER_ID);
   if (!job) return false;
   const today = todayInTimezone(now, timezone);
