@@ -3,7 +3,7 @@ import {queueScheduledCorosDailySync} from './coros-daily-schedule';
 import {initializeBulkHealthProgress} from './coros-health-history';
 import {initializeActivityProgress,initialSyncProgress,recordCheckedRange,syncProgressDomains} from './coros-sync-state';
 import {syncTestDatabase} from './coros-sync-test-helpers';
-const now=new Date('2024-02-01T00:00:00Z');
+const now=new Date('2024-02-01T01:00:00Z');
 let fixture:ReturnType<typeof syncTestDatabase>|undefined;
 afterEach(()=>{fixture?.sqlite.close();fixture=undefined});
 function setup(state:'enabled'|'paused'='enabled'){
@@ -14,10 +14,11 @@ function setup(state:'enabled'|'paused'='enabled'){
  fixture.job(p);return fixture;
 }
 describe('daily observations after initial history',()=>{
- it('queues once at 08:00 without editing progress or a live lease',async()=>{
+ it('queues once at 09:00 without editing progress or a live lease',async()=>{
   const f=setup();const before=f.saved()!.progress;
-  f.sqlite.prepare('UPDATE coros_sync_jobs SET lease_token=?,lease_until=?').run('existing-owner','2024-02-01T00:10:00Z');
-  expect(await queueScheduledCorosDailySync(f.env,new Date('2024-01-31T23:59:00Z'))).toBe(false);
+  f.sqlite.prepare('UPDATE coros_sync_jobs SET lease_token=?,lease_until=?').run('existing-owner','2024-02-01T01:10:00Z');
+  expect(await queueScheduledCorosDailySync(f.env,new Date('2024-02-01T00:59:00Z'))).toBe(false);
+  expect(await queueScheduledCorosDailySync(f.env,new Date('2024-02-01T00:00:00Z'))).toBe(false);
   expect(await queueScheduledCorosDailySync(f.env,now)).toBe(true);
   expect(await queueScheduledCorosDailySync(f.env,new Date('2024-02-01T12:00:00Z'))).toBe(false);
   expect(f.saved()).toMatchObject({request_seq:2,daily_requested_date:'2024-02-01',lease_token:'existing-owner',progress:before});

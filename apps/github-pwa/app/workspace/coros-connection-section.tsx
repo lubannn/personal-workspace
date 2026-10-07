@@ -193,7 +193,7 @@ export function CorosConnectionSection({ connectionMethod, onClearHealthCache, c
       if (path === "/coros/disconnect") {
         setPreview(null); setConfirmDisconnect(false);
         setMessage("已断开工作台与 COROS 的连接，停止后续同步。已入库的记录仍保留。");
-      } else if (path === "/coros/enable") setMessage("已开启每日自动同步。历史补齐后每天 08:00 自动更新；首次先读取最近记录，再沿保存进度补齐所选历史范围。");
+      } else if (path === "/coros/enable") setMessage("已开启每日自动同步。历史补齐后每天 09:00 自动更新；首次先读取最近记录，再沿保存进度补齐所选历史范围。");
       else if (path === "/coros/pause") setMessage("已暂停后台自动同步；已有记录与进度保留，恢复后接着已有进度继续。");
       await refresh();
     } catch { setMessage("操作结果暂时无法确认，请刷新状态后查看。已有记录仍保留。"); }
@@ -252,7 +252,7 @@ export function CorosConnectionSection({ connectionMethod, onClearHealthCache, c
           : !enabled ? <button className="secondary-button" type="button" disabled={busy || !ready || (!progress && !validStartDate(startDate)) || Boolean(progress && startDate !== progress.startDate)} onClick={() => void mutate("/coros/enable")}>{progress ? "恢复自动更新" : "开启自动更新"}</button> : null : null}
       </div>
     </div>
-    {view === "ready" && status?.connected ? <p className="coros-compact-meta">最近同步：{displayTime(status.lastSyncAt)} · 历史补齐后每日 08:00 更新 · 可手动额外更新</p> : null}
+    {view === "ready" && status?.connected ? <p className="coros-compact-meta">最近同步：{displayTime(status.lastSyncAt)} · 历史补齐后每日 09:00 更新 · 可手动额外更新</p> : null}
     {view === "unavailable" ? <p role="alert">后台连接服务暂时不可用，请稍后重试。</p> : null}
     {view === "login-required" ? <p>请先使用 GitHub App 登录工作台。</p> : null}
     {view === "error" ? <p role="alert">暂时无法确认同步状态，请在设置中重新检查。</p> : null}
