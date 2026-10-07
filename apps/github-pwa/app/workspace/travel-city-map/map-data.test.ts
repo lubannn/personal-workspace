@@ -17,27 +17,27 @@ describe("licensed static city-map geography", () => {
     expect(new Set(readMap("650000").missing)).toEqual(new Set(["新星市", "白杨市", "胡杨河市"]));
     expect(Object.values(manifest).reduce((sum, p) => sum + p.missing.length, 0)).toBe(4);
   });
-  it("keeps reproducible source/output hashes and every real polygon/ring, without invented city shapes", () => {
-    for (const [id, info] of Object.entries(manifest)) {
-      const bytes = readFileSync(new URL(`../../../public/travel-city-maps/${id}.json`, import.meta.url));
-      expect(hash(bytes)).toBe(info.output_sha256);
-      const isWhole = info.source.endsWith("china.json");
-      const source = readFileSync(new URL(isWhole ? "../travel-map/china.source.json" : `sources/${info.source.split("/").at(-1)}`, import.meta.url));
-      expect(hash(source)).toBe(info.source_sha256);
-      const features = JSON.parse(source.toString()).features.filter((f: { id: string }) => !isWhole || f.id === id);
-      const rings = features.flatMap((f: { geometry: { type: string; coordinates: string[] | string[][] } }) => f.geometry.type === "Polygon" ? f.geometry.coordinates : f.geometry.coordinates.flat());
-      const map = readMap(id);
-      expect(map.regions.reduce((sum, r) => sum + (r.path.match(/M/g)?.length ?? 0), 0)).toBe(rings.length);
-      expect(bytes.length).toBeLessThan(100_000); // Only the selected province is fetched.
-      const names = map.regions.map(r => r.city).filter(Boolean);
-      expect(new Set(names).size).toBe(names.length);
-      expect([...names, ...map.missing].sort()).toEqual([...travelCitiesForProvince(id)].sort());
-      for (const region of map.regions) {
-        expect(region.path).toMatch(/^M.*Z$/);
-        for (const point of region.path.matchAll(/[ML]([\d.-]+),([\d.-]+)/g)) {
-          expect(Number(point[1])).toBeGreaterThanOrEqual(14.9); expect(Number(point[1])).toBeLessThanOrEqual(775.1);
-          expect(Number(point[2])).toBeGreaterThanOrEqual(14.9); expect(Number(point[2])).toBeLessThanOrEqual(525.1);
-        }
+  // Each province gets the default timeout independently; parallel CI no longer
+  // puts all 34 complete geometry validations into a single five-second case.
+  it.each(Object.entries(manifest))("keeps reproducible hashes and every polygon/ring for province %s", (id, info) => {
+    const bytes = readFileSync(new URL(`../../../public/travel-city-maps/${id}.json`, import.meta.url));
+    expect(hash(bytes)).toBe(info.output_sha256);
+    const isWhole = info.source.endsWith("china.json");
+    const source = readFileSync(new URL(isWhole ? "../travel-map/china.source.json" : `sources/${info.source.split("/").at(-1)}`, import.meta.url));
+    expect(hash(source)).toBe(info.source_sha256);
+    const features = JSON.parse(source.toString()).features.filter((f: { id: string }) => !isWhole || f.id === id);
+    const rings = features.flatMap((f: { geometry: { type: string; coordinates: string[] | string[][] } }) => f.geometry.type === "Polygon" ? f.geometry.coordinates : f.geometry.coordinates.flat());
+    const map = JSON.parse(bytes.toString()) as TravelCityMapData;
+    expect(map.regions.reduce((sum, r) => sum + (r.path.match(/M/g)?.length ?? 0), 0)).toBe(rings.length);
+    expect(bytes.length).toBeLessThan(100_000); // Only the selected province is fetched.
+    const names = map.regions.map(r => r.city).filter(Boolean);
+    expect(new Set(names).size).toBe(names.length);
+    expect([...names, ...map.missing].sort()).toEqual([...travelCitiesForProvince(id)].sort());
+    for (const region of map.regions) {
+      expect(region.path).toMatch(/^M.*Z$/);
+      for (const point of region.path.matchAll(/[ML]([\d.-]+),([\d.-]+)/g)) {
+        expect(Number(point[1])).toBeGreaterThanOrEqual(14.9); expect(Number(point[1])).toBeLessThanOrEqual(775.1);
+        expect(Number(point[2])).toBeGreaterThanOrEqual(14.9); expect(Number(point[2])).toBeLessThanOrEqual(525.1);
       }
     }
   });
