@@ -12,13 +12,14 @@ import "./travel.css";
 
 const emptyFields: TravelVisitFields = { province_id: "", city: "", start_date: "", end_date: "", notes: "" };
 type Props = {
+  nationalMapRequest?: number;
   connection: Connection | null; online: boolean | null; files: SyncedTravelVisit[];
   loading: boolean; ready: boolean; saving: boolean; error: string;
   onRefresh: () => void; onSave: (fields: TravelVisitFields, current?: SyncedTravelVisit) => Promise<boolean>;
   onDelete: (current: SyncedTravelVisit) => Promise<boolean>; onRestore: (current: SyncedTravelVisit) => Promise<boolean>;
 };
 
-export function TravelSection({ connection, online, files, loading, ready, saving, error, onRefresh, onSave, onDelete, onRestore }: Props) {
+export function TravelSection({ nationalMapRequest = 0, connection, online, files, loading, ready, saving, error, onRefresh, onSave, onDelete, onRestore }: Props) {
   const [fields, setFields] = useState<TravelVisitFields>(emptyFields);
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<SyncedTravelVisit | undefined>();
@@ -26,6 +27,13 @@ export function TravelSection({ connection, online, files, loading, ready, savin
   const [view, setView] = useState<"time" | "province">("time");
   const [sortOrder, setSortOrder] = useState<TravelSortOrder>("desc");
   const [mapProvince, setMapProvince] = useState("");
+  const [seenNationalMapRequest, setSeenNationalMapRequest] = useState(nationalMapRequest);
+  // Navigation also fires when the travel tab is already active. Reset only
+  // presentation state; retain the mounted component and all unsaved fields.
+  if (seenNationalMapRequest !== nationalMapRequest) {
+    setSeenNationalMapRequest(nationalMapRequest);
+    setView("time"); setMapProvince("");
+  }
   const submitRef = useRef(false);
   const cityRef = useRef<HTMLSelectElement>(null);
   const visited = visitedTravelProvinces(files.map(item => item.record));
