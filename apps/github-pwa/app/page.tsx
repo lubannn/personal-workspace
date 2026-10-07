@@ -184,6 +184,7 @@ export default function GitHubWorkspacePage() {
   const [token, setToken] = useState("");
   const [connection, setConnection] = useState<Connection | null>(null);
   const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<WorkspaceTabId>("overview");
+  const [travelNationalMapRequest, setTravelNationalMapRequest] = useState(0);
   const [workspaceTabReady, setWorkspaceTabReady] = useState(false);
   const [visitedWorkspaceTabs, setVisitedWorkspaceTabs] = useState<Set<WorkspaceTabId>>(() => new Set());
   const moduleLoaderRef = useRef(new WorkspaceModuleLoader<GitHubContentsAdapter>());
@@ -2855,7 +2856,10 @@ export default function GitHubWorkspacePage() {
       </section>
 
       <div id="workspace-navigation-anchor" />
-      <WorkspaceTabNavigation activeTab={activeWorkspaceTab} onSelect={selectWorkspaceTab} />
+      <WorkspaceTabNavigation activeTab={activeWorkspaceTab} onSelect={tab => {
+        if (tab === "travel") setTravelNationalMapRequest(request => request + 1);
+        selectWorkspaceTab(tab);
+      }} />
 
       <WorkspaceTabPanel tab="journal" activeTab={activeWorkspaceTab} mounted={workspaceTabReady && (activeWorkspaceTab === "journal" || visitedWorkspaceTabs.has("journal"))} key={connection ? `journal:${connection.ownerId}:${connection.repository}` : "journal:disconnected"}>
       <JournalSection
@@ -3148,7 +3152,7 @@ export default function GitHubWorkspacePage() {
 
 
       <WorkspaceTabPanel tab="travel" activeTab={activeWorkspaceTab} mounted={workspaceTabReady && (activeWorkspaceTab === "travel" || visitedWorkspaceTabs.has("travel"))} key={connection ? `travel:${connection.ownerId}:${connection.repository}` : "travel:disconnected"}>
-        <TravelSection connection={connection} online={online} files={travel.files} loading={travel.loading} ready={travel.ready} saving={travel.saving} error={travel.error} onRefresh={() => void travel.load()} onSave={travel.save} onDelete={travel.remove} onRestore={travel.restore} />
+        <TravelSection nationalMapRequest={travelNationalMapRequest} connection={connection} online={online} files={travel.files} loading={travel.loading} ready={travel.ready} saving={travel.saving} error={travel.error} onRefresh={() => void travel.load()} onSave={travel.save} onDelete={travel.remove} onRestore={travel.restore} />
       </WorkspaceTabPanel>
 
       <WorkspaceTabPanel tab="reports" activeTab={activeWorkspaceTab} mounted={workspaceTabReady && (activeWorkspaceTab === "reports" || visitedWorkspaceTabs.has("reports"))} key={connection ? `reports:${connection.ownerId}:${connection.repository}` : "reports:disconnected"}>
