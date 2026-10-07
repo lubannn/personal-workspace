@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createWorkspaceRecord, serializeRecord } from "../../../../src/lib/github-data/protocol";
 import { createTravelVisitData, parseTravelVisitRecord } from "../../../../src/lib/github-data/travel-visits";
 import type { SyncedTravelVisit } from "../../../../src/lib/github-data/travel-sync";
-import { groupTravelVisitsByProvince, travelVisitsForDisplay } from "./travel-list-view";
+import { travelCityCoverage, travelProvinceVisits, travelVisitsForDisplay } from "./travel-list-view";
 
 function visit(id: string, province: string, city: string, date: string, legacy = false): SyncedTravelVisit {
   const data = legacy ? { travel_visit_version: 1, province_id: province, city, visited_on: date } : createTravelVisitData({ province_id: province, city, start_date: date, end_date: date, notes: "保留备注" });
@@ -28,18 +28,28 @@ describe("travel display choices", () => {
     expect(ids(travelVisitsForDisplay(input, "asc"))).toEqual(["travel_old", "travel_a", "travel_b", "travel_c"]);
     expect(ids(travelVisitsForDisplay([...input].reverse(), "asc"))).toEqual(["travel_old", "travel_a", "travel_b", "travel_c"]);
   });
-  it("groups only provinces with active visits and keeps chosen time order inside each province", () => {
-    const groups = groupTravelVisitsByProvince(travelVisitsForDisplay(input));
-    expect(groups.map(group => group.province.id)).toEqual(["320000", "330000", "810000"]);
-    expect(ids(groups[1].visits)).toEqual(["travel_c", "travel_a"]);
-    expect(ids(groupTravelVisitsByProvince(travelVisitsForDisplay(input, "asc"))[1].visits)).toEqual(["travel_a", "travel_c"]);
-    expect(groups[0].visits[0].record.data.city).toBe(groups[1].visits[1].record.data.city);
-    expect(groups[1].visits[0].record.data.notes).toBe("保留备注");
-    expect(groups[2].visits[0].record.data).toMatchObject({ start_date: "2024-02-29", end_date: "2024-02-29" });
+  it("keeps every province visit in the selected order, while time view retains all cities and repeat visits", () => {
+    const again = visit("travel_again", "330000", "杭州", "2026-10-04");
+    const visits = travelVisitsForDisplay([...input, again]);
+    expect(visits).toHaveLength(5);
+    expect(ids(travelProvinceVisits(visits, "330000"))).toEqual(["travel_again", "travel_c", "travel_a"]);
+    expect(ids(travelProvinceVisits(travelVisitsForDisplay([...input, again], "asc"), "330000"))).toEqual(["travel_a", "travel_c", "travel_again"]);
+    expect(travelProvinceVisits(visits, "810000")[0].record.data).toMatchObject({ start_date: "2024-02-29", end_date: "2024-02-29" });
   });
-  it("handles empty collections, deleted-only collections, and one province without extra groups", () => {
+  it("handles empty and deleted-only collections without hiding other cities in the time view", () => {
     expect(travelVisitsForDisplay([])).toEqual([]);
-    expect(groupTravelVisitsByProvince(travelVisitsForDisplay([deleted]))).toEqual([]);
-    expect(groupTravelVisitsByProvince(travelVisitsForDisplay([a, c]))).toHaveLength(1);
+    expect(travelProvinceVisits(travelVisitsForDisplay([deleted]), "330000")).toEqual([]);
+    expect(travelProvinceVisits(travelVisitsForDisplay([a, c]), "330000")).toHaveLength(2);
+  });
+  it("counts exact catalog cities once, rejects old spelling and other provinces, and unlights only the last active visit", () => {
+    const exact = visit("travel_exact", "330000", "杭州市", "2026-10-01");
+    const repeat = visit("travel_repeat", "330000", "杭州市", "2026-10-04");
+    const otherProvince = visit("travel_wrong", "320000", "杭州市", "2026-10-03");
+    expect([...travelCityCoverage([a, exact, repeat, otherProvince], "330000").visited]).toEqual(["杭州市"]);
+    expect(travelCityCoverage([a, exact, repeat, otherProvince], "330000").unmatched).toEqual([a]);
+    const erased = { ...exact, record: { ...exact.record, deleted_at: "2026-10-05T00:00:00.000Z" } };
+    expect(travelCityCoverage([erased, repeat], "330000").visited.size).toBe(1);
+    expect(travelCityCoverage([erased], "330000").visited.size).toBe(0);
+    expect(travelCityCoverage([otherProvince], "330000").visited.size).toBe(0);
   });
 });

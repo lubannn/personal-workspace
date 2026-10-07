@@ -1,5 +1,5 @@
 import type { SyncedTravelVisit } from "../../../../src/lib/github-data/travel-sync";
-import { TRAVEL_PROVINCES } from "../../../../src/lib/github-data/travel-visits";
+import { travelCitiesForProvince } from "../../../../src/lib/github-data/travel-cities";
 
 export type TravelSortOrder = "desc" | "asc";
 
@@ -12,9 +12,13 @@ export function travelVisitsForDisplay(files: readonly SyncedTravelVisit[], orde
   ));
 }
 
-export function groupTravelVisitsByProvince(sortedVisits: readonly SyncedTravelVisit[]) {
-  return TRAVEL_PROVINCES.map(province => ({
-    province,
-    visits: sortedVisits.filter(item => item.record.data.province_id === province.id),
-  })).filter(group => group.visits.length > 0);
+export function travelProvinceVisits(sortedVisits: readonly SyncedTravelVisit[], provinceId: string) {
+  return sortedVisits.filter(item => item.record.data.province_id === provinceId);
+}
+
+export function travelCityCoverage(files: readonly SyncedTravelVisit[], provinceId: string) {
+  const options = travelCitiesForProvince(provinceId);
+  const visits = files.filter(item => item.record.deleted_at === null && item.record.data.province_id === provinceId);
+  // Exact catalog names only. Historical user text is never guessed or renamed.
+  return { visited: new Set(visits.filter(item => options.includes(item.record.data.city)).map(item => item.record.data.city)), unmatched: visits.filter(item => !options.includes(item.record.data.city)) };
 }
