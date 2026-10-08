@@ -35,7 +35,7 @@ export function NoticesSection({ connection, online, files, loading, ready, savi
   }
   return <section className="notices-section" aria-labelledby="notices-title">
     <div className="notices-heading">
-      <div><p className="eyebrow">NOTICE BOARD</p><h2 id="notices-title">通告</h2><p className="muted">把这段时间需要反复提醒自己的事，放在醒目的地方。</p></div>
+      <div><p className="eyebrow">NOTICE BOARD</p><h2 id="notices-title">通告</h2></div>
       <div className="notices-actions"><button type="button" disabled={!connection || online === false || loading || saving} onClick={onRefresh}>{loading ? "读取中…" : "刷新通告"}</button>
         {!formOpen && <button className="primary-button" type="button" disabled={disabled} onClick={() => { setBody(""); setEditing(undefined); setFormError(""); setFormOpen(true); }}>新增通告</button>}</div>
     </div>
