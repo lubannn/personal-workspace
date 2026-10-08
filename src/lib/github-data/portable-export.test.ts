@@ -378,7 +378,7 @@ async function sampleExport() {
 describe("portable GitHub workspace export", () => {
   it("builds a deterministic manifest and passes restore preflight", async () => {
     const exported = await sampleExport();
-    expect(exported.manifest.counts).toEqual({ files: 26, captures: 1, dashboard_layouts: 1, tasks: 1, time_entries: 1, projects: 1, project_phases: 1, milestones: 1, project_notes: 1, project_file_references: 1, activity_events: 1, calendar_events: 1, report_drafts: 1, journal_entries: 1, journal_segments: 1, journal_revisions: 1, journal_import_checkpoints: 1, obsidian_documents: 1, sync_conflicts: 1, learning_areas: 1, learning_goals: 1, learning_activities: 1, learning_resources: 1, habits: 1, habit_rules: 1, habit_check_ins: 1, health_staging_records: 0, health_metrics: 0, sleep_sessions: 0, workouts: 0, coros_sync_conflicts: 0, travel_visits: 0 });
+    expect(exported.manifest.counts).toEqual({ files: 26, captures: 1, dashboard_layouts: 1, tasks: 1, time_entries: 1, projects: 1, project_phases: 1, milestones: 1, project_notes: 1, project_file_references: 1, activity_events: 1, calendar_events: 1, report_drafts: 1, journal_entries: 1, journal_segments: 1, journal_revisions: 1, journal_import_checkpoints: 1, obsidian_documents: 1, sync_conflicts: 1, learning_areas: 1, learning_goals: 1, learning_activities: 1, learning_resources: 1, habits: 1, habit_rules: 1, habit_check_ins: 1, health_staging_records: 0, health_metrics: 0, sleep_sessions: 0, workouts: 0, coros_sync_conflicts: 0, travel_visits: 0, notices: 0 });
     expect(exported.manifest.files.map((file) => file.path)).toEqual([
       "config/dashboard-layout.json",
       "data/activity-events/activity_20260827015800000_abcd1234.json",

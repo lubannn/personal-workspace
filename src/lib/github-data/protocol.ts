@@ -1,6 +1,7 @@
 export const GITHUB_DATA_SCHEMA_VERSION = 1 as const;
 
 export type EntityType =
+  | "notice"
   | "travel_visit"
   | "capture"
   | "task"
@@ -49,6 +50,7 @@ export type WorkspaceRecord<TData extends Record<string, unknown> = Record<strin
 };
 
 const ENTITY_DIRECTORIES: Record<Exclude<EntityType, "journal">, string> = {
+  notice: "notices",
   travel_visit: "travel-visits",
   capture: "captures",
   task: "tasks",
