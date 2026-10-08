@@ -10,6 +10,7 @@ describe("workspace tab deep links", () => {
   });
 
   it("opens the right tab for existing section links", () => {
+    expect(workspaceTabFromHash("#notices-title")).toBe("notices");
     expect(workspaceTabFromHash("#journal-title")).toBe("journal");
     expect(workspaceTabFromHash("#tasks-title")).toBe("tasks");
     expect(workspaceTabFromHash("#time-entries-title")).toBe("tasks");

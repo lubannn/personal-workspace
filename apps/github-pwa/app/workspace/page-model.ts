@@ -133,6 +133,7 @@ export type AuthAvailability = "checking" | "unavailable" | "configured";
 export type ConnectionMethod = "github-app" | "personal-token";
 
 export type PortabilityResult = {
+  notices?: number;
   fileName: string;
   valid: boolean;
   files: number;

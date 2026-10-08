@@ -17,6 +17,15 @@ describe("workspace module data loading", () => {
     }
   });
 
+  it("loads notices only once without reading other collections", async () => {
+    const loaders = createLoaders(), adapter = {};
+    const coordinator = new WorkspaceModuleLoader<object>();
+    await coordinator.load(adapter, "notices", loaders);
+    await coordinator.load(adapter, "notices", loaders);
+    expect(loaders.notices).toHaveBeenCalledOnce();
+    for (const [name, loader] of Object.entries(loaders)) if (name !== "notices") expect(loader).not.toHaveBeenCalled();
+  });
+
   it("opens tasks without reading historical time entries, which remain available to reports", async () => {
     const coordinator = new WorkspaceModuleLoader<object>();
     const adapter = {};

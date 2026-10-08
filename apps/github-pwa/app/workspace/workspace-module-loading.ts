@@ -6,6 +6,7 @@ export const WORKSPACE_MODULE_COLLECTIONS = {
   overview: ["dashboard", "captures", "tasks", "calendar"],
   journal: ["journal"],
   travel: ["travel"],
+  notices: ["notices"],
   ideas: ["captures"],
   tasks: ["tasks", "projects"],
   calendar: ["calendar", "tasks"],

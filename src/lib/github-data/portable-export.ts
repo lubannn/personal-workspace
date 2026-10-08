@@ -1,3 +1,4 @@
+import { parseNoticeRecord } from "./notices";
 import { parseTravelVisitRecord } from "./travel-visits";
 import type { GitHubStoredFile } from "./github-contents";
 import { DASHBOARD_LAYOUT_PATH, parseDashboardLayout } from "./dashboard-layout";
@@ -59,7 +60,7 @@ export type PortableWorkspaceExport = {
   manifest: {
     schema_version: 1;
     scope: {
-      modules: Array<"workspace" | "captures" | "dashboard_layout" | "tasks" | "time_entries" | "projects" | "project_phases" | "milestones" | "project_notes" | "project_file_references" | "activity_events" | "calendar_events" | "report_drafts" | "journal_entries" | "journal_segments" | "journal_revisions" | "journal_import_checkpoints" | "obsidian_documents" | "sync_conflicts" | "learning_areas" | "learning_goals" | "learning_activities" | "learning_resources" | "habits" | "habit_rules" | "habit_check_ins" | "health_staging_records" | "health_metrics" | "sleep_sessions" | "workouts" | "coros_sync_conflicts" | "travel_visits">;
+      modules: Array<"workspace" | "captures" | "dashboard_layout" | "tasks" | "time_entries" | "projects" | "project_phases" | "milestones" | "project_notes" | "project_file_references" | "activity_events" | "calendar_events" | "report_drafts" | "journal_entries" | "journal_segments" | "journal_revisions" | "journal_import_checkpoints" | "obsidian_documents" | "sync_conflicts" | "learning_areas" | "learning_goals" | "learning_activities" | "learning_resources" | "habits" | "habit_rules" | "habit_check_ins" | "health_staging_records" | "health_metrics" | "sleep_sessions" | "workouts" | "coros_sync_conflicts" | "travel_visits" | "notices">;
       complete: true;
     };
     counts: {
@@ -95,6 +96,7 @@ export type PortableWorkspaceExport = {
       workouts?: number;
       coros_sync_conflicts?: number;
       travel_visits?: number;
+      notices?: number;
     };
     files: PortableExportManifestFile[];
   };
@@ -145,6 +147,7 @@ export type ExportInspection = {
     workouts: number;
     corosSyncConflicts: number;
     travelVisits: number;
+    notices: number;
   };
   errors: ExportInspectionIssue[];
   warnings: ExportInspectionIssue[];
@@ -198,6 +201,7 @@ export async function buildPortableWorkspaceExport(input: {
   workoutFiles?: GitHubStoredFile[];
   corosSyncConflictFiles?: GitHubStoredFile[];
   travelVisitFiles?: GitHubStoredFile[];
+  noticeFiles?: GitHubStoredFile[];
   generatedAt?: string;
 }): Promise<PortableWorkspaceExport> {
   const dashboardLayoutFiles = input.dashboardLayoutFile ? [input.dashboardLayoutFile] : [];
@@ -230,7 +234,8 @@ export async function buildPortableWorkspaceExport(input: {
   const workoutFiles = input.workoutFiles ?? [];
   const corosSyncConflictFiles = input.corosSyncConflictFiles ?? [];
   const travelVisitFiles = input.travelVisitFiles ?? [];
-  const files = [input.workspaceFile, ...input.captureFiles, ...dashboardLayoutFiles, ...taskFiles, ...timeEntryFiles, ...projectFiles, ...projectPhaseFiles, ...milestoneFiles, ...projectNoteFiles, ...projectFileReferenceFiles, ...activityEventFiles, ...calendarEventFiles, ...reportDraftFiles, ...journalEntryFiles, ...journalSegmentFiles, ...journalRevisionFiles, ...journalImportCheckpointFiles, ...obsidianDocumentFiles, ...syncConflictFiles, ...learningAreaFiles, ...learningGoalFiles, ...learningActivityFiles, ...learningResourceFiles, ...habitFiles, ...habitRuleFiles, ...habitCheckInFiles, ...healthStagingFiles, ...healthMetricFiles, ...sleepSessionFiles, ...workoutFiles, ...corosSyncConflictFiles, ...travelVisitFiles]
+  const noticeFiles = input.noticeFiles ?? [];
+  const files = [input.workspaceFile, ...input.captureFiles, ...dashboardLayoutFiles, ...taskFiles, ...timeEntryFiles, ...projectFiles, ...projectPhaseFiles, ...milestoneFiles, ...projectNoteFiles, ...projectFileReferenceFiles, ...activityEventFiles, ...calendarEventFiles, ...reportDraftFiles, ...journalEntryFiles, ...journalSegmentFiles, ...journalRevisionFiles, ...journalImportCheckpointFiles, ...obsidianDocumentFiles, ...syncConflictFiles, ...learningAreaFiles, ...learningGoalFiles, ...learningActivityFiles, ...learningResourceFiles, ...habitFiles, ...habitRuleFiles, ...habitCheckInFiles, ...healthStagingFiles, ...healthMetricFiles, ...sleepSessionFiles, ...workoutFiles, ...corosSyncConflictFiles, ...travelVisitFiles, ...noticeFiles]
     .map((file) => ({ ...file }))
     .sort((left, right) => left.path.localeCompare(right.path));
   const manifestFiles = await Promise.all(files.map(async (file) => ({
@@ -247,7 +252,7 @@ export async function buildPortableWorkspaceExport(input: {
     source: { repository: input.repository, branch: input.branch },
     manifest: {
       schema_version: 1,
-      scope: { modules: ["workspace", "captures", "dashboard_layout", "tasks", "time_entries", "projects", "project_phases", "milestones", "project_notes", "project_file_references", "activity_events", "calendar_events", "report_drafts", "journal_entries", "journal_segments", "journal_revisions", "journal_import_checkpoints", "obsidian_documents", "sync_conflicts", "learning_areas", "learning_goals", "learning_activities", "learning_resources", "habits", "habit_rules", "habit_check_ins", "health_staging_records", "health_metrics", "sleep_sessions", "workouts", "coros_sync_conflicts", "travel_visits"], complete: true },
+      scope: { modules: ["workspace", "captures", "dashboard_layout", "tasks", "time_entries", "projects", "project_phases", "milestones", "project_notes", "project_file_references", "activity_events", "calendar_events", "report_drafts", "journal_entries", "journal_segments", "journal_revisions", "journal_import_checkpoints", "obsidian_documents", "sync_conflicts", "learning_areas", "learning_goals", "learning_activities", "learning_resources", "habits", "habit_rules", "habit_check_ins", "health_staging_records", "health_metrics", "sleep_sessions", "workouts", "coros_sync_conflicts", "travel_visits", "notices"], complete: true },
       counts: {
         files: files.length,
         captures: input.captureFiles.length,
@@ -281,6 +286,7 @@ export async function buildPortableWorkspaceExport(input: {
         workouts: workoutFiles.length,
         coros_sync_conflicts: corosSyncConflictFiles.length,
         travel_visits: travelVisitFiles.length,
+        notices: noticeFiles.length,
       },
       files: manifestFiles,
     },
@@ -314,7 +320,7 @@ export async function inspectPortableWorkspaceExport(value: unknown): Promise<Ex
     generatedAt: null,
     repository: null,
     workspace: null,
-    counts: { files: 0, captures: 0, dashboardLayouts: 0, tasks: 0, timeEntries: 0, projects: 0, projectPhases: 0, milestones: 0, projectNotes: 0, projectFileReferences: 0, activityEvents: 0, calendarEvents: 0, reportDrafts: 0, journalEntries: 0, journalSegments: 0, journalRevisions: 0, journalImportCheckpoints: 0, obsidianDocuments: 0, syncConflicts: 0, learningAreas: 0, learningGoals: 0, learningActivities: 0, learningResources: 0, habits: 0, habitRules: 0, habitCheckIns: 0, healthStagingRecords: 0, healthMetrics: 0, sleepSessions: 0, workouts: 0, corosSyncConflicts: 0, travelVisits: 0 },
+    counts: { files: 0, captures: 0, dashboardLayouts: 0, tasks: 0, timeEntries: 0, projects: 0, projectPhases: 0, milestones: 0, projectNotes: 0, projectFileReferences: 0, activityEvents: 0, calendarEvents: 0, reportDrafts: 0, journalEntries: 0, journalSegments: 0, journalRevisions: 0, journalImportCheckpoints: 0, obsidianDocuments: 0, syncConflicts: 0, learningAreas: 0, learningGoals: 0, learningActivities: 0, learningResources: 0, habits: 0, habitRules: 0, habitCheckIns: 0, healthStagingRecords: 0, healthMetrics: 0, sleepSessions: 0, workouts: 0, corosSyncConflicts: 0, travelVisits: 0, notices: 0 },
     errors,
     warnings,
   };
@@ -1196,6 +1202,21 @@ export async function inspectPortableWorkspaceExport(value: unknown): Promise<Ex
   const rawTravelCount = manifestCounts?.travel_visits;
   if ((rawTravelCount !== undefined || travelVisitFiles.length > 0) && rawTravelCount !== travelVisitFiles.length) errors.push({ code: "TRAVEL_VISIT_COUNT_MISMATCH", message: "旅游记录数量与 manifest 不一致。" });
 
+  const noticeFiles = validPayloadFiles.filter(file => file.path.startsWith("data/notices/"));
+  result.counts.notices = noticeFiles.length;
+  const noticeIds = new Set<string>();
+  for (const file of noticeFiles) {
+    try {
+      const record = parseNoticeRecord(file.content);
+      if (result.workspace && record.owner_id !== result.workspace.owner_id) errors.push({ code: "OWNER_MISMATCH", message: "通告的 owner_id 与 workspace 不一致。", path: file.path });
+      if (recordPath("notice", record.id) !== file.path) errors.push({ code: "NOTICE_PATH_MISMATCH", message: "通告的 ID 与路径不一致。", path: file.path });
+      if (noticeIds.has(record.id)) errors.push({ code: "DUPLICATE_NOTICE_ID", message: "通告 ID 重复。", path: file.path });
+      noticeIds.add(record.id);
+    } catch { errors.push({ code: "INVALID_NOTICE", message: "通告无法通过校验。", path: file.path }); }
+  }
+  const rawNoticeCount = manifestCounts?.notices;
+  if ((rawNoticeCount !== undefined || noticeFiles.length > 0) && rawNoticeCount !== noticeFiles.length) errors.push({ code: "NOTICE_COUNT_MISMATCH", message: "通告数量与 manifest 不一致。" });
+
   const unexpectedFiles = validPayloadFiles.filter((file) => (
     !supportedPaths.has(file.path)
     && !file.path.startsWith("data/captures/")
@@ -1227,6 +1248,7 @@ export async function inspectPortableWorkspaceExport(value: unknown): Promise<Ex
     && !file.path.startsWith("data/sleep-sessions/")
     && !file.path.startsWith("data/workouts/")
     && !file.path.startsWith("data/travel-visits/")
+    && !file.path.startsWith("data/notices/")
     && !file.path.startsWith("data/coros-sync-conflicts/")
   ));
   for (const file of unexpectedFiles) {
