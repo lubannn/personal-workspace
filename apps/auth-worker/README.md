@@ -68,6 +68,20 @@ the PWA. Multiple browsers/logins remain separate sessions, and `lastUsedAt`
 means authentication refresh time, not real-time online status. PAT connections
 have no server-side device list. No migration or additional permission is needed.
 
+New sessions receive a short platform/browser label (for example `Mac－Chrome`)
+derived only from the `/auth/callback` request's existing User-Agent. The callback
+is the browser receiving the new session cookie; the initiating page or a
+different app is not used as its identity. OAuth state/PKCE cookies, user and
+repository checks still gate session creation. Only fixed labels (at most 64
+characters) are stored, never raw UA, versions, hardware models, IP or location;
+no additional client hints are requested. Known embedded apps/WebViews,
+unrecognized or conflicting tokens fall back to unknown labels. UA is spoofable,
+and desktop-mode tablets or indistinguishable browser brands may report another
+platform/browser. Labels are informational and have no authorization role.
+Existing names remain unchanged, including on token refresh; unnamed historical
+sessions stay unnamed until a future login creates a new session. Names are
+bounded in the list response and rendered as plain React text.
+
 The deployed D1 schema contains authentication sessions plus encrypted COROS connection and short-lived OAuth attempt tables. Workspace business data continues to flow directly between the browser and the private GitHub repository.
 
 ## COROS automatic sync (daily-login scheduling, 2026-10-03)

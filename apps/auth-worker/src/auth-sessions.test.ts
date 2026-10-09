@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { handleAuthRequest, type AuthEnv, type D1DatabaseLike } from "./auth";
-import { hmacSha256Base64Url, randomToken } from "./security";
+import { decryptRefreshToken, hmacSha256Base64Url, randomToken } from "./security";
 
 const origin = "https://workspace.example";
 const now = "2026-10-09T12:00:00.000Z";
@@ -18,6 +18,40 @@ function request(path = "/auth/sessions", rawCookie: string | null = "current", 
       origin, "x-pw-csrf": "synthetic-csrf",
     },
   });
+}
+
+const macChrome = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36";
+const iphoneSafari = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1";
+
+function responseCookies(response: Response) {
+  return response.headers.getSetCookie().map((value) => value.split(";")[0]).join("; ");
+}
+
+async function beginLogin() {
+  const response = await handleAuthRequest(new Request(`${origin}/auth/login`, { headers: { "user-agent": macChrome } }), env);
+  const state = new URL(response.headers.get("location")!).searchParams.get("state")!;
+  return { cookie: responseCookies(response), state };
+}
+
+function mockGitHub(login = "user-a", privateRepo = true) {
+  const fetcher = vi.fn<typeof fetch>().mockImplementation(async (url) => {
+    if (url === "https://github.com/login/oauth/access_token") return Response.json({
+      access_token: "synthetic-access-token", refresh_token: "synthetic-refresh-token",
+      expires_in: 3600, refresh_token_expires_in: 86400 * 30,
+    });
+    if (url === "https://api.github.com/user") return Response.json({ id: 313, login });
+    if (url === "https://api.github.com/repos/user-a/synthetic-data") return Response.json({ name: "synthetic-data", private: privateRepo, owner: { login: "user-a" } });
+    throw new Error("Unexpected provider request");
+  });
+  vi.stubGlobal("fetch", fetcher);
+  return fetcher;
+}
+
+async function finishLogin(ua: string | null, flow: { cookie: string; state: string }) {
+  return handleAuthRequest(new Request(`${origin}/auth/callback?code=synthetic-code&state=${flow.state}`, {
+    headers: { cookie: flow.cookie, ...(ua === null ? {} : { "user-agent": ua }),
+      "x-forwarded-for": "192.0.2.1", "sec-ch-ua-model": "MUST-NOT-USE-HARDWARE", "x-device-name": "MUST-NOT-USE-NAME" },
+  }), env);
 }
 
 async function seed(raw: string, user = "user-a", overrides: Record<string, string | null> = {}) {
@@ -59,6 +93,88 @@ beforeEach(async () => {
     ALLOWED_GITHUB_LOGIN: "user-a", ALLOWED_REPO_OWNER: "user-a", ALLOWED_REPO_NAME: "synthetic-data",
   };
   currentHash = await seed("current");
+});
+
+describe("new-session device name persistence through OAuth", () => {
+  it.each([
+    [macChrome, "Mac－Chrome"], [iphoneSafari, "iPhone－Safari"],
+    [null, "未知系统－未知浏览器"], ["<script>private-device</script>", "未知系统－未知浏览器"],
+  ])("names only the new callback session from its own browser: %s", async (ua, expectedName) => {
+    const oldSession = db.prepare("SELECT * FROM auth_sessions WHERE session_id_hash = ?").get(currentHash);
+    const legacyHash = await seed("legacy-for-login-user", "313");
+    const legacySession = db.prepare("SELECT * FROM auth_sessions WHERE session_id_hash = ?").get(legacyHash);
+    const flow = await beginLogin();
+    const fetcher = mockGitHub();
+    const response = await finishLogin(ua, flow);
+    expect(response.status).toBe(302);
+    expect(response.headers.get("location")).toBe(`${origin}/?auth=connected`);
+    expect(response.headers.get("set-cookie")).toContain("HttpOnly");
+    expect(response.headers.get("set-cookie")).toContain("Secure");
+    const cookie = responseCookies(response);
+    const rawSession = /__Host-pw_session=([^;]+)/.exec(cookie)![1];
+    const hash = await hmacSha256Base64Url(rawSession, env.SESSION_HMAC_KEY!);
+    const row = db.prepare("SELECT * FROM auth_sessions WHERE session_id_hash = ?").get(hash)!;
+    expect(row.device_name).toBe(expectedName);
+    expect(row.github_user_id).toBe("313");
+    expect(await decryptRefreshToken(row.encrypted_refresh_token as string, env.TOKEN_ENCRYPTION_KEY!)).toBe("synthetic-refresh-token");
+    expect(db.prepare("SELECT * FROM auth_sessions WHERE session_id_hash = ?").get(currentHash)).toEqual(oldSession);
+    expect(db.prepare("SELECT * FROM auth_sessions WHERE session_id_hash = ?").get(legacyHash)).toEqual(legacySession);
+    expect(JSON.stringify(row)).not.toMatch(/Mozilla|AppleWebKit|MUST-NOT-USE|192\.0\.2\.1|private-device/);
+    expect(fetcher).toHaveBeenCalledTimes(3);
+    const exchange = JSON.parse(fetcher.mock.calls[0][1]!.body as string);
+    expect(exchange.code_verifier).toBe(/__Host-pw_pkce_verifier=([^;]+)/.exec(flow.cookie)![1]);
+    expect(exchange.redirect_uri).toBe(`${origin}/auth/callback`);
+    expect(Object.keys(exchange).sort()).toEqual(["client_id", "client_secret", "code", "code_verifier", "redirect_uri"]);
+
+    const list = await handleAuthRequest(new Request(`${origin}/auth/sessions?userId=user-a`, { headers: { cookie } }), env);
+    expect(await list.json()).toEqual({ sessions: [
+      { deviceName: expectedName, createdAt: now, lastUsedAt: now, current: true },
+      { deviceName: null, createdAt: "2026-10-01T00:00:00.000Z", lastUsedAt: "2026-10-08T00:00:00.000Z", current: false },
+    ] });
+    expect((await handleAuthRequest(new Request(`${origin}/auth/sessions`), env)).status).toBe(401);
+
+    // Refreshing later from a different UA preserves the original login label.
+    const csrf = /__Host-pw_csrf=([^;]+)/.exec(cookie)![1];
+    const refreshed = await handleAuthRequest(new Request(`${origin}/auth/token`, {
+      method: "POST", headers: { cookie, origin, "x-pw-csrf": csrf, "user-agent": "different-browser" },
+    }), env);
+    expect(refreshed.status).toBe(200);
+    expect(db.prepare("SELECT device_name FROM auth_sessions WHERE session_id_hash = ?").get(hash)?.device_name).toBe(expectedName);
+  });
+
+  it("rejects a callback in another cookie jar instead of borrowing the initiator's label", async () => {
+    const flow = await beginLogin();
+    const fetcher = mockGitHub();
+    const response = await finishLogin(iphoneSafari, { ...flow, cookie: "" });
+    expect(response.headers.get("location")).toBe(`${origin}/?auth=denied`);
+    expect(db.prepare("SELECT COUNT(*) AS count FROM auth_sessions").get()?.count).toBe(1);
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("preserves state validation before naming or creating a session", async () => {
+    const flow = await beginLogin();
+    const fetcher = mockGitHub();
+    const response = await finishLogin(macChrome, { ...flow, state: "wrong" });
+    expect(response.headers.get("location")).toBe(`${origin}/?auth=failed`);
+    expect(db.prepare("SELECT COUNT(*) AS count FROM auth_sessions").get()?.count).toBe(1);
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it.each([["other-login", true, "GitHubUserNotAllowed"], ["user-a", false, "GitHubRepositoryNotAllowed"]])("preserves user/repository allowlist denial: %s", async (login, privateRepo, error) => {
+    const flow = await beginLogin();
+    mockGitHub(login as string, privateRepo as boolean);
+    await expect(finishLogin(macChrome, flow)).rejects.toThrow(error as string);
+    expect(db.prepare("SELECT COUNT(*) AS count FROM auth_sessions").get()?.count).toBe(1);
+  });
+
+  it("bounds untrusted existing names in list responses without updating stored rows", async () => {
+    const name = "<img src=x onerror=alert(1)>" + "x".repeat(100);
+    await seed("long-name", "user-a", { device_name: name });
+    const response = await handleAuthRequest(request(), env);
+    const body = await response.json() as { sessions: Array<{ deviceName: string | null }> };
+    expect(body.sessions[1].deviceName).toBe(name.slice(0, 64));
+    expect(db.prepare("SELECT device_name FROM auth_sessions WHERE device_name = ?").get(name)?.device_name).toBe(name);
+  });
 });
 
 afterEach(() => { db.close(); vi.useRealTimers(); vi.unstubAllGlobals(); });
