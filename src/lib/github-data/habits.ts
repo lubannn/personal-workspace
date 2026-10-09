@@ -76,6 +76,18 @@ export function moveHabit(records: HabitRecord[], id: string, direction: "up" | 
   const target = index + (direction === "up" ? -1 : 1);
   if (index < 0 || target < 0 || target >= ordered.length) return [];
   [ordered[index], ordered[target]] = [ordered[target]!, ordered[index]!];
+  return reorderHabits(records, ordered.map((record) => record.id), timestamp);
+}
+
+/** Version each changed record once for the final order of a batch of moves. */
+export function reorderHabits(records: HabitRecord[], ids: readonly string[], timestamp = new Date().toISOString()) {
+  assertInstant(timestamp);
+  const active = activeHabits(records);
+  const byId = new Map(active.map((record) => [record.id, record]));
+  if (ids.length !== active.length || new Set(ids).size !== ids.length || ids.some((id) => !byId.has(id))) {
+    throw new Error("INVALID_HABIT_ORDER");
+  }
+  const ordered = ids.map((id) => byId.get(id)!);
   return ordered.flatMap((record, sortOrder) => record.data.sort_order === sortOrder ? [] : [
     updateWorkspaceRecord(record, validateData({ ...record.data, sort_order: sortOrder }), timestamp),
   ]);

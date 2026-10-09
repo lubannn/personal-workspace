@@ -7,6 +7,7 @@ import { activeHabits, archivedHabits, trashedHabits, type HabitAutomationMode, 
 import { checkInsForMonth, type HabitCheckInStatus } from "../../../../src/lib/github-data/habit-check-ins";
 import { activeHabitRule } from "../../../../src/lib/github-data/habit-rules";
 import { evaluateSleepHabitRule, type SleepHabitRuleFields, type SleepHabitRuleType } from "../../../../src/lib/github-data/sleep-habit-rules";
+import type { HabitOrderSnapshot } from "../../../../src/lib/github-data/habit-order-sync";
 import type { Connection, SyncedHabit, SyncedHabitCheckIn, SyncedHabitRule, SyncedSleepSession } from "./page-model";
 
 type Props = {
@@ -21,6 +22,10 @@ type Props = {
   saving: boolean;
   savingId: string | null;
   onCreate: (fields: HabitFields, sleepRule?: SleepHabitRuleFields) => Promise<boolean>;
+  orderStatus?: HabitOrderSnapshot["status"];
+  orderError?: string;
+  onRetryOrder?: () => void;
+  onDiscardOrder?: () => void;
   onMove: (item: SyncedHabit, direction: "up" | "down") => Promise<void>;
   onStatusChange: (item: SyncedHabit, status: HabitStatus) => void;
   onDeletionChange: (item: SyncedHabit, operation: "trash" | "restore") => void;
@@ -31,7 +36,7 @@ type Props = {
 
 const STATUS_LABELS = { completed: "已完成", missed: "未完成", skipped: "已跳过", unknown: "未打卡", none: "未打卡" };
 
-export function HabitsSection({ connection, online, todayDate, habits, checkIns, rules, sleepSessions, loading, saving, savingId, onCreate, onMove, onStatusChange, onDeletionChange, onCheckIn, onConfirmSleepSuggestion, onRefresh }: Props) {
+export function HabitsSection({ connection, online, todayDate, habits, checkIns, rules, sleepSessions, loading, saving, savingId, orderStatus = "idle", orderError, onRetryOrder, onDiscardOrder, onCreate, onMove, onStatusChange, onDeletionChange, onCheckIn, onConfirmSleepSuggestion, onRefresh }: Props) {
   const [view, setView] = useState<"active" | "archived" | "trash">("active");
   const [creating, setCreating] = useState(false);
   const [sorting, setSorting] = useState(false);
@@ -54,7 +59,9 @@ export function HabitsSection({ connection, online, todayDate, habits, checkIns,
   const monthly = new Map(visible.map((item) => [item.record.id,
     new Map((month ? checkInsForMonth(checkIns.map((entry) => entry.record), item.record.id, month) : []).map((record) => [record.data.local_date, record.data.status])),
   ]));
-  const busy = saving || savingId !== null;
+  const orderPending = orderStatus === "pending" || orderStatus === "saving" || orderStatus === "error";
+  const sortDisabled = !connection || saving || savingId !== null || loading || online === false;
+  const busy = saving || savingId !== null || orderPending;
   const disabled = !connection || busy || loading || online === false;
   const sleepSuggestions = useMemo(() => {
     const candidates: Array<{ habit: SyncedHabit; rule: SyncedHabitRule; session: SyncedSleepSession; explanation: string; localDate: string; status: "completed" | "missed" }> = [];
@@ -123,7 +130,7 @@ export function HabitsSection({ connection, online, todayDate, habits, checkIns,
         <button className={`view-button ${view === "archived" ? "active" : ""}`} type="button" aria-pressed={view === "archived"} onClick={() => switchView("archived")} disabled={busy}>已归档 {archived.length}</button>
         <button className={`view-button ${view === "trash" ? "active" : ""}`} type="button" aria-pressed={view === "trash"} onClick={() => switchView("trash")} disabled={busy}>回收站 {trash.length}</button>
       </div>
-      {view === "active" ? <button className="text-button" type="button" aria-pressed={sorting} onClick={() => { setSorting(!sorting); setMenuId(null); }} disabled={disabled || active.length < 2}>{sorting ? "完成排序" : "调整顺序"}</button> : null}
+      {view === "active" ? <button className="text-button" type="button" aria-pressed={sorting} onClick={() => { setSorting(!sorting); setMenuId(null); }} disabled={sortDisabled || active.length < 2}>{sorting ? "完成排序" : "调整顺序"}</button> : null}
     </div>
     {view === "active" && creating ? <form className="habit-create-form" onSubmit={submit}>
       <label>事项名称<input autoFocus value={name} maxLength={200} onChange={(event) => setName(event.target.value)} placeholder="例如：阅读、运动、早睡" disabled={disabled} /></label>
@@ -140,7 +147,7 @@ export function HabitsSection({ connection, online, todayDate, habits, checkIns,
           <thead><tr><th scope="col" className="habit-name-cell">事项名称</th>{days.map((date) => <th key={date} scope="col" className="habit-date-cell" data-today={date === todayDate}><span aria-label={date}>{Number(date.slice(-2))}</span></th>)}<th scope="col" className="habit-actions-cell"><span className="habit-sr-only">操作</span></th></tr></thead>
           <tbody>{visible.map((item, index) => <tr key={item.record.id}>
             <th scope="row" className="habit-name-cell"><div className="habit-name-content">
-              {sorting ? <div className="habit-sort-actions"><button type="button" className="habit-icon-button" aria-label={`上移${item.record.data.name}`} title="上移" disabled={disabled || index === 0} onClick={() => void onMove(item, "up")}><ArrowUp size={14} aria-hidden="true" /></button><button type="button" className="habit-icon-button" aria-label={`下移${item.record.data.name}`} title="下移" disabled={disabled || index === visible.length - 1} onClick={() => void onMove(item, "down")}><ArrowDown size={14} aria-hidden="true" /></button></div> : null}
+              {sorting ? <div className="habit-sort-actions"><button type="button" className="habit-icon-button" aria-label={`上移${item.record.data.name}`} title="上移" disabled={sortDisabled || index === 0} onClick={() => void onMove(item, "up")}><ArrowUp size={14} aria-hidden="true" /></button><button type="button" className="habit-icon-button" aria-label={`下移${item.record.data.name}`} title="下移" disabled={sortDisabled || index === visible.length - 1} onClick={() => void onMove(item, "down")}><ArrowDown size={14} aria-hidden="true" /></button></div> : null}
               <strong title={item.record.data.name}>{item.record.data.name}</strong>{item.record.data.status === "paused" && view === "active" ? <small>暂停</small> : null}
             </div></th>
             {days.map((date) => {
@@ -158,8 +165,9 @@ export function HabitsSection({ connection, online, todayDate, habits, checkIns,
         {view === "active" ? <><button className="text-button" type="button" disabled={disabled} onClick={() => { onStatusChange(item, item.record.data.status === "paused" ? "active" : "paused"); setMenuId(null); }}>{item.record.data.status === "paused" ? "继续" : "暂停"}</button><button className="text-button" type="button" disabled={disabled} onClick={() => { onStatusChange(item, "archived"); setMenuId(null); }}>归档</button></> : view === "archived" ? <button className="text-button" type="button" disabled={disabled} onClick={() => { onStatusChange(item, "active"); setMenuId(null); }}>恢复进行</button> : null}
         <button className="text-button" type="button" disabled={disabled} onClick={() => { onDeletionChange(item, view === "trash" ? "restore" : "trash"); setMenuId(null); }}>{view === "trash" ? "恢复" : "移到回收站"}</button><button className="text-button" type="button" onClick={() => setMenuId(null)}>收起</button>
       </div></div>)}
-      <div className="habit-legend"><span><i data-status="completed" />已完成</span><span><i />未打卡</span><span className="habit-mobile-hint">左右滑动查看日期</span><span className="habit-sort-note" role="status">{savingId ? "正在保存…" : sorting ? "用上移、下移调整顺序，自动保存" : "今天的打卡可再次点击撤销"}</span></div>
+      <div className="habit-legend"><span><i data-status="completed" />已完成</span><span><i />未打卡</span><span className="habit-mobile-hint">左右滑动查看日期</span><span className="habit-sort-note" role="status">{orderStatus === "error" ? "顺序尚未保存" : orderPending ? "顺序已调整，后台保存中…" : orderStatus === "saved" ? "顺序已保存" : savingId ? "正在保存…" : sorting ? "用上移、下移调整顺序，自动保存" : "今天的打卡可再次点击撤销"}</span></div>
     </>}
+    {orderStatus === "error" ? <div className="habit-manage-bar" role="alert"><span>{orderError}</span><div><button type="button" className="text-button" onClick={onRetryOrder} disabled={sortDisabled}>重试保存</button><button type="button" className="text-button" onClick={onDiscardOrder}>取消调整</button></div></div> : null}
     {view === "active" && sleepSuggestions.length > 0 ? <details className="habit-sleep-suggestions"><summary>待确认的睡眠判定 · {sleepSuggestions.length} 条</summary><ol className="learning-list">{sleepSuggestions.map((suggestion) => <li key={`${suggestion.habit.record.id}:${suggestion.rule.record.id}:${suggestion.session.record.id}`}><div><strong>{suggestion.habit.record.data.name} · {suggestion.localDate}</strong><code>{suggestion.status === "completed" ? "建议：完成" : "建议：未完成"}</code><small>{suggestion.explanation} · 规则 v{suggestion.rule.record.data.rule_version}</small></div><button className="primary-button" type="button" onClick={() => void onConfirmSleepSuggestion(suggestion.habit, suggestion.rule, suggestion.session)} disabled={busy || online === false}>{savingId === suggestion.habit.record.id ? "写入中…" : "确认判定并打卡"}</button></li>)}</ol></details> : null}
   </section>;
 }
