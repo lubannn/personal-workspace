@@ -1174,3 +1174,17 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 @media (max-width: 519px) {
   .overview-columns .dashboard-widget-grid { grid-template-columns: minmax(0, 1fr); }
 }
+
+.device-sessions-dialog { width: min(560px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); margin: auto; padding: 20px; overflow-y: auto; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 16px 60px #17171330; }
+.device-sessions-dialog::backdrop { background: #17171366; }
+.device-sessions-heading { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+.device-sessions-heading h2 { margin: 0; font-size: 20px; }
+.device-sessions-dialog button { min-height: 44px; }
+.device-sessions-description { color: var(--muted); font-size: 13px; line-height: 1.6; }
+.device-sessions-list { padding: 0; margin: 16px 0 0; list-style: none; }
+.device-sessions-list li { padding: 16px 0; border-top: 1px solid var(--line); }
+.device-sessions-list li > div { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; overflow-wrap: anywhere; }
+.device-sessions-list dl { margin: 12px 0 0; font-size: 13px; }
+.device-sessions-list dl > div { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 6px; }
+.device-sessions-list dt { color: var(--muted); }
+.device-sessions-list dd { margin: 0; }

@@ -379,6 +379,38 @@ async function status(request: Request, env: CompleteAuthEnv): Promise<Response>
   });
 }
 
+async function listSessions(request: Request, env: CompleteAuthEnv): Promise<Response> {
+  if (request.method !== "GET") return json({ error: "METHOD_NOT_ALLOWED" }, 405);
+  const session = await findSession(request, env);
+  if (!session) return json({ error: "AUTHENTICATION_REQUIRED" }, 401);
+
+  // Aggregate only the public fields; neither credentials nor session identifiers
+  // leave D1. Identity comes exclusively from the authenticated cookie session.
+  const row = await env.DB.prepare(
+    `SELECT json_group_array(json_object(
+       'deviceName', device_name, 'createdAt', created_at,
+       'lastUsedAt', last_used_at, 'current', is_current
+     )) AS sessions
+     FROM (
+       SELECT device_name, created_at, last_used_at,
+              CASE WHEN session_id_hash = ?3 THEN 1 ELSE 0 END AS is_current
+         FROM auth_sessions
+        WHERE github_user_id = ?1 AND revoked_at IS NULL AND expires_at > ?2
+        ORDER BY is_current DESC, last_used_at DESC, created_at DESC
+     )`,
+  ).bind(session.github_user_id, new Date().toISOString(), session.session_id_hash)
+    .first<{ sessions: string }>();
+  const sessions = JSON.parse(row?.sessions ?? "[]") as Array<{
+    deviceName: string | null; createdAt: string; lastUsedAt: string; current: number;
+  }>;
+  return json({ sessions: sessions.map((entry) => ({
+    deviceName: entry.deviceName,
+    createdAt: entry.createdAt,
+    lastUsedAt: entry.lastUsedAt,
+    current: entry.current === 1,
+  })) });
+}
+
 async function issueToken(request: Request, env: CompleteAuthEnv): Promise<Response> {
   if (request.method !== "POST") return json({ error: "METHOD_NOT_ALLOWED" }, 405);
   if (!csrfValid(request)) return json({ error: "CSRF_VALIDATION_FAILED" }, 403);
@@ -478,6 +510,8 @@ export async function handleAuthRequest(request: Request, env: AuthEnv): Promise
       return callback(request, configured);
     case "/auth/status":
       return status(request, configured);
+    case "/auth/sessions":
+      return listSessions(request, configured);
     case "/auth/token":
       return issueToken(request, configured);
     case "/auth/logout":
