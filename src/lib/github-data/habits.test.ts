@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { createWorkspaceRecord, serializeRecord, setWorkspaceRecordDeleted } from "./protocol";
-import { activeHabits, archivedHabits, createHabitData, parseHabitRecord, setHabitStatus, trashedHabits, updateHabitDetails, type HabitFields } from "./habits";
+import { activeHabits, archivedHabits, createHabitData, moveHabit, nextHabitSortOrder, parseHabitRecord, setHabitStatus, trashedHabits, updateHabitDetails, type HabitFields } from "./habits";
 
 const baseFields: HabitFields = {
   name: "阅读",
@@ -60,5 +60,47 @@ describe("Habit canonical records", () => {
     const record = habit("habit_invalid");
     const invalid = { ...record, data: { ...record.data, surprise: true } };
     expect(() => parseHabitRecord(serializeRecord(invalid))).toThrow("INVALID_HABIT_RECORD");
+  });
+
+  it("persists manual ordering for legacy records through reloads and subsequent moves", () => {
+    let records = [habit("habit_c", "C"), habit("habit_a", "A"), habit("habit_b", "B")];
+    const original = records.map((record) => serializeRecord(record));
+    const changed = moveHabit(records, "habit_b", "up", "2026-09-13T12:00:00.000Z");
+    expect(records.map((record) => serializeRecord(record))).toEqual(original);
+    records = records.map((record) => parseHabitRecord(serializeRecord(changed.find((item) => item.id === record.id) ?? record)));
+    expect(activeHabits(records).map((record) => record.data.name)).toEqual(["B", "A", "C"]);
+    expect(changed.every((record) => record.version === 2)).toBe(true);
+    const moved = moveHabit(records, "habit_b", "down");
+    expect(moved).toHaveLength(2);
+    records = records.map((record) => moved.find((item) => item.id === record.id) ?? record);
+    expect(activeHabits(records).map((record) => record.data.name)).toEqual(["A", "B", "C"]);
+    const edited = updateHabitDetails(records.find((record) => record.id === "habit_b")!, { ...baseFields, name: "Z" });
+    expect(edited.data.sort_order).toBe(1);
+    expect(setHabitStatus(edited, "paused").data.sort_order).toBe(1);
+  });
+
+  it("keeps boundary moves unchanged and excludes archived and deleted habits", () => {
+    const archived = setHabitStatus(habit("habit_archived"), "archived");
+    const trashed = setWorkspaceRecordDeleted(habit("habit_trashed"), "2026-09-13T12:00:00.000Z");
+    const records = [habit("habit_a", "A"), habit("habit_b", "B"), archived, trashed];
+    expect(moveHabit(records, "habit_a", "up")).toEqual([]);
+    expect(moveHabit(records, "habit_b", "down")).toEqual([]);
+    expect(moveHabit(records, "habit_archived", "up")).toEqual([]);
+    expect(moveHabit(records, "missing", "down")).toEqual([]);
+    expect(moveHabit(records, "habit_b", "up").map((record) => record.id)).toEqual(["habit_b", "habit_a"]);
+  });
+
+  it("appends new habits after saved positions, accepts legacy records and validates ordering", () => {
+    expect(nextHabitSortOrder([])).toBe(0);
+    const record = habit("habit_a", "A");
+    const ordered = { ...record, data: createHabitData(baseFields, 10) };
+    expect(nextHabitSortOrder([record, ordered])).toBe(11);
+    const newRecord = { ...habit("habit_new", "0"), data: createHabitData({ ...baseFields, name: "0" }, nextHabitSortOrder([ordered])) };
+    expect(activeHabits([newRecord, ordered]).map((item) => item.id)).toEqual(["habit_a", "habit_new"]);
+    expect(parseHabitRecord(serializeRecord(ordered)).data.sort_order).toBe(10);
+    for (const sortOrder of [-1, 0.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
+      expect(() => createHabitData(baseFields, sortOrder)).toThrow("INVALID_HABIT_DETAILS");
+    }
+    expect(parseHabitRecord(serializeRecord(record)).data.sort_order).toBeUndefined();
   });
 });
