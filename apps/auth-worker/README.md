@@ -7,7 +7,7 @@ This Worker was introduced in two deliberately separate stages.
 - Canonical Cloudflare entry: `https://nexus.lubannn.workers.dev/`.
 - Proxies the static PWA from the fixed production origin
   `https://personal-workspace-app.pages.dev`.
-- Exposes `GET /health`, `GET /auth/status`, `GET /auth/login`,
+- Exposes `GET /health`, `GET /auth/status`, `GET /auth/sessions`, `GET /auth/login`,
   `GET /auth/callback`, `POST /auth/token`, `POST /auth/logout`, and
   `POST /auth/logout-all`.
 - Keeps GitHub OAuth credentials in Cloudflare Workers Secrets; no secret is
@@ -58,6 +58,15 @@ acceptance is complete.
 The implemented flow uses OAuth state plus PKCE, a `__Host-` HttpOnly session
 cookie, a same-origin CSRF token, HMAC-hashed session identifiers, encrypted and
 rotating refresh tokens, and an explicit GitHub user/repository allowlist.
+
+`GET /auth/sessions` uses the existing session cookie to list only that user's
+unexpired, unrevoked sessions. Client-supplied user IDs are ignored. The
+non-cacheable response contains only `deviceName`, `createdAt`, `lastUsedAt`,
+and `current`; it does not expose session identifiers or credentials and does
+not refresh tokens. Historical unnamed sessions appear as unnamed devices in
+the PWA. Multiple browsers/logins remain separate sessions, and `lastUsedAt`
+means authentication refresh time, not real-time online status. PAT connections
+have no server-side device list. No migration or additional permission is needed.
 
 The deployed D1 schema contains authentication sessions plus encrypted COROS connection and short-lived OAuth attempt tables. Workspace business data continues to flow directly between the browser and the private GitHub repository.
 

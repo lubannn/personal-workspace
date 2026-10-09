@@ -47,6 +47,7 @@ describe("compact connected account", () => {
     expect(html).toContain("owner/private-data");
     expect(html).toContain(" · Private · Asia/Shanghai");
     expect(html).toContain("退出当前设备");
+    expect(html).toContain("查看所有设备");
     expect(html).toContain("撤销全部设备");
     expect(html).not.toContain("message-bar");
     expect(html).not.toContain(statusMessage);
@@ -59,6 +60,7 @@ describe("compact connected account", () => {
     });
     expect(html).toContain('class="connection-method">Token</span>');
     expect(html).toContain("断开并清除");
+    expect(html).toContain("查看所有设备");
     expect(html).not.toContain("撤销全部设备");
     expect(html).not.toContain("message-bar");
   });
@@ -92,6 +94,7 @@ describe("compact connected account", () => {
     expect(html).toContain("使用 Token 连接");
     expect(html).toContain(`role="status">${statusMessage}`);
     expect(html).not.toContain('class="connection-method"');
+    expect(html).not.toContain("查看所有设备");
   });
 
   it("does not discard a connection message when there is no active connection", () => {

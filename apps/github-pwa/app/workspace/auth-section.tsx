@@ -1,9 +1,11 @@
 "use client";
 
-import type { FormEvent } from "react";
+import { useEffect, useState, useSyncExternalStore, type FormEvent } from "react";
 
 import type { AuthAvailability, Connection, ConnectionMethod } from "./page-model";
 import { formatWorkspaceDate } from "./workspace-date";
+import { DeviceSessionsStore } from "./device-sessions";
+import { DeviceSessionsDialog } from "./device-sessions-dialog";
 
 type Props = {
   online: boolean | null;
@@ -31,6 +33,9 @@ type Props = {
 
 export function AuthSection(props: Props) {
   const { online, connection, todayDate, settingsOpen = false, connectionMethod, authAvailability, owner, repository, token, connecting, confirmingRevokeAll, revokingAll, errorMessage, statusMessage, onOwnerChange, onRepositoryChange, onTokenChange, onConnect, onDisconnect, onConfirmingRevokeAllChange, onRevokeAll } = props;
+  const [devices] = useState(() => new DeviceSessionsStore());
+  const deviceState = useSyncExternalStore(devices.subscribe, devices.getSnapshot, devices.getSnapshot);
+  useEffect(() => () => devices.close(), [connection, connectionMethod, devices]);
   const visibleStatusMessage = connection && isConnectionSuccessMessage(statusMessage) ? "" : statusMessage;
   return <>
     <header className="topbar" id="top">
@@ -46,9 +51,10 @@ export function AuthSection(props: Props) {
             <p><span className="connection-method">{connectionMethod === "github-app" ? "GitHub App" : "Token"}</span> · Private · {connection.timezone}</p>
             <div className="connection-actions">
             <span className="private-badge">Private verified</span>
-            <button className="secondary-button" type="button" onClick={onDisconnect} disabled={revokingAll}>{connectionMethod === "github-app" ? "退出当前设备" : "断开并清除"}</button>
+            <button className="secondary-button" type="button" onClick={() => { void devices.open(connectionMethod); }} disabled={revokingAll}>查看所有设备</button>
+            <button className="secondary-button" type="button" onClick={() => { devices.close(); onDisconnect(); }} disabled={revokingAll}>{connectionMethod === "github-app" ? "退出当前设备" : "断开并清除"}</button>
             {connectionMethod === "github-app" ? confirmingRevokeAll ? <div className="revoke-confirm" role="group" aria-label="确认撤销全部设备">
-            <span>所有设备都需要重新登录。</span><button className="danger-button" type="button" onClick={onRevokeAll} disabled={revokingAll}>{revokingAll ? "正在撤销…" : "确认撤销全部设备"}</button>
+            <span>所有设备都需要重新登录。</span><button className="danger-button" type="button" onClick={() => { devices.close(); onRevokeAll(); }} disabled={revokingAll}>{revokingAll ? "正在撤销…" : "确认撤销全部设备"}</button>
             <button className="secondary-button" type="button" onClick={() => onConfirmingRevokeAllChange(false)} disabled={revokingAll}>取消</button>
             </div> : <button className="danger-outline-button" type="button" onClick={() => onConfirmingRevokeAllChange(true)}>撤销全部设备</button> : null}
             </div>
@@ -56,6 +62,7 @@ export function AuthSection(props: Props) {
         </details> : <div className={`network ${online === false ? "offline" : ""}`}><i /> {online === null ? "检测网络" : online ? "GitHub 可连接" : "当前离线"}</div>}
       </div>
     </header>
+    {connection && deviceState.status !== "closed" ? <DeviceSessionsDialog state={deviceState} timezone={connection.timezone} onClose={devices.close} onRetry={() => { void devices.open(connectionMethod); }} /> : null}
     {!connection ? <section className="connection-card" aria-labelledby="connection-title">
       <div className="connection-copy">
         <p className="eyebrow">Private connection</p><h2 id="connection-title">连接你的数据仓库</h2>
