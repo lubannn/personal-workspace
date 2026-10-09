@@ -5,6 +5,7 @@ import {
   randomToken,
   sha256Base64Url,
 } from "./security";
+import { loginDeviceName, MAX_DEVICE_NAME_LENGTH } from "./device-name";
 
 const GITHUB_AUTHORIZE_URL = "https://github.com/login/oauth/authorize";
 const GITHUB_TOKEN_URL = "https://github.com/login/oauth/access_token";
@@ -347,7 +348,7 @@ async function callback(request: Request, env: CompleteAuthEnv): Promise<Respons
     `INSERT INTO auth_sessions (
        session_id_hash, github_user_id, github_login, encrypted_refresh_token,
        access_token_expires_at, created_at, last_used_at, expires_at, revoked_at, device_name
-     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6, ?7, NULL, NULL)`,
+     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6, ?7, NULL, ?8)`,
   )
     .bind(
       hash,
@@ -357,6 +358,9 @@ async function callback(request: Request, env: CompleteAuthEnv): Promise<Respons
       isoAfter(now, token.expires_in),
       now.toISOString(),
       expiresAt,
+      // This request receives the new session cookie. Do not label it using
+      // the initiating page, GitHub's token request, or another app's browser.
+      loginDeviceName(request.headers.get("user-agent")),
     )
     .run();
   if (!insert.success) throw new Error("SessionPersistenceError");
@@ -404,7 +408,7 @@ async function listSessions(request: Request, env: CompleteAuthEnv): Promise<Res
     deviceName: string | null; createdAt: string; lastUsedAt: string; current: number;
   }>;
   return json({ sessions: sessions.map((entry) => ({
-    deviceName: entry.deviceName,
+    deviceName: entry.deviceName?.trim().slice(0, MAX_DEVICE_NAME_LENGTH) || null,
     createdAt: entry.createdAt,
     lastUsedAt: entry.lastUsedAt,
     current: entry.current === 1,

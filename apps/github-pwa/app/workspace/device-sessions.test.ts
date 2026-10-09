@@ -107,4 +107,17 @@ describe("device session display", () => {
     expect(renderToStaticMarkup(createElement(DeviceSessionsContent, { ...props, state: { status: "personal-token" } }))).toContain("没有可查询的服务器设备会话清单");
     expect(renderToStaticMarkup(createElement(DeviceSessionsContent, { ...props, state: { status: "loaded", sessions: [] } }))).toContain("没有有效的登录会话");
   });
+  it("renders new labels and treats every device name as bounded plain text", () => {
+    const untrustedName = "<img src=x onerror=alert(1)>" + "x".repeat(100);
+    const html = renderToStaticMarkup(createElement(DeviceSessionsContent, {
+      state: { status: "loaded", sessions: [{ ...session, deviceName: "Mac－Chrome" }, { ...session, current: false, deviceName: "iPhone－Safari" }, { ...session, current: false, deviceName: untrustedName }] },
+      timezone: "UTC", onRetry: () => {},
+    }));
+    expect(html).toContain("<strong>Mac－Chrome</strong>");
+    expect(html).toContain("<strong>iPhone－Safari</strong>");
+    expect(html).toContain("不代表具体硬件型号");
+    expect(html).not.toContain("<img");
+    expect(html).toContain("&lt;img");
+    expect(html).not.toContain("x".repeat(100));
+  });
 });

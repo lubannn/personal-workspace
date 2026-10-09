@@ -13,12 +13,13 @@ export function DeviceSessionsContent({ state, timezone, onRetry }: {
   return <>
     <p className="device-sessions-description">这里显示仍有效的登录会话。同一设备的不同浏览器或重复登录可能有多条记录，并不代表实时在线。</p>
     <p className="device-sessions-description">最近认证时间仅表示认证刷新时间。时间按 {timezone} 显示。</p>
+    <p className="device-sessions-description">设备名称是登录时浏览器报告的系统与浏览器提示，可能不准确，不代表具体硬件型号。旧会话仍显示未命名；下次登录时生成新名称。</p>
     {state.status === "personal-token" ? <p role="status">当前使用 Token 连接，没有可查询的服务器设备会话清单。</p> : null}
     {state.status === "loading" ? <p role="status">正在加载设备会话…</p> : null}
     {state.status === "error" ? <div role="alert"><p>{state.message}</p><button className="secondary-button" type="button" onClick={onRetry}>重试</button></div> : null}
     {state.status === "loaded" ? state.sessions.length === 0 ? <p role="status">没有有效的登录会话。</p> : <ul className="device-sessions-list">
       {state.sessions.map((session, index) => <li key={index}>
-        <div><strong>{session.deviceName?.trim() || "未命名设备"}</strong>{session.current ? <span className="private-badge">当前会话（本机）</span> : null}</div>
+        <div><strong>{session.deviceName?.trim().slice(0, 64) || "未命名设备"}</strong>{session.current ? <span className="private-badge">当前会话（本机）</span> : null}</div>
         <dl>
           <div><dt>登录时间</dt><dd><time dateTime={session.createdAt}>{sessionTime(session.createdAt, timezone)}</time></dd></div>
           <div><dt>最近认证时间</dt><dd><time dateTime={session.lastUsedAt}>{sessionTime(session.lastUsedAt, timezone)}</time></dd></div>
