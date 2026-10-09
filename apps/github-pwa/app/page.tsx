@@ -101,7 +101,7 @@ import {
   type LearningActivityFields,
 } from "../../../src/lib/github-data/learning-activities";
 import { createLearningResourceData, setLearningResourceStatus, updateLearningResourceDetails, type LearningResourceFields, type LearningResourceStatus } from "../../../src/lib/github-data/learning-resources";
-import { activeHabits, createHabitData, moveHabit, nextHabitSortOrder, setHabitStatus, type HabitFields, type HabitStatus } from "../../../src/lib/github-data/habits";
+import { createHabitData, nextHabitSortOrder, setHabitStatus, type HabitFields, type HabitStatus } from "../../../src/lib/github-data/habits";
 import { correctHabitCheckIn, createAutomaticHabitCheckInData, createManualHabitCheckInData, type HabitCheckInStatus } from "../../../src/lib/github-data/habit-check-ins";
 import { createSleepHabitRuleData, evaluateSleepHabitRule, type SleepHabitRuleFields } from "../../../src/lib/github-data/sleep-habit-rules";
 import { listCompleteHealthDirectory } from "./workspace/health-collection-loading";
@@ -167,6 +167,7 @@ import { TasksSection } from "./workspace/tasks-section";
 import { JournalSection } from "./workspace/journal-section";
 import { LearningSection } from "./workspace/learning-section";
 import { HabitsSection } from "./workspace/habits-section";
+import { useHabitOrder } from "./workspace/use-habit-order";
 import { HealthRecordsSection } from "./workspace/health-records-section";
 import { WorkspaceTabNavigation, WorkspaceTabPanel, workspaceTabFromHash, type WorkspaceTabId } from "./workspace/workspace-tab-navigation";
 
@@ -389,6 +390,8 @@ export default function GitHubWorkspacePage() {
     setErrorMessage,
     setStatusMessage,
   });
+
+  const habitOrder = useHabitOrder(adapterRef, connection, habitFiles, setHabitFiles);
 
   const travel = useTravelVisits(adapterRef, connection, online);
   const loadTravel = travel.load;
@@ -1949,7 +1952,7 @@ export default function GitHubWorkspacePage() {
 
   async function saveHabit(fields: HabitFields, sleepRule?: SleepHabitRuleFields) {
     const adapter = adapterRef.current;
-    if (!adapter || !connection || savingHabit || online === false) return false;
+    if (!adapter || !connection || savingHabit || habitOrder.pending || online === false) return false;
     setSavingHabit(true); setErrorMessage(""); setStatusMessage("");
     const timestamp = new Date().toISOString();
     const id = `habit_${timestamp.replaceAll(/\D/g, "").slice(0, 17)}_${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`;
@@ -1975,38 +1978,13 @@ export default function GitHubWorkspacePage() {
   }
 
   async function moveHabitItem(item: SyncedHabit, direction: "up" | "down") {
-    const adapter = adapterRef.current;
-    if (!adapter || !connection || savingHabit || savingHabitId || loadingHabits || online === false) return;
-    const changed = moveHabit(habitFiles.map((candidate) => candidate.record), item.record.id, direction);
-    if (changed.length === 0) return;
-    setSavingHabitId(item.record.id); setErrorMessage(""); setStatusMessage("");
-    try {
-      const snapshot = await adapter.readBranchSnapshot();
-      const files = changed.map((record) => ({ record, item: habitFiles.find((candidate) => candidate.record.id === record.id)! }));
-      const activeIds = new Set(activeHabits(habitFiles.map((candidate) => candidate.record)).map((record) => record.id));
-      const activeFiles = habitFiles.filter((candidate) => activeIds.has(candidate.record.id));
-      const latest = await Promise.all(activeFiles.map((current) => adapter.readText(current.path, snapshot.headCommitSha)));
-      if (latest.some((file, index) => file.blobSha !== activeFiles[index]!.blobSha)) {
-        throw new GitHubDataError("Habit order changed on another device.", 409, "GITHUB_SYNC_CONFLICT");
-      }
-      const result = await adapter.writeAtomicFiles({
-        files: files.map(({ record, item: current }) => ({ path: current.path, text: serializeRecord(record) })),
-        message: `habit: reorder ${item.record.id}`,
-        expectedHeadCommitSha: snapshot.headCommitSha,
-        baseTreeSha: snapshot.rootTreeSha,
-      });
-      const updated = new Map(files.map(({ record, item: current }) => [record.id, {
-        record, path: current.path, blobSha: result.files.find((file) => file.path === current.path)!.blobSha,
-      }]));
-      setHabitFiles((current) => current.map((candidate) => updated.get(candidate.record.id) ?? candidate));
-      setStatusMessage("习惯顺序已保存。");
-    } catch (error) { setErrorMessage(friendlyError(error)); }
-    finally { setSavingHabitId(null); }
+    if (!connection || savingHabit || savingHabitId || loadingHabits || online === false) return;
+    habitOrder.move(item, direction);
   }
 
   async function updateHabitStatus(item: SyncedHabit, status: HabitStatus) {
     const adapter = adapterRef.current;
-    if (!adapter || !connection || savingHabitId || online === false) return;
+    if (!adapter || !connection || savingHabitId || habitOrder.pending || online === false) return;
     setSavingHabitId(item.record.id); setErrorMessage(""); setStatusMessage("");
     try {
       const updated = setHabitStatus(item.record, status);
@@ -2019,7 +1997,7 @@ export default function GitHubWorkspacePage() {
 
   async function updateHabitDeletion(item: SyncedHabit, operation: "trash" | "restore") {
     const adapter = adapterRef.current;
-    if (!adapter || !connection || savingHabitId || online === false) return;
+    if (!adapter || !connection || savingHabitId || habitOrder.pending || online === false) return;
     setSavingHabitId(item.record.id); setErrorMessage(""); setStatusMessage("");
     const timestamp = new Date().toISOString();
     const updated = setWorkspaceRecordDeleted(item.record, operation === "trash" ? timestamp : null, timestamp);
@@ -2033,7 +2011,7 @@ export default function GitHubWorkspacePage() {
 
   async function saveManualHabitCheckIn(item: SyncedHabit, date: string, status: HabitCheckInStatus) {
     const adapter = adapterRef.current;
-    if (!adapter || !connection || savingHabitId || online === false) return false;
+    if (!adapter || !connection || savingHabitId || habitOrder.pending || online === false) return false;
     setSavingHabitId(item.record.id); setErrorMessage(""); setStatusMessage("");
     const timestamp = new Date().toISOString();
     const existing = habitCheckInFiles.find((candidate) => candidate.record.deleted_at === null && candidate.record.data.habit_id === item.record.id && candidate.record.data.local_date === date);
@@ -2059,7 +2037,7 @@ export default function GitHubWorkspacePage() {
 
   async function confirmSleepHabitSuggestion(item: SyncedHabit, rule: SyncedHabitRule, session: SyncedSleepSession) {
     const adapter = adapterRef.current;
-    if (!adapter || !connection || savingHabitId || online === false) return false;
+    if (!adapter || !connection || savingHabitId || habitOrder.pending || online === false) return false;
     setSavingHabitId(item.record.id); setErrorMessage(""); setStatusMessage("");
     const timestamp = new Date().toISOString();
     try {
@@ -3150,7 +3128,7 @@ export default function GitHubWorkspacePage() {
         connection={connection}
         online={online}
         todayDate={currentTaskDate}
-        habits={habitFiles}
+        habits={habitOrder.items}
         rules={habitRuleFiles}
         checkIns={habitCheckInFiles}
         sleepSessions={sleepSessionFiles}
@@ -3159,11 +3137,15 @@ export default function GitHubWorkspacePage() {
         savingId={savingHabitId}
         onCreate={saveHabit}
         onMove={moveHabitItem}
+        orderStatus={habitOrder.status}
+        orderError={habitOrder.error}
+        onRetryOrder={habitOrder.retry}
+        onDiscardOrder={habitOrder.discard}
         onStatusChange={updateHabitStatus}
         onDeletionChange={updateHabitDeletion}
         onCheckIn={saveManualHabitCheckIn}
         onConfirmSleepSuggestion={confirmSleepHabitSuggestion}
-        onRefresh={() => loadHabitDomain()}
+        onRefresh={() => { if (!habitOrder.pending) void loadHabitDomain(); }}
       />
       </WorkspaceTabPanel>
 
