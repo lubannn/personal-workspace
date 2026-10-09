@@ -53,16 +53,22 @@ export function evaluateSleepHabitRule(rule: HabitRuleRecord, session: SleepSess
   assertTime(threshold); assertTimezone(timezone);
   const instant = ruleType === "sleep_start_before" ? session.data.start_at : session.data.end_at;
   const { localDate, localTime } = localParts(instant, timezone);
+  // Compare bedtimes on a noon-to-noon clock so after-midnight sleep follows
+  // an evening deadline, while retaining the existing sleep-start date.
+  const bedtime = ruleType === "sleep_start_before";
   if (localDate < rule.data.active_from || (rule.data.active_to !== null && localDate > rule.data.active_to)) throw new Error("SLEEP_HABIT_RULE_INACTIVE");
-  const status = minutes(localTime) <= minutes(threshold) ? "completed" : "missed";
+  const completed = bedtime ? nightMinutes(localTime) < nightMinutes(threshold) : minutes(localTime) <= minutes(threshold);
+  const status = completed ? "completed" : "missed";
   const action = ruleType === "sleep_start_before" ? "入睡" : "起床";
+  const observed = bedtime && minutes(localTime) < 12 * 60 ? `${localTime}（凌晨 / 上午）` : localTime;
+  const requirement = bedtime ? `在 ${threshold} 之前入睡` : `不晚于 ${threshold}`;
   return {
     local_date: localDate,
     status,
     observed_local_time: localTime,
     threshold_local_time: threshold,
     rule_type: ruleType,
-    explanation: `${action} ${localTime}，规则要求不晚于 ${threshold}，因此判定为${status === "completed" ? "完成" : "未完成"}。`,
+    explanation: `${action} ${observed}，规则要求${requirement}，因此判定为${status === "completed" ? "完成" : "未完成"}。`,
     value_json: { duration_minutes: session.data.duration_minutes, observed_local_time: localTime, rule_type: ruleType, session_type: "main_sleep", threshold_local_time: threshold },
   };
 }
@@ -73,5 +79,6 @@ function localParts(instant: string, timezone: string) {
   return { localDate: `${pick("year")}-${pick("month")}-${pick("day")}`, localTime: `${pick("hour")}:${pick("minute")}` };
 }
 function minutes(value: string) { const [hour, minute] = value.split(":").map(Number); return hour! * 60 + minute!; }
+function nightMinutes(value: string) { const result = minutes(value); return result < 12 * 60 ? result + 24 * 60 : result; }
 function assertTime(value: string) { if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/u.test(value)) throw new Error("INVALID_SLEEP_HABIT_TIME"); }
 function assertTimezone(value: string) { try { new Intl.DateTimeFormat("en", { timeZone: value }).format(); } catch { throw new Error("INVALID_SLEEP_HABIT_TIMEZONE"); } }
