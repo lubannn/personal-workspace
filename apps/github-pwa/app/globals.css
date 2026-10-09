@@ -1188,3 +1188,64 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .device-sessions-list dl > div { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 6px; }
 .device-sessions-list dt { color: var(--muted); }
 .device-sessions-list dd { margin: 0; }
+
+.habit-card { min-width: 0; margin-top: 18px; padding: clamp(24px, 4vw, 40px); border: 1px solid var(--line); border-radius: 24px; background: rgba(250,249,245,.72); }
+.habit-card .card-heading h2 { font-size: 25px; }
+.habit-subtitle { margin: 9px 0 0; color: var(--muted); font-size: 11px; line-height: 1.6; }
+.habit-header-actions, .habit-view-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.habit-card .view-button { font-size: 11px; }
+.habit-card .text-button { min-height: 32px; padding: 6px 2px; border: 0; background: transparent; color: var(--soft); cursor: pointer; font-size: 11px; }
+.habit-card .text-button:hover:not(:disabled), .habit-card .text-button[aria-pressed="true"] { color: var(--accent); }
+.habit-card .text-button:disabled { opacity: .4; cursor: default; }
+.habit-card .primary-button { display: inline-flex; width: auto; align-items: center; justify-content: center; gap: 6px; min-height: 38px; font-size: 11px; }
+.habit-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-top: 22px; }
+.habit-toolbar > .text-button { font-size: 11px; }
+.habit-create-form { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; margin-top: 18px; padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: rgba(255,255,255,.38); }
+.habit-create-form label { display: grid; flex: 1 1 120px; gap: 7px; color: var(--muted); font-size: 11px; }
+.habit-create-form label:first-child { flex: 2 1 220px; }
+.habit-create-form input, .habit-create-form select { min-width: 0; width: 100%; height: 42px; border: 1px solid var(--line); border-radius: 10px; padding: 0 11px; background: rgba(255,255,255,.72); color: var(--ink); font-size: 13px; }
+.habit-create-form .primary-button { min-height: 42px; }
+.habit-table-scroll { margin-top: 18px; overflow-x: auto; border-top: 1px solid var(--line); scrollbar-width: thin; }
+.habit-table { width: 100%; min-width: 980px; border-collapse: separate; border-spacing: 0; table-layout: fixed; }
+.habit-table th, .habit-table td { height: 54px; border-bottom: 1px solid var(--line); text-align: center; }
+.habit-table thead th { height: 38px; color: var(--muted); font-size: 10px; font-weight: 500; }
+.habit-table .habit-name-cell { position: sticky; left: 0; z-index: 1; width: 180px; padding: 0 12px 0 0; background: #faf9f5; text-align: left; }
+.habit-name-content { min-width: 0; display: flex; align-items: center; gap: 8px; }
+.habit-name-content strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 15px/1.45 ui-serif, Georgia, "Songti SC", serif; }
+.habit-name-content small { color: var(--muted); font-size: 10px; font-weight: 400; white-space: nowrap; }
+.habit-sort-actions { flex-shrink: 0; display: flex; gap: 2px; }
+.habit-icon-button { display: inline-grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--soft); cursor: pointer; }
+.habit-icon-button:hover:not(:disabled) { border-color: var(--line); background: var(--accent-soft); }
+.habit-icon-button:disabled { opacity: .3; cursor: default; }
+.habit-table .habit-actions-cell { position: sticky; right: 0; width: 40px; background: #faf9f5; }
+.habit-date-cell { padding: 0 2px; }
+.habit-date-cell[data-today="true"] { background: rgba(98,113,93,.06); }
+.habit-table thead th[data-today="true"] { color: var(--accent); font-weight: 700; }
+.habit-day { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 22px; padding: 0; border: 1px solid var(--line); border-radius: 5px; background: #eeece5; color: var(--muted); vertical-align: middle; font-size: 11px; }
+.habit-day[data-status="completed"], .habit-legend i[data-status="completed"] { border-color: var(--accent); background: var(--accent); color: white; }
+.habit-day[data-status="missed"] { border-color: #cda99f; background: #ead5cf; color: #734a40; }
+.habit-day[data-status="skipped"] { border-color: #d4c8a7; background: #eee8d8; color: #6e654d; }
+.habit-day[data-future="true"] { opacity: .4; }
+button.habit-day { border-color: var(--accent); cursor: pointer; }
+button.habit-day:hover:not(:disabled) { box-shadow: 0 0 0 2px var(--accent-soft); }
+button.habit-day:disabled { cursor: default; }
+.habit-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 12px; color: var(--muted); font-size: 10px; line-height: 1.6; }
+.habit-legend > span { display: flex; align-items: center; gap: 5px; }
+.habit-legend i { width: 9px; height: 9px; border: 1px solid var(--line); border-radius: 3px; background: #eeece5; }
+.habit-sort-note { margin-left: auto; }
+.habit-mobile-hint { display: none; }
+.habit-manage-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-top: 12px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: rgba(255,255,255,.38); }
+.habit-manage-bar > span { min-width: 0; overflow-wrap: anywhere; color: var(--soft); font-size: 12px; }
+.habit-manage-bar > div { display: flex; flex-wrap: wrap; gap: 12px; }
+.habit-manage-bar .text-button { font-size: 11px; }
+.habit-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+@media (max-width: 680px) {
+  .habit-card .card-heading { display: flex; flex-wrap: wrap; gap: 14px; }
+  .habit-table .habit-name-cell { width: 150px; }
+  .habit-sort-note { margin-left: 0; }
+  .habit-legend > .habit-mobile-hint { display: inline-flex; }
+}
+
+.habit-form-note { flex-basis: 100%; margin: 0; color: var(--muted); font-size: 11px; }
+.habit-sleep-suggestions { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line); }
+.habit-sleep-suggestions > summary { color: var(--soft); font-size: 12px; cursor: pointer; }

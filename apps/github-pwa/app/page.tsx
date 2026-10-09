@@ -101,7 +101,7 @@ import {
   type LearningActivityFields,
 } from "../../../src/lib/github-data/learning-activities";
 import { createLearningResourceData, setLearningResourceStatus, updateLearningResourceDetails, type LearningResourceFields, type LearningResourceStatus } from "../../../src/lib/github-data/learning-resources";
-import { createHabitData, setHabitStatus, type HabitFields, type HabitStatus } from "../../../src/lib/github-data/habits";
+import { activeHabits, createHabitData, moveHabit, nextHabitSortOrder, setHabitStatus, type HabitFields, type HabitStatus } from "../../../src/lib/github-data/habits";
 import { correctHabitCheckIn, createAutomaticHabitCheckInData, createManualHabitCheckInData, type HabitCheckInStatus } from "../../../src/lib/github-data/habit-check-ins";
 import { createSleepHabitRuleData, evaluateSleepHabitRule, type SleepHabitRuleFields } from "../../../src/lib/github-data/sleep-habit-rules";
 import { listCompleteHealthDirectory } from "./workspace/health-collection-loading";
@@ -1954,7 +1954,7 @@ export default function GitHubWorkspacePage() {
     const timestamp = new Date().toISOString();
     const id = `habit_${timestamp.replaceAll(/\D/g, "").slice(0, 17)}_${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`;
     try {
-      const record = createWorkspaceRecord({ entityType: "habit", id, ownerId: connection.ownerId, timestamp, data: createHabitData(fields) });
+      const record = createWorkspaceRecord({ entityType: "habit", id, ownerId: connection.ownerId, timestamp, data: createHabitData(fields, nextHabitSortOrder(habitFiles.map((item) => item.record))) });
       if (sleepRule) {
         const ruleId = `habit_rule_${timestamp.replaceAll(/\D/g, "").slice(0, 17)}_${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`;
         const rule = createWorkspaceRecord({ entityType: "habit_rule", id: ruleId, ownerId: connection.ownerId, timestamp, data: createSleepHabitRuleData({ habitId: id, timezone: fields.timezone, activeFrom: fields.start_date, fields: sleepRule }) });
@@ -1972,6 +1972,36 @@ export default function GitHubWorkspacePage() {
       return true;
     } catch (error) { setErrorMessage(friendlyError(error)); return false; }
     finally { setSavingHabit(false); }
+  }
+
+  async function moveHabitItem(item: SyncedHabit, direction: "up" | "down") {
+    const adapter = adapterRef.current;
+    if (!adapter || !connection || savingHabit || savingHabitId || loadingHabits || online === false) return;
+    const changed = moveHabit(habitFiles.map((candidate) => candidate.record), item.record.id, direction);
+    if (changed.length === 0) return;
+    setSavingHabitId(item.record.id); setErrorMessage(""); setStatusMessage("");
+    try {
+      const snapshot = await adapter.readBranchSnapshot();
+      const files = changed.map((record) => ({ record, item: habitFiles.find((candidate) => candidate.record.id === record.id)! }));
+      const activeIds = new Set(activeHabits(habitFiles.map((candidate) => candidate.record)).map((record) => record.id));
+      const activeFiles = habitFiles.filter((candidate) => activeIds.has(candidate.record.id));
+      const latest = await Promise.all(activeFiles.map((current) => adapter.readText(current.path, snapshot.headCommitSha)));
+      if (latest.some((file, index) => file.blobSha !== activeFiles[index]!.blobSha)) {
+        throw new GitHubDataError("Habit order changed on another device.", 409, "GITHUB_SYNC_CONFLICT");
+      }
+      const result = await adapter.writeAtomicFiles({
+        files: files.map(({ record, item: current }) => ({ path: current.path, text: serializeRecord(record) })),
+        message: `habit: reorder ${item.record.id}`,
+        expectedHeadCommitSha: snapshot.headCommitSha,
+        baseTreeSha: snapshot.rootTreeSha,
+      });
+      const updated = new Map(files.map(({ record, item: current }) => [record.id, {
+        record, path: current.path, blobSha: result.files.find((file) => file.path === current.path)!.blobSha,
+      }]));
+      setHabitFiles((current) => current.map((candidate) => updated.get(candidate.record.id) ?? candidate));
+      setStatusMessage("习惯顺序已保存。");
+    } catch (error) { setErrorMessage(friendlyError(error)); }
+    finally { setSavingHabitId(null); }
   }
 
   async function updateHabitStatus(item: SyncedHabit, status: HabitStatus) {
@@ -3128,6 +3158,7 @@ export default function GitHubWorkspacePage() {
         saving={savingHabit}
         savingId={savingHabitId}
         onCreate={saveHabit}
+        onMove={moveHabitItem}
         onStatusChange={updateHabitStatus}
         onDeletionChange={updateHabitDeletion}
         onCheckIn={saveManualHabitCheckIn}

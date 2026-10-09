@@ -28,14 +28,15 @@ export type HabitData = {
   status: HabitStatus;
   start_date: string;
   end_date: string | null;
+  sort_order?: number;
 };
 export type HabitRecord = WorkspaceRecord<HabitData>;
 export type HabitFields = Pick<HabitData,
   "name" | "description_markdown" | "schedule_json" | "timezone" | "tracking_type" | "target_json" | "automation_mode" | "start_date" | "end_date"
 >;
 
-export function createHabitData(fields: HabitFields): HabitData {
-  return validateData({ habit_version: HABIT_VERSION, ...normalizeFields(fields), status: "active" });
+export function createHabitData(fields: HabitFields, sortOrder?: number): HabitData {
+  return validateData({ habit_version: HABIT_VERSION, ...normalizeFields(fields), status: "active", ...(sortOrder === undefined ? {} : { sort_order: sortOrder }) });
 }
 
 export function updateHabitDetails(current: HabitRecord, fields: HabitFields, timestamp = new Date().toISOString()) {
@@ -59,7 +60,25 @@ export function parseHabitRecord(value: string): HabitRecord {
 
 export function activeHabits(records: HabitRecord[]) {
   return records.filter((record) => record.deleted_at === null && record.data.status !== "archived")
-    .sort((left, right) => left.data.name.localeCompare(right.data.name, "zh-CN") || left.id.localeCompare(right.id));
+    .sort((left, right) => (left.data.sort_order ?? Number.MAX_SAFE_INTEGER) - (right.data.sort_order ?? Number.MAX_SAFE_INTEGER)
+      || left.data.name.localeCompare(right.data.name, "zh-CN") || left.id.localeCompare(right.id));
+}
+
+export function nextHabitSortOrder(records: HabitRecord[]) {
+  return Math.max(records.length, ...records.map((record) => (record.data.sort_order ?? -1) + 1));
+}
+
+/** Return only changed records so a move can be saved in a single Git commit. */
+export function moveHabit(records: HabitRecord[], id: string, direction: "up" | "down", timestamp = new Date().toISOString()) {
+  assertInstant(timestamp);
+  const ordered = activeHabits(records);
+  const index = ordered.findIndex((record) => record.id === id);
+  const target = index + (direction === "up" ? -1 : 1);
+  if (index < 0 || target < 0 || target >= ordered.length) return [];
+  [ordered[index], ordered[target]] = [ordered[target]!, ordered[index]!];
+  return ordered.flatMap((record, sortOrder) => record.data.sort_order === sortOrder ? [] : [
+    updateWorkspaceRecord(record, validateData({ ...record.data, sort_order: sortOrder }), timestamp),
+  ]);
 }
 
 export function archivedHabits(records: HabitRecord[]) {
@@ -93,7 +112,7 @@ function normalizeFields(fields: HabitFields): HabitFields {
 }
 
 function validateData(data: HabitData): HabitData {
-  const expectedKeys = "automation_mode,description_markdown,end_date,habit_version,name,schedule_json,start_date,status,target_json,timezone,tracking_type";
+  const expectedKeys = `automation_mode,description_markdown,end_date,habit_version,name,schedule_json,${"sort_order" in data ? "sort_order," : ""}start_date,status,target_json,timezone,tracking_type`;
   if (
     Object.keys(data).sort().join(",") !== expectedKeys
     || data.habit_version !== HABIT_VERSION
@@ -107,6 +126,7 @@ function validateData(data: HabitData): HabitData {
     || !HABIT_STATUSES.includes(data.status)
     || !isDateOnly(data.start_date)
     || !(data.end_date === null || (isDateOnly(data.end_date) && data.end_date >= data.start_date))
+    || ("sort_order" in data && (!Number.isSafeInteger(data.sort_order) || Number(data.sort_order) < 0))
   ) throw new Error("INVALID_HABIT_DETAILS");
   return data;
 }
