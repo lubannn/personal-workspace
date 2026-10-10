@@ -12,7 +12,8 @@ const MAP_HEIGHT = 540;
 // Extra vertical space is preferable to dropping names or shrinking the type.
 export function layoutCityMapLabels(regions: readonly RegionAnchor[], renderedWidth: number) {
   const unit = WIDTH / Math.max(160, Math.min(850, renderedWidth));
-  const fontSize = Math.max(14, 13 * unit);
+  // Match the national map's 10 SVG units on desktop; retain 10px on phones.
+  const fontSize = Math.max(10, 10 * unit);
   const padding = 3 * unit, gap = 4 * unit, margin = 6 * unit;
   const lineHeight = fontSize * 1.25;
   const charactersPerLine = Math.max(1, Math.floor((WIDTH * 0.36 - 2 * padding) / fontSize));

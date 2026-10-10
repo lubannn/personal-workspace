@@ -11,7 +11,8 @@ describe("complete city-map labels", () => {
     for (const width of [218, 250, 318, 540, 850]) {
       const layout = layoutCityMapLabels(map.regions, width);
       expect(layout.labels.map(l => l.lines.join("")).sort()).toEqual(map.regions.flatMap(r => r.city ? [r.city] : []).sort());
-      expect(layout.fontSize * width / 790).toBeGreaterThanOrEqual(13 - 0.001);
+      expect(layout.fontSize * width / 790).toBeGreaterThanOrEqual(10 - 0.001);
+      if (width === 850) expect(layout.fontSize).toBe(10); // National province labels.
       for (const [index, label] of layout.labels.entries()) {
         expect(label.x - label.width / 2).toBeGreaterThanOrEqual(0);
         expect(label.x + label.width / 2).toBeLessThanOrEqual(790);
