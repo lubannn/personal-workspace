@@ -102,7 +102,7 @@ import {
 } from "../../../src/lib/github-data/learning-activities";
 import { createLearningResourceData, setLearningResourceStatus, updateLearningResourceDetails, type LearningResourceFields, type LearningResourceStatus } from "../../../src/lib/github-data/learning-resources";
 import { createHabitData, nextHabitSortOrder, setHabitStatus, type HabitFields, type HabitStatus } from "../../../src/lib/github-data/habits";
-import { correctHabitCheckIn, createAutomaticHabitCheckInData, createManualHabitCheckInData, type HabitCheckInStatus } from "../../../src/lib/github-data/habit-check-ins";
+import { correctHabitCheckIn, createAutomaticHabitCheckInData, createManualHabitCheckInData, recentHabitCheckInDates, type HabitCheckInStatus } from "../../../src/lib/github-data/habit-check-ins";
 import { createSleepHabitRuleData, evaluateSleepHabitRule, type SleepHabitRuleFields } from "../../../src/lib/github-data/sleep-habit-rules";
 import { listCompleteHealthDirectory } from "./workspace/health-collection-loading";
 import { canWriteJournalDate, resolveJournalCreateDate, type JournalDateChoice } from "../../../src/lib/github-data/journal-entries";
@@ -2020,6 +2020,12 @@ export default function GitHubWorkspacePage() {
   async function saveManualHabitCheckIn(item: SyncedHabit, date: string, status: HabitCheckInStatus) {
     const adapter = adapterRef.current;
     if (!adapter || !connection || savingHabitId || habitOrder.pending || online === false) return false;
+    if (!recentHabitCheckInDates(localDateInTimezone(connection.timezone)).includes(date)) {
+      setErrorMessage("只能修改前天、昨天和今天的习惯打卡，请刷新后重试。");
+      return false;
+    }
+    if (item.record.deleted_at !== null || item.record.data.status !== "active" || date < item.record.data.start_date
+      || (item.record.data.end_date !== null && date > item.record.data.end_date)) return false;
     setSavingHabitId(item.record.id); setErrorMessage(""); setStatusMessage("");
     const timestamp = new Date().toISOString();
     const existing = habitCheckInFiles.find((candidate) => candidate.record.deleted_at === null && candidate.record.data.habit_id === item.record.id && candidate.record.data.local_date === date);
@@ -2037,7 +2043,7 @@ export default function GitHubWorkspacePage() {
         const result = await adapter.writeText({ path: recordPath("habit_check_in", id), text: serializeRecord(record), message: `habit check-in: create ${id}` });
         setHabitCheckInFiles((current) => [{ record, path: result.path, blobSha: result.blobSha }, ...current]);
       }
-      setStatusMessage(status === "completed" ? `${item.record.data.name} 今日已完成。` : `${item.record.data.name} 今日打卡已撤销为待确认。`);
+      setStatusMessage(status === "completed" ? `${item.record.data.name} · ${date} 已完成。` : `${item.record.data.name} · ${date} 打卡已撤销为待确认。`);
       return true;
     } catch (error) { setErrorMessage(friendlyError(error)); return false; }
     finally { setSavingHabitId(null); }

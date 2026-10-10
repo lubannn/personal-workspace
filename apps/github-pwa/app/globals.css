@@ -1219,6 +1219,8 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .habit-icon-button:disabled { opacity: .3; cursor: default; }
 .habit-table .habit-actions-cell { position: sticky; right: 0; width: 40px; background: #faf9f5; }
 .habit-date-cell { padding: 0 2px; }
+.habit-date-label { display: block; margin-top: 2px; color: var(--muted); font-size: 9px; line-height: 1.3; }
+.habit-date-cell[data-editable="true"] { background: rgba(98,113,93,.03); }
 .habit-date-cell[data-today="true"] { background: rgba(98,113,93,.06); }
 .habit-table thead th[data-today="true"] { color: var(--accent); font-weight: 700; }
 .habit-day { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 22px; padding: 0; border: 1px solid var(--line); border-radius: 5px; background: #eeece5; color: var(--muted); vertical-align: middle; font-size: 11px; }

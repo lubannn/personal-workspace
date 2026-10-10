@@ -112,6 +112,13 @@ export function checkInsForMonth(records: HabitCheckInRecord[], habitId: string,
     .sort((left, right) => left.data.local_date.localeCompare(right.data.local_date) || left.id.localeCompare(right.id));
 }
 
+/** Calendar days in the workspace's local date, independent of the host timezone. */
+export function recentHabitCheckInDates(today: string): string[] {
+  if (!isDateOnly(today)) return [];
+  const midnight = Date.parse(`${today}T00:00:00Z`);
+  return [-2, -1, 0].map((offset) => new Date(midnight + offset * 86_400_000).toISOString().slice(0, 10));
+}
+
 function validateData(data: HabitCheckInData) {
   const expectedKeys = "confirmed_at,correction_reason,entry_method,evaluated_at,evidence_id,evidence_type,habit_check_in_version,habit_id,local_date,rule_id,rule_version,status,timezone,value_json";
   const evidencePair = (data.evidence_type === null && data.evidence_id === null)
