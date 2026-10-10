@@ -133,6 +133,8 @@ describe("historical jump-rope details and official HRV through persistence", ()
         }
       }
       expect(db.saved()?.progress.health?.activity).toMatchObject({ backfillNext: "2024-01-08", backfillThrough: "2024-01-07", checkedRanges: [{ from: "2024-01-01", through: "2024-01-07" }] });
+      // Seven bounded details after a process restart share one complete list.
+      expect(f.read.mock.calls.filter(([name]) => name === "querySportRecords")).toHaveLength(1);
       expect(f.records()).toHaveLength(24);
       expect(f.records().filter(r => r.data.metric_type === "training_load").map(r => [r.data.local_date, r.data.value]).sort()).toEqual(activities.slice(0, 7).map(a => [a.date, a.load]));
       expect(f.records().some(r => r.data.metric_type === "elevation_gain" || r.data.value === 999)).toBe(false);

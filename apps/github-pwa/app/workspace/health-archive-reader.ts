@@ -44,6 +44,7 @@ export class HealthArchiveReader {
   private readonly lifetime = new AbortController();
   private catalogVersion = 0;
   private readonly bodyCache?: HealthBlobCache;
+  private readonly prefetched = new Map<string, { version: number; promise: Promise<void> }>();
 
   constructor(private readonly adapter: Reader, private readonly timezone = "Asia/Shanghai", cache?: HealthBlobCache) {
     const scope = adapter.healthArchiveMetadataCacheKey?.("records");
@@ -51,6 +52,8 @@ export class HealthArchiveReader {
   }
 
   async clearLocalCache() { await this.bodyCache?.clear(); }
+
+  isPrefetching(month: string) { return this.prefetched.get(month)?.version === this.catalogVersion; }
 
   async prefetchNeighbors(month: string, signal?: AbortSignal) {
     const months = this.months();
@@ -61,11 +64,11 @@ export class HealthArchiveReader {
       signal?.throwIfAborted(); this.lifetime.signal.throwIfAborted();
       if (version !== this.catalogVersion) return;
       if (!neighbor || this.completedMonths.has(neighbor)) continue;
-      const entries = [...this.dates.values()].filter(entry => !entry.deleted && this.date(entry).startsWith(`${neighbor}-`));
-      await this.loadMetricMonth(neighbor, signal);
-      await this.loadEntries(entries, signal);
+      const task = { version, promise: this.loadMonth(neighbor, signal) };
+      this.prefetched.set(neighbor, task);
+      try { await task.promise; }
+      finally { if (this.prefetched.get(neighbor) === task) this.prefetched.delete(neighbor); }
       if (version !== this.catalogVersion) return;
-      this.completedMonths.add(neighbor);
     }
   }
 
@@ -74,17 +77,29 @@ export class HealthArchiveReader {
     activeSignal.throwIfAborted();
     const cached = await this.bodyCache?.read(files) ?? [];
     activeSignal.throwIfAborted();
-    const byPath = new Map(cached.filter(file => files.some(item => item.path === file.path && item.blobSha === file.blobSha && item.sizeBytes === file.sizeBytes)).map(file => [file.path, file]));
+    const requested = new Map(files.map(file => [file.path, file]));
+    const byPath = new Map(cached.filter(file => {
+      const item = requested.get(file.path);
+      return item?.blobSha === file.blobSha && item.sizeBytes === file.sizeBytes;
+    }).map(file => [file.path, file]));
     const missing = files.filter(file => !byPath.has(file.path));
     if (missing.length) {
-      const fresh = await this.adapter.readBlobTexts(missing, () => !activeSignal.aborted, activeSignal, { maxBatchFiles: 40 });
+      // Let the adapter schedule bounded parallel GraphQL batches across the
+      // entire requested range, rather than awaiting one 40-file batch at a time.
+      const maxBatchFiles = missing.reduce((sum, file) => sum + file.sizeBytes, 0) <= 1024 * 1024 ? 40 : 25;
+      const fresh = await this.adapter.readBlobTexts(missing, () => !activeSignal.aborted, activeSignal, { maxBatchFiles });
       activeSignal.throwIfAborted();
       if (fresh.length !== missing.length) throw new Error("HEALTH_ARCHIVE_INCOMPLETE_BATCH");
+      const remaining = new Map(missing.map(file => [file.path, file]));
       for (const file of fresh) {
-        if (!missing.some(item => item.path === file.path && item.blobSha === file.blobSha)) throw new Error("HEALTH_ARCHIVE_INCOMPLETE_BATCH");
-        byPath.set(file.path, file);
+        const expected = remaining.get(file.path);
+        if (expected?.blobSha !== file.blobSha || expected.sizeBytes !== file.sizeBytes) throw new Error("HEALTH_ARCHIVE_INCOMPLETE_BATCH");
+        remaining.delete(file.path); byPath.set(file.path, file);
       }
-      await this.bodyCache?.remember(fresh);
+      if (remaining.size) throw new Error("HEALTH_ARCHIVE_INCOMPLETE_BATCH");
+      // Persistence is optional and ordered by the cache; rendering must not
+      // wait for encryption, disk writes and eviction. clear() still waits for it.
+      void this.bodyCache?.remember(fresh).catch(() => undefined);
       activeSignal.throwIfAborted();
     }
     return files.map(file => byPath.get(file.path)!);
@@ -130,17 +145,17 @@ export class HealthArchiveReader {
     const months = this.months();
     this.month = requestedMonth && months.includes(requestedMonth) ? requestedMonth : months.at(-1) ?? "";
     options.onCatalog?.(this.snapshot());
-    // Reuse the encrypted SHA cache and bounded month batches for the shared
-    // 90-day baseline. No cell performs its own read.
-    const today = healthLocalParts(new Date().toISOString(), "Asia/Shanghai").date;
-    const baselineRange = healthBaselineRange(this.month, today);
-    for (const baselineMonth of months.filter(month => month >= baselineRange.start.slice(0, 7) && month <= baselineRange.end.slice(0, 7))) {
-      await this.loadMetricMonth(baselineMonth, signal);
+    const month = this.month;
+    const prefetched = this.prefetched.get(month);
+    if (prefetched?.version === this.catalogVersion) {
+      try { await this.awaitPrefetch(prefetched.promise, signal); }
+      catch (error) {
+        signal?.throwIfAborted(); this.lifetime.signal.throwIfAborted();
+        if (!(error instanceof Error && error.name === "AbortError")) throw error;
+      }
     }
-    await this.loadMetricMonth(this.month, signal);
-    const needed = [...this.dates.values()].filter(entry => !entry.deleted && this.date(entry).startsWith(`${this.month}-`));
-    await this.loadEntries(needed, signal);
-    if (this.month) this.completedMonths.add(this.month);
+    signal?.throwIfAborted();
+    await this.loadMonth(month, signal);
     options.onProgress?.(this.snapshot());
     // The newest workout may be in another month. Verify it rather than treating an index hint as a record.
     if (!this.latestReady) {
@@ -211,8 +226,8 @@ export class HealthArchiveReader {
     const metricFiles = files.filter(file => file.type === "file" && /^data\/health-metrics\/[^/]+\.json$/.test(file.path)
       && !file.name.startsWith("coros_metric_revision_") && !metricDates.has(file.path)
       && this.metrics.get(file.path)?.blobSha !== file.blobSha);
-    for (let offset = 0; offset < metricFiles.length; offset += 40) {
-      const batch = metricFiles.slice(offset, offset + 40);
+    if (metricFiles.length) {
+      const batch = metricFiles;
       const read = await this.readFiles(batch);
       for (const file of read) {
         try {
@@ -245,8 +260,8 @@ export class HealthArchiveReader {
     }
     // A new/manual/changed record can precede index maintenance. Read only those SHA mismatches.
     const unknown = canonical.filter(file => !dates.has(file.path));
-    for (let offset = 0; offset < unknown.length; offset += 40) {
-      const batch = unknown.slice(offset, offset + 40);
+    if (unknown.length) {
+      const batch = unknown;
       const read = await this.readFiles(batch);
       for (const file of read) {
         if (!batch.some(item => item.path === file.path && item.blobSha === file.blobSha)) throw new Error("HEALTH_ARCHIVE_INCOMPLETE_BATCH");
@@ -265,7 +280,9 @@ export class HealthArchiveReader {
       const path = recordPath("health_staging_record", data.staging_record_id);
       return catalog.get(path)?.blobSha !== this.catalog.get(path)?.blobSha;
     });
-    if (sourceChanged) this.completedMonths.clear();
+    const metricsChanged = [...catalog.values()].some(file => metricDates.has(file.path) && this.catalog.get(file.path)?.blobSha !== file.blobSha)
+      || [...this.metricDates.keys()].some(path => !catalog.has(path));
+    if (sourceChanged || metricsChanged) this.completedMonths.clear();
     else for (const month of changedMonths) this.completedMonths.delete(month);
     this.latestReady = this.catalogReady && !sourceChanged && changedMonths.size === 0;
     this.catalog = catalog; this.dates = dates; this.index = index; this.catalogReady = true; this.catalogVersion += 1;
@@ -282,18 +299,48 @@ export class HealthArchiveReader {
     for (const [path, date] of metricDates) if (catalog.get(path)?.blobSha !== this.metrics.get(path)?.blobSha) this.completedMonths.delete(date.slice(0, 7));
   }
 
-  private async loadMetricMonth(month: string, signal?: AbortSignal) {
-    const files = [...this.catalog.values()].filter(file => this.metricDates.get(file.path)?.startsWith(`${month}-`)
+  private async awaitPrefetch(promise: Promise<void>, signal?: AbortSignal) {
+    if (!signal) return promise;
+    signal.throwIfAborted();
+    let aborted!: () => void;
+    try {
+      await Promise.race([promise, new Promise<never>((_, reject) => {
+        aborted = () => reject(signal.reason);
+        signal.addEventListener("abort", aborted, { once: true });
+      })]);
+    } finally { signal.removeEventListener("abort", aborted); }
+  }
+
+  private async loadMonth(month: string, signal?: AbortSignal) {
+    const version = this.catalogVersion;
+    const today = healthLocalParts(new Date().toISOString(), "Asia/Shanghai").date;
+    const baseline = healthBaselineRange(month, today);
+    const metricMonths = this.months().filter(value => value >= baseline.start.slice(0, 7) && value <= baseline.end.slice(0, 7));
+    const entries = [...this.dates.values()].filter(entry => !entry.deleted && this.date(entry).startsWith(`${month}-`));
+    // Both visible records and their complete rating reference load together.
+    // The adapter limits shared network concurrency across these two reads.
+    const controller = new AbortController();
+    const activeSignal = AbortSignal.any([controller.signal, this.lifetime.signal, ...(signal ? [signal] : [])]);
+    try {
+      await Promise.all([this.loadMetricMonths(new Set([...metricMonths, month]), activeSignal), this.loadEntries(entries, activeSignal)]);
+    } catch (error) { controller.abort(); throw error; }
+    activeSignal.throwIfAborted();
+    if (version !== this.catalogVersion) throw new DOMException("Health catalog changed.", "AbortError");
+    if (month) this.completedMonths.add(month);
+  }
+
+  private async loadMetricMonths(months: Set<string>, signal?: AbortSignal) {
+    const files = [...this.catalog.values()].filter(file => months.has(this.metricDates.get(file.path)?.slice(0, 7) ?? "")
       && this.metrics.get(file.path)?.blobSha !== file.blobSha);
-    for (let offset = 0; offset < files.length; offset += 40) {
-      for (const file of await this.readFiles(files.slice(offset, offset + 40), signal)) {
-        try {
-          const record = parseHealthMetricRecord(file.text);
-          if (recordPath(record.entity_type, record.id) !== file.path || record.data.local_date !== this.metricDates.get(file.path)) throw new Error();
-          this.metrics.set(file.path, { record, path: file.path, blobSha: file.blobSha });
-          if (record.deleted_at !== null) this.metricDates.delete(file.path);
-        } catch { throw new Error("HEALTH_RECORD_INVALID"); }
-      }
+    if (!files.length) return;
+    for (const file of await this.readFiles(files, signal)) {
+      if (this.catalog.get(file.path)?.blobSha !== file.blobSha) throw new DOMException("Health catalog changed.", "AbortError");
+      try {
+        const record = parseHealthMetricRecord(file.text);
+        if (recordPath(record.entity_type, record.id) !== file.path || record.data.local_date !== this.metricDates.get(file.path)) throw new Error();
+        this.metrics.set(file.path, { record, path: file.path, blobSha: file.blobSha });
+        if (record.deleted_at !== null) this.metricDates.delete(file.path);
+      } catch { throw new Error("HEALTH_RECORD_INVALID"); }
     }
   }
 
@@ -308,8 +355,8 @@ export class HealthArchiveReader {
   private async loadEntries(entries: DateHint[], signal?: AbortSignal) {
     signal?.throwIfAborted();
     const missing = entries.filter(entry => this.entries.get(entry.path)?.blobSha !== entry.blob_sha).map(entry => this.catalog.get(entry.path)!);
-    for (let offset = 0; offset < missing.length; offset += 40) {
-      const batch = missing.slice(offset, offset + 40);
+    if (missing.length) {
+      const batch = missing;
       const files = await this.readFiles(batch, signal);
       signal?.throwIfAborted();
       if (files.length !== batch.length) throw new Error("HEALTH_ARCHIVE_INCOMPLETE_BATCH");

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { EncryptedHealthBlobCache, type HealthCacheStorage, type HealthCachedBlob } from "./health-blob-cache";
+import { createHealthCacheRetention, EncryptedHealthBlobCache, type HealthCacheStorage, type HealthCachedBlob } from "./health-blob-cache";
 function storage() {
   const records = new Map<string, HealthCachedBlob>(); const keys = new Map<string, CryptoKey>();
   const api: HealthCacheStorage = {
@@ -66,4 +66,19 @@ describe("encrypted persistent health bodies", () => {
     const cannotClear = new EncryptedHealthBlobCache("repoA", { ...s.api, clear: async () => { throw new Error("storage disabled"); } });
     await expect(cannotClear.clear()).rejects.toThrow("storage disabled");
   });
+});
+
+it("retains a complete multi-year metric archive and evicts older versions by age and quota", () => {
+  const now = Date.now(); const retain = createHealthCacheRetention(now);
+  const ciphertext = new ArrayBuffer(1024);
+  const kept = Array.from({ length: 12_010 }, (_, index) => retain({ ciphertext, savedAt: now - index }));
+  expect(kept.slice(0, 12_000).every(Boolean)).toBe(true);
+  expect(kept.slice(12_000).every(value => !value)).toBe(true);
+  const sizeLimited = createHealthCacheRetention(now);
+  expect(sizeLimited({ savedAt: now, ciphertext: new ArrayBuffer(48 * 1024 * 1024) })).toBe(true);
+  expect(sizeLimited({ savedAt: now - 1, ciphertext })).toBe(false);
+  const ageLimited = createHealthCacheRetention(now);
+  expect(ageLimited({ savedAt: now - 31 * 86400_000, ciphertext })).toBe(false);
+  expect(ageLimited({ savedAt: now + 1, ciphertext })).toBe(false);
+  expect(ageLimited({ savedAt: now, ciphertext })).toBe(true);
 });

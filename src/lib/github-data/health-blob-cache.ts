@@ -15,6 +15,20 @@ export interface HealthBlobCache {
 }
 const MAX_AGE = 30 * 86400_000;
 const MAX_RECORD_BYTES = 1024 * 1024;
+// Retain the full imported history (including rating metrics), rather than a
+// random 2,500 SHA-sorted records. Still bounded and rebuildable.
+const MAX_CACHE_RECORDS = 12_000;
+const MAX_CACHE_BYTES = 48 * 1024 * 1024;
+/** Apply to newest-first entries; invalid/expired blobs consume no quota. */
+export function createHealthCacheRetention(now = Date.now()) {
+  let count = 0, bytes = 0;
+  return (entry: Pick<HealthCachedBlob, "savedAt" | "ciphertext">) => {
+    if (!Number.isFinite(entry.savedAt) || entry.savedAt > now || now - entry.savedAt > MAX_AGE) return false;
+    if (count >= MAX_CACHE_RECORDS || bytes + entry.ciphertext.byteLength > MAX_CACHE_BYTES) return false;
+    count++; bytes += entry.ciphertext.byteLength;
+    return true;
+  };
+}
 const allowed = (path: string) => /^data\/(sleep-sessions|workouts|health-staging-records|health-metrics)\/[a-zA-Z0-9_-]+\.json$/.test(path);
 const context = (scope: string, sha: string, size: number) => new TextEncoder().encode(JSON.stringify([scope, sha, size]));
 async function bodySha(body: Uint8Array<ArrayBuffer>) {
@@ -84,12 +98,16 @@ export class IndexedHealthCacheStorage implements HealthCacheStorage {
   private open(): Promise<IDBDatabase> {
     if (this.database) return this.database;
     this.database = new Promise((resolve, reject) => {
-      const request = indexedDB.open("nexus-health-encrypted-cache-v1", 1);
+      const request = indexedDB.open("nexus-health-encrypted-cache-v1", 2);
       let finished = false;
       const timeout = setTimeout(() => { finished = true; reject(new Error("HEALTH_CACHE_UNAVAILABLE")); }, 1500);
       request.onupgradeneeded = () => {
-        request.result.createObjectStore("keys");
-        request.result.createObjectStore("blobs", { keyPath: "id" }).createIndex("scope", "scope");
+        const database = request.result;
+        if (!database.objectStoreNames.contains("keys")) database.createObjectStore("keys");
+        const blobs = database.objectStoreNames.contains("blobs")
+          ? request.transaction!.objectStore("blobs") : database.createObjectStore("blobs", { keyPath: "id" });
+        if (!blobs.indexNames.contains("scope")) blobs.createIndex("scope", "scope");
+        if (!blobs.indexNames.contains("savedAt")) blobs.createIndex("savedAt", "savedAt");
       };
       request.onerror = request.onblocked = () => { clearTimeout(timeout); finished = true; reject(new Error("HEALTH_CACHE_UNAVAILABLE")); };
       request.onsuccess = () => {
@@ -102,6 +120,14 @@ export class IndexedHealthCacheStorage implements HealthCacheStorage {
   }
   async key(scope: string): Promise<CryptoKey> {
     const database = await this.open();
+    // Most reads reuse a persisted key. Generate only when none exists.
+    const existing = await new Promise<CryptoKey | undefined>((resolve, reject) => {
+      const transaction = database.transaction("keys", "readonly");
+      const request = transaction.objectStore("keys").get(scope);
+      transaction.oncomplete = () => resolve(request.result);
+      transaction.onerror = transaction.onabort = () => reject(new Error("HEALTH_CACHE_UNAVAILABLE"));
+    });
+    if (existing) return existing;
     const candidate = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);
     return new Promise((resolve, reject) => {
       const transaction = database.transaction("keys", "readwrite");
@@ -129,15 +155,13 @@ export class IndexedHealthCacheStorage implements HealthCacheStorage {
       const store = transaction.objectStore("blobs");
       for (const record of records) store.put(record);
       // Keep the cache rebuildable and bounded, including obsolete record versions.
-      const request = store.openCursor();
-      let count = 0;
-      let bytes = 0;
+      const request = store.index("savedAt").openCursor(null, "prev");
+      const retain = createHealthCacheRetention();
       request.onsuccess = () => {
         const cursor = request.result;
         if (!cursor) return;
         const entry = cursor.value as HealthCachedBlob;
-        bytes += entry.ciphertext.byteLength;
-        if (Date.now() - entry.savedAt > MAX_AGE || ++count > 2500 || bytes > 16 * 1024 * 1024) cursor.delete();
+        if (!retain(entry)) cursor.delete();
         cursor.continue();
       };
       transaction.oncomplete = () => resolve();
