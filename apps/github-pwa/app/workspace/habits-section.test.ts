@@ -17,7 +17,7 @@ function render(today: string, options: { start?: string; paused?: boolean; comp
   return renderToStaticMarkup(createElement(HabitsSection, {
     connection: { ownerId: "owner_test", ownerLogin: "test", repository: "test/data", timezone: "Asia/Shanghai" }, online: true,
     todayDate: today, habits: [{ record, path: "", blobSha: "" }], checkIns, rules: [], sleepSessions: [], loading: false, saving: false, savingId: null,
-    onCreate: async () => true, onMove: async () => {}, onStatusChange: () => {}, onDeletionChange: () => {}, onCheckIn: async () => true,
+    onCreate: async () => true, onRename: async () => true, onMove: async () => {}, onStatusChange: () => {}, onDeletionChange: () => {}, onCheckIn: async () => true,
     onConfirmSleepSuggestion: async () => true, onRefresh: () => {},
   }));
 }

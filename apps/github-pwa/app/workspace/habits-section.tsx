@@ -27,6 +27,7 @@ type Props = {
   onRetryOrder?: () => void;
   onDiscardOrder?: () => void;
   onMove: (item: SyncedHabit, direction: "up" | "down") => Promise<void>;
+  onRename: (item: SyncedHabit, name: string) => Promise<boolean>;
   onStatusChange: (item: SyncedHabit, status: HabitStatus) => void;
   onDeletionChange: (item: SyncedHabit, operation: "trash" | "restore") => void;
   onCheckIn: (item: SyncedHabit, date: string, status: HabitCheckInStatus) => Promise<boolean>;
@@ -36,11 +37,12 @@ type Props = {
 
 const STATUS_LABELS = { completed: "已完成", missed: "未完成", skipped: "已跳过", unknown: "未打卡", none: "未打卡" };
 
-export function HabitsSection({ connection, online, todayDate, habits, checkIns, rules, sleepSessions, loading, saving, savingId, orderStatus = "idle", orderError, onRetryOrder, onDiscardOrder, onCreate, onMove, onStatusChange, onDeletionChange, onCheckIn, onConfirmSleepSuggestion, onRefresh }: Props) {
+export function HabitsSection({ connection, online, todayDate, habits, checkIns, rules, sleepSessions, loading, saving, savingId, orderStatus = "idle", orderError, onRetryOrder, onDiscardOrder, onCreate, onMove, onRename, onStatusChange, onDeletionChange, onCheckIn, onConfirmSleepSuggestion, onRefresh }: Props) {
   const [view, setView] = useState<"active" | "archived" | "trash">("active");
   const [creating, setCreating] = useState(false);
   const [sorting, setSorting] = useState(false);
   const [menuId, setMenuId] = useState<string | null>(null);
+  const [rename, setRename] = useState<{ id: string; value: string; error?: string } | null>(null);
   const [name, setName] = useState("");
   const [trackingType, setTrackingType] = useState<HabitTrackingType>("boolean");
   const [targetValue, setTargetValue] = useState("1");
@@ -117,7 +119,15 @@ export function HabitsSection({ connection, online, todayDate, habits, checkIns,
   }
 
   function switchView(next: typeof view) {
-    setView(next); setCreating(false); setSorting(false); setMenuId(null);
+    setView(next); setCreating(false); setSorting(false); setMenuId(null); setRename(null);
+  }
+
+  async function submitRename(event: FormEvent<HTMLFormElement>, item: SyncedHabit) {
+    event.preventDefault();
+    if (disabled || rename?.id !== item.record.id || !rename.value.trim()) return;
+    const saved = await onRename(item, rename.value.trim());
+    setRename((current) => current?.id === item.record.id ? saved ? null : { ...current, error: "保存失败，输入的名称已保留，请重试。" } : current);
+    if (saved) setMenuId(null);
   }
 
   return <section className="habit-card" aria-labelledby="habits-title">
@@ -162,14 +172,21 @@ export function HabitsSection({ connection, online, todayDate, habits, checkIns,
               const content = status === "completed" ? <Check size={12} aria-hidden="true" /> : status === "skipped" ? "−" : status === "missed" ? "×" : null;
               return <td key={date} className="habit-date-cell" data-today={isToday} data-editable={editable}>{editable && view === "active" ? <button type="button" className="habit-day" data-status={status} aria-label={`${label}，${status === "completed" ? "撤销打卡" : "打卡"}`} aria-pressed={status === "completed"} title={label} disabled={disabled || date < item.record.data.start_date || (item.record.data.end_date !== null && date > item.record.data.end_date) || item.record.data.status === "paused"} onClick={() => void onCheckIn(item, date, status === "completed" ? "unknown" : "completed")}>{content}</button> : <span className="habit-day" data-status={status} data-future={date > todayDate} role="img" aria-label={label} title={label}>{content}</span>}</td>;
             })}
-            <td className="habit-actions-cell"><button type="button" className="habit-icon-button" aria-label={`管理${item.record.data.name}`} aria-expanded={menuId === item.record.id} aria-controls={`habit-menu-${item.record.id}`} title="管理习惯" disabled={disabled} onClick={() => setMenuId(menuId === item.record.id ? null : item.record.id)}><MoreHorizontal size={16} aria-hidden="true" /></button></td>
+            <td className="habit-actions-cell"><button type="button" className="habit-icon-button" aria-label={`管理${item.record.data.name}`} aria-expanded={menuId === item.record.id} aria-controls={`habit-menu-${item.record.id}`} title="管理习惯" disabled={disabled} onClick={() => { setMenuId(menuId === item.record.id ? null : item.record.id); setRename(null); }}><MoreHorizontal size={16} aria-hidden="true" /></button></td>
           </tr>)}</tbody>
         </table>
       </div>
-      {visible.filter((item) => item.record.id === menuId).map((item) => <div key={item.record.id} id={`habit-menu-${item.record.id}`} className="habit-manage-bar" aria-label={`管理${item.record.data.name}`}><span>{item.record.data.name}</span><div>
+      {visible.filter((item) => item.record.id === menuId).map((item) => <div key={item.record.id} id={`habit-menu-${item.record.id}`} className="habit-manage-bar" aria-label={`管理${item.record.data.name}`}>
+        {rename?.id === item.record.id ? <form className="habit-rename-form" aria-label={`修改${item.record.data.name}的名称`} onSubmit={(event) => void submitRename(event, item)}>
+          <label>事项名称<input autoFocus value={rename.value} maxLength={200} onFocus={(event) => event.currentTarget.select()} onChange={(event) => setRename({ id: item.record.id, value: event.target.value })} disabled={disabled} /></label>
+          <div><button className="primary-button" type="submit" disabled={disabled || !rename.value.trim()}>{savingId === item.record.id ? "保存中…" : "保存名称"}</button><button className="text-button" type="button" disabled={busy} onClick={() => setRename(null)}>取消</button></div>
+          {rename.error ? <p role="alert">{rename.error}</p> : null}
+        </form> : <><span>{item.record.data.name}</span><div>
+        {view !== "trash" ? <button className="text-button" type="button" disabled={disabled} onClick={() => { setRename({ id: item.record.id, value: item.record.data.name }); setCreating(false); setSorting(false); }}>修改名称</button> : null}
         {view === "active" ? <><button className="text-button" type="button" disabled={disabled} onClick={() => { onStatusChange(item, item.record.data.status === "paused" ? "active" : "paused"); setMenuId(null); }}>{item.record.data.status === "paused" ? "继续" : "暂停"}</button><button className="text-button" type="button" disabled={disabled} onClick={() => { onStatusChange(item, "archived"); setMenuId(null); }}>归档</button></> : view === "archived" ? <button className="text-button" type="button" disabled={disabled} onClick={() => { onStatusChange(item, "active"); setMenuId(null); }}>恢复进行</button> : null}
         <button className="text-button" type="button" disabled={disabled} onClick={() => { onDeletionChange(item, view === "trash" ? "restore" : "trash"); setMenuId(null); }}>{view === "trash" ? "恢复" : "移到回收站"}</button><button className="text-button" type="button" onClick={() => setMenuId(null)}>收起</button>
-      </div></div>)}
+      </div></>}
+      </div>)}
       <div className="habit-legend"><span><i data-status="completed" />已完成</span><span><i />未打卡</span><span className="habit-mobile-hint">左右滑动查看日期</span><span className="habit-sort-note" role="status">{orderStatus === "error" ? "顺序尚未保存" : orderPending ? "顺序已调整，后台保存中…" : orderStatus === "saved" ? "顺序已保存" : savingId ? "正在保存…" : sorting ? "用上移、下移调整顺序，自动保存" : "最近三天的打卡可再次点击撤销"}</span></div>
     </>}
     {orderStatus === "error" ? <div className="habit-manage-bar" role="alert"><span>{orderError}</span><div><button type="button" className="text-button" onClick={onRetryOrder} disabled={sortDisabled}>重试保存</button><button type="button" className="text-button" onClick={onDiscardOrder}>取消调整</button></div></div> : null}
