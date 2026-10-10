@@ -10,12 +10,14 @@ describe("today exercise data states", () => {
   it("shows missing records as missing and presents advice reasons with a health link", () => {
     const html = render();
     expect(html).toContain("今天尚未记录运动");expect(html).toContain("当天睡眠：尚未记录");
+    expect(html).toMatch(/aria-pressed="true"[^>]*>今天建议/);
+    expect(html).toMatch(/aria-pressed="false"[^>]*>明天建议/);
     expect(html).toContain("建议依据");expect(html).toContain("查看健康");
     expect(html).not.toContain("今天没有运动");
   });
   it("does not show old recommendations while disconnected, loading, failed or on a new local day", () => {
     for (const overrides of [{ connected: false }, { loading: true }, { error: "failed" }, { loadedDate: "2026-10-09" }]) {
-      const html = render(overrides);expect(html).not.toContain("先从轻松活动开始");expect(html).not.toContain("建议依据");
+      const html = render(overrides);expect(html).not.toContain("先从轻松活动开始");expect(html).not.toContain("建议依据");expect(html).not.toContain("明天建议");
     }
     expect(render({ error: "failed" })).toContain("重试");
     expect(render({ snapshot: null, online: false })).toContain("当前离线");
