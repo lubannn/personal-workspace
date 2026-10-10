@@ -82,6 +82,23 @@ describe("complete daily activity evidence", () => {
     reader.mockClear(); const result = await collectCorosActivityTotals(reader, "2024-01-02", "2024-01-02", p, async () => {}, observedAt, key);
     expect(reader.mock.calls.filter(([tool]) => tool === "getActivityDetail")).toHaveLength(1);
     expect(result.items.map(item => item.candidate.value)).toEqual([15, 50]);
+    expect(reader.mock.calls.filter(([tool]) => tool === "querySportRecords")).toHaveLength(0);
+    expect(JSON.parse(await decryptRefreshToken(p.health!.encryptedActivityCache!, key)).pendingLists).toEqual([]);
+  });
+  it("refreshes a pending list when its observation changes or its cache expires", async () => {
+    for (const invalidate of ["new-observation", "expiry"] as const) {
+      const p = progress(), reader = read(5);
+      await collectCorosActivityTotals(reader, "2024-01-02", "2024-01-02", p, async () => {}, observedAt, key);
+      if (invalidate === "new-observation") p.request = { sequence: 99, through: "2024-01-02" };
+      else {
+        const cache = JSON.parse(await decryptRefreshToken(p.health!.encryptedActivityCache!, key));
+        cache.pendingLists[0].savedAt -= 6 * 60_000;
+        p.health!.encryptedActivityCache = await encryptRefreshToken(JSON.stringify(cache), key);
+      }
+      reader.mockClear();
+      await collectCorosActivityTotals(reader, "2024-01-02", "2024-01-02", p, async () => {}, observedAt, key);
+      expect(reader.mock.calls.filter(([tool]) => tool === "querySportRecords")).toHaveLength(1);
+    }
   });
   it("resumes today's pending details across another request, then refreshes after the observation completes", async () => {
     const p = progress(), reader = read(5), date = new Date("2024-01-02T04:00:00Z");

@@ -86,6 +86,10 @@ describe("incremental health month reads", () => {
     f.files.set("data/health-metrics/coros_metric_revision_synthetic.json", "must not be read");
     const september = await f.reader.load("2026-09"); expect(september.healthMetrics).toHaveLength(92);
     expect(f.calls.flat()).toHaveLength(92); expect(f.calls.flat().every(path => /coros_metric_2026(?:07|08|09)/.test(path))).toBe(true);
+    // A range larger than a single batch reaches the adapter intact, enabling
+    // its bounded parallel pipeline instead of one serial request per month.
+    expect(f.calls).toHaveLength(1);
+    expect(f.calls[0]).toHaveLength(92);
     f.calls.length = 0; await f.reader.load("2026-09"); expect(f.calls.flat()).toHaveLength(0);
     await f.reader.load("2026-08"); f.calls.length = 0;
     const revised = metric("2026-08-15", 60); const path = recordPath("health_metric", revised.id); f.files.set(path, serializeRecord(revised));
@@ -323,6 +327,50 @@ describe("incremental health month reads", () => {
     const invalid = await f.reader.load("2026-08", { refresh: true });
     expect(invalid.unverifiedWorkoutCount).toBe(1);
     expect(invalid.workouts).toHaveLength(7);
+  });
+
+  it("prefetches the full reference range so odd and even neighbor months need no body reads", async () => {
+    const f = fake([sleep("2026-09-30"), sleep("2026-08-31"), sleep("2026-07-31")]);
+    for (let i = 0; i < 153; i++) {
+      const date = new Date(Date.parse("2026-05-01") + i * 86400_000).toISOString().slice(0, 10);
+      const id = `coros_metric_${date.replaceAll("-", "")}_resting_heart_rate_daily`;
+      const record = createWorkspaceRecord({ entityType: "health_metric", id, ownerId: "owner_test", timestamp,
+        data: createAutomaticHealthMetricData({ metric_type: "resting_heart_rate", value: 50, unit: "bpm", local_date: date,
+          measured_at: timestamp, timezone: "Asia/Shanghai", aggregation_period: "daily" }, provenance) });
+      f.files.set(recordPath("health_metric", id), serializeRecord(record));
+    }
+    await f.reader.load("2026-09");
+    await f.reader.prefetchNeighbors("2026-09"); f.calls.length = 0;
+    await f.reader.load("2026-08"); expect(f.calls).toHaveLength(0);
+    await f.reader.prefetchNeighbors("2026-08"); f.calls.length = 0;
+    await f.reader.load("2026-07"); expect(f.calls).toHaveLength(0);
+    expect(f.reader.snapshot().month).toBe("2026-07");
+  });
+
+  it("adopts an in-flight neighbor read without repeating its request or changing selection", async () => {
+    const f = fake([sleep("2026-10-04"), sleep("2026-09-30")]);
+    await f.reader.load(); f.calls.length = 0;
+    const read = f.adapter.readBlobTexts.getMockImplementation()!;
+    let release!: () => void, started!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const reading = new Promise<void>(resolve => { started = resolve; });
+    f.adapter.readBlobTexts.mockImplementationOnce(async items => { started(); await gate; return read(items); });
+    const prefetch = f.reader.prefetchNeighbors("2026-10"); await reading;
+    const selected = f.reader.load("2026-09");
+    release(); await prefetch;
+    expect(await selected).toMatchObject({ month: "2026-09", loadedMonths: ["2026-10", "2026-09"] });
+    expect(f.calls.flat()).toEqual([recordPath("sleep_session", "sleep_20260930")]);
+  });
+
+  it("renders a verified month without waiting for optional disk writes", async () => {
+    const f = fake([sleep("2026-10-04")]);
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const cache: HealthBlobCache = { read: async () => [], remember: vi.fn(async () => gate), clear: async () => {} };
+    const reader = new HealthArchiveReader(f.adapter, "Asia/Shanghai", cache);
+    expect(await reader.load()).toMatchObject({ month: "2026-10", loadedMonths: ["2026-10"] });
+    expect(cache.remember).toHaveBeenCalledTimes(1);
+    release();
   });
 
 });

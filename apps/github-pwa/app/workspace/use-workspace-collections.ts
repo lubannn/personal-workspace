@@ -757,7 +757,15 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
 
   const loadHealthView = useCallback((adapter: GitHubContentsAdapter | null, month?: string, refresh = false): Promise<boolean> => {
     if (!adapter || adapter !== adapterRef.current) return Promise.resolve(false);
-    if (healthPrefetchRef.current) { clearTimeout(healthPrefetchRef.current.timer); healthPrefetchRef.current.controller.abort(); healthPrefetchRef.current = null; }
+    if (healthPrefetchRef.current) {
+      clearTimeout(healthPrefetchRef.current.timer);
+      // Navigation adopts an in-flight neighbor read. Refresh/new connections
+      // invalidate its catalog and must cancel it instead.
+      if (refresh || healthReaderRef.current?.adapter !== adapter || healthReaderRef.current?.timezone !== timezone
+        || (month && !healthReaderRef.current?.reader.isPrefetching(month))) {
+        healthPrefetchRef.current.controller.abort(); healthPrefetchRef.current = null;
+      }
+    }
     if (healthReaderRef.current?.adapter !== adapter || healthReaderRef.current?.timezone !== timezone) {
       healthRequestRef.current?.controller.abort();
       healthReaderRef.current?.reader.dispose();
@@ -788,6 +796,7 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
         const snapshot = await reader.load(month, { refresh, signal: controller.signal, onCatalog: publish, onProgress: publish });
         publish(snapshot);
         if (current() && snapshot.month && healthVisibleRef.current) {
+          healthPrefetchRef.current?.controller.abort();
           const prefetchController = new AbortController();
           const timer = setTimeout(() => {
             if (healthVisibleRef.current && document.visibilityState !== "hidden") {

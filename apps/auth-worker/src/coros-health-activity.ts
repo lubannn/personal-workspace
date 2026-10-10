@@ -7,6 +7,9 @@ import type { CorosHealthMetricItem } from "./coros-health-mapping";
 type Workout = Extract<CorosSyncCandidate, { kind: "workout" }>;
 type Detail = { elevationGainMeters: number | null; trainingLoad: number | null };
 type PendingWindow = [string, string[]];
+type PendingList = { window: string; through: string; sequence: number; savedAt: number; result: CorosReadResult };
+const LIST_CACHE_MS = 5 * 60_000;
+const MAX_LIST_BYTES = 64 * 1024;
 type Cached = Detail & { signature: string; date: string; requestSequence: number };
 type Read = (name: CorosReadTool, args: Record<string, unknown>) => Promise<CorosReadResult>;
 function fail(): never { throw new Error("COROS_SYNC_HEALTH_DETAIL_FORMAT_UNSUPPORTED"); }
@@ -61,25 +64,9 @@ export function mapCorosActivityDetail(result: CorosReadResult, workout: Workout
 /** A complete list plus every unique detail establishes a daily sum, independently per metric. */
 export async function collectCorosActivityTotals(read: Read, from: string, requestedThrough: string, progress: SyncProgress,
   assertActive: () => Promise<void>, observedAt: string, encryptionKey?: string, checkpoint?: () => Promise<void>, detailLimit = 4) {
-  let through = requestedThrough;
-  let mapped;
-  for (;;) {
-    // Padding covers the observed one-day discrepancy between headings and epoch timestamps.
-    const result = await read("querySportRecords", { startDate: shiftDate(from, -1).replaceAll("-", ""), endDate: shiftDate(through, 1).replaceAll("-", ""),
-      limit: 20, sportTypeCodes: [65535], locationKeyword: "", maxAveragePace: "", minDistanceKm: 0, maxDistanceKm: 1000000, minDurationMinutes: 0, maxDurationMinutes: 1000000 });
-    await assertActive();
-    mapped = mapCorosWorkouts(result, { startDate: shiftDate(from, -1), endDate: shiftDate(through, 1), timezone: progress.timezone });
-    if (mapped.reportedCount < 20) break;
-    const span = Math.round((Date.parse(through) - Date.parse(from)) / 86400000);
-    if (span === 0) throw new Error("COROS_SYNC_WINDOW_TRUNCATED");
-    through = shiftDate(from, Math.floor(span / 2));
-  }
-  const localDates = new Map(mapped.items.map(workout => [workout.sourceId, todayInTimezone(new Date(workout.candidate.start_at), progress.timezone)]));
-  const localDate = (workout: Workout) => localDates.get(workout.sourceId)!;
-  const today = todayInTimezone(new Date(observedAt), progress.timezone);
-  const workouts = mapped.items.filter(workout => localDate(workout) >= from && localDate(workout) <= through);
   let cache: Record<string, Cached> = {};
   let pendingWindows: PendingWindow[] = [];
+  let pendingLists: PendingList[] = [];
   const encrypted = progress.health?.encryptedActivityCache;
   if (encrypted && encryptionKey) {
     try {
@@ -93,9 +80,53 @@ export async function collectCorosActivityTotals(read: Read, from: string, reque
         if (Array.isArray(parsed.pendingWindows)) pendingWindows = parsed.pendingWindows.filter((entry: PendingWindow) =>
           Array.isArray(entry) && /^\d{4}-\d{2}-\d{2}\/\d{4}-\d{2}-\d{2}$/u.test(entry[0])
           && Array.isArray(entry[1]) && entry[1].length < 20 && entry[1].every(id => typeof id === "string" && /^workout:\d{1,30}$/u.test(id))).slice(-2);
+        if (Array.isArray(parsed.pendingLists)) pendingLists = parsed.pendingLists.filter((entry: PendingList) =>
+          entry && typeof entry.window === "string" && /^\d{4}-\d{2}-\d{2}\/\d{4}-\d{2}-\d{2}$/u.test(entry.window)
+          && typeof entry.through === "string" && /^\d{4}-\d{2}-\d{2}$/u.test(entry.through)
+          && Number.isSafeInteger(entry.sequence) && Number.isFinite(entry.savedAt)
+          && entry.savedAt <= Date.now() && Date.now() - entry.savedAt <= LIST_CACHE_MS
+          && entry.result && ["content", "structured"].includes(entry.result.format)
+          && new TextEncoder().encode(JSON.stringify(entry.result)).byteLength <= MAX_LIST_BYTES).slice(-2);
       }
-    } catch { cache = {}; pendingWindows = []; } // An unusable optional cache never becomes evidence.
+    } catch { cache = {}; pendingWindows = []; pendingLists = []; } // An unusable optional cache never becomes evidence.
   }
+  let through = requestedThrough;
+  let mapped: ReturnType<typeof mapCorosWorkouts> | undefined;
+  const listWindow = `${from}/${requestedThrough}`;
+  const sequence = progress.request?.sequence ?? 0;
+  const savedList = pendingLists.find(entry => entry.window === listWindow && entry.sequence === sequence);
+  if (savedList && savedList.through >= from && savedList.through <= requestedThrough) {
+    try {
+      mapped = mapCorosWorkouts(savedList.result, { startDate: shiftDate(from, -1), endDate: shiftDate(savedList.through, 1), timezone: progress.timezone });
+      if (mapped.reportedCount >= 20) mapped = undefined;
+      else through = savedList.through;
+    } catch { mapped = undefined; } // Invalid optional evidence is fetched again.
+  }
+  if (mapped) await assertActive();
+  for (; !mapped;) {
+    // Padding covers the observed one-day discrepancy between headings and epoch timestamps.
+    const result = await read("querySportRecords", { startDate: shiftDate(from, -1).replaceAll("-", ""), endDate: shiftDate(through, 1).replaceAll("-", ""),
+      limit: 20, sportTypeCodes: [65535], locationKeyword: "", maxAveragePace: "", minDistanceKm: 0, maxDistanceKm: 1000000, minDurationMinutes: 0, maxDurationMinutes: 1000000 });
+    await assertActive();
+    mapped = mapCorosWorkouts(result, { startDate: shiftDate(from, -1), endDate: shiftDate(through, 1), timezone: progress.timezone });
+    if (mapped.reportedCount < 20) {
+      // Only reuse the complete list while reading bounded detail continuations
+      // of this exact observation. A new observation always fetches a fresh list.
+      if (new TextEncoder().encode(JSON.stringify(result)).byteLength <= MAX_LIST_BYTES) {
+        pendingLists = [...pendingLists.filter(entry => entry.window !== listWindow),
+          { window: listWindow, through, sequence, savedAt: Date.now(), result }].slice(-2);
+      }
+      break;
+    }
+    mapped = undefined;
+    const span = Math.round((Date.parse(through) - Date.parse(from)) / 86400000);
+    if (span === 0) throw new Error("COROS_SYNC_WINDOW_TRUNCATED");
+    through = shiftDate(from, Math.floor(span / 2));
+  }
+  const localDates = new Map(mapped.items.map(workout => [workout.sourceId, todayInTimezone(new Date(workout.candidate.start_at), progress.timezone)]));
+  const localDate = (workout: Workout) => localDates.get(workout.sourceId)!;
+  const today = todayInTimezone(new Date(observedAt), progress.timezone);
+  const workouts = mapped.items.filter(workout => localDate(workout) >= from && localDate(workout) <= through);
   const windowId = `${from}/${through}`;
   const wasPending = pendingWindows.some(([id]) => id === windowId);
   pendingWindows = [...pendingWindows.filter(([id]) => id !== windowId), [windowId, workouts.map(workout => workout.sourceId)] as PendingWindow].slice(-2);
@@ -106,7 +137,7 @@ export async function collectCorosActivityTotals(read: Read, from: string, reque
     const pinned = Object.entries(cache).filter(([id]) => currentIds.has(id));
     const others = Object.entries(cache).filter(([id]) => !currentIds.has(id)).sort((a, b) => a[1].date.localeCompare(b[1].date));
     const entries = [...others.slice(-Math.max(0, 256 - pinned.length)), ...pinned];
-    progress.health.encryptedActivityCache = await encryptRefreshToken(JSON.stringify({ version: 1, timezone: progress.timezone, entries, pendingWindows }), encryptionKey);
+    progress.health.encryptedActivityCache = await encryptRefreshToken(JSON.stringify({ version: 1, timezone: progress.timezone, entries, pendingWindows, pendingLists }), encryptionKey);
     await checkpoint?.();
   };
   const observationSequence = progress.health?.recentObservationSequence ?? progress.request?.sequence ?? 0;
@@ -129,6 +160,7 @@ export async function collectCorosActivityTotals(read: Read, from: string, reque
     await remember();
   }
   pendingWindows = pendingWindows.filter(([id]) => id !== windowId);
+  pendingLists = pendingLists.filter(entry => entry.window !== listWindow);
   if (reads || wasPending) await remember();
   const items: CorosHealthMetricItem[] = [];
   for (let date = from; date <= through; date = shiftDate(date, 1)) {
