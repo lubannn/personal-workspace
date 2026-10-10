@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { createWorkspaceRecord, serializeRecord } from "./protocol";
-import { checkInsForMonth, correctHabitCheckIn, createAutomaticHabitCheckInData, createManualHabitCheckInData, parseHabitCheckInRecord } from "./habit-check-ins";
+import { checkInsForMonth, correctHabitCheckIn, createAutomaticHabitCheckInData, createManualHabitCheckInData, parseHabitCheckInRecord, recentHabitCheckInDates } from "./habit-check-ins";
 
 const confirmedAt = "2026-09-12T12:00:00.000Z";
 
@@ -28,5 +28,20 @@ describe("HabitCheckIn canonical records", () => {
     const make = (id: string, date: string) => createWorkspaceRecord({ entityType: "habit_check_in" as const, id, ownerId: "github_lubannn", timestamp: confirmedAt, data: createManualHabitCheckInData({ habitId: "habit_reading", localDate: date, timezone: "Asia/Shanghai", status: "completed", confirmedAt }) });
     const records = [make("check_2", "2026-09-20"), make("check_1", "2026-09-02"), make("check_old", "2026-08-31")];
     expect(checkInsForMonth(records, "habit_reading", "2026-09").map((record) => record.data.local_date)).toEqual(["2026-09-02", "2026-09-20"]);
+  });
+});
+
+describe("Recent habit check-in editing window", () => {
+  it.each([
+    ["2026-10-11", ["2026-10-09", "2026-10-10", "2026-10-11"]],
+    ["2026-10-01", ["2026-09-29", "2026-09-30", "2026-10-01"]],
+    ["2026-01-01", ["2025-12-30", "2025-12-31", "2026-01-01"]],
+    ["2028-03-01", ["2028-02-28", "2028-02-29", "2028-03-01"]],
+  ])("includes exactly three calendar dates for %s", (today, expected) => {
+    expect(recentHabitCheckInDates(today)).toEqual(expected);
+  });
+  it("does not enable editing before the local date is available or valid", () => {
+    expect(recentHabitCheckInDates("")).toEqual([]);
+    expect(recentHabitCheckInDates("2026-02-30")).toEqual([]);
   });
 });
