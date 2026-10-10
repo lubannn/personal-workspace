@@ -101,7 +101,7 @@ import {
   type LearningActivityFields,
 } from "../../../src/lib/github-data/learning-activities";
 import { createLearningResourceData, setLearningResourceStatus, updateLearningResourceDetails, type LearningResourceFields, type LearningResourceStatus } from "../../../src/lib/github-data/learning-resources";
-import { createHabitData, nextHabitSortOrder, setHabitStatus, type HabitFields, type HabitStatus } from "../../../src/lib/github-data/habits";
+import { createHabitData, nextHabitSortOrder, setHabitStatus, updateHabitDetails, type HabitFields, type HabitStatus } from "../../../src/lib/github-data/habits";
 import { correctHabitCheckIn, createAutomaticHabitCheckInData, createManualHabitCheckInData, recentHabitCheckInDates, type HabitCheckInStatus } from "../../../src/lib/github-data/habit-check-ins";
 import { createSleepHabitRuleData, evaluateSleepHabitRule, type SleepHabitRuleFields } from "../../../src/lib/github-data/sleep-habit-rules";
 import { listCompleteHealthDirectory } from "./workspace/health-collection-loading";
@@ -1990,6 +1990,26 @@ export default function GitHubWorkspacePage() {
     habitOrder.move(item, direction);
   }
 
+  async function renameHabitItem(item: SyncedHabit, name: string) {
+    const adapter = adapterRef.current;
+    if (!adapter || !connection || savingHabit || savingHabitId || loadingHabits || habitOrder.pending || online === false || item.record.deleted_at !== null) return false;
+    const trimmed = name.trim();
+    if (!trimmed || trimmed.length > 200) return false;
+    if (trimmed === item.record.data.name) return true;
+    setSavingHabitId(item.record.id); setErrorMessage(""); setStatusMessage("");
+    try {
+      const updated = updateHabitDetails(item.record, { ...item.record.data, name: trimmed });
+      const result = await adapter.writeText({ path: item.path, text: serializeRecord(updated), message: `habit: rename ${item.record.id}`, expectedBlobSha: item.blobSha });
+      if (adapterRef.current !== adapter) return false;
+      setHabitFiles((current) => current.map((candidate) => candidate.record.id === item.record.id ? { record: updated, path: result.path, blobSha: result.blobSha } : candidate));
+      setStatusMessage(`习惯名称已修改为“${trimmed}”。`);
+      return true;
+    } catch (error) {
+      if (adapterRef.current === adapter) setErrorMessage(friendlyError(error));
+      return false;
+    } finally { if (adapterRef.current === adapter) setSavingHabitId(null); }
+  }
+
   async function updateHabitStatus(item: SyncedHabit, status: HabitStatus) {
     const adapter = adapterRef.current;
     if (!adapter || !connection || savingHabitId || habitOrder.pending || online === false) return;
@@ -3157,6 +3177,7 @@ export default function GitHubWorkspacePage() {
         savingId={savingHabitId}
         onCreate={saveHabit}
         onMove={moveHabitItem}
+        onRename={renameHabitItem}
         orderStatus={habitOrder.status}
         orderError={habitOrder.error}
         onRetryOrder={habitOrder.retry}

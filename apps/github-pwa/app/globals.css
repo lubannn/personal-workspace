@@ -1240,6 +1240,11 @@ button.habit-day:disabled { cursor: default; }
 .habit-manage-bar > span { min-width: 0; overflow-wrap: anywhere; color: var(--soft); font-size: 12px; }
 .habit-manage-bar > div { display: flex; flex-wrap: wrap; gap: 12px; }
 .habit-manage-bar .text-button { font-size: 11px; }
+.habit-rename-form { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; width: 100%; }
+.habit-rename-form label { display: grid; flex: 1 1 200px; gap: 7px; color: var(--muted); font-size: 11px; }
+.habit-rename-form input { width: 100%; min-width: 0; height: 38px; padding: 0 11px; border: 1px solid var(--line); border-radius: 10px; background: rgba(255,255,255,.72); color: var(--ink); font-size: 13px; }
+.habit-rename-form > div { display: flex; align-items: center; gap: 12px; }
+.habit-rename-form p { width: 100%; margin: 0; color: var(--muted); font-size: 11px; }
 .habit-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 @media (max-width: 680px) {
   .habit-card .card-heading { display: flex; flex-wrap: wrap; gap: 14px; }
