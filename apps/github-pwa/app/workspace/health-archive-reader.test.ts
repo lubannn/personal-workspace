@@ -374,3 +374,44 @@ describe("incremental health month reads", () => {
   });
 
 });
+
+
+describe("overview recent health read", () => {
+  it("reads seven local days across a month boundary without reading month metrics or other history; shares authenticated bodies with health", async () => {
+    const f = fake([sleep("2026-10-01"), sleep("2026-09-29"), workout("2026-09-25"), workout("2026-09-24"), workout("2026-10-02")]);
+    f.files.set("data/health-metrics/coros_metric_20260815_resting_heart_rate_daily.json", "must not be read by overview");
+    const recent = await f.reader.loadRecent("2026-10-01");
+    expect(recent.month).toBe(""); expect(recent.loadedMonths).toEqual([]);
+    expect(recent.sleepSessions).toHaveLength(2); expect(recent.workouts).toHaveLength(1);
+    expect(f.calls.flat()).not.toContain("data/workouts/workout_20260924.json");
+    expect(f.calls.flat()).not.toContain("data/workouts/workout_20261002.json");
+    expect(f.calls.flat()).not.toContain("data/health-metrics/coros_metric_20260815_resting_heart_rate_daily.json");
+    f.calls.length = 0; await f.reader.loadRecent("2026-10-01");
+    expect(f.calls).toEqual([]); expect(f.adapter.listHealthArchive).toHaveBeenCalledOnce();
+    f.files.delete("data/health-metrics/coros_metric_20260815_resting_heart_rate_daily.json");
+    await f.reader.load("2026-09", { refresh: true });
+    expect(f.calls.flat()).not.toContain("data/sleep-sessions/sleep_20260929.json");
+    expect(f.calls.flat()).not.toContain("data/workouts/workout_20260925.json");
+    expect(f.reader.snapshot().month).toBe("2026-09");
+    await f.reader.loadRecent("2026-10-01");
+    expect(f.reader.snapshot().month).toBe("2026-09");
+  });
+  it("refreshes changed SHAs and removed records without retaining deleted advice inputs", async () => {
+    const f = fake([sleep("2026-10-01"), workout("2026-10-01")]);
+    await f.reader.loadRecent("2026-10-01"); f.calls.length = 0;
+    const revised = sleep("2026-10-01", 60);
+    f.files.set(recordPath(revised.entity_type, revised.id), serializeRecord(revised));
+    f.files.delete("data/workouts/workout_20261001.json"); f.reindex();
+    const updated = await f.reader.loadRecent("2026-10-01", { refresh: true });
+    expect(updated.sleepSessions[0].record.data.sleep_session_version === 2 && updated.sleepSessions[0].record.data.sleep_metrics_json.score).toBe(60);
+    expect(updated.workouts).toEqual([]);
+    expect(f.calls.flat()).toEqual([COROS_SYNC_INDEX_PATH, recordPath(revised.entity_type, revised.id)]);
+  });
+  it("rejects an invalid day and never publishes an aborted range", async () => {
+    const f = fake([sleep("2026-10-01")]);
+    await expect(f.reader.loadRecent("2026-02-30")).rejects.toThrow("INVALID_HEALTH_DATE");
+    const controller = new AbortController();controller.abort();
+    await expect(f.reader.loadRecent("2026-10-01", { signal: controller.signal })).rejects.toMatchObject({ name: "AbortError" });
+    expect(f.adapter.listHealthArchive).not.toHaveBeenCalled();
+  });
+});

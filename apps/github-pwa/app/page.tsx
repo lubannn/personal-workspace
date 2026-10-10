@@ -355,6 +355,7 @@ export default function GitHubWorkspacePage() {
     loadingHealth,
     healthLoaded,
     healthArchive,
+    todayHealth, todayHealthDate, todayHealthError, loadingTodayHealth,
     healthLoadError,
     healthUnverifiedWorkoutCount,
     loadingDashboard,
@@ -375,6 +376,7 @@ export default function GitHubWorkspacePage() {
     loadLearningAreas,
     loadHabitDomain,
     loadHealthDomain,
+    loadTodayHealth,
     loadHealthMonth,
     clearHealthCache,
     loadDashboardLayout,
@@ -417,7 +419,8 @@ export default function GitHubWorkspacePage() {
     learning: loadLearningAreas,
     habits: loadHabitDomain,
     health: loadHealthDomain,
-  }), [loadNotices, loadTravel, connection?.ownerId, loadActivityEvents, loadCalendarEvents, loadDashboardLayout, loadHabitDomain, loadHealthDomain, loadJournalEntries, loadLearningAreas, loadMilestones, loadProjectFileReferences, loadProjectNotes, loadProjectPhases, loadProjects, loadRecentCaptures, loadReportDrafts, loadTasks, loadTimeEntries]);
+    todayHealth: loadTodayHealth,
+  }), [loadNotices, loadTravel, connection?.ownerId, loadActivityEvents, loadCalendarEvents, loadDashboardLayout, loadHabitDomain, loadHealthDomain, loadTodayHealth, loadJournalEntries, loadLearningAreas, loadMilestones, loadProjectFileReferences, loadProjectNotes, loadProjectPhases, loadProjects, loadRecentCaptures, loadReportDrafts, loadTasks, loadTimeEntries]);
 
   useEffect(() => {
     const adapter = adapterRef.current;
@@ -430,15 +433,20 @@ export default function GitHubWorkspacePage() {
   useEffect(() => {
     const refreshSyncedHealth = (event: Event) => {
       if ((event as CustomEvent<{ recordsChanged?: boolean }>).detail?.recordsChanged === false) return;
-      if (connection && online !== false) void loadHealthDomain();
+      if (connection && online !== false) void (activeWorkspaceTab === "overview" ? loadTodayHealth(adapterRef.current, true) : loadHealthDomain());
     };
     window.addEventListener("coros-sync-updated", refreshSyncedHealth);
     return () => window.removeEventListener("coros-sync-updated", refreshSyncedHealth);
-  }, [connection, loadHealthDomain, online]);
+  }, [activeWorkspaceTab, connection, loadHealthDomain, loadTodayHealth, online]);
 
   const workspaceTimezone = connection?.timezone ?? "Asia/Shanghai";
   const [currentTaskDate, setCurrentTaskDate] = useState("");
   useEffect(() => watchWorkspaceDate(workspaceTimezone, setCurrentTaskDate), [workspaceTimezone]);
+  useEffect(() => {
+    if (activeWorkspaceTab === "overview" && connection && workspaceTabReady && online !== false && currentTaskDate) {
+      void loadTodayHealth();
+    }
+  }, [activeWorkspaceTab, connection, workspaceTabReady, online, currentTaskDate, loadTodayHealth]);
   const taskDueDate = taskDueDateOverride ?? currentTaskDate;
 
   const readiness = useMemo(
@@ -2925,6 +2933,12 @@ export default function GitHubWorkspacePage() {
         calendarEvents={calendarEventFiles}
         loadingTasks={loadingTasks}
         loadingCalendarEvents={loadingCalendarEvents}
+        todayHealth={todayHealth}
+        todayHealthDate={todayHealthDate}
+        todayHealthError={todayHealthError}
+        loadingTodayHealth={loadingTodayHealth}
+        onRefreshHealth={() => void loadTodayHealth(adapterRef.current, true)}
+        onOpenHealth={() => selectWorkspaceTab("health")}
         savingTaskId={savingTaskId}
         savingCalendarEvent={savingCalendarEvent}
         savingCalendarEventId={savingCalendarEventId}

@@ -175,6 +175,24 @@ export class HealthArchiveReader {
     return this.snapshot();
   }
 
+  /** Read only the recent canonical records; keep the health tab's selected month unchanged. */
+  async loadRecent(today: string, options: { refresh?: boolean; signal?: AbortSignal } = {}) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(today) || !Number.isFinite(Date.parse(`${today}T00:00:00Z`))
+      || new Date(`${today}T00:00:00Z`).toISOString().slice(0, 10) !== today) throw new Error("INVALID_HEALTH_DATE");
+    options.signal?.throwIfAborted();
+    if (!this.catalogReady || options.refresh || this.catalogRequest) {
+      if (!this.catalogRequest) this.catalogRequest = this.refreshCatalog().finally(() => { this.catalogRequest = undefined; });
+      await this.catalogRequest;
+    }
+    options.signal?.throwIfAborted();
+    const version = this.catalogVersion;
+    const from = new Date(Date.parse(`${today}T00:00:00Z`) - 6 * 86400_000).toISOString().slice(0, 10);
+    await this.loadEntries([...this.dates.values()].filter(entry => !entry.deleted && entry.date >= from && entry.date <= today), options.signal);
+    options.signal?.throwIfAborted(); this.lifetime.signal.throwIfAborted();
+    if (version !== this.catalogVersion) throw new DOMException("Health catalog changed.", "AbortError");
+    return this.snapshot();
+  }
+
   private date(entry: DateHint) { return entry.date; }
 
   private hint(entry: CorosSyncIndexEntry, timezone = this.timezone): DateHint {
