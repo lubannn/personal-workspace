@@ -2044,7 +2044,7 @@ export default function GitHubWorkspacePage() {
       setErrorMessage("只能修改前天、昨天和今天的习惯打卡，请刷新后重试。");
       return false;
     }
-    if (item.record.deleted_at !== null || item.record.data.status !== "active" || date < item.record.data.start_date
+    if (item.record.deleted_at !== null || item.record.data.status !== "active"
       || (item.record.data.end_date !== null && date > item.record.data.end_date)) return false;
     setSavingHabitId(item.record.id); setErrorMessage(""); setStatusMessage("");
     const timestamp = new Date().toISOString();
