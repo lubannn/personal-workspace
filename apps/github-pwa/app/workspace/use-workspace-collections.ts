@@ -33,6 +33,7 @@ import { parseHabitRecord } from "../../../../src/lib/github-data/habits";
 import { parseHabitRuleRecord } from "../../../../src/lib/github-data/habit-rules";
 import { parseHabitCheckInRecord } from "../../../../src/lib/github-data/habit-check-ins";
 import { parseCaptureRecord } from "../../../../src/lib/github-data/workspace";
+import { localDateInTimezone } from "./page-model";
 import { HealthArchiveReader, type HealthArchiveSnapshot } from "./health-archive-reader";
 import { friendlyError, type SyncedActivityEvent, type SyncedCalendarEvent, type SyncedCapture, type SyncedHabit, type SyncedHabitCheckIn, type SyncedHabitRule, type SyncedHealthMetric, type SyncedHealthStagingRecord, type SyncedJournalEntry, type SyncedJournalImportCheckpoint, type SyncedJournalRevision, type SyncedJournalSegment, type SyncedLearningActivity, type SyncedLearningArea, type SyncedLearningGoal, type SyncedLearningResource, type SyncedMilestone, type SyncedObsidianDocument, type SyncedProject, type SyncedProjectFileReference, type SyncedProjectNote, type SyncedProjectPhase, type SyncedReportDraft, type SyncedSleepSession, type SyncedSyncConflict, type SyncedTask, type SyncedTimeEntry, type SyncedWorkout } from "./page-model";
 
@@ -84,9 +85,10 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
   const [healthUnverifiedWorkoutCount, setHealthUnverifiedWorkoutCount] = useState(0);
   const healthLoadRequestRef = useRef(0);
   const healthReaderRef = useRef<{ adapter: GitHubContentsAdapter; reader: HealthArchiveReader; timezone: string } | null>(null);
-  const healthRequestRef = useRef<{ controller: AbortController; promise: Promise<boolean>; month?: string; refresh: boolean } | null>(null);
+  const healthRequestRef = useRef<{ controller: AbortController; promise: Promise<boolean>; month?: string; recentDate?: string; refresh: boolean } | null>(null);
   const healthMonthRef = useRef("");
   const healthRefreshQueuedRef = useRef<Promise<boolean> | null>(null);
+  const todayHealthRefreshQueuedRef = useRef<Promise<boolean> | null>(null);
   const healthPrefetchRef = useRef<{ controller: AbortController; timer: ReturnType<typeof setTimeout> } | null>(null);
   const healthVisibleRef = useRef(healthVisible);
   useEffect(() => {
@@ -104,6 +106,10 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
       }
     };
   }, [healthVisible]);
+  const [todayHealth, setTodayHealth] = useState<HealthArchiveSnapshot | null>(null);
+  const [todayHealthDate, setTodayHealthDate] = useState("");
+  const [todayHealthError, setTodayHealthError] = useState("");
+  const [loadingTodayHealth, setLoadingTodayHealth] = useState(false);
   const [healthArchive, setHealthArchive] = useState<HealthArchiveSnapshot | null>(null);
   const [dashboardLayout, setDashboardLayout] = useState<DashboardLayout | null>(null);
   const [dashboardBlobSha, setDashboardBlobSha] = useState<string | null>(null);
@@ -755,7 +761,7 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     finally { setLoadingHabits(false); }
   }, [adapterRef, setErrorMessage]);
 
-  const loadHealthView = useCallback((adapter: GitHubContentsAdapter | null, month?: string, refresh = false): Promise<boolean> => {
+  const loadHealthView = useCallback((adapter: GitHubContentsAdapter | null, month?: string, refresh = false, recentDate?: string): Promise<boolean> => {
     if (!adapter || adapter !== adapterRef.current) return Promise.resolve(false);
     if (healthPrefetchRef.current) {
       clearTimeout(healthPrefetchRef.current.timer);
@@ -771,12 +777,13 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
       healthReaderRef.current?.reader.dispose();
       healthRequestRef.current = null;
       healthRefreshQueuedRef.current = null;
+      todayHealthRefreshQueuedRef.current = null;
       healthReaderRef.current = { adapter, reader: new HealthArchiveReader(adapter, timezone), timezone };
       healthMonthRef.current = "";
     }
     const pending = healthRequestRef.current;
     // Coalesce duplicate refresh notifications; never launch another full read in parallel.
-    if (pending && pending.month === month && pending.refresh === refresh) return pending.promise;
+    if (pending && pending.month === month && pending.recentDate === recentDate && pending.refresh === refresh) return pending.promise;
     pending?.controller.abort();
     const controller = new AbortController();
     const requestId = ++healthLoadRequestRef.current;
@@ -790,9 +797,17 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
       setHealthUnverifiedWorkoutCount(snapshot.unverifiedWorkoutCount);
       setHealthLoaded(true);
     };
-    setLoadingHealth(true); setHealthLoadError(""); setErrorMessage("");
+    setLoadingHealth(!recentDate); setLoadingTodayHealth(Boolean(recentDate));
+    if (recentDate) setTodayHealthError("");
+    else setHealthLoadError("");
+    setErrorMessage("");
     const promise = (async () => {
       try {
+        if (recentDate) {
+          const snapshot = await reader.loadRecent(recentDate, { refresh, signal: controller.signal });
+          if (current()) { setTodayHealth(snapshot); setTodayHealthDate(recentDate); }
+          return current();
+        }
         const snapshot = await reader.load(month, { refresh, signal: controller.signal, onCatalog: publish, onProgress: publish });
         publish(snapshot);
         if (current() && snapshot.month && healthVisibleRef.current) {
@@ -809,15 +824,17 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
       } catch (error) {
         if (!current()) return false;
         const message = error instanceof Error && error.message === "HEALTH_RECORD_INVALID"
-          ? "部分健康记录格式无效，本月读取未完成，请检查后重试。"
+          ? "部分健康记录格式无效，读取未完成，请检查后重试。"
           : `健康记录读取未完成：${friendlyError(error)}`;
-        setHealthLoadError(message); setErrorMessage(message);
+        if (recentDate) setTodayHealthError(message);
+        else setHealthLoadError(message);
+        setErrorMessage(message);
         return false;
       } finally {
-        if (current()) { setLoadingHealth(false); healthRequestRef.current = null; }
+        if (current()) { setLoadingHealth(false); setLoadingTodayHealth(false); healthRequestRef.current = null; }
       }
     })();
-    healthRequestRef.current = { controller, promise, month, refresh };
+    healthRequestRef.current = { controller, promise, month, recentDate, refresh };
     return promise;
   }, [adapterRef, setErrorMessage, timezone]);
 
@@ -833,6 +850,20 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
       void queued.finally(() => { if (healthRefreshQueuedRef.current === queued) healthRefreshQueuedRef.current = null; });
     }
     return healthRefreshQueuedRef.current;
+  }, [adapterRef, loadHealthView, timezone]);
+  const loadTodayHealth = useCallback((adapter = adapterRef.current, refresh = false): Promise<boolean> => {
+    if (!adapter || adapter !== adapterRef.current) return Promise.resolve(false);
+    const date = localDateInTimezone(timezone), pending = healthRequestRef.current;
+    if (!refresh || !pending || (pending.refresh && pending.recentDate === date)) return loadHealthView(adapter, undefined, refresh, date);
+    // A sync finishing during a metadata read requires a fresh catalog after it,
+    // rather than joining the older inventory or interrupting a new navigation.
+    if (!todayHealthRefreshQueuedRef.current) {
+      const queued = pending.promise.then(() => !pending.controller.signal.aborted && adapter === adapterRef.current
+        ? loadHealthView(adapter, undefined, true, localDateInTimezone(timezone)) : false);
+      todayHealthRefreshQueuedRef.current = queued;
+      void queued.finally(() => { if (todayHealthRefreshQueuedRef.current === queued) todayHealthRefreshQueuedRef.current = null; });
+    }
+    return todayHealthRefreshQueuedRef.current;
   }, [adapterRef, loadHealthView, timezone]);
   const clearHealthCache = useCallback(async () => {
     if (healthPrefetchRef.current) { clearTimeout(healthPrefetchRef.current.timer); healthPrefetchRef.current.controller.abort(); healthPrefetchRef.current = null; }
@@ -913,8 +944,10 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     healthReaderRef.current?.reader.dispose();
     healthReaderRef.current = null;
     healthRefreshQueuedRef.current = null;
+    todayHealthRefreshQueuedRef.current = null;
     healthMonthRef.current = "";
     setHealthArchive(null);
+    setTodayHealth(null); setTodayHealthDate(""); setTodayHealthError(""); setLoadingTodayHealth(false);
     setLoadingHealth(false);
     setHealthLoaded(false);
     setHealthLoadError("");
@@ -1042,6 +1075,7 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     loadingHealth,
     healthLoaded,
     healthArchive,
+    todayHealth, todayHealthDate, todayHealthError, loadingTodayHealth,
     healthLoadError,
     healthUnverifiedWorkoutCount,
     loadingDashboard,
@@ -1068,6 +1102,7 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     loadHabitDomain,
     loadHealthDomain,
     loadHealthMonth,
+    loadTodayHealth,
     clearHealthCache,
     loadDashboardLayout,
     clearCollections,

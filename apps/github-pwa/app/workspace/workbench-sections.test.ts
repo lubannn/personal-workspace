@@ -34,6 +34,7 @@ describe("workbench controls", () => {
     const dashboard = (busy = false) => renderToStaticMarkup(createElement(DashboardSection, {
       connection, online: true, dashboardLayout: layout, dashboardBlobSha: null, dashboardDirty: false, editingDashboard: false,
       loadingDashboard: false, savingDashboard: false, visibleWidgets: layout.widgets, hiddenWidgets: [], todayTasks: [], calendarEvents: [item],
+      todayHealth: null, todayHealthDate: "", todayHealthError: "", loadingTodayHealth: false, onRefreshHealth: () => undefined, onOpenHealth: () => undefined,
       loadingTasks: false, loadingCalendarEvents: false, savingTaskId: null, savingCalendarEvent: false, savingCalendarEventId: busy ? item.record.id : null,
       currentTaskDate: "2026-10-04", onToggleEditing: () => undefined, onRefresh: () => undefined, onSaveLayout: () => undefined,
       onWidgetChange: () => undefined, onWidgetResize: () => undefined, onReset: () => undefined, onCompleteTask: () => undefined, onCalendarCompletionChange: () => undefined,

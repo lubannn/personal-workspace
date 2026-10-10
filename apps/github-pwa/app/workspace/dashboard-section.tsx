@@ -4,6 +4,8 @@ import type { DashboardLayout, DashboardWidgetConfig, DashboardWidgetSize } from
 import { isTodayDashboardWidget } from "./dashboard-presentation";
 import { calendarEventsForDate } from "../../../../src/lib/github-data/calendar-events";
 import { formatTaskDue, type Connection, type SyncedCalendarEvent, type SyncedTask } from "./page-model";
+import { TodayExerciseWidget } from "./today-exercise-widget";
+import type { HealthArchiveSnapshot } from "./health-archive-reader";
 import { CalendarCompletionCheckbox } from "./calendar-completion-checkbox";
 
 
@@ -34,6 +36,12 @@ type Props = {
   calendarEvents: SyncedCalendarEvent[];
   loadingTasks: boolean;
   loadingCalendarEvents: boolean;
+  todayHealth: HealthArchiveSnapshot | null;
+  todayHealthDate: string;
+  todayHealthError: string;
+  loadingTodayHealth: boolean;
+  onRefreshHealth: () => void;
+  onOpenHealth: () => void;
   savingTaskId: string | null;
   savingCalendarEvent: boolean;
   savingCalendarEventId: string | null;
@@ -113,6 +121,10 @@ export function DashboardSection(props: Props) {
                         : <ul>{todayTasks.slice(0, 4).map((item) => <li key={item.record.id}><button type="button" aria-label={`完成任务：${item.record.data.title}`} onClick={() => onCompleteTask(item)} disabled={Boolean(savingTaskId) || online === false}>○</button><span>{item.record.data.title}</span><small>{formatTaskDue(item.record.data.due_at, currentTaskDate)}</small></li>)}</ul>}
                   {todayTasks.length > 4 ? <p className="task-overflow-note">另有 {todayTasks.length - 4} 项，请在任务清单查看。</p> : null}
                 </div>
+              ) : widget.widget_type === "exercise_today" ? (
+                <TodayExerciseWidget connected={Boolean(connection)} online={online} today={currentTaskDate} timezone={connection?.timezone ?? "Asia/Shanghai"}
+                  snapshot={props.todayHealth} loadedDate={props.todayHealthDate} loading={props.loadingTodayHealth} error={props.todayHealthError}
+                  onRefresh={props.onRefreshHealth} onOpenHealth={props.onOpenHealth} />
               ) : <p className="widget-empty">{definition.empty}</p>}
             </article>
           );

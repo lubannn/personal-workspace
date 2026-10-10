@@ -1,0 +1,12 @@
+.today-exercise-widget { margin-top: 8px; font-size: 13px; line-height: 1.5; min-width: 0; }
+.today-exercise-widget p { margin: 5px 0; }
+.today-exercise-widget .exercise-context { color: var(--muted); font-size: 11px; }
+.today-exercise-widget .exercise-today-records { padding: 0; margin: 5px 0; list-style: none; }
+.today-exercise-widget .exercise-today-records li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px; padding: 3px 0; border-bottom: 1px solid var(--line); }
+.today-exercise-widget .exercise-today-records small { font-size: 11px; color: var(--muted); }
+.today-exercise-widget .exercise-advice { margin-top: 8px; padding: 8px 10px; border-radius: 10px; background: var(--accent-soft); }
+.today-exercise-widget .exercise-advice details { font-size: 11px; color: var(--muted); }
+.today-exercise-widget .exercise-advice summary { cursor: pointer; }
+.today-exercise-widget .exercise-widget-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.today-exercise-widget .exercise-widget-actions button { min-height: 28px; padding: 3px 8px; border: 1px solid var(--line); border-radius: 7px; background: transparent; font: inherit; font-size: 11px; cursor: pointer; }
+@media (max-width: 600px) { .today-exercise-widget .exercise-widget-actions button { min-height: 36px; } }
