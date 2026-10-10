@@ -53,3 +53,36 @@ describe("today exercise from recorded health facts", () => {
     expect(result.advice.mode).toBe("regular"); expect(result.advice.suggestion).toContain("20–30");
   });
 });
+
+
+describe("tomorrow exercise is a tentative plan from today's records", () => {
+  it("prioritizes today's poor or short sleep without assuming recovery tomorrow", () => {
+    for (const night of [sleep({ score: 60 }), sleep({ score: null, asleepSeconds: 5 * 3600 })]) {
+      const result = buildTodayExercise(today, timezone, [night], [workout("one", "2026-10-01T01:00:00Z", 3600)]);
+      expect(result.tomorrow.date).toBe("2026-10-02");expect(result.tomorrow.advice.mode).toBe("recovery");
+      expect(result.tomorrow.note).toContain("新的睡眠记录");expect(result.tomorrow.advice.suggestion).toContain("若明天仍疲惫");
+    }
+  });
+  it("bases a lighter next-day plan on today's duration, with duplicate records counted once", () => {
+    const one = workout("one", "2026-10-01T01:00:00Z", 3600);
+    const result = buildTodayExercise(today, timezone, [sleep()], [one, one]);
+    expect(result.tomorrow.advice.mode).toBe("gentle");expect(result.tomorrow.advice.reason).toContain("今天已记录至少 60 分钟");
+    expect(result.tomorrow.advice.reason).toContain("时长不代表强度");
+  });
+  it("does not reuse yesterday's duration as today's or read future workouts/sleep as facts for tomorrow", () => {
+    const result = buildTodayExercise(today, timezone, [sleep(), sleep({ id: "future_sleep", recordDate: "2026-10-02", score: 60 })], [workout("yesterday", "2026-09-30T01:00:00Z", 3600), workout("future", "2026-10-02T01:00:00Z", 3600)]);
+    expect(result.advice.mode).toBe("gentle");expect(result.tomorrow.advice.mode).toBe("regular");
+    expect(result.tomorrow.advice.reason).toContain("今天尚未记录运动");
+  });
+  it("does not infer tomorrow's readiness from missing or incomplete sleep", () => {
+    for (const nights of [[], [sleep({ score: null, asleepSeconds: null })]]) {
+      const result = buildTodayExercise(today, timezone, nights, []);
+      expect(result.tomorrow.advice.mode).toBe("gentle");expect(result.tomorrow.advice.reason).toContain("暂不预判");
+    }
+  });
+  it("rolls the local calendar date across month, year, leap day and DST boundaries", () => {
+    for (const [date, next] of [["2026-10-31", "2026-11-01"], ["2026-12-31", "2027-01-01"], ["2028-02-28", "2028-02-29"], ["2026-03-07", "2026-03-08"]]) {
+      expect(buildTodayExercise(date, "America/New_York", [], []).tomorrow.date).toBe(next);
+    }
+  });
+});

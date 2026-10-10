@@ -10,3 +10,8 @@
 .today-exercise-widget .exercise-widget-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .today-exercise-widget .exercise-widget-actions button { min-height: 28px; padding: 3px 8px; border: 1px solid var(--line); border-radius: 7px; background: transparent; font: inherit; font-size: 11px; cursor: pointer; }
 @media (max-width: 600px) { .today-exercise-widget .exercise-widget-actions button { min-height: 36px; } }
+
+.today-exercise-widget .exercise-advice-picker { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
+.today-exercise-widget .exercise-advice-picker button { min-height: 28px; padding: 3px 9px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--soft); font: inherit; font-size: 11px; cursor: pointer; }
+.today-exercise-widget .exercise-advice-picker button[aria-pressed="true"] { background: var(--surface); border-color: var(--line); color: var(--ink); font-weight: 650; }
+@media (max-width: 600px) { .today-exercise-widget .exercise-advice-picker button { min-height: 36px; } }

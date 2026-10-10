@@ -49,7 +49,8 @@
 .travel-city-map .unavailable { fill: #ddd; cursor: default; stroke-dasharray: 3 2; }
 .travel-city-leaders { pointer-events: none; fill: #5a756a; }
 .travel-city-leaders line { vector-effect: non-scaling-stroke; }
-.travel-city-label rect { fill: #f8faf7; }
+.travel-city-label rect { fill: transparent; }
+.travel-city-label text { stroke: none; paint-order: normal; text-shadow: none; filter: none; }
 .travel-city-label.selectable { cursor: pointer; }
 .travel-city-label.selectable:hover rect, .travel-city-label.selected rect { fill: #e1eee7; stroke: #579184; vector-effect: non-scaling-stroke; }
 .travel-city-stats { color: #245d4c; font-weight: 600; }

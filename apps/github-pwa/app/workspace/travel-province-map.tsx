@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { travelCitiesForProvince } from "../../../../src/lib/github-data/travel-cities";
 import type { SyncedTravelVisit } from "../../../../src/lib/github-data/travel-sync";
 import { travelCityCoverage } from "./travel-list-view";
@@ -20,6 +20,7 @@ export function TravelProvinceMap({ provinceId, label, files, selectedCity, savi
   const [map, setMap] = useState<TravelCityMapData | null>(null);
   const [error, setError] = useState(false);
   const containerRef = useRef<HTMLElement>(null);
+  const leaderMaskId = useId();
   const [mapWidth, setMapWidth] = useState(320);
   useEffect(() => {
     const container = containerRef.current;
@@ -65,7 +66,14 @@ export function TravelProvinceMap({ provinceId, label, files, selectedCity, savi
           </path>
         </g>)}
       </g>
-      <g aria-hidden="true" className="travel-city-leaders">
+      <defs>
+        {/* Clear leaders behind names without painting a background or halo. */}
+        <mask id={leaderMaskId} maskUnits="userSpaceOnUse" x={0} y={0} width={790} height={layout.height}>
+          <rect x={0} y={0} width={790} height={layout.height} fill="white" />
+          {layout.labels.map(cityLabel => <rect key={cityLabel.city} x={cityLabel.x - cityLabel.width / 2} y={cityLabel.y - cityLabel.height / 2} width={cityLabel.width} height={cityLabel.height} fill="black" />)}
+        </mask>
+      </defs>
+      <g aria-hidden="true" className="travel-city-leaders" mask={`url(#${leaderMaskId})`}>
         {layout.labels.map(cityLabel => {
           const end = cityLabelLeader(cityLabel);
           return end && <g key={cityLabel.city}><line x1={cityLabel.anchorX} y1={cityLabel.anchorY} x2={end.x} y2={end.y} /><circle cx={cityLabel.anchorX} cy={cityLabel.anchorY} r={layout.fontSize / 10} /></g>;
