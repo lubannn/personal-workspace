@@ -37,6 +37,11 @@ Generated assets live at `public/travel-city-maps/<province_id>.json`. The UI fe
 only the selected province, with cancellation when switching; no aggregate city
 geometry is imported into the client bundle. All maps total about 1.51 MB uncompressed,
 with each province below 100 KB. Failed map loads retain the complete city list.
+City names render in a separate top layer. `label-layout.ts` reserves each full
+name's bounds, moves colliding/edge labels with leaders to their original anchors,
+and maintains at least 13px screen type when resized. Long names wrap in full;
+crowded narrow maps can grow vertically. No names are hidden or truncated.
+Browser coverage and synthetic screenshots: [city-label validation](../../../../../docs/TRAVEL_CITY_LABELS.md).
 Province selection changes display only; selecting a city explicitly opens the
 existing visit form without saving. Time view always shows every active visit,
 including multiple dates/notes for the same city. CRUD/storage/schema are unchanged.
