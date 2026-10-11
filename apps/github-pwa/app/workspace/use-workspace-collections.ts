@@ -132,6 +132,7 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
   const [loadingSyncConflicts, setLoadingSyncConflicts] = useState(false);
   const [loadingLearningAreas, setLoadingLearningAreas] = useState(false);
   const [loadingHabits, setLoadingHabits] = useState(false);
+  const [habitLoadError, setHabitLoadError] = useState("");
   const [loadingHealth, setLoadingHealth] = useState(false);
   const [loadingDashboard, setLoadingDashboard] = useState(false);
 
@@ -728,8 +729,9 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
   }, [adapterRef, setErrorMessage]);
 
   const loadHabitDomain = useCallback(async (adapter = adapterRef.current) => {
-    if (!adapter) return;
+    if (!adapter || adapter !== adapterRef.current) return false;
     setLoadingHabits(true);
+    setHabitLoadError("");
     setErrorMessage("");
     async function loadDirectory<T>(directory: string, parse: (text: string) => T) {
       let items;
@@ -742,7 +744,8 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
       const records: Array<{ record: T; path: string; blobSha: string }> = [];
       for (let index = 0; index < candidates.length; index += 6) {
         records.push(...(await Promise.all(candidates.slice(index, index + 6).map(async (item) => {
-          try { const file = await adapter!.readText(item.path); return { record: parse(file.text), path: file.path, blobSha: file.blobSha }; }
+          const file = await adapter!.readText(item.path);
+          try { return { record: parse(file.text), path: file.path, blobSha: file.blobSha }; }
           catch { return null; }
         }))).filter((item): item is { record: T; path: string; blobSha: string } => item !== null));
       }
@@ -754,11 +757,15 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
         loadDirectory("data/habit-rules", parseHabitRuleRecord),
         loadDirectory("data/habit-check-ins", parseHabitCheckInRecord),
       ]);
+      if (adapterRef.current !== adapter) return false;
       setHabitFiles(habits);
       setHabitRuleFiles(rules);
       setHabitCheckInFiles(checkIns);
-    } catch (error) { setErrorMessage(friendlyError(error)); }
-    finally { setLoadingHabits(false); }
+      return true;
+    } catch (error) {
+      if (adapterRef.current === adapter) { const message = friendlyError(error); setHabitLoadError(message); setErrorMessage(message); }
+      return false;
+    } finally { if (adapterRef.current === adapter) setLoadingHabits(false); }
   }, [adapterRef, setErrorMessage]);
 
   const loadHealthView = useCallback((adapter: GitHubContentsAdapter | null, month?: string, refresh = false, recentDate?: string): Promise<boolean> => {
@@ -981,6 +988,7 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     setLearningGoalFiles([]);
     setLearningActivityFiles([]);
     setLearningResourceFiles([]);
+    setHabitLoadError(""); setLoadingHabits(false);
     setHabitFiles([]);
     setHabitRuleFiles([]);
     setHabitCheckInFiles([]);
@@ -1072,6 +1080,7 @@ export function useWorkspaceCollections({ adapterRef, setErrorMessage, setDashbo
     loadingSyncConflicts,
     loadingLearningAreas,
     loadingHabits,
+    habitLoadError,
     loadingHealth,
     healthLoaded,
     healthArchive,

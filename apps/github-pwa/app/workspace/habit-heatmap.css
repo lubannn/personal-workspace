@@ -1,0 +1,32 @@
+.habit-heatmap-widget { margin-top: 10px; color: var(--ink); font-size: 12px; }
+.habit-heatmap-summary, .habit-heatmap-legend, .habit-heatmap-actions { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.habit-heatmap-summary { margin-bottom: 8px; }
+.habit-heatmap-summary > span { color: var(--soft); font-size: 11px; }
+.habit-heatmap-weekdays, .habit-heatmap-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+.habit-heatmap-weekdays { margin-bottom: 4px; color: var(--soft); font-size: 10px; text-align: center; }
+.habit-heatmap-day { min-width: 0; min-height: 28px; padding: 3px; border: 1px solid transparent; border-radius: 5px; background: #eae7de; color: var(--ink); font: inherit; cursor: pointer; }
+.habit-heatmap-day[data-level="1"], .habit-heatmap-legend i[data-level="1"] { background: #dbe5d4; }
+.habit-heatmap-day[data-level="2"], .habit-heatmap-legend i[data-level="2"] { background: #bacbac; }
+.habit-heatmap-day[data-level="3"], .habit-heatmap-legend i[data-level="3"] { background: #7f9470; color: #171713; }
+.habit-heatmap-day[data-level="4"], .habit-heatmap-legend i[data-level="4"] { background: #526747; color: white; }
+.habit-heatmap-day[data-future="true"] { background: transparent; border-color: var(--line); color: var(--soft); }
+.habit-heatmap-day[data-today="true"] { outline: 1px solid var(--ink); outline-offset: 1px; }
+.habit-heatmap-day[aria-pressed="true"] { box-shadow: inset 0 0 0 2px currentColor; }
+.habit-heatmap-day:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.habit-heatmap-legend { justify-content: flex-start; margin-top: 8px; color: var(--soft); font-size: 10px; }
+.habit-heatmap-legend i { width: 10px; height: 10px; border-radius: 2px; background: #eae7de; }
+.habit-heatmap-today { margin-left: auto; }
+.habit-heatmap-detail { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--line); }
+.habit-heatmap-detail > strong { font-size: 11px; }
+.habit-heatmap-detail ul { display: grid; gap: 5px; margin: 6px 0 0; padding: 0; list-style: none; }
+.habit-heatmap-detail li { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.habit-heatmap-detail li span { min-width: 0; overflow-wrap: anywhere; }
+.habit-heatmap-detail small { flex-shrink: 0; color: var(--soft); font-size: 10px; }
+.habit-heatmap-detail small[data-status="completed"] { color: #405436; }
+.habit-heatmap-detail p { margin: 6px 0 0; color: var(--soft); }
+.habit-heatmap-actions { margin-top: 8px; }
+.habit-heatmap-actions button { min-height: 28px; }
+.habit-heatmap-error { color: var(--ink); font-size: 12px; }
+@media (max-width: 600px) {
+  .habit-heatmap-day, .habit-heatmap-actions button { min-height: 36px; }
+}

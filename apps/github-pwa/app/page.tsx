@@ -351,7 +351,7 @@ export default function GitHubWorkspacePage() {
     loadingReportDrafts,
     loadingJournalEntries,
     loadingLearningAreas,
-    loadingHabits,
+    loadingHabits, habitLoadError,
     loadingHealth,
     healthLoaded,
     healthArchive,
@@ -2959,6 +2959,12 @@ export default function GitHubWorkspacePage() {
         calendarEvents={calendarEventFiles}
         loadingTasks={loadingTasks}
         loadingCalendarEvents={loadingCalendarEvents}
+        habits={habitOrder.items}
+        habitCheckIns={habitCheckInFiles}
+        loadingHabits={loadingHabits}
+        habitError={habitLoadError}
+        onRefreshHabits={() => { if (!habitOrder.pending) void loadHabitDomain(); }}
+        onOpenHabits={() => selectWorkspaceTab("habits")}
         todayHealth={todayHealth}
         todayHealthDate={todayHealthDate}
         todayHealthError={todayHealthError}

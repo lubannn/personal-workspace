@@ -62,7 +62,7 @@ describe("workspace module data loading", () => {
     expect(WORKSPACE_MODULE_COLLECTIONS.projects).toContain("tasks");
     expect(WORKSPACE_MODULE_COLLECTIONS.tasks).toEqual(["tasks", "projects"]);
     expect(WORKSPACE_MODULE_COLLECTIONS.habits).toEqual(["habits", "health"]);
-    expect(WORKSPACE_MODULE_COLLECTIONS.overview).toEqual(["dashboard", "captures", "tasks", "calendar", "todayHealth"]);
+    expect(WORKSPACE_MODULE_COLLECTIONS.overview).toEqual(["dashboard", "captures", "tasks", "calendar", "todayHealth", "habits"]);
     expect(WORKSPACE_MODULE_COLLECTIONS.reports).toEqual(["tasks", "timeEntries", "projects", "milestones", "calendar", "activity", "reports"]);
   });
 
@@ -81,7 +81,25 @@ describe("workspace module data loading", () => {
     await coordinator.load(adapter, "journal", loaders);
     expect(loaders.journal).toHaveBeenCalledOnce();
     const called = Object.entries(loaders).filter(([, loader]) => vi.mocked(loader).mock.calls.length).map(([name]) => name);
-    expect(called.sort()).toEqual(["calendar", "captures", "dashboard", "journal", "tasks", "todayHealth"]);
+    expect(called.sort()).toEqual(["calendar", "captures", "dashboard", "habits", "journal", "tasks", "todayHealth"]);
+  });
+
+  it("shares overview habit reads with the habits tab without loading historical health in overview", async () => {
+    const coordinator = new WorkspaceModuleLoader<object>(), adapter = {}, loaders = createLoaders();
+    let finish!: () => void;
+    loaders.habits = vi.fn(() => new Promise<void>((resolve) => { finish = resolve; }));
+    const overview = coordinator.load(adapter, "overview", loaders);
+    await Promise.resolve();
+    expect(loaders.habits).toHaveBeenCalledOnce();
+    expect(loaders.health).not.toHaveBeenCalled();
+    const habits = coordinator.load(adapter, "habits", loaders);
+    await Promise.resolve();
+    expect(loaders.habits).toHaveBeenCalledOnce();
+    finish();
+    await Promise.all([overview, habits]);
+    await coordinator.load(adapter, "overview", loaders);
+    expect(loaders.habits).toHaveBeenCalledOnce();
+    expect(loaders.health).toHaveBeenCalledOnce();
   });
 
   it("starts fresh after disconnect or a different repository connection", async () => {
