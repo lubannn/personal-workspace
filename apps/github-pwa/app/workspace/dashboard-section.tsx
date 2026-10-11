@@ -6,6 +6,8 @@ import { calendarEventsForDate } from "../../../../src/lib/github-data/calendar-
 import { formatTaskDue, type Connection, type SyncedCalendarEvent, type SyncedTask } from "./page-model";
 import { TodayExerciseWidget } from "./today-exercise-widget";
 import type { HealthArchiveSnapshot } from "./health-archive-reader";
+import { HabitHeatmapWidget } from "./habit-heatmap-widget";
+import type { SyncedHabit, SyncedHabitCheckIn } from "./page-model";
 import { CalendarCompletionCheckbox } from "./calendar-completion-checkbox";
 
 
@@ -36,6 +38,12 @@ type Props = {
   calendarEvents: SyncedCalendarEvent[];
   loadingTasks: boolean;
   loadingCalendarEvents: boolean;
+  habits: SyncedHabit[];
+  habitCheckIns: SyncedHabitCheckIn[];
+  loadingHabits: boolean;
+  habitError: string;
+  onRefreshHabits: () => void;
+  onOpenHabits: () => void;
   todayHealth: HealthArchiveSnapshot | null;
   todayHealthDate: string;
   todayHealthError: string;
@@ -121,6 +129,9 @@ export function DashboardSection(props: Props) {
                         : <ul>{todayTasks.slice(0, 4).map((item) => <li key={item.record.id}><button type="button" aria-label={`完成任务：${item.record.data.title}`} onClick={() => onCompleteTask(item)} disabled={Boolean(savingTaskId) || online === false}>○</button><span>{item.record.data.title}</span><small>{formatTaskDue(item.record.data.due_at, currentTaskDate)}</small></li>)}</ul>}
                   {todayTasks.length > 4 ? <p className="task-overflow-note">另有 {todayTasks.length - 4} 项，请在任务清单查看。</p> : null}
                 </div>
+              ) : widget.widget_type === "habit_heatmap" ? (
+                <HabitHeatmapWidget connected={Boolean(connection)} today={currentTaskDate} habits={props.habits} checkIns={props.habitCheckIns}
+                  loading={props.loadingHabits} error={props.habitError} onRefresh={props.onRefreshHabits} onOpenHabits={props.onOpenHabits} />
               ) : widget.widget_type === "exercise_today" ? (
                 <TodayExerciseWidget connected={Boolean(connection)} online={online} today={currentTaskDate} timezone={connection?.timezone ?? "Asia/Shanghai"}
                   snapshot={props.todayHealth} loadedDate={props.todayHealthDate} loading={props.loadingTodayHealth} error={props.todayHealthError}

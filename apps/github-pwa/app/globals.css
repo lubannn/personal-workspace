@@ -112,8 +112,8 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .today-task-widget li { min-width: 0; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 9px; padding: 10px 0; background: #f9f8f4; }
 .today-task-widget li button { width: 23px; height: 23px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 50%; background: transparent; color: var(--accent); cursor: pointer; }
 .today-task-widget li button:disabled { opacity: .4; cursor: default; }
-.today-task-widget li span { min-width: 0; overflow: hidden; color: var(--soft); font: 12px/1.4 ui-serif, Georgia, "Songti SC", serif; text-overflow: ellipsis; white-space: nowrap; }
-.today-task-widget li small { color: var(--muted); font-size: 8px; white-space: nowrap; }
+.today-task-widget li span { min-width: 0; overflow: hidden; color: var(--ink); font: 12px/1.4 ui-serif, Georgia, "Songti SC", serif; text-overflow: ellipsis; white-space: nowrap; }
+.today-task-widget li small { color: var(--soft); font-size: 8px; white-space: nowrap; }
 .today-schedule-widget li { grid-template-columns: auto minmax(0, 1fr) auto; }
 .calendar-completion-control { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; min-width: 36px; min-height: 36px; cursor: pointer; }
 .calendar-completion-control:has(input:disabled) { cursor: default; opacity: .55; }
