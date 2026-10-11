@@ -1,32 +1,42 @@
+.overview-columns .dashboard-widget.widget-habit_heatmap { grid-column: 1 / -1; }
 .habit-heatmap-widget { margin-top: 10px; color: var(--ink); font-size: 12px; }
-.habit-heatmap-summary, .habit-heatmap-legend, .habit-heatmap-actions { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
-.habit-heatmap-summary { margin-bottom: 8px; }
+.habit-heatmap-summary, .habit-heatmap-actions { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.habit-heatmap-summary { flex-wrap: wrap; margin-bottom: 8px; }
 .habit-heatmap-summary > span { color: var(--soft); font-size: 11px; }
-.habit-heatmap-weekdays, .habit-heatmap-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
-.habit-heatmap-weekdays { margin-bottom: 4px; color: var(--soft); font-size: 10px; text-align: center; }
-.habit-heatmap-day { min-width: 0; min-height: 28px; padding: 3px; border: 1px solid transparent; border-radius: 5px; background: #eae7de; color: var(--ink); font: inherit; cursor: pointer; }
-.habit-heatmap-day[data-level="1"], .habit-heatmap-legend i[data-level="1"] { background: #dbe5d4; }
-.habit-heatmap-day[data-level="2"], .habit-heatmap-legend i[data-level="2"] { background: #bacbac; }
-.habit-heatmap-day[data-level="3"], .habit-heatmap-legend i[data-level="3"] { background: #7f9470; color: #171713; }
-.habit-heatmap-day[data-level="4"], .habit-heatmap-legend i[data-level="4"] { background: #526747; color: white; }
-.habit-heatmap-day[data-future="true"] { background: transparent; border-color: var(--line); color: var(--soft); }
-.habit-heatmap-day[data-today="true"] { outline: 1px solid var(--ink); outline-offset: 1px; }
-.habit-heatmap-day[aria-pressed="true"] { box-shadow: inset 0 0 0 2px currentColor; }
-.habit-heatmap-day:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
-.habit-heatmap-legend { justify-content: flex-start; margin-top: 8px; color: var(--soft); font-size: 10px; }
-.habit-heatmap-legend i { width: 10px; height: 10px; border-radius: 2px; background: #eae7de; }
-.habit-heatmap-today { margin-left: auto; }
-.habit-heatmap-detail { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--line); }
-.habit-heatmap-detail > strong { font-size: 11px; }
-.habit-heatmap-detail ul { display: grid; gap: 5px; margin: 6px 0 0; padding: 0; list-style: none; }
-.habit-heatmap-detail li { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
-.habit-heatmap-detail li span { min-width: 0; overflow-wrap: anywhere; }
-.habit-heatmap-detail small { flex-shrink: 0; color: var(--soft); font-size: 10px; }
-.habit-heatmap-detail small[data-status="completed"] { color: #405436; }
-.habit-heatmap-detail p { margin: 6px 0 0; color: var(--soft); }
-.habit-heatmap-actions { margin-top: 8px; }
+.habit-matrix-month-nav { display: flex; align-items: center; gap: 7px; }
+.habit-matrix-month-nav button { width: 28px; min-height: 28px; padding: 0; border: 1px solid var(--line); border-radius: 5px; background: transparent; color: var(--ink); cursor: pointer; font: inherit; }
+.habit-matrix-month-nav button:disabled { opacity: .35; cursor: default; }
+.habit-matrix-month-nav .habit-matrix-current { width: auto; padding: 0 6px; font-size: 11px; }
+.habit-matrix-scroll { max-width: 100%; overflow-x: auto; scrollbar-width: thin; overscroll-behavior-x: contain; }
+.habit-matrix-scroll:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.habit-matrix-table { width: 100%; border-collapse: separate; border-spacing: 0; table-layout: fixed; }
+.habit-matrix-table th, .habit-matrix-table td { min-width: 20px; width: 20px; padding: 0; text-align: center; }
+.habit-matrix-table thead th { height: 24px; color: var(--soft); font-size: 9px; font-weight: 500; }
+.habit-matrix-table .habit-matrix-name { position: sticky; left: 0; z-index: 1; width: 88px; min-width: 88px; padding: 0 8px 0 0; background: var(--surface); text-align: left; }
+.habit-matrix-table tbody .habit-matrix-name { color: var(--ink); font-size: 11px; font-weight: 600; }
+.habit-matrix-name > span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.habit-matrix-name small { display: block; color: var(--soft); font-size: 9px; font-weight: 400; }
+.habit-matrix-table [data-today="true"] { background: var(--accent-soft); }
+.habit-matrix-table thead [data-today="true"] { color: var(--ink); font-weight: 700; border-radius: 4px 4px 0 0; }
+.habit-matrix-cell { display: grid; place-items: center; width: 100%; min-width: 20px; height: 34px; padding: 0; border: 0; background: transparent; color: var(--ink); cursor: pointer; }
+.habit-matrix-dot { box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; width: 12px; height: 12px; flex-shrink: 0; border: 1px solid #b2b2a5; border-radius: 50%; background: transparent; color: var(--soft); font: 11px/1 sans-serif; font-style: normal; }
+.habit-matrix-dot[data-status="completed"] { border-color: var(--accent); background: var(--accent); color: white; }
+.habit-matrix-dot[data-status="missed"] { border-color: #b7887c; color: #804d40; background: #f1e2dd; }
+.habit-matrix-dot[data-status="skipped"] { border-color: #b4a57d; color: #75633b; background: #f0ebdc; }
+.habit-matrix-dot[data-status="not_scheduled"] { border-style: dashed; opacity: .35; }
+.habit-matrix-dot[data-status="future"] { opacity: .35; }
+.habit-matrix-cell[aria-pressed="true"] .habit-matrix-dot { outline: 1px solid var(--ink); outline-offset: 2px; }
+.habit-matrix-cell:focus-visible, .habit-matrix-month-nav button:focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; border-radius: 4px; }
+.habit-heatmap-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 8px; color: var(--soft); font-size: 10px; }
+.habit-heatmap-legend > span { display: inline-flex; align-items: center; gap: 4px; }
+.habit-heatmap-legend .habit-matrix-dot { width: 10px; height: 10px; font-size: 9px; }
+.habit-matrix-scroll-hint { margin-left: auto; }
+.habit-matrix-selection { margin: 8px 0 0; min-height: 16px; color: var(--soft); font-size: 11px; overflow-wrap: anywhere; }
+.habit-heatmap-actions { margin-top: 6px; }
 .habit-heatmap-actions button { min-height: 28px; }
 .habit-heatmap-error { color: var(--ink); font-size: 12px; }
+.habit-matrix-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 @media (max-width: 600px) {
-  .habit-heatmap-day, .habit-heatmap-actions button { min-height: 36px; }
+  .habit-matrix-month-nav button, .habit-heatmap-actions button { min-height: 36px; }
+  .habit-matrix-cell { height: 36px; }
 }

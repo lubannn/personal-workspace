@@ -55,11 +55,27 @@ describe("overview habit heatmap", () => {
     expect(buildHabitHeatmap([habit("reading")], [original], "2026-10-11")?.days[10]?.level).toBe(4);
   });
 
-  it("renders accessible day controls and today's actual habit states", () => {
+  it("keeps each habit's status separate and can browse another month from the same records", () => {
+    const result = buildHabitHeatmap([habit("reading"), habit("walking")], [checkIn("reading", "2026-09-01"), checkIn("reading", "2026-10-11"), checkIn("walking", "2026-09-01", "missed")], "2026-10-11", "2026-09")!;
+    expect(result.days).toHaveLength(30);
+    expect(result.completed).toBe(1);
+    expect(result.rows.find((row) => row.habit.id === "reading")?.cells[0]?.status).toBe("completed");
+    expect(result.rows.find((row) => row.habit.id === "walking")?.cells[0]?.status).toBe("missed");
+    const current = buildHabitHeatmap([habit("reading", { start_date: "2026-10-10" })], [], "2026-10-11")!;
+    expect(current.rows[0]?.cells[0]?.status).toBe("not_scheduled");
+    expect(current.rows[0]?.cells[10]?.status).toBe("none");
+    expect(current.rows[0]?.cells[11]?.status).toBe("future");
+    expect(buildHabitHeatmap([], [], "2026-10-11", "2026-13")).toBeNull();
+  });
+
+  it("renders a separate row per habit and accessible day status controls", () => {
     const props = { connected: true, today: "2026-10-11", habits: [synced(habit("reading"))], checkIns: [synced(checkIn("reading", "2026-10-11"))], loading: false, error: "", onRefresh: vi.fn(), onOpenHabits: vi.fn() };
     const html = renderToStaticMarkup(createElement(HabitHeatmapWidget, props));
-    expect(html).toContain('aria-label="2026-10-11 · 1/1 项完成"');
-    expect(html).toContain('aria-pressed="true"');
+    expect(html).toContain('aria-label="阅读 · 2026-10-11 · 已完成"');
+    expect(html).toContain('scope="row"');
+    expect(html).toContain('data-status="completed"');
+    expect(html).toContain('aria-label="上个月习惯打卡"');
+    expect(html).toContain('data-today="true"');
     expect(html).toContain("阅读");
     expect(html).toContain("已完成");
     expect(html).toContain("刷新打卡");
