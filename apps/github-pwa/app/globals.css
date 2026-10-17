@@ -1263,10 +1263,18 @@ button.habit-day:disabled { cursor: default; }
 .habit-period-switch button[aria-pressed="true"] { background: var(--accent); color: white; }
 .habit-period-nav { display: flex; align-items: center; gap: 6px; }
 .habit-period-nav strong { min-width: 100px; text-align: center; font-size: 13px; font-weight: 500; }
-.habit-year-table { min-width: 1050px; }
-.habit-month-count { display: inline-flex; flex-direction: column; justify-content: center; align-items: center; gap: 3px; min-width: 44px; min-height: 38px; padding: 5px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--muted); font-size: 13px; cursor: pointer; }
-.habit-month-count[data-completed="true"] { color: var(--accent); background: var(--accent-soft); }
-.habit-month-count:hover { border-color: var(--line); }
-.habit-month-count small { font-size: 9px; color: var(--muted); white-space: nowrap; }
-.habit-year-total { font-size: 12px; color: var(--accent); }
 .habit-sleep-status { margin-top: 16px; color: var(--muted); font-size: 11px; line-height: 1.7; }
+
+.habit-year-heatmap-table { table-layout: auto; }
+.habit-year-heatmap-table .habit-name-cell { width: 150px; min-width: 150px; }
+.habit-year-heatmap-table td { padding: 14px 0; }
+.habit-year-months, .habit-year-days { display: grid; grid-template-columns: 24px repeat(var(--habit-year-weeks), 15px); width: max-content; text-align: left; }
+.habit-year-months { height: 30px; align-items: center; color: var(--muted); font-size: 10px; font-weight: 400; }
+.habit-year-months span { white-space: nowrap; }
+.habit-year-week, .habit-year-weekdays { display: grid; grid-template-rows: repeat(7, 12px); gap: 3px; }
+.habit-year-weekdays { color: var(--muted); font-size: 9px; line-height: 12px; font-weight: 400; }
+.habit-year-week .habit-day, .habit-year-padding { width: 12px; height: 12px; border-radius: 3px; font-size: 9px; line-height: 10px; }
+.habit-year-week .habit-day[data-today="true"] { outline: 1px solid var(--ink); outline-offset: 1px; }
+.habit-year-week .habit-day:focus-visible { outline: 2px solid var(--ink); outline-offset: 1px; }
+.habit-legend i[data-status="missed"] { border-color: #cda99f; background: #ead5cf; }
+.habit-legend i[data-status="skipped"] { border-color: #d4c8a7; background: #eee8d8; }
