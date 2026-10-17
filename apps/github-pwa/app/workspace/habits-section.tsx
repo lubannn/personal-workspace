@@ -155,19 +155,17 @@ export function HabitsSection({ connection, online, todayDate, habits, checkIns,
         {view === "active" ? <button className="primary-button" type="button" onClick={() => { setCreating(!creating); setMenuId(null); }} disabled={disabled}><Plus size={14} aria-hidden="true" />{creating ? "收起" : "新增习惯"}</button> : null}
       </div>
     </div>
-    <div className="habit-toolbar">
+    <div className="habit-toolbar" role="group" aria-label="习惯筛选与日期，窄屏可左右滑动" tabIndex={0}>
       <div className="habit-view-actions" aria-label="习惯视图">
         <button className={`view-button ${view === "active" ? "active" : ""}`} type="button" aria-pressed={view === "active"} onClick={() => switchView("active")} disabled={busy}>进行中 {active.length}</button>
         <button className={`view-button ${view === "archived" ? "active" : ""}`} type="button" aria-pressed={view === "archived"} onClick={() => switchView("archived")} disabled={busy}>已归档 {archived.length}</button>
         <button className={`view-button ${view === "trash" ? "active" : ""}`} type="button" aria-pressed={view === "trash"} onClick={() => switchView("trash")} disabled={busy}>回收站 {trash.length}</button>
       </div>
-      {view === "active" && period === "month" ? <button className="text-button" type="button" aria-pressed={sorting} onClick={() => { setSorting(!sorting); setMenuId(null); }} disabled={sortDisabled || active.length < 2}>{sorting ? "完成排序" : "调整顺序"}</button> : null}
-    </div>
-    <div className="habit-period-toolbar">
       <div className="habit-period-switch" role="group" aria-label="打卡时间视图">
         <button type="button" aria-pressed={period === "month"} onClick={() => changePeriod("month")}>按月</button>
         <button type="button" aria-pressed={period === "year"} onClick={() => changePeriod("year")}>按年</button>
       </div>
+      {view === "active" && period === "month" ? <button className="text-button" type="button" aria-pressed={sorting} onClick={() => { setSorting(!sorting); setMenuId(null); }} disabled={sortDisabled || active.length < 2}>{sorting ? "完成排序" : "调整顺序"}</button> : null}
       <div className="habit-period-nav" aria-label={period === "year" ? "切换年份" : "切换月份"}>
         <button type="button" className="habit-icon-button" aria-label={period === "year" ? "上一年" : "上个月"} disabled={!month || (period === "year" ? Number(year) <= 1 : month <= "0001-01")} onClick={() => movePeriod(-1)}><ChevronLeft size={16} /></button>
         <strong aria-live="polite">{period === "year" ? `${year} 年` : month ? `${year} 年 ${Number(month.slice(5, 7))} 月` : "每日打卡"}</strong>
