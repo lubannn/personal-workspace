@@ -1198,7 +1198,10 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .habit-card .text-button:hover:not(:disabled), .habit-card .text-button[aria-pressed="true"] { color: var(--accent); }
 .habit-card .text-button:disabled { opacity: .4; cursor: default; }
 .habit-card .primary-button { display: inline-flex; width: auto; align-items: center; justify-content: center; gap: 6px; min-height: 38px; font-size: 11px; }
-.habit-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-top: 22px; }
+.habit-toolbar { display: flex; align-items: center; gap: 16px; margin-top: 18px; padding: 2px; overflow-x: auto; scrollbar-width: thin; overscroll-behavior-x: contain; }
+.habit-toolbar > * { flex-shrink: 0; }
+.habit-toolbar .habit-view-actions { flex-wrap: nowrap; }
+.habit-toolbar:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 8px; }
 .habit-toolbar > .text-button { font-size: 11px; }
 .habit-create-form { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; margin-top: 18px; padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: rgba(255,255,255,.38); }
 .habit-create-form label { display: grid; flex: 1 1 120px; gap: 7px; color: var(--muted); font-size: 11px; }
@@ -1257,11 +1260,10 @@ button.habit-day:disabled { cursor: default; }
 .habit-sleep-suggestions { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line); }
 .habit-sleep-suggestions > summary { color: var(--soft); font-size: 12px; cursor: pointer; }
 
-.habit-period-toolbar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; margin-top: 16px; }
 .habit-period-switch { display: inline-flex; padding: 3px; border: 1px solid var(--line); border-radius: 10px; }
 .habit-period-switch button { border: 0; padding: 7px 14px; border-radius: 7px; background: transparent; color: var(--muted); font-size: 11px; cursor: pointer; }
 .habit-period-switch button[aria-pressed="true"] { background: var(--accent); color: white; }
-.habit-period-nav { display: flex; align-items: center; gap: 6px; }
+.habit-period-nav { display: flex; align-items: center; gap: 6px; margin-left: auto; white-space: nowrap; }
 .habit-period-nav strong { min-width: 100px; text-align: center; font-size: 13px; font-weight: 500; }
 .habit-sleep-status { margin-top: 16px; color: var(--muted); font-size: 11px; line-height: 1.7; }
 
