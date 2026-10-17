@@ -168,6 +168,7 @@ import { JournalSection } from "./workspace/journal-section";
 import { LearningSection } from "./workspace/learning-section";
 import { HabitsSection } from "./workspace/habits-section";
 import { useHabitOrder } from "./workspace/use-habit-order";
+import { useHabitSleep } from "./workspace/use-habit-sleep";
 import { HealthRecordsSection } from "./workspace/health-records-section";
 import { WorkspaceTabNavigation, WorkspaceTabPanel, workspaceTabFromHash, type WorkspaceTabId } from "./workspace/workspace-tab-navigation";
 
@@ -430,14 +431,6 @@ export default function GitHubWorkspacePage() {
     });
   }, [activeWorkspaceTab, connection, moduleLoaders, online, workspaceTabReady]);
 
-  useEffect(() => {
-    const refreshSyncedHealth = (event: Event) => {
-      if ((event as CustomEvent<{ recordsChanged?: boolean }>).detail?.recordsChanged === false) return;
-      if (connection && online !== false) void (activeWorkspaceTab === "overview" ? loadTodayHealth(adapterRef.current, true) : loadHealthDomain());
-    };
-    window.addEventListener("coros-sync-updated", refreshSyncedHealth);
-    return () => window.removeEventListener("coros-sync-updated", refreshSyncedHealth);
-  }, [activeWorkspaceTab, connection, loadHealthDomain, loadTodayHealth, online]);
 
   const workspaceTimezone = connection?.timezone ?? "Asia/Shanghai";
   const [currentTaskDate, setCurrentTaskDate] = useState("");
@@ -447,6 +440,20 @@ export default function GitHubWorkspacePage() {
       void loadTodayHealth();
     }
   }, [activeWorkspaceTab, connection, workspaceTabReady, online, currentTaskDate, loadTodayHealth]);
+  const habitSleep = useHabitSleep(adapterRef, connection, currentTaskDate, workspaceTabReady && activeWorkspaceTab === "habits" && online !== false);
+  const refreshHabitSleep = habitSleep.refresh;
+  useEffect(() => {
+    const refreshSyncedHealth = (event: Event) => {
+      if ((event as CustomEvent<{ recordsChanged?: boolean }>).detail?.recordsChanged === false) return;
+      if (connection && online !== false) {
+        if (activeWorkspaceTab === "habits") void refreshHabitSleep();
+        else void (activeWorkspaceTab === "overview" ? loadTodayHealth(adapterRef.current, true) : loadHealthDomain());
+      }
+    };
+    window.addEventListener("coros-sync-updated", refreshSyncedHealth);
+    return () => window.removeEventListener("coros-sync-updated", refreshSyncedHealth);
+  }, [activeWorkspaceTab, connection, loadHealthDomain, loadTodayHealth, online, refreshHabitSleep]);
+
   const taskDueDate = taskDueDateOverride ?? currentTaskDate;
 
   const readiness = useMemo(
@@ -3177,7 +3184,9 @@ export default function GitHubWorkspacePage() {
         habits={habitOrder.items}
         rules={habitRuleFiles}
         checkIns={habitCheckInFiles}
-        sleepSessions={sleepSessionFiles}
+        sleepSessions={habitSleep.sessions}
+        sleepLoading={habitSleep.loading}
+        sleepError={habitSleep.error}
         loading={loadingHabits}
         saving={savingHabit}
         savingId={savingHabitId}
@@ -3192,7 +3201,7 @@ export default function GitHubWorkspacePage() {
         onDeletionChange={updateHabitDeletion}
         onCheckIn={saveManualHabitCheckIn}
         onConfirmSleepSuggestion={confirmSleepHabitSuggestion}
-        onRefresh={() => { if (!habitOrder.pending) void loadHabitDomain(); }}
+        onRefresh={() => { if (!habitOrder.pending) { void loadHabitDomain(); void refreshHabitSleep(); } }}
       />
       </WorkspaceTabPanel>
 
