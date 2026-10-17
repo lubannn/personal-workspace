@@ -1256,3 +1256,17 @@ button.habit-day:disabled { cursor: default; }
 .habit-form-note { flex-basis: 100%; margin: 0; color: var(--muted); font-size: 11px; }
 .habit-sleep-suggestions { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line); }
 .habit-sleep-suggestions > summary { color: var(--soft); font-size: 12px; cursor: pointer; }
+
+.habit-period-toolbar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; margin-top: 16px; }
+.habit-period-switch { display: inline-flex; padding: 3px; border: 1px solid var(--line); border-radius: 10px; }
+.habit-period-switch button { border: 0; padding: 7px 14px; border-radius: 7px; background: transparent; color: var(--muted); font-size: 11px; cursor: pointer; }
+.habit-period-switch button[aria-pressed="true"] { background: var(--accent); color: white; }
+.habit-period-nav { display: flex; align-items: center; gap: 6px; }
+.habit-period-nav strong { min-width: 100px; text-align: center; font-size: 13px; font-weight: 500; }
+.habit-year-table { min-width: 1050px; }
+.habit-month-count { display: inline-flex; flex-direction: column; justify-content: center; align-items: center; gap: 3px; min-width: 44px; min-height: 38px; padding: 5px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--muted); font-size: 13px; cursor: pointer; }
+.habit-month-count[data-completed="true"] { color: var(--accent); background: var(--accent-soft); }
+.habit-month-count:hover { border-color: var(--line); }
+.habit-month-count small { font-size: 9px; color: var(--muted); white-space: nowrap; }
+.habit-year-total { font-size: 12px; color: var(--accent); }
+.habit-sleep-status { margin-top: 16px; color: var(--muted); font-size: 11px; line-height: 1.7; }
