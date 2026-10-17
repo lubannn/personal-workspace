@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { habitDayStatuses, habitMonthDays, habitYearCounts, shiftHabitMonth } from "./habit-calendar";
+import { habitDayStatuses, habitMonthDays, habitYearWeeks, shiftHabitMonth } from "./habit-calendar";
 import { createWorkspaceRecord } from "../../../../src/lib/github-data/protocol";
 import { createManualHabitCheckInData } from "../../../../src/lib/github-data/habit-check-ins";
 
@@ -21,7 +21,7 @@ describe("habit history calendar", () => {
     expect(habitMonthDays("2026-09").at(-1)).toBe("2026-09-30");
     expect(habitMonthDays("")).toEqual([]);
   });
-  it("counts completed calendar days once, reflects corrections, and excludes deleted, other-habit and future entries", () => {
+  it("keeps one latest status per date and excludes deleted and other-habit entries", () => {
     const deleted = checkIn("deleted", "2026-01-02", "completed"); deleted.deleted_at = "2026-10-17T05:00:00Z";
     const statuses = habitDayStatuses([
       checkIn("initial", "2026-01-01", "completed"),
@@ -32,11 +32,23 @@ describe("habit history calendar", () => {
       checkIn("future", "2026-11-01", "completed"),
       checkIn("other", "2026-10-15", "completed", undefined, "habit_other"), deleted,
     ], "habit_test");
-    const months = habitYearCounts(statuses, "2026", "2026-10-17");
-    expect(months).toHaveLength(12);
-    expect(months[0]).toMatchObject({ completed: 0, missed: 0 });
-    expect(months[9]).toEqual({ month: "2026-10", completed: 1, missed: 1 });
-    expect(months[10]).toMatchObject({ completed: 0 });
-    expect(habitYearCounts(statuses, "2025", "2026-10-17").every(month => month.completed === 0)).toBe(true);
+    expect(statuses.get("2026-01-01")).toBe("unknown");
+    expect(statuses.get("2026-10-16")).toBe("completed");
+    expect(statuses.get("2026-10-17")).toBe("missed");
+    expect(statuses.has("2026-01-02")).toBe(false);
+    expect(statuses.has("2026-10-15")).toBe(false);
+    expect(statuses.size).toBe(4);
+  });
+  it.each([["2026", 365], ["2024", 366], ["2012", 366], ["2100", 365]])("lays out every day of %s once in Monday-first weeks", (year, count) => {
+    const weeks = habitYearWeeks(String(year));
+    const dates = weeks.flatMap(week => week.days).filter((date): date is string => date !== null);
+    expect(dates).toHaveLength(Number(count));
+    expect(new Set(dates).size).toBe(count);
+    expect(dates[0]).toBe(`${year}-01-01`);
+    expect(dates.at(-1)).toBe(`${year}-12-31`);
+    expect(weeks.flatMap(week => week.monthLabel ? [week.monthLabel] : [])).toEqual(Array.from({ length: 12 }, (_, i) => `${i + 1}月`));
+    for (const week of weeks) week.days.forEach((date, index) => {
+      if (date) expect((new Date(`${date}T00:00:00Z`).getUTCDay() + 6) % 7).toBe(index);
+    });
   });
 });
