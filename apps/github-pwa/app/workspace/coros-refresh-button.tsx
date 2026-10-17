@@ -5,9 +5,11 @@ import { RefreshCw } from "lucide-react";
 import { readCookie, type ConnectionMethod } from "./page-model";
 import { drainCorosHistory } from "./coros-history-client";
 import { createCorosRefreshUpdates } from "./coros-refresh-updates";
+import { corosDeferredSyncMessage, corosSyncErrorMessage } from "./coros-history-settings";
 
 function friendlyError(code: string) {
   if (/PAUSED/u.test(code)) return "请先在 COROS 连接设置中恢复自动更新。";
+  if (code.startsWith("COROS_OAUTH_")) return corosSyncErrorMessage(code)!;
   if (/AUTH|TOKEN|CONNECTION_REQUIRED/u.test(code)) return "请检查 GitHub 登录及 COROS 连接后重试。";
   if (/RATE|LIMIT/u.test(code)) return "COROS 暂时限流，已保存的记录仍保留，稍后重试。";
   if (/CONFIG/u.test(code)) return "COROS 同步连接尚未准备好。";
@@ -42,7 +44,7 @@ export function CorosRefreshButton({ connectionMethod, disabled = false }: { con
       if (current.signal.aborted) return;
       if (result.status === "complete") setMessage("近期睡眠与运动已更新。");
       else if (result.status === "busy") setMessage("后台正在更新，完成后记录会自动刷新。");
-      else if (result.status === "deferred") setMessage("COROS 暂时需要等待，后台会继续处理已提交的更新。");
+      else if (result.status === "deferred") setMessage(corosDeferredSyncMessage(result));
       else if (result.status === "limit") setMessage("近期记录已分批更新，剩余部分会在后台继续。");
       else setMessage(friendlyError(result.errorCode ?? ""));
     } catch (error) {

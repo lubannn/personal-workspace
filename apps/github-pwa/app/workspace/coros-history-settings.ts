@@ -1,6 +1,22 @@
 import { parseCorosOAuthFailure } from "../../../auth-worker/src/coros-oauth-errors";
 import type { DomainProgress, SyncProgress } from "../../../auth-worker/src/coros-sync-state";
 import type { BulkHealthSource, BulkHealthSourceProgress } from "../../../auth-worker/src/coros-health-history";
+import type { CorosSyncRunResult } from "../../../auth-worker/src/coros-sync";
+
+/** Deferred means our retry/queue gate, not evidence that COROS has no new data. */
+export function corosDeferredSyncMessage(result: CorosSyncRunResult): string {
+  const source = result.retryAt && result.progress ? corosHistorySources(result.progress).find(item =>
+    item.progress?.retryAfter === result.retryAt && item.progress?.lastErrorCode) : undefined;
+  const code = result.errorCode ?? source?.progress?.lastErrorCode ?? result.progress?.lastErrorCode;
+  const reason = code === "COROS_SYNC_BUDGET_EXHAUSTED" ? "本批达到运行预算，已保存同步进度。"
+    : corosSyncErrorMessage(code) ?? "本次更新暂缓，已保留同步请求。";
+  const retry = result.retryAt ? new Date(result.retryAt) : null;
+  const retryText = retry && Number.isFinite(retry.valueOf()) ? `最早可重试：${new Intl.DateTimeFormat("zh-CN", {
+    timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23",
+  }).format(retry)}（北京时间）。` : "";
+  return `${reason}${retryText}后台会按重试计划继续。`;
+}
 
 export function corosNeedsReauthorization(code: string | null | undefined): boolean {
   const oauth = parseCorosOAuthFailure(code);
