@@ -1,10 +1,33 @@
 import { describe, expect, it, vi } from "vitest";
 import { initialSyncProgress } from "../../../auth-worker/src/coros-sync-state";
-import { corosCheckedRangeText, corosHistorySources, corosSyncErrorMessage, saveCorosHistorySettings } from "./coros-history-settings";
+import { corosCheckedRangeText, corosDeferredSyncMessage, corosHistorySources, corosSyncErrorMessage, saveCorosHistorySettings } from "./coros-history-settings";
 
 const progress = () => initialSyncProgress("2024-02-01", "Asia/Shanghai");
 const options = () => ({ state: "paused" as const, running: false, historyScopeSupported: true,
   progress: progress(), startDate: "2024-01-01", csrf: "synthetic-csrf" });
+
+describe("COROS manual update retry explanation", () => {
+  it("shows the gated source's cause and Shanghai retry time instead of implying missing source data", () => {
+    const p = progress();
+    p.domains.sleep.lastErrorCode = "COROS_OAUTH_RESOURCE_METADATA_TIMEOUT";
+    p.domains.sleep.retryAfter = "2026-10-17T05:11:54Z";
+    p.lastErrorCode = "COROS_READ_TOOL_UNAVAILABLE";
+    const message = corosDeferredSyncMessage({ status: "deferred", progress: p, retryAt: p.domains.sleep.retryAfter });
+    expect(message).toContain("COROS 资源发现：请求超时");
+    expect(message).toContain("2026/10/17 13:11:54（北京时间）");
+    expect(message).not.toContain("来源返回内容尚需核对");
+    expect(message).not.toContain("COROS 暂时需要等待");
+  });
+  it("preserves rate-limit and authorization diagnostics, with no invented retry time", () => {
+    expect(corosDeferredSyncMessage({ status: "deferred", errorCode: "COROS_OAUTH_REFRESH_HTTP_429", retryAt: null })).toContain("限流");
+    expect(corosDeferredSyncMessage({ status: "deferred", errorCode: "COROS_OAUTH_REFRESH_HTTP_400_INVALID_GRANT" })).toContain("凭据被拒绝");
+    const unknown = corosDeferredSyncMessage({ status: "deferred", retryAt: "invalid" });
+    expect(unknown).toContain("已保留同步请求");
+    expect(unknown).not.toContain("Invalid Date");
+    expect(unknown).not.toContain("最早可重试");
+    expect(corosDeferredSyncMessage({ status: "deferred", errorCode: "COROS_SYNC_BUDGET_EXHAUSTED" })).toContain("达到运行预算");
+  });
+});
 
 describe("COROS checked range display", () => {
   it("shows empty/uninitialized sources without claiming the configured range or latest value was checked", () => {
