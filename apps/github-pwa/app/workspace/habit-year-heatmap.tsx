@@ -10,11 +10,13 @@ type Props = {
   statuses: Map<string, Map<string, HabitCheckInStatus>>;
   editable: boolean;
   disabled: boolean;
+  statusPickerIds?: ReadonlySet<string>;
+  onSelectStatus?: (item: SyncedHabit, date: string) => void;
   onCheckIn: (item: SyncedHabit, date: string, status: HabitCheckInStatus) => Promise<boolean>;
 };
 const LABELS = { completed: "已完成", missed: "未完成", skipped: "已跳过", unknown: "未打卡", none: "未打卡" };
 
-export function HabitYearHeatmap({ year, todayDate, habits, statuses, editable, disabled, onCheckIn }: Props) {
+export function HabitYearHeatmap({ year, todayDate, habits, statuses, editable, disabled, onCheckIn, statusPickerIds, onSelectStatus }: Props) {
   const weeks = habitYearWeeks(year);
   const recent = new Set(recentHabitCheckInDates(todayDate));
   const style = { "--habit-year-weeks": weeks.length, minWidth: 174 + weeks.length * 15 } as CSSProperties;
@@ -31,8 +33,9 @@ export function HabitYearHeatmap({ year, todayDate, habits, statuses, editable, 
             const status = future ? "none" : statuses.get(item.record.id)?.get(date) ?? "none";
             const label = `${item.record.data.name} · ${date} · ${future ? "未到日期" : LABELS[status]}`;
             const content = status === "missed" ? "×" : status === "skipped" ? "−" : null;
+            const statusPicker = Boolean(onSelectStatus && statusPickerIds?.has(item.record.id));
             const props = { className: "habit-day", "data-status": status, "data-future": future, "data-today": date === todayDate, title: label };
-            return editable && recent.has(date) ? <button {...props} key={date} type="button" aria-label={`${label}，${status === "completed" ? "撤销打卡" : "打卡"}`} aria-pressed={status === "completed"} disabled={disabled || item.record.data.status !== "active" || (item.record.data.end_date !== null && date > item.record.data.end_date)} onClick={() => void onCheckIn(item, date, status === "completed" ? "unknown" : "completed")}>{content}</button>
+            return editable && recent.has(date) ? <button {...props} key={date} type="button" aria-label={`${label}，${statusPicker ? "修改打卡状态" : status === "completed" ? "撤销打卡" : "打卡"}`} aria-haspopup={statusPicker ? "dialog" : undefined} aria-pressed={status === "completed"} disabled={disabled || item.record.data.status !== "active" || (item.record.data.end_date !== null && date > item.record.data.end_date)} onClick={() => { if (statusPicker) onSelectStatus!(item, date); else void onCheckIn(item, date, status === "completed" ? "unknown" : "completed"); }}>{content}</button>
               : <span {...props} key={date} role="img" aria-label={label}>{content}</span>;
           })}</div>)}
         </div></td>

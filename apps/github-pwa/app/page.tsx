@@ -2070,7 +2070,7 @@ export default function GitHubWorkspacePage() {
         const result = await adapter.writeText({ path: recordPath("habit_check_in", id), text: serializeRecord(record), message: `habit check-in: create ${id}` });
         setHabitCheckInFiles((current) => [{ record, path: result.path, blobSha: result.blobSha }, ...current]);
       }
-      setStatusMessage(status === "completed" ? `${item.record.data.name} · ${date} 已完成。` : `${item.record.data.name} · ${date} 打卡已撤销为待确认。`);
+      setStatusMessage(status === "completed" ? `${item.record.data.name} · ${date} 已完成。` : status === "missed" ? `${item.record.data.name} · ${date} 已标记为未完成。` : `${item.record.data.name} · ${date} 打卡已撤销为待确认。`);
       return true;
     } catch (error) { setErrorMessage(friendlyError(error)); return false; }
     finally { setSavingHabitId(null); }

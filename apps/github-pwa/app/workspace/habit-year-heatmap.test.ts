@@ -6,15 +6,21 @@ import { createWorkspaceRecord } from "../../../../src/lib/github-data/protocol"
 import { createHabitData } from "../../../../src/lib/github-data/habits";
 import type { HabitCheckInStatus } from "../../../../src/lib/github-data/habit-check-ins";
 
-function render(options: { year?: string; paused?: boolean; end?: string; editable?: boolean } = {}) {
+function render(options: { year?: string; paused?: boolean; end?: string; editable?: boolean; picker?: boolean } = {}) {
   const record = createWorkspaceRecord({ entityType: "habit", id: "habit_test", ownerId: "owner_test", timestamp: "2026-10-17T05:00:00Z",
     data: createHabitData({ name: "阅读", description_markdown: "", schedule_json: { frequency: "daily", weekdays: [] }, timezone: "Asia/Shanghai", tracking_type: "boolean", target_json: { value: 1, unit: null }, automation_mode: "manual", start_date: options.end ?? "2026-10-17", end_date: options.end ?? null }) });
   if (options.paused) record.data.status = "paused";
   const statuses = new Map<string, HabitCheckInStatus>([["2026-10-14", "completed"], ["2026-10-15", "missed"], ["2026-10-16", "skipped"], ["2026-10-18", "completed"]]);
-  return renderToStaticMarkup(createElement(HabitYearHeatmap, { year: options.year ?? "2026", todayDate: "2026-10-17", habits: [{ record, path: "", blobSha: "" }], statuses: new Map([[record.id, statuses]]), editable: options.editable ?? true, disabled: false, onCheckIn: async () => true }));
+  return renderToStaticMarkup(createElement(HabitYearHeatmap, { year: options.year ?? "2026", todayDate: "2026-10-17", habits: [{ record, path: "", blobSha: "" }], statuses: new Map([[record.id, statuses]]), editable: options.editable ?? true, disabled: false, statusPickerIds: options.picker ? new Set([record.id]) : undefined, onSelectStatus: options.picker ? () => {} : undefined, onCheckIn: async () => true }));
 }
 
 describe("annual daily habit heatmap", () => {
+  it("offers the scoped status picker on recent days when requested by the habits panel", () => {
+    const html = render({ picker: true });
+    expect(html.match(/aria-haspopup="dialog"/g)).toHaveLength(3);
+    expect(html).toContain("阅读 · 2026-10-17 · 未打卡，修改打卡状态");
+    expect(render()).not.toContain('aria-haspopup="dialog"');
+  });
   it("renders one cell per day, all months, and no aggregate totals", () => {
     const html = render();
     expect(html.match(/class="habit-day"/g)).toHaveLength(365);
