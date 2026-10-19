@@ -1280,3 +1280,16 @@ button.habit-day:disabled { cursor: default; }
 .habit-year-week .habit-day:focus-visible { outline: 2px solid var(--ink); outline-offset: 1px; }
 .habit-legend i[data-status="missed"] { border-color: #cda99f; background: #ead5cf; }
 .habit-legend i[data-status="skipped"] { border-color: #d4c8a7; background: #eee8d8; }
+
+.sleep-habit-status-dialog { width: min(420px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); margin: auto; padding: 20px; overflow-y: auto; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 16px 60px #17171330; }
+.sleep-habit-status-dialog::backdrop { background: #17171366; }
+.sleep-habit-status-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.sleep-habit-status-heading h3 { margin: 0; font-size: 15px; font-weight: 500; }
+.sleep-habit-status-dialog p { color: var(--muted); font-size: 12px; line-height: 1.7; }
+.sleep-habit-status-options { display: flex; gap: 8px; margin-top: 16px; }
+.sleep-habit-status-options button { flex: 1; min-height: 44px; border: 1px solid var(--line); border-radius: 9px; background: transparent; color: var(--ink); font-size: 12px; cursor: pointer; }
+.sleep-habit-status-options button:hover:not(:disabled) { border-color: var(--accent); }
+.sleep-habit-status-options button[aria-pressed="true"][data-status="completed"] { border-color: var(--accent); background: var(--accent); color: white; }
+.sleep-habit-status-options button[aria-pressed="true"][data-status="missed"] { border-color: #cda99f; background: #ead5cf; color: #734a40; }
+.sleep-habit-status-options button[aria-pressed="true"][data-status="unknown"] { background: #eeece5; }
+.sleep-habit-status-options button:disabled { cursor: default; }

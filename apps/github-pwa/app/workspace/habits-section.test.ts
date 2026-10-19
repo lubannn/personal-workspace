@@ -6,10 +6,10 @@ import { createManualHabitCheckInData } from "../../../../src/lib/github-data/ha
 import { createWorkspaceRecord } from "../../../../src/lib/github-data/protocol";
 import { HabitsSection } from "./habits-section";
 
-function render(today: string, options: { start?: string; end?: string; paused?: boolean; completedDate?: string } = {}) {
+function render(today: string, options: { name?: string; start?: string; end?: string; paused?: boolean; completedDate?: string } = {}) {
   const timestamp = "2026-01-01T00:00:00Z";
   const record = createWorkspaceRecord({ entityType: "habit", id: "habit_test", ownerId: "owner_test", timestamp,
-    data: createHabitData({ name: "阅读", description_markdown: "", schedule_json: { frequency: "daily", weekdays: [] },
+    data: createHabitData({ name: options.name ?? "阅读", description_markdown: "", schedule_json: { frequency: "daily", weekdays: [] },
       timezone: "Asia/Shanghai", tracking_type: "boolean", target_json: { value: 1, unit: null }, automation_mode: "manual", start_date: options.start ?? "2025-01-01", end_date: options.end ?? null }) });
   if (options.paused) record.data.status = "paused";
   const checkIns = options.completedDate ? [{ path: "", blobSha: "", record: createWorkspaceRecord({ entityType: "habit_check_in", id: "check_test", ownerId: "owner_test", timestamp,
@@ -25,6 +25,16 @@ function render(today: string, options: { start?: string; end?: string; paused?:
 function dateButtons(html: string) { return [...html.matchAll(/<button[^>]*aria-label="阅读 · (\d{4}-\d{2}-\d{2})[^>]*>/gu)].map((match) => ({ date: match[1], tag: match[0] })); }
 
 describe("Habit calendar recent-day editing", () => {
+  it("opens the status picker only for sleep habits on recent days", () => {
+    for (const name of ["早起", "早睡"]) {
+      const html = render("2026-10-19", { name });
+      expect(html.match(/aria-haspopup="dialog"/g)).toHaveLength(3);
+      expect(html).toContain(`${name} · 2026-10-19 · 未打卡，修改打卡状态`);
+    }
+    const reading = render("2026-10-19");
+    expect(reading).not.toContain('aria-haspopup="dialog"');
+    expect(reading).toContain("阅读 · 2026-10-19 · 未打卡，打卡");
+  });
   it("makes only the day before yesterday, yesterday and today interactive", () => {
     expect(dateButtons(render("2026-10-11")).map((button) => button.date)).toEqual(["2026-10-09", "2026-10-10", "2026-10-11"]);
   });

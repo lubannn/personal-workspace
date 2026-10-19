@@ -7,6 +7,8 @@ import { activeHabits, archivedHabits, trashedHabits, type HabitAutomationMode, 
 import { recentHabitCheckInDates, type HabitCheckInStatus } from "../../../../src/lib/github-data/habit-check-ins";
 import { activeHabitRule } from "../../../../src/lib/github-data/habit-rules";
 import { evaluateSleepHabitRule, type SleepHabitRuleFields, type SleepHabitRuleType } from "../../../../src/lib/github-data/sleep-habit-rules";
+import { supportsManualSleepStatus } from "./habit-manual-status";
+import { SleepHabitStatusDialog } from "./sleep-habit-status-dialog";
 import { HabitYearHeatmap } from "./habit-year-heatmap";
 import { healthLocalParts } from "./health-records";
 import { habitDayStatuses, habitMonthDays, shiftHabitMonth } from "./habit-calendar";
@@ -50,6 +52,7 @@ export function HabitsSection({ connection, online, todayDate, habits, checkIns,
   const [sorting, setSorting] = useState(false);
   const [menuId, setMenuId] = useState<string | null>(null);
   const [rename, setRename] = useState<{ id: string; value: string; error?: string } | null>(null);
+  const [statusSelection, setStatusSelection] = useState<{ habitId: string; date: string } | null>(null);
   const [name, setName] = useState("");
   const [trackingType, setTrackingType] = useState<HabitTrackingType>("boolean");
   const [targetValue, setTargetValue] = useState("1");
@@ -69,6 +72,8 @@ export function HabitsSection({ connection, online, todayDate, habits, checkIns,
   const relativeDates = new Map(recentDates.map((date, index) => [date, ["前天", "昨天", "今天"][index]!]));
   const days = [...(month === todayDate.slice(0, 7) ? recentDates.filter((date) => !date.startsWith(`${month}-`)) : []), ...habitMonthDays(month)];
   const monthly = useMemo(() => new Map(visible.map((item) => [item.record.id, habitDayStatuses(checkIns.map(entry => entry.record), item.record.id)])), [visible, checkIns]);
+  const sleepStatusIds = useMemo(() => new Set(visible.filter(item => supportsManualSleepStatus(item.record, rules.map(rule => rule.record))).map(item => item.record.id)), [visible, rules]);
+  const selectedHabit = statusSelection ? byId.get(statusSelection.habitId) : null;
   const assisted = active.some(item => item.record.data.status === "active" && item.record.data.automation_mode === "rule_assisted");
   const latestSleepDate = sleepSessions.filter(item => item.record.deleted_at === null && item.record.data.session_type === "main_sleep")
     .map(item => healthLocalParts(item.record.data.end_at, connection?.timezone ?? "Asia/Shanghai").date)
@@ -106,6 +111,12 @@ export function HabitsSection({ connection, online, todayDate, habits, checkIns,
       })
       .slice(0, 8);
   }, [active, checkIns, rules, sleepSessions]);
+
+  function selectDay(item: SyncedHabit, date: string, status: HabitCheckInStatus | "none") {
+    if (disabled || item.record.data.status !== "active" || item.record.deleted_at !== null || !relativeDates.has(date)) return;
+    if (sleepStatusIds.has(item.record.id)) setStatusSelection({ habitId: item.record.id, date });
+    else void onCheckIn(item, date, status === "completed" ? "unknown" : "completed");
+  }
 
   function changePeriod(next: "month" | "year") {
     setPeriod(next); setSorting(false); setMenuId(null); setRename(null);
@@ -183,7 +194,7 @@ export function HabitsSection({ connection, online, todayDate, habits, checkIns,
       <button className="primary-button" type="submit" disabled={disabled || !todayDate || !name.trim() || (trackingType !== "boolean" && (!targetUnit.trim() || !Number.isFinite(Number(targetValue)) || Number(targetValue) <= 0)) || (automationMode === "rule_assisted" && (!thresholdTime || trackingType !== "boolean"))}>{saving ? "保存中…" : "添加"}</button>
     </form> : null}
     {!connection ? <p className="empty-note">连接后显示你的习惯。</p> : loading && habits.length === 0 ? <p className="empty-note">正在读取习惯…</p> : visible.length === 0 ? <p className="empty-note">{view === "active" ? "添加一个习惯，开始每日打卡。" : view === "archived" ? "还没有已归档的习惯。" : "回收站是空的。"}</p> : <>
-      {period === "year" ? <HabitYearHeatmap year={year} todayDate={todayDate} habits={visible} statuses={monthly} editable={view === "active"} disabled={disabled} onCheckIn={onCheckIn} /> : <div className="habit-table-scroll" role="region" aria-label="习惯与每日打卡，最近三天可修改，窄屏可左右滚动" tabIndex={0}>
+      {period === "year" ? <HabitYearHeatmap year={year} todayDate={todayDate} habits={visible} statuses={monthly} editable={view === "active"} disabled={disabled} onCheckIn={onCheckIn} statusPickerIds={sleepStatusIds} onSelectStatus={(item, date) => setStatusSelection({ habitId: item.record.id, date })} /> : <div className="habit-table-scroll" role="region" aria-label="习惯与每日打卡，最近三天可修改，窄屏可左右滚动" tabIndex={0}>
         <table className="habit-table">
           <thead><tr><th scope="col" className="habit-name-cell">事项名称</th>{days.map((date) => <th key={date} scope="col" className="habit-date-cell" data-today={date === todayDate} data-editable={relativeDates.has(date)}><span aria-label={date}>{date.startsWith(`${month}-`) ? Number(date.slice(-2)) : `${Number(date.slice(5, 7))}/${Number(date.slice(-2))}`}</span>{relativeDates.has(date) ? <small className="habit-date-label">{relativeDates.get(date)}</small> : null}</th>)}<th scope="col" className="habit-actions-cell"><span className="habit-sr-only">操作</span></th></tr></thead>
           <tbody>{visible.map((item, index) => <tr key={item.record.id}>
@@ -197,7 +208,7 @@ export function HabitsSection({ connection, online, todayDate, habits, checkIns,
               const isToday = date === todayDate;
               const editable = relativeDates.has(date);
               const content = status === "completed" ? <Check size={12} aria-hidden="true" /> : status === "skipped" ? "−" : status === "missed" ? "×" : null;
-              return <td key={date} className="habit-date-cell" data-today={isToday} data-editable={editable}>{editable && view === "active" ? <button type="button" className="habit-day" data-status={status} aria-label={`${label}，${status === "completed" ? "撤销打卡" : "打卡"}`} aria-pressed={status === "completed"} title={label} disabled={disabled || (item.record.data.end_date !== null && date > item.record.data.end_date) || item.record.data.status === "paused"} onClick={() => void onCheckIn(item, date, status === "completed" ? "unknown" : "completed")}>{content}</button> : <span className="habit-day" data-status={status} data-future={date > todayDate} role="img" aria-label={label} title={label}>{content}</span>}</td>;
+              return <td key={date} className="habit-date-cell" data-today={isToday} data-editable={editable}>{editable && view === "active" ? <button type="button" className="habit-day" data-status={status} aria-label={`${label}，${sleepStatusIds.has(item.record.id) ? "修改打卡状态" : status === "completed" ? "撤销打卡" : "打卡"}`} aria-haspopup={sleepStatusIds.has(item.record.id) ? "dialog" : undefined} aria-pressed={status === "completed"} title={label} disabled={disabled || (item.record.data.end_date !== null && date > item.record.data.end_date) || item.record.data.status === "paused"} onClick={() => selectDay(item, date, status)}>{content}</button> : <span className="habit-day" data-status={status} data-future={date > todayDate} role="img" aria-label={label} title={label}>{content}</span>}</td>;
             })}
             <td className="habit-actions-cell"><button type="button" className="habit-icon-button" aria-label={`管理${item.record.data.name}`} aria-expanded={menuId === item.record.id} aria-controls={`habit-menu-${item.record.id}`} title="管理习惯" disabled={disabled} onClick={() => { setMenuId(menuId === item.record.id ? null : item.record.id); setRename(null); }}><MoreHorizontal size={16} aria-hidden="true" /></button></td>
           </tr>)}</tbody>
@@ -223,5 +234,6 @@ export function HabitsSection({ connection, online, todayDate, habits, checkIns,
       {!sleepLoading && (sleepError || latestSleepDate !== todayDate) ? <> <a href="#workspace-panel-health">前往健康模块同步</a></> : null}
     </div> : null}
     {view === "active" && sleepSuggestions.length > 0 ? <details open className="habit-sleep-suggestions"><summary>待确认的睡眠判定 · {sleepSuggestions.length} 条</summary><ol className="learning-list">{sleepSuggestions.map((suggestion) => <li key={`${suggestion.habit.record.id}:${suggestion.rule.record.id}:${suggestion.session.record.id}`}><div><strong>{suggestion.habit.record.data.name} · {suggestion.localDate}</strong><code>{suggestion.status === "completed" ? "建议：完成" : "建议：未完成"}</code><small>{suggestion.explanation} · 规则 v{suggestion.rule.record.data.rule_version}</small></div><button className="primary-button" type="button" onClick={() => void onConfirmSleepSuggestion(suggestion.habit, suggestion.rule, suggestion.session)} disabled={busy || online === false}>{savingId === suggestion.habit.record.id ? "写入中…" : "确认判定并打卡"}</button></li>)}</ol></details> : null}
+    {selectedHabit && statusSelection ? <SleepHabitStatusDialog key={`${selectedHabit.record.id}:${statusSelection.date}`} name={selectedHabit.record.data.name} date={statusSelection.date} status={monthly.get(selectedHabit.record.id)?.get(statusSelection.date) ?? "none"} disabled={disabled || selectedHabit.record.data.status !== "active" || !relativeDates.has(statusSelection.date)} onSave={status => onCheckIn(selectedHabit, statusSelection.date, status)} onClose={() => setStatusSelection(null)} /> : null}
   </section>;
 }
