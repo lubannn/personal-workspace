@@ -16,6 +16,8 @@ export type SleepHabitEvaluation = {
   rule_type: SleepHabitRuleType;
   explanation: string;
   value_json: {
+    bedtime_date_version?: 2;
+    observed_local_date?: string;
     duration_minutes: number;
     observed_local_time: string;
     rule_type: SleepHabitRuleType;
@@ -53,24 +55,29 @@ export function evaluateSleepHabitRule(rule: HabitRuleRecord, session: SleepSess
   assertTime(threshold); assertTimezone(timezone);
   const instant = ruleType === "sleep_start_before" ? session.data.start_at : session.data.end_at;
   const { localDate, localTime } = localParts(instant, timezone);
-  // Compare bedtimes on a noon-to-noon clock so after-midnight sleep follows
-  // an evening deadline, while retaining the existing sleep-start date.
   const bedtime = ruleType === "sleep_start_before";
-  if (localDate < rule.data.active_from || (rule.data.active_to !== null && localDate > rule.data.active_to)) throw new Error("SLEEP_HABIT_RULE_INACTIVE");
+  // Before 09:00 belongs to the preceding evening in the rule timezone.
+  // Keep the evening-deadline comparison separate from calendar attribution.
+  const habitDate = bedtime && localTime < "09:00" ? previousSleepHabitDate(localDate) : localDate;
+  if (habitDate < rule.data.active_from || (rule.data.active_to !== null && habitDate > rule.data.active_to)) throw new Error("SLEEP_HABIT_RULE_INACTIVE");
   const completed = bedtime ? nightMinutes(localTime) < nightMinutes(threshold) : minutes(localTime) <= minutes(threshold);
   const status = completed ? "completed" : "missed";
   const action = ruleType === "sleep_start_before" ? "入睡" : "起床";
   const observed = bedtime && minutes(localTime) < 12 * 60 ? `${localTime}（凌晨 / 上午）` : localTime;
   const requirement = bedtime ? `在 ${threshold} 之前入睡` : `不晚于 ${threshold}`;
   return {
-    local_date: localDate,
+    local_date: habitDate,
     status,
     observed_local_time: localTime,
     threshold_local_time: threshold,
     rule_type: ruleType,
-    explanation: `${action} ${observed}，规则要求${requirement}，因此判定为${status === "completed" ? "完成" : "未完成"}。`,
-    value_json: { duration_minutes: session.data.duration_minutes, observed_local_time: localTime, rule_type: ruleType, session_type: "main_sleep", threshold_local_time: threshold },
+    explanation: `${action} ${observed}${bedtime ? `，入睡日期 ${localDate}，归属 ${habitDate} 晚` : ""}，规则要求${requirement}，因此判定为${status === "completed" ? "完成" : "未完成"}。`,
+    value_json: { ...(bedtime ? { bedtime_date_version: 2 as const, observed_local_date: localDate } : {}), duration_minutes: session.data.duration_minutes, observed_local_time: localTime, rule_type: ruleType, session_type: "main_sleep", threshold_local_time: threshold },
   };
+}
+
+export function previousSleepHabitDate(date: string) {
+  return new Date(Date.parse(`${date}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
 }
 
 function localParts(instant: string, timezone: string) {

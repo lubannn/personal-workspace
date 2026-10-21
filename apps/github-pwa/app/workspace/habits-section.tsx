@@ -5,6 +5,7 @@ import { ArrowDown, ArrowUp, Check, ChevronLeft, ChevronRight, MoreHorizontal, P
 
 import { activeHabits, archivedHabits, trashedHabits, type HabitAutomationMode, type HabitFields, type HabitStatus, type HabitTrackingType } from "../../../../src/lib/github-data/habits";
 import { recentHabitCheckInDates, type HabitCheckInStatus } from "../../../../src/lib/github-data/habit-check-ins";
+import { planSleepHabitDateCorrections } from "../../../../src/lib/github-data/sleep-habit-date-corrections";
 import { activeHabitRule } from "../../../../src/lib/github-data/habit-rules";
 import { evaluateSleepHabitRule, type SleepHabitRuleFields, type SleepHabitRuleType } from "../../../../src/lib/github-data/sleep-habit-rules";
 import { supportsManualSleepStatus } from "./habit-manual-status";
@@ -39,12 +40,13 @@ type Props = {
   onDeletionChange: (item: SyncedHabit, operation: "trash" | "restore") => void;
   onCheckIn: (item: SyncedHabit, date: string, status: HabitCheckInStatus) => Promise<boolean>;
   onConfirmSleepSuggestion: (item: SyncedHabit, rule: SyncedHabitRule, session: SyncedSleepSession) => Promise<boolean>;
+  onRepairSleepDates?: () => Promise<void>;
   onRefresh: () => void;
 };
 
 const STATUS_LABELS = { completed: "已完成", missed: "未完成", skipped: "已跳过", unknown: "未打卡", none: "未打卡" };
 
-export function HabitsSection({ connection, online, todayDate, habits, checkIns, rules, sleepSessions, sleepLoading = false, sleepError, loading, saving, savingId, orderStatus = "idle", orderError, onRetryOrder, onDiscardOrder, onCreate, onMove, onRename, onStatusChange, onDeletionChange, onCheckIn, onConfirmSleepSuggestion, onRefresh }: Props) {
+export function HabitsSection({ connection, online, todayDate, habits, checkIns, rules, sleepSessions, sleepLoading = false, sleepError, loading, saving, savingId, orderStatus = "idle", orderError, onRetryOrder, onDiscardOrder, onCreate, onMove, onRename, onStatusChange, onDeletionChange, onCheckIn, onConfirmSleepSuggestion, onRepairSleepDates, onRefresh }: Props) {
   const [view, setView] = useState<"active" | "archived" | "trash">("active");
   const [period, setPeriod] = useState<"month" | "year">("month");
   const [selectedMonth, setSelectedMonth] = useState<string | null>(null);
@@ -74,6 +76,7 @@ export function HabitsSection({ connection, online, todayDate, habits, checkIns,
   const monthly = useMemo(() => new Map(visible.map((item) => [item.record.id, habitDayStatuses(checkIns.map(entry => entry.record), item.record.id)])), [visible, checkIns]);
   const sleepStatusIds = useMemo(() => new Set(visible.filter(item => supportsManualSleepStatus(item.record, rules.map(rule => rule.record))).map(item => item.record.id)), [visible, rules]);
   const selectedHabit = statusSelection ? byId.get(statusSelection.habitId) : null;
+  const dateCorrections = useMemo(() => planSleepHabitDateCorrections(checkIns.map(item => item.record), rules.map(item => item.record)), [checkIns, rules]);
   const assisted = active.some(item => item.record.data.status === "active" && item.record.data.automation_mode === "rule_assisted");
   const latestSleepDate = sleepSessions.filter(item => item.record.deleted_at === null && item.record.data.session_type === "main_sleep")
     .map(item => healthLocalParts(item.record.data.end_at, connection?.timezone ?? "Asia/Shanghai").date)
@@ -91,7 +94,7 @@ export function HabitsSection({ connection, online, todayDate, habits, checkIns,
         for (const rule of habitRules) {
           try {
             const evaluation = evaluateSleepHabitRule(rule.record, session.record);
-            const hasCheckIn = checkIns.some((item) => item.record.deleted_at === null && item.record.data.habit_id === habit.record.id && item.record.data.local_date === evaluation.local_date);
+            const hasCheckIn = checkIns.some((item) => item.record.deleted_at === null && item.record.data.habit_id === habit.record.id && (item.record.data.local_date === evaluation.local_date || item.record.data.evidence_id === session.record.id));
             const selectedRule = activeHabitRule(habitRules.map((item) => item.record), habit.record.id, evaluation.local_date);
             if (!hasCheckIn && selectedRule?.id === rule.record.id) candidates.push({ habit, rule, session, explanation: evaluation.explanation, localDate: evaluation.local_date, status: evaluation.status });
           } catch { /* Ineligible sessions and inactive rules do not create suggestions. */ }
@@ -190,7 +193,7 @@ export function HabitsSection({ connection, online, todayDate, habits, checkIns,
       {trackingType !== "boolean" ? <><label>目标值<input type="number" min="0.01" step="0.01" value={targetValue} onChange={(event) => setTargetValue(event.target.value)} disabled={disabled} /></label><label>单位<input value={targetUnit} maxLength={64} onChange={(event) => setTargetUnit(event.target.value)} placeholder="分钟 / 页 / 次" disabled={disabled} /></label></> : null}
       <label>记录方式<select value={automationMode} onChange={(event) => setAutomationMode(event.target.value as HabitAutomationMode)} disabled={!connection || busy}><option value="manual">仅手工打卡</option><option value="rule_assisted">已确认睡眠辅助</option></select></label>
       {automationMode === "rule_assisted" ? <><label>睡眠规则<select value={sleepRuleType} onChange={(event) => { const next = event.target.value as SleepHabitRuleType; setSleepRuleType(next); setThresholdTime(next === "sleep_start_before" ? "23:30" : "07:00"); }} disabled={!connection || busy}><option value="sleep_start_before">早于此时间入睡</option><option value="wake_before">不晚于此时间起床</option></select></label><label>时间阈值<input type="time" value={thresholdTime} onChange={(event) => setThresholdTime(event.target.value)} disabled={!connection || busy} /></label></> : null}
-      {automationMode === "rule_assisted" ? <p className="habit-form-note">{sleepRuleType === "sleep_start_before" ? `入睡须早于 ${thresholdTime}；凌晨入睡按晚于夜间截止时间判断。` : "按起床当天的本地时间判断。"} 根据夜间睡眠记录生成判定，确认后才打卡。此方式仅支持完成 / 未完成。</p> : null}
+      {automationMode === "rule_assisted" ? <p className="habit-form-note">{sleepRuleType === "sleep_start_before" ? `入睡须早于 ${thresholdTime}；次日 09:00 前入睡归前一晚，凌晨入睡仍判为晚于截止时间。` : "按起床当天的本地时间判断。"} 根据夜间睡眠记录生成判定，确认后才打卡。此方式仅支持完成 / 未完成。</p> : null}
       <button className="primary-button" type="submit" disabled={disabled || !todayDate || !name.trim() || (trackingType !== "boolean" && (!targetUnit.trim() || !Number.isFinite(Number(targetValue)) || Number(targetValue) <= 0)) || (automationMode === "rule_assisted" && (!thresholdTime || trackingType !== "boolean"))}>{saving ? "保存中…" : "添加"}</button>
     </form> : null}
     {!connection ? <p className="empty-note">连接后显示你的习惯。</p> : loading && habits.length === 0 ? <p className="empty-note">正在读取习惯…</p> : visible.length === 0 ? <p className="empty-note">{view === "active" ? "添加一个习惯，开始每日打卡。" : view === "archived" ? "还没有已归档的习惯。" : "回收站是空的。"}</p> : <>
@@ -229,6 +232,13 @@ export function HabitsSection({ connection, online, todayDate, habits, checkIns,
       {period === "year" ? <div className="habit-legend"><span><i data-status="completed" />已完成</span><span><i data-status="missed" />未完成</span><span><i data-status="skipped" />已跳过</span><span><i />未打卡</span><span className="habit-mobile-hint">左右滑动查看全年</span></div> : <div className="habit-legend"><span><i data-status="completed" />已完成</span><span><i />未打卡</span><span className="habit-mobile-hint">左右滑动查看日期</span><span className="habit-sort-note" role="status">{orderStatus === "error" ? "顺序尚未保存" : orderPending ? "顺序已调整，后台保存中…" : orderStatus === "saved" ? "顺序已保存" : savingId ? "正在保存…" : sorting ? "用上移、下移调整顺序，自动保存" : "最近三天的打卡可再次点击撤销"}</span></div>}
     </>}
     {orderStatus === "error" ? <div className="habit-manage-bar" role="alert"><span>{orderError}</span><div><button type="button" className="text-button" onClick={onRetryOrder} disabled={sortDisabled}>重试保存</button><button type="button" className="text-button" onClick={onDiscardOrder}>取消调整</button></div></div> : null}
+    {connection && view !== "trash" && onRepairSleepDates && (dateCorrections.changes.length > 0 || dateCorrections.blocked.length > 0) ? <details className="habit-sleep-suggestions"><summary>旧版早睡日期归属修正 · {dateCorrections.changes.length} 条可修正</summary>
+      <p className="habit-form-note">仅调整旧版自动判定的日期。手动打卡和手动更正的记录保留；目标日期已有记录时不会覆盖。</p>
+      <ul className="habit-date-repair-list">{dateCorrections.changes.map(change => <li key={change.id}>{byId.get(checkIns.find(item => item.record.id === change.id)!.record.data.habit_id)?.record.data.name ?? "早睡"} · {change.from} → {change.to}</li>)}</ul>
+      {dateCorrections.blocked.length > 0 ? <p className="habit-form-note">{dateCorrections.blocked.length} 条因目标日期已有记录或超出原规则生效范围而保留原日期。</p> : null}
+      {dateCorrections.changes.length > 0 ? <button type="button" className="secondary-button" disabled={disabled} onClick={() => void onRepairSleepDates()}>修正历史早睡日期</button> : null}
+    </details> : null}
+    {connection && view === "active" && assisted ? <p className="habit-form-note">早睡：次日 09:00 前入睡归前一晚；早起：按起床当天。</p> : null}
     {connection && view === "active" && assisted ? <div className="habit-sleep-status" role="status">
       {sleepLoading ? "正在读取最近的睡眠记录…" : sleepError ? `${sleepError.replace(/[。；]+$/u, "")}；请点击刷新重试。` : latestSleepDate !== todayDate ? `尚无今天的夜间睡眠记录${latestSleepDate ? `，最近记录为 ${latestSleepDate}` : ""}。请先同步 COROS，再点击刷新。` : sleepSuggestions.length === 0 ? "今天的睡眠记录已读取，已有打卡或暂无待确认判定。" : "已读取最近的睡眠记录，请确认下方判定。"}
       {!sleepLoading && (sleepError || latestSleepDate !== todayDate) ? <> <a href="#workspace-panel-health">前往健康模块同步</a></> : null}
