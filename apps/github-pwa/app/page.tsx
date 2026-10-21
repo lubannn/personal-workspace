@@ -102,6 +102,7 @@ import {
 } from "../../../src/lib/github-data/learning-activities";
 import { createLearningResourceData, setLearningResourceStatus, updateLearningResourceDetails, type LearningResourceFields, type LearningResourceStatus } from "../../../src/lib/github-data/learning-resources";
 import { createHabitData, nextHabitSortOrder, setHabitStatus, updateHabitDetails, type HabitFields, type HabitStatus } from "../../../src/lib/github-data/habits";
+import { correctLegacySleepHabitDate, planSleepHabitDateCorrections } from "../../../src/lib/github-data/sleep-habit-date-corrections";
 import { correctHabitCheckIn, createAutomaticHabitCheckInData, createManualHabitCheckInData, recentHabitCheckInDates, type HabitCheckInStatus } from "../../../src/lib/github-data/habit-check-ins";
 import { createSleepHabitRuleData, evaluateSleepHabitRule, type SleepHabitRuleFields } from "../../../src/lib/github-data/sleep-habit-rules";
 import { listCompleteHealthDirectory } from "./workspace/health-collection-loading";
@@ -2076,6 +2077,28 @@ export default function GitHubWorkspacePage() {
     finally { setSavingHabitId(null); }
   }
 
+  async function repairSleepHabitDates() {
+    const adapter = adapterRef.current;
+    if (!adapter || !connection || savingHabitId || savingHabit || loadingHabits || habitOrder.pending || online === false) return;
+    const plan = planSleepHabitDateCorrections(habitCheckInFiles.map(item => item.record), habitRuleFiles.map(item => item.record));
+    if (!plan.changes.length) return;
+    setSavingHabitId("sleep-date-repair"); setErrorMessage(""); setStatusMessage("");
+    let repaired = 0;
+    try {
+      for (const change of plan.changes) {
+        if (adapterRef.current !== adapter) return;
+        const item = habitCheckInFiles.find(item => item.record.id === change.id)!;
+        const updated = correctLegacySleepHabitDate(item.record, new Date().toISOString());
+        const result = await adapter.writeText({ path: item.path, text: serializeRecord(updated), expectedBlobSha: item.blobSha, message: `habit check-in: correct bedtime date ${item.record.id}` });
+        if (adapterRef.current !== adapter) return;
+        setHabitCheckInFiles(current => current.map(candidate => candidate.record.id === item.record.id ? { record: updated, path: result.path, blobSha: result.blobSha } : candidate));
+        repaired++;
+      }
+      setStatusMessage(`已修正 ${repaired} 条早睡日期归属；手动记录和目标日期已有记录均已保留。`);
+    } catch (error) { if (adapterRef.current === adapter) setErrorMessage(`已修正 ${repaired} 条，剩余记录未确认完成，请刷新后重试。${friendlyError(error)}`); }
+    finally { if (adapterRef.current === adapter) setSavingHabitId(null); }
+  }
+
   async function confirmSleepHabitSuggestion(item: SyncedHabit, rule: SyncedHabitRule, session: SyncedSleepSession) {
     const adapter = adapterRef.current;
     if (!adapter || !connection || savingHabitId || habitOrder.pending || online === false) return false;
@@ -2083,7 +2106,7 @@ export default function GitHubWorkspacePage() {
     const timestamp = new Date().toISOString();
     try {
       const evaluation = evaluateSleepHabitRule(rule.record, session.record);
-      if (habitCheckInFiles.some((candidate) => candidate.record.deleted_at === null && candidate.record.data.habit_id === item.record.id && candidate.record.data.local_date === evaluation.local_date)) throw new Error("HABIT_CHECK_IN_ALREADY_EXISTS");
+      if (habitCheckInFiles.some((candidate) => candidate.record.deleted_at === null && candidate.record.data.habit_id === item.record.id && (candidate.record.data.local_date === evaluation.local_date || candidate.record.data.evidence_id === session.record.id))) throw new Error("HABIT_CHECK_IN_ALREADY_EXISTS");
       const id = `habit_check_in_${timestamp.replaceAll(/\D/g, "").slice(0, 17)}_${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`;
       const data = createAutomaticHabitCheckInData({ habitId: item.record.id, localDate: evaluation.local_date, timezone: item.record.data.timezone, status: evaluation.status, valueJson: evaluation.value_json, evidenceType: "health_sleep_session", evidenceId: session.record.id, ruleId: rule.record.id, ruleVersion: rule.record.data.rule_version, evaluatedAt: timestamp, confirmedAt: timestamp });
       const record = createWorkspaceRecord({ entityType: "habit_check_in", id, ownerId: connection.ownerId, timestamp, data });
@@ -3201,6 +3224,7 @@ export default function GitHubWorkspacePage() {
         onDeletionChange={updateHabitDeletion}
         onCheckIn={saveManualHabitCheckIn}
         onConfirmSleepSuggestion={confirmSleepHabitSuggestion}
+        onRepairSleepDates={repairSleepHabitDates}
         onRefresh={() => { if (!habitOrder.pending) { void loadHabitDomain(); void refreshHabitSleep(); } }}
       />
       </WorkspaceTabPanel>

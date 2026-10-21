@@ -1293,3 +1293,5 @@ button.habit-day:disabled { cursor: default; }
 .sleep-habit-status-options button[aria-pressed="true"][data-status="missed"] { border-color: #cda99f; background: #ead5cf; color: #734a40; }
 .sleep-habit-status-options button[aria-pressed="true"][data-status="unknown"] { background: #eeece5; }
 .sleep-habit-status-options button:disabled { cursor: default; }
+
+.habit-date-repair-list { margin: 10px 0; padding-left: 18px; color: var(--soft); font-size: 12px; line-height: 1.7; }

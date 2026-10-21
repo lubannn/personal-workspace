@@ -35,7 +35,7 @@ describe("sleep-assisted Habit rules", () => {
   ])("compares %s against the evening 23:30 deadline on the same sleep night", (startAt, observed, status) => {
     const rule = createWorkspaceRecord({ entityType: "habit_rule", id: "rule_bedtime", ownerId: "github_fixture", timestamp, data: createSleepHabitRuleData({ habitId: "habit_bedtime", timezone: "Asia/Shanghai", activeFrom: "2026-09-01", fields: { rule_type: "sleep_start_before", threshold_local_time: "23:30" } }) });
     const result = evaluateSleepHabitRule(rule, session(startAt, "2026-09-12T23:00:00.000Z"));
-    expect(result).toMatchObject({ local_date: observed < "12:00" ? "2026-09-13" : "2026-09-12", observed_local_time: observed, status });
+    expect(result).toMatchObject({ local_date: "2026-09-12", observed_local_time: observed, status });
     expect(result.explanation).toContain("在 23:30 之前入睡");
     if (observed < "12:00") expect(result.explanation).toContain("凌晨 / 上午");
   });
@@ -43,22 +43,42 @@ describe("sleep-assisted Habit rules", () => {
   it("supports an after-midnight deadline without considering later morning sleep early", () => {
     const rule = createWorkspaceRecord({ entityType: "habit_rule", id: "rule_bedtime", ownerId: "github_fixture", timestamp, data: createSleepHabitRuleData({ habitId: "habit_bedtime", timezone: "Asia/Shanghai", activeFrom: "2026-09-01", fields: { rule_type: "sleep_start_before", threshold_local_time: "01:00" } }) });
     expect(evaluateSleepHabitRule(rule, session("2026-09-12T15:30:00.000Z", "2026-09-12T23:00:00.000Z"))).toMatchObject({ local_date: "2026-09-12", status: "completed" });
-    expect(evaluateSleepHabitRule(rule, session("2026-09-12T16:59:00.000Z", "2026-09-12T23:00:00.000Z"))).toMatchObject({ local_date: "2026-09-13", status: "completed" });
-    expect(evaluateSleepHabitRule(rule, session("2026-09-12T17:00:00.000Z", "2026-09-12T23:00:00.000Z"))).toMatchObject({ local_date: "2026-09-13", status: "missed" });
+    expect(evaluateSleepHabitRule(rule, session("2026-09-12T16:59:00.000Z", "2026-09-12T23:00:00.000Z"))).toMatchObject({ local_date: "2026-09-12", status: "completed" });
+    expect(evaluateSleepHabitRule(rule, session("2026-09-12T17:00:00.000Z", "2026-09-12T23:00:00.000Z"))).toMatchObject({ local_date: "2026-09-12", status: "missed" });
   });
 
   it("handles the local date across a leap-day month boundary in the rule timezone", () => {
     const rule = createWorkspaceRecord({ entityType: "habit_rule", id: "rule_bedtime", ownerId: "github_fixture", timestamp, data: createSleepHabitRuleData({ habitId: "habit_bedtime", timezone: "Asia/Shanghai", activeFrom: "2024-02-01", fields: { rule_type: "sleep_start_before", threshold_local_time: "23:30" } }) });
-    expect(evaluateSleepHabitRule(rule, session("2024-02-29T16:42:00.000Z", "2024-02-29T23:00:00.000Z"))).toMatchObject({ local_date: "2024-03-01", observed_local_time: "00:42", status: "missed" });
+    expect(evaluateSleepHabitRule(rule, session("2024-02-29T16:42:00.000Z", "2024-02-29T23:00:00.000Z"))).toMatchObject({ local_date: "2024-02-29", observed_local_time: "00:42", status: "missed" });
   });
 
-  it("keeps rule activation and expiry tied to the local sleep-start date", () => {
+  it("uses the attributed evening date for rule activation and expiry", () => {
     const rule = createWorkspaceRecord({ entityType: "habit_rule", id: "rule_bedtime", ownerId: "github_fixture", timestamp, data: createSleepHabitRuleData({ habitId: "habit_bedtime", timezone: "Asia/Shanghai", activeFrom: "2026-09-13", fields: { rule_type: "sleep_start_before", threshold_local_time: "23:30" } }) });
     const afterMidnight = session("2026-09-12T16:42:00.000Z", "2026-09-12T23:00:00.000Z");
-    expect(evaluateSleepHabitRule(rule, afterMidnight)).toMatchObject({ local_date: "2026-09-13", status: "missed" });
+    expect(() => evaluateSleepHabitRule(rule, afterMidnight)).toThrow("SLEEP_HABIT_RULE_INACTIVE");
     rule.data.active_from = "2026-09-01";
     rule.data.active_to = "2026-09-12";
-    expect(() => evaluateSleepHabitRule(rule, afterMidnight)).toThrow("SLEEP_HABIT_RULE_INACTIVE");
+    expect(evaluateSleepHabitRule(rule, afterMidnight)).toMatchObject({ local_date: "2026-09-12", status: "missed" });
+  });
+
+  it.each([
+    ["2026-10-22T00:00:00+08:00", "2026-10-21"],
+    ["2026-10-22T08:59:59+08:00", "2026-10-21"],
+    ["2026-10-22T09:00:00+08:00", "2026-10-22"],
+    ["2026-10-22T09:00:01+08:00", "2026-10-22"],
+    ["2027-01-01T02:00:00+08:00", "2026-12-31"],
+  ])("attributes %s to %s at the strict 09:00 boundary", (start, date) => {
+    const rule = createWorkspaceRecord({ entityType: "habit_rule", id: "rule_bedtime", ownerId: "github_fixture", timestamp, data: createSleepHabitRuleData({ habitId: "habit_bedtime", timezone: "Asia/Shanghai", activeFrom: "2026-01-01", fields: { rule_type: "sleep_start_before", threshold_local_time: "23:30" } }) });
+    const end = new Date(Date.parse(start) + 3600_000).toISOString();
+    const original = session(start, end);
+    expect(evaluateSleepHabitRule(rule, original)).toMatchObject({ local_date: date, status: "missed", value_json: { bedtime_date_version: 2 } });
+    expect(original.data.local_date).toBe(new Date(Date.parse(start) + 8 * 3600_000).toISOString().slice(0, 10));
+  });
+
+  it("uses the rule timezone for the night boundary, including daylight saving transitions", () => {
+    const rule = createWorkspaceRecord({ entityType: "habit_rule", id: "rule_bedtime", ownerId: "github_fixture", timestamp, data: createSleepHabitRuleData({ habitId: "habit_bedtime", timezone: "America/New_York", activeFrom: "2026-01-01", fields: { rule_type: "sleep_start_before", threshold_local_time: "23:30" } }) });
+    expect(evaluateSleepHabitRule(rule, session("2026-03-08T12:59:00Z", "2026-03-08T14:00:00Z"))).toMatchObject({ local_date: "2026-03-07", observed_local_time: "08:59" });
+    expect(evaluateSleepHabitRule(rule, session("2026-03-08T13:00:00Z", "2026-03-08T14:00:00Z"))).toMatchObject({ local_date: "2026-03-08", observed_local_time: "09:00" });
   });
 
   it("keeps the inclusive wake-up threshold and wake date unchanged", () => {

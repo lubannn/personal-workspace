@@ -5,6 +5,8 @@ import { HabitsSection } from "./habits-section";
 import { createHabitData } from "../../../../src/lib/github-data/habits";
 import { createSleepHabitRuleData } from "../../../../src/lib/github-data/sleep-habit-rules";
 import { createConfirmedSleepSessionData } from "../../../../src/lib/github-data/sleep-sessions";
+import { createAutomaticHabitCheckInData } from "../../../../src/lib/github-data/habit-check-ins";
+import type { SyncedHabitCheckIn } from "./page-model";
 import { createWorkspaceRecord } from "../../../../src/lib/github-data/protocol";
 
 const timestamp = "2026-10-17T05:00:00Z";
@@ -14,19 +16,28 @@ const rules = habits.map((habit, i) => ({ path: "", blobSha: "", record: createW
   data: createSleepHabitRuleData({ habitId: habit.record.id, timezone: "Asia/Shanghai", activeFrom: "2026-10-09", fields: { rule_type: i === 0 ? "wake_before" : "sleep_start_before", threshold_local_time: i === 0 ? "07:00" : "23:30" } }) }) }));
 const session = { path: "", blobSha: "", record: createWorkspaceRecord({ entityType: "sleep_session", id: "sleep_today", ownerId: "owner_test", timestamp,
   data: createConfirmedSleepSessionData({ start_at: "2026-10-16T18:00:00Z", end_at: "2026-10-17T04:20:00Z", local_date: "2026-10-17", timezone: "Asia/Shanghai", session_type: "main_sleep", duration_minutes: 620 }, "staging_test") }) };
-function render(sessions = [session], sleepError = "", sleepLoading = false) {
+function render(sessions = [session], sleepError = "", sleepLoading = false, checkIns: SyncedHabitCheckIn[] = []) {
   return renderToStaticMarkup(createElement(HabitsSection, {
     connection: { ownerId: "owner_test", ownerLogin: "test", repository: "test/data", timezone: "Asia/Shanghai" }, online: true, todayDate: "2026-10-17",
-    habits, rules, checkIns: [], sleepSessions: sessions, sleepError, sleepLoading, loading: false, saving: false, savingId: null,
+    habits, rules, checkIns, sleepSessions: sessions, sleepError, sleepLoading, loading: false, saving: false, savingId: null,
     onCreate: async () => true, onRename: async () => true, onMove: async () => {}, onStatusChange: () => {}, onDeletionChange: () => {}, onCheckIn: async () => true, onConfirmSleepSuggestion: async () => true, onRefresh: () => {},
   }));
 }
 describe("habit sleep evidence feedback", () => {
+  it("does not offer the same sleep evidence again when a legacy result exists on the old date", () => {
+    const legacy: SyncedHabitCheckIn = { path: "", blobSha: "", record: createWorkspaceRecord({ entityType: "habit_check_in", id: "legacy_result", ownerId: "owner_test", timestamp,
+      data: createAutomaticHabitCheckInData({ habitId: habits[1]!.record.id, localDate: "2026-10-17", timezone: "Asia/Shanghai", status: "missed", valueJson: { rule_type: "sleep_start_before", observed_local_time: "02:00", session_type: "main_sleep" }, evidenceType: "health_sleep_session", evidenceId: session.record.id, ruleId: rules[1]!.record.id, ruleVersion: 1, evaluatedAt: timestamp, confirmedAt: timestamp }) }) };
+    const html = render([session], "", false, [legacy]);
+    expect(html).toContain("待确认的睡眠判定 · 1 条");
+  });
   it("shows both pending missed judgements for a 02:00 bedtime and 12:20 wake-up", () => {
     const html = render();
     expect(html).toContain("待确认的睡眠判定 · 2 条");
     expect(html).toContain("起床 12:20");
     expect(html).toContain("入睡 02:00");
+    expect(html).toContain("早睡 · 2026-10-16");
+    expect(html).toContain("早起 · 2026-10-17");
+    expect(html).toContain("归属 2026-10-16 晚");
     expect(html.match(/建议：未完成/g)).toHaveLength(2);
     expect(html).toContain('<details open=""');
   });
