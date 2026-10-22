@@ -1,5 +1,6 @@
 "use client";
 
+import { calendarEventProjectId, canLinkCalendarProject } from "../../../src/lib/github-data/calendar-projects";
 import { type ChangeEvent, type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { GitHubConflictError, GitHubContentsAdapter, GitHubDataError } from "../../../src/lib/github-data/github-contents";
@@ -220,6 +221,9 @@ export default function GitHubWorkspacePage() {
   const [savingTask, setSavingTask] = useState(false);
   const [savingReportDraft, setSavingReportDraft] = useState(false);
   const [savingTaskId, setSavingTaskId] = useState<string | null>(null);
+  const [calendarNavigation, setCalendarNavigation] = useState<{ projectId: string; date?: string } | null>(null);
+  const [projectFocusRequest, setProjectFocusRequest] = useState<{ projectId: string } | null>(null);
+  const [reportProjectId, setReportProjectId] = useState("");
   const [projectName, setProjectName] = useState("");
   const [projectTargetDate, setProjectTargetDate] = useState("");
   const [projectView, setProjectView] = useState<"current" | "completed" | "cancelled" | "archived" | "trash">("current");
@@ -639,6 +643,7 @@ export default function GitHubWorkspacePage() {
   }
 
   function clearConnection(message: string) {
+    setCalendarNavigation(null); setProjectFocusRequest(null); setReportProjectId("");
     adapterRef.current = null;
     moduleLoaderRef.current.reset();
     setVisitedWorkspaceTabs(new Set());
@@ -895,6 +900,10 @@ export default function GitHubWorkspacePage() {
       setErrorMessage("关联 Task 已不在当前数据中，请刷新后重新选择；未写入 CalendarEvent。");
       return false;
     }
+    if (!canLinkCalendarProject(fields.projectId ?? null, projectFiles.map((project) => project.record), null)) {
+      setErrorMessage("所属项目已不可用，请刷新后重新选择；日程尚未保存。");
+      return false;
+    }
     calendarWriteRef.current = true;
     setSavingCalendarEvent(true);
     setErrorMessage("");
@@ -917,6 +926,7 @@ export default function GitHubWorkspacePage() {
           timezone: connection.timezone,
           localDate: fields.localDate,
           linkedTaskId: fields.linkedTaskId,
+          projectId: fields.projectId,
           reminderOffsetsMinutes: fields.reminderOffsetsMinutes,
         }), all_day: window.allDay, local_end_date: window.localEndDate },
       });
@@ -948,6 +958,10 @@ export default function GitHubWorkspacePage() {
       setErrorMessage("关联 Task 已不在当前数据中，请刷新后重新选择；未改写 CalendarEvent。");
       return false;
     }
+    if (!canLinkCalendarProject(fields.projectId ?? null, projectFiles.map((project) => project.record), calendarEventProjectId(item.record, taskFiles.map((task) => task.record)))) {
+      setErrorMessage("所属项目已不可用，请刷新后重新选择；日程尚未保存。");
+      return false;
+    }
     calendarWriteRef.current = true;
     setSavingCalendarEventId(item.record.id);
     setErrorMessage("");
@@ -962,6 +976,7 @@ export default function GitHubWorkspacePage() {
         timezone: connection.timezone,
         localDate: fields.localDate,
         linkedTaskId: fields.linkedTaskId,
+          projectId: fields.projectId,
         reminderOffsetsMinutes: fields.reminderOffsetsMinutes,
       });
       const updated = { ...modified, data: { ...modified.data, all_day: window.allDay, local_end_date: window.localEndDate } };
@@ -1081,7 +1096,7 @@ export default function GitHubWorkspacePage() {
   async function saveProject(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const adapter = adapterRef.current;
-    if (!adapter || !connection || !projectName.trim() || savingProject || online === false) return;
+    if (!adapter || !connection || !projectName.trim() || savingProject || online === false) return null;
     setSavingProject(true);
     setErrorMessage("");
     setStatusMessage("");
@@ -1107,8 +1122,10 @@ export default function GitHubWorkspacePage() {
       setProjectView("current");
       await appendProjectActivity({ projectId: id, eventType: "project.created", changeSummary: { name: record.data.name, status: record.data.status }, sourceRef: id, timestamp });
       setStatusMessage("项目已保存；进度将按未删除、未取消、未归档的关联任务事实计算。");
+      return id;
     } catch (error) {
       setErrorMessage(friendlyError(error));
+      return null;
     } finally {
       setSavingProject(false);
     }
@@ -3065,6 +3082,15 @@ export default function GitHubWorkspacePage() {
         todayDate={currentTaskDate}
         eventFiles={calendarEventFiles}
         taskFiles={taskFiles}
+        projectFiles={projectFiles}
+        loadingProjects={loadingProjects}
+        navigation={calendarNavigation}
+        onOpenProject={(projectId) => {
+          const project = projectFiles.find((item) => item.record.id === projectId);
+          if (!project) return;
+          setProjectView(project.record.deleted_at ? "trash" : project.record.data.status === "completed" ? "completed" : project.record.data.status === "cancelled" ? "cancelled" : project.record.data.status === "archived" ? "archived" : "current");
+          setProjectFocusRequest({ projectId }); selectWorkspaceTab("projects");
+        }}
         loading={loadingCalendarEvents}
         saving={savingCalendarEvent}
         savingEventId={savingCalendarEventId}
@@ -3073,7 +3099,7 @@ export default function GitHubWorkspacePage() {
         onLifecycleChange={updateCalendarEventLifecycle}
         onDeletionChange={updateCalendarEventDeletion}
         onCompletionChange={updateCalendarEventCompletion}
-        onRefresh={() => loadCalendarEvents()}
+        onRefresh={() => Promise.all([loadCalendarEvents(), loadProjects(), loadTasks()])}
       />
       </WorkspaceTabPanel>
 
@@ -3098,7 +3124,14 @@ export default function GitHubWorkspacePage() {
         visibleProjectFiles={visibleProjectFiles}
         projectView={projectView}
         taskFiles={taskFiles}
+        calendarEventFiles={calendarEventFiles}
+        loadingCalendarEvents={loadingCalendarEvents}
+        focusRequest={projectFocusRequest}
+        onOpenCalendar={(projectId, date) => { setCalendarNavigation({ projectId, date }); selectWorkspaceTab("calendar"); }}
+        onOpenReport={(projectId) => { setReportProjectId(projectId); selectWorkspaceTab("reports"); }}
         loadingProjects={loadingProjects}
+        loadingTasks={loadingTasks}
+        onOpenTasks={(projectId) => { setTaskProjectId(currentProjectFiles.some((item) => item.record.id === projectId) ? projectId : ""); selectWorkspaceTab("tasks"); }}
         loadingProjectPhases={loadingProjectPhases}
         loadingMilestones={loadingMilestones}
         loadingProjectNotes={loadingProjectNotes}
@@ -3127,7 +3160,7 @@ export default function GitHubWorkspacePage() {
         onCreateProjectNote={saveProjectNote}
         onEditProjectNote={saveProjectNoteEdit}
         onCreateProjectFileReference={saveProjectFileReference}
-        onRefresh={() => Promise.all([loadProjects(), loadProjectPhases(), loadMilestones(), loadProjectNotes(), loadProjectFileReferences(), loadActivityEvents()])}
+        onRefresh={() => Promise.all([loadProjects(), loadTasks(), loadCalendarEvents(), loadProjectPhases(), loadMilestones(), loadProjectNotes(), loadProjectFileReferences(), loadActivityEvents()])}
       />
       </WorkspaceTabPanel>
 
@@ -3272,6 +3305,8 @@ export default function GitHubWorkspacePage() {
       <WorkspaceTabPanel tab="reports" activeTab={activeWorkspaceTab} mounted={workspaceTabReady && (activeWorkspaceTab === "reports" || visitedWorkspaceTabs.has("reports"))} key={connection ? `reports:${connection.ownerId}:${connection.repository}` : "reports:disconnected"}>
       <ReportsSection
         connection={connection}
+        projectId={reportProjectId}
+        onProjectIdChange={setReportProjectId}
         todayDate={currentTaskDate}
         taskFiles={taskFiles}
         projectFiles={projectFiles}

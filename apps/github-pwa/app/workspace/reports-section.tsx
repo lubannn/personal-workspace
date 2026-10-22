@@ -24,13 +24,15 @@ type Props = {
   activityEventFiles: SyncedActivityEvent[];
   timeEntryFiles: SyncedTimeEntry[];
   reportDraftFiles: SyncedReportDraft[];
+  projectId?: string;
+  onProjectIdChange?: (projectId: string) => void;
   loading: boolean;
   savingDraft: boolean;
   onRefresh: () => void;
   onSaveDraft: (report: ReturnType<typeof buildDeterministicReport>, audience: DeterministicReportAudience, markdown: string) => Promise<boolean>;
 };
 
-export function ReportsSection({ connection, todayDate, taskFiles, projectFiles, milestoneFiles, calendarEventFiles, activityEventFiles, timeEntryFiles, reportDraftFiles, loading, savingDraft, onRefresh, onSaveDraft }: Props) {
+export function ReportsSection({ connection, todayDate, taskFiles, projectFiles, milestoneFiles, calendarEventFiles, activityEventFiles, timeEntryFiles, reportDraftFiles, projectId = "", onProjectIdChange, loading, savingDraft, onRefresh, onSaveDraft }: Props) {
   const [reportType, setReportType] = useState<DeterministicReportType>("weekly");
   const [audience, setAudience] = useState<DeterministicReportAudience>("personal");
   const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "failed">("idle");
@@ -39,6 +41,7 @@ export function ReportsSection({ connection, todayDate, taskFiles, projectFiles,
   const timezone = connection?.timezone ?? "Asia/Shanghai";
   const report = useMemo(() => buildDeterministicReport({
     reportType,
+    projectId: projectId || null,
     anchorDate: anchorDate || "1970-01-01",
     timezone,
     tasks: taskFiles.map((item) => item.record),
@@ -47,7 +50,8 @@ export function ReportsSection({ connection, todayDate, taskFiles, projectFiles,
     calendarEvents: calendarEventFiles.map((item) => item.record),
     activityEvents: activityEventFiles.map((item) => item.record),
     timeEntries: timeEntryFiles.map((item) => item.record),
-  }), [activityEventFiles, anchorDate, calendarEventFiles, milestoneFiles, projectFiles, reportType, taskFiles, timeEntryFiles, timezone]);
+  }), [activityEventFiles, anchorDate, calendarEventFiles, milestoneFiles, projectFiles, projectId, reportType, taskFiles, timeEntryFiles, timezone]);
+  const visibleDrafts = projectId ? reportDraftFiles.filter((item) => item.record.data.scope_json.project_id === projectId) : reportDraftFiles;
   const factCount = report.completedTasks.length + report.completedMilestones.length + report.calendarEvents.length + report.activityEvents.length + report.timeEntries.length;
   const markdown = useMemo(() => renderDeterministicReportMarkdown(report, audience), [audience, report]);
 
@@ -99,6 +103,7 @@ export function ReportsSection({ connection, todayDate, taskFiles, projectFiles,
           <button className="secondary-button" type="button" aria-pressed={reportType === "weekly"} onClick={() => setReportType("weekly")}>周报</button>
           <button className="secondary-button" type="button" aria-pressed={reportType === "monthly"} onClick={() => setReportType("monthly")}>月报</button>
         </div>
+        {onProjectIdChange ? <label className="report-project-filter">所属项目<select aria-label="报告所属项目" value={projectId} onChange={(event) => onProjectIdChange(event.target.value)}><option value="">全部项目</option>{projectFiles.map((item) => <option key={item.record.id} value={item.record.id}>{item.record.data.name}</option>)}</select></label> : null}
         <span>{report.periodStart} → {report.periodEnd} · {report.timezone}</span>
       </div>
 
@@ -116,7 +121,7 @@ export function ReportsSection({ connection, todayDate, taskFiles, projectFiles,
           <ReportGroup title="已完成任务" empty="本周期没有完成任务。" items={report.completedTasks.map((record) => ({ id: record.id, title: record.data.title, meta: `${localTimestamp(record.data.completed_at, report.timezone)}${record.data.actual_duration_minutes === null ? "" : ` · ${formatMinutes(record.data.actual_duration_minutes)}`}` }))} />
           <ReportGroup title="项目进度快照" empty="当前没有进行中或本周期完成的项目。" items={report.projectSnapshots.map((snapshot) => ({ id: snapshot.record.id, title: snapshot.record.data.name, meta: `${snapshot.percent}% · ${progressLabel(snapshot.progressSource, snapshot.completed, snapshot.total)}` }))} />
           <ReportGroup title="已完成里程碑" empty="本周期没有完成里程碑。" items={report.completedMilestones.map((record) => ({ id: record.id, title: record.data.title, meta: `${localTimestamp(record.data.completed_at, report.timezone)} · 权重 ${record.data.weight}` }))} />
-          <ReportGroup title="日程与时间块" empty="本周期没有已确认日程。" items={report.calendarEvents.map((record) => ({ id: record.id, title: record.data.title, meta: `${record.data.local_start_date} · ${record.data.event_type === "time_block" ? "时间块" : "日程"}` }))} />
+          <ReportGroup title="日程与时间块" empty="本周期没有已确认日程。" items={report.calendarEvents.map((record) => ({ id: record.id, title: record.data.title, meta: `${record.data.local_start_date} · ${record.data.completed ? "已完成" : "已安排"} · ${record.data.event_type === "time_block" ? "时间块" : "日程"}${report.calendarEventProjectIds[record.id] ? ` · 项目：${projectFiles.find((item) => item.record.id === report.calendarEventProjectIds[record.id])?.record.data.name ?? report.calendarEventProjectIds[record.id]}` : ""}` }))} />
           <ReportGroup title="Project Activity" empty="本周期没有 Project Activity。" items={report.activityEvents.map((record) => ({ id: record.id, title: record.data.event_type, meta: `${localTimestamp(record.data.occurred_at, report.timezone)} · Project ${record.data.entity_id}` }))} />
           <ReportGroup title="时间投入" empty="本周期没有 Time Entry。" items={report.timeEntries.map((record) => ({ id: record.id, title: `${formatMinutes(record.data.duration_minutes)} · Task ${record.data.task_id}`, meta: `${record.data.local_date}${record.data.project_id ? ` · Project ${record.data.project_id}` : ""}` }))} />
         </div>
@@ -141,8 +146,8 @@ export function ReportsSection({ connection, todayDate, taskFiles, projectFiles,
         </article>
 
         <article className="reports-draft-history">
-          <header><strong>已保存 ReportDraft</strong><span>{reportDraftFiles.length} 份</span></header>
-          {reportDraftFiles.length === 0 ? <p className="empty-note">尚未保存 canonical 报告草稿。</p> : <ol>{reportDraftFiles.slice(0, 8).map((item) => <li key={item.record.id}><span><strong>{item.record.data.report_type === "weekly" ? "周报" : "月报"} · {item.record.data.audience === "personal" ? "个人复盘" : "汇报版"}</strong><small>{item.record.data.period_start} → {item.record.data.period_end} · {item.record.data.facts_snapshot_json.sources.length} 条快照</small></span><code>{item.record.id}</code></li>)}</ol>}
+          <header><strong>已保存 ReportDraft</strong><span>{visibleDrafts.length} 份</span></header>
+          {visibleDrafts.length === 0 ? <p className="empty-note">尚未保存 canonical 报告草稿。</p> : <ol>{visibleDrafts.slice(0, 8).map((item) => <li key={item.record.id}><span><strong>{item.record.data.report_type === "weekly" ? "周报" : "月报"} · {item.record.data.audience === "personal" ? "个人复盘" : "汇报版"}</strong><small>{item.record.data.period_start} → {item.record.data.period_end} · {item.record.data.facts_snapshot_json.sources.length} 条快照</small></span><code>{item.record.id}</code></li>)}</ol>}
           <p>保存采用 create-only：每次生成新 ID 和新文件，不覆盖旧草稿；源记录版本和值已固化在 facts snapshot 中。</p>
         </article>
 

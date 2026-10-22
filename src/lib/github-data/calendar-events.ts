@@ -19,6 +19,7 @@ export type CalendarEventData = {
   location: string;
   status: "confirmed" | "cancelled";
   completed: boolean;
+  project_id?: string | null;
   linked_entity_type: "task" | null;
   linked_entity_id: string | null;
   external_uid: null;
@@ -39,6 +40,7 @@ export type CalendarEventEditableFields = {
   timezone: string;
   localDate: string;
   linkedTaskId: string | null;
+  projectId?: string | null;
   reminderOffsetsMinutes?: CalendarReminderOffset[];
 };
 
@@ -93,6 +95,7 @@ function isValidData(data: Record<string, unknown>): data is CalendarEventData {
     && data.location.length <= 1_000
     && (data.status === "confirmed" || data.status === "cancelled")
     && (data.completed === undefined || typeof data.completed === "boolean")
+    && (data.project_id === undefined || data.project_id === null || isStableId(data.project_id))
     && linkedPairValid
     && data.external_uid === null
     && data.external_etag === null
@@ -131,6 +134,7 @@ export function createCalendarEventData(input: {
   timezone: string;
   localDate: string;
   linkedTaskId?: string | null;
+  projectId?: string | null;
   reminderOffsetsMinutes?: CalendarReminderOffset[];
 }): CalendarEventData {
   const linkedTaskId = input.linkedTaskId || null;
@@ -148,6 +152,7 @@ export function createCalendarEventData(input: {
     location: "",
     status: "confirmed",
     completed: false,
+    ...(input.projectId !== undefined ? { project_id: input.projectId } : {}),
     linked_entity_type: linkedTaskId ? "task" : null,
     linked_entity_id: linkedTaskId,
     external_uid: null,
@@ -179,6 +184,7 @@ export function updateCalendarEventDetails(
     all_day: false,
     local_start_date: fields.localDate,
     local_end_date: fields.localDate,
+    ...(fields.projectId !== undefined ? { project_id: fields.projectId } : {}),
     linked_entity_type: linkedTaskId ? "task" : null,
     linked_entity_id: linkedTaskId,
     reminder_offsets_minutes: normalizeReminderOffsets(fields.reminderOffsetsMinutes ?? current.data.reminder_offsets_minutes),

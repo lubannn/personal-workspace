@@ -13,10 +13,11 @@ import {
   type CalendarEventType,
   type CalendarReminderOffset,
 } from "../../../../src/lib/github-data/calendar-events";
+import { calendarEventProjectId } from "../../../../src/lib/github-data/calendar-projects";
 import { shiftCalendarDate, formatCalendarTime } from "./calendar-presentation";
 import { formatWorkspaceDate } from "./workspace-date";
 import { openTasks } from "../../../../src/lib/github-data/tasks";
-import type { Connection, SyncedCalendarEvent, SyncedTask } from "./page-model";
+import type { Connection, SyncedCalendarEvent, SyncedTask, SyncedProject } from "./page-model";
 import { useCalendarReminders } from "./use-calendar-reminders";
 import { CalendarCompletionCheckbox } from "./calendar-completion-checkbox";
 
@@ -28,6 +29,7 @@ export type CalendarEventFields = {
   startTime: string;
   endTime: string;
   linkedTaskId: string | null;
+  projectId?: string | null;
   reminderOffsetsMinutes: CalendarReminderOffset[];
 };
 
@@ -37,6 +39,10 @@ type Props = {
   todayDate: string;
   eventFiles: SyncedCalendarEvent[];
   taskFiles: SyncedTask[];
+  projectFiles?: SyncedProject[];
+  loadingProjects?: boolean;
+  navigation?: { projectId: string; date?: string } | null;
+  onOpenProject?: (projectId: string) => void;
   loading: boolean;
   saving: boolean;
   savingEventId: string | null;
@@ -48,7 +54,7 @@ type Props = {
   onRefresh: () => void;
 };
 
-export function CalendarSection({ connection, online, todayDate, eventFiles, taskFiles, loading, saving, savingEventId, onCreate, onEdit, onLifecycleChange, onDeletionChange, onCompletionChange, onRefresh }: Props) {
+export function CalendarSection({ connection, online, todayDate, eventFiles, taskFiles, projectFiles = [], loadingProjects = false, navigation = null, onOpenProject, loading, saving, savingEventId, onCreate, onEdit, onLifecycleChange, onDeletionChange, onCompletionChange, onRefresh }: Props) {
   const [selectedDateOverride, setSelectedDate] = useState<string | null>(null);
   const selectedDate = selectedDateOverride ?? todayDate;
   const [eventView, setEventView] = useState<"scheduled" | "cancelled" | "trash">("scheduled");
@@ -59,6 +65,9 @@ export function CalendarSection({ connection, online, todayDate, eventFiles, tas
   const [startTime, setStartTime] = useState("09:00");
   const [endTime, setEndTime] = useState("10:00");
   const [linkedTaskId, setLinkedTaskId] = useState("");
+  const [projectId, setProjectId] = useState("");
+  const [projectFilter, setProjectFilter] = useState("");
+  const [seenNavigation, setSeenNavigation] = useState<typeof navigation>(null);
   const [reminderOffset, setReminderOffset] = useState<"none" | `${CalendarReminderOffset}`>("none");
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState("");
@@ -68,24 +77,57 @@ export function CalendarSection({ connection, online, todayDate, eventFiles, tas
   const [editStartTime, setEditStartTime] = useState("09:00");
   const [editEndTime, setEditEndTime] = useState("10:00");
   const [editLinkedTaskId, setEditLinkedTaskId] = useState("");
+  const [editProjectId, setEditProjectId] = useState("");
   const [editReminderOffset, setEditReminderOffset] = useState<"none" | `${CalendarReminderOffset}`>("none");
   const { permission: reminderPermission, deliveryError: reminderDeliveryError, requestPermission } = useCalendarReminders(eventFiles.map((item) => item.record));
   const dateRange = useMemo(() => calendarDateRange(selectedDate || "1970-01-01", periodView), [selectedDate, periodView]);
   const events = useMemo(() => {
     if (!selectedDate) return [];
-    const records = eventFiles.map((item) => item.record);
+    const records = eventFiles.map((item) => item.record).filter((record) => !projectFilter || calendarEventProjectId(record, taskFiles.map((item) => item.record)) === projectFilter);
     if (eventView === "cancelled") return cancelledCalendarEventsForRange(records, dateRange.startDate, dateRange.endDate);
     if (eventView === "trash") return trashedCalendarEventsForRange(records, dateRange.startDate, dateRange.endDate);
     return calendarEventsForRange(records, dateRange.startDate, dateRange.endDate);
-  }, [dateRange, eventFiles, eventView, selectedDate]);
+  }, [dateRange, eventFiles, eventView, selectedDate, projectFilter, taskFiles]);
   const eventItems = useMemo(() => new Map(eventFiles.map((item) => [item.record.id, item])), [eventFiles]);
   const openTaskRecords = useMemo(() => openTasks(taskFiles.map((item) => item.record)).filter((record) => record.data.parent_task_id === null), [taskFiles]);
   const linkableTaskRecords = useMemo(() => taskFiles.map((item) => item.record).filter((record) => record.deleted_at === null), [taskFiles]);
   const taskNames = useMemo(() => new Map(taskFiles.map((item) => [item.record.id, item.record.data.title])), [taskFiles]);
+  const projectNames = new Map(projectFiles.map((item) => [item.record.id, item.record.data.name]));
+  const linkableProjects = projectFiles.filter((item) => item.record.deleted_at === null && item.record.data.status !== "archived");
+  const taskChoices = openTaskRecords.filter((task) => !projectId || task.data.project_id === null || task.data.project_id === projectId);
+  const editTaskChoices = linkableTaskRecords.filter((task) => task.id === editLinkedTaskId || !editProjectId || task.data.project_id === null || task.data.project_id === editProjectId);
   const invalidRange = !allDay && (!startTime || !endTime || startTime === endTime);
   const invalidEditRange = !editDate || (!editAllDay && (!editStartTime || !editEndTime || editStartTime === editEndTime));
   const operationBusy = saving || savingEventId !== null;
   const calendarBusy = operationBusy || editingEventId !== null;
+  if (navigation && navigation !== seenNavigation && !calendarBusy) {
+    setSeenNavigation(navigation);
+    setSelectedDate(navigation.date ?? null);
+    setProjectFilter(navigation.projectId);
+    setEventView("scheduled");
+    setPeriodView("day");
+    if (!title.trim()) setProjectId(navigation.projectId);
+  }
+
+  function selectProject(value: string, editing = false) {
+    const taskId = editing ? editLinkedTaskId : linkedTaskId;
+    const task = taskFiles.find((item) => item.record.id === taskId);
+    if (editing) setEditProjectId(value); else setProjectId(value);
+    if (task?.record.data.project_id && task.record.data.project_id !== value) {
+      if (editing) setEditLinkedTaskId(""); else setLinkedTaskId("");
+    }
+  }
+
+  function selectTask(value: string, editing = false) {
+    const task = taskFiles.find((item) => item.record.id === value);
+    if (editing) {
+      setEditLinkedTaskId(value);
+      if (task?.record.data.project_id) setEditProjectId(task.record.data.project_id);
+    } else {
+      setLinkedTaskId(value);
+      if (task?.record.data.project_id) setProjectId(task.record.data.project_id);
+    }
+  }
   const periodLabel = !selectedDate ? "正在定位日期"
     : periodView === "day"
       ? selectedDate === todayDate ? "今天" : selectedDate
@@ -101,8 +143,11 @@ export function CalendarSection({ connection, online, todayDate, eventFiles, tas
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!selectedDate || !title.trim() || invalidRange || operationBusy || online === false) return;
-    const saved = await onCreate({ allDay, title, eventType, localDate: selectedDate, startTime, endTime, linkedTaskId: linkedTaskId || null, reminderOffsetsMinutes: reminderOffset === "none" ? [] : [Number(reminderOffset) as CalendarReminderOffset] });
-    if (saved) setTitle("");
+    const saved = await onCreate({ allDay, title, eventType, localDate: selectedDate, startTime, endTime, linkedTaskId: linkedTaskId || null, projectId: projectId || null, reminderOffsetsMinutes: reminderOffset === "none" ? [] : [Number(reminderOffset) as CalendarReminderOffset] });
+    if (saved) {
+      setTitle("");
+      if (projectFilter && projectFilter !== projectId) setProjectFilter(projectId);
+    }
   }
 
   function beginEdit(item: SyncedCalendarEvent) {
@@ -115,6 +160,7 @@ export function CalendarSection({ connection, online, todayDate, eventFiles, tas
     setEditStartTime(formatEventInputTime(item.record.data.start_at, item.record.data.timezone));
     setEditEndTime(formatEventInputTime(item.record.data.end_at, item.record.data.timezone));
     setEditLinkedTaskId(item.record.data.linked_entity_id ?? "");
+    setEditProjectId(calendarEventProjectId(item.record, taskFiles.map((task) => task.record)) ?? "");
     setEditReminderOffset(item.record.data.reminder_offsets_minutes[0] === undefined ? "none" : String(item.record.data.reminder_offsets_minutes[0]) as `${CalendarReminderOffset}`);
   }
 
@@ -129,9 +175,13 @@ export function CalendarSection({ connection, online, todayDate, eventFiles, tas
       startTime: editStartTime,
       endTime: editEndTime,
       linkedTaskId: editLinkedTaskId || null,
+      projectId: editProjectId || null,
       reminderOffsetsMinutes: editReminderOffset === "none" ? [] : [Number(editReminderOffset) as CalendarReminderOffset],
     });
-    if (saved) setEditingEventId(null);
+    if (saved) {
+      setEditingEventId(null);
+      if (projectFilter && projectFilter !== editProjectId) setProjectFilter(editProjectId);
+    }
   }
 
   return (
@@ -140,11 +190,11 @@ export function CalendarSection({ connection, online, todayDate, eventFiles, tas
         <div>
           <p className="eyebrow">CALENDAR</p>
           <h2 id="calendar-title">日程安排</h2>
-          <p className="calendar-subtitle">安排时间，留出专注。关联待办不会改变它的截止日期。</p>
+          <p className="calendar-subtitle">安排时间，留出专注。日程可关联项目与待办，并进入项目报告。</p>
         </div>
         <div className="calendar-header-actions">
           <label>定位日期<input type="date" value={selectedDate} onChange={(event) => { if (event.target.value) setSelectedDate(event.target.value); setEditingEventId(null); }} onInput={(event) => { if (event.currentTarget.value) setSelectedDate(event.currentTarget.value); setEditingEventId(null); }} disabled={calendarBusy} /></label>
-          <button className="secondary-button" type="button" onClick={onRefresh} disabled={!connection || loading || calendarBusy}>{loading ? "读取中…" : "刷新"}</button>
+          <button className="secondary-button" type="button" onClick={onRefresh} disabled={!connection || loading || loadingProjects || calendarBusy}>{loading ? "读取中…" : "刷新"}</button>
         </div>
       </div>
 
@@ -160,6 +210,7 @@ export function CalendarSection({ connection, online, todayDate, eventFiles, tas
           <button className={`view-button ${eventView === "cancelled" ? "active" : ""}`} type="button" aria-pressed={eventView === "cancelled"} onClick={() => { setEventView("cancelled"); setEditingEventId(null); }} disabled={calendarBusy}>已取消</button>
           <button className={`view-button ${eventView === "trash" ? "active" : ""}`} type="button" aria-pressed={eventView === "trash"} onClick={() => { setEventView("trash"); setEditingEventId(null); }} disabled={calendarBusy}>回收站</button>
         </div>
+        <label className="calendar-project-filter">所属项目<select value={projectFilter} onChange={(event) => setProjectFilter(event.target.value)} disabled={calendarBusy || loadingProjects}><option value="">全部项目</option>{projectFiles.map((item) => <option key={item.record.id} value={item.record.id}>{item.record.data.name}{item.record.deleted_at ? "（已移入回收站）" : item.record.data.status === "archived" ? "（已归档）" : ""}</option>)}</select></label>
         <div className="calendar-period-actions" aria-label="Calendar 时间范围">
           <button className={`view-button ${periodView === "day" ? "active" : ""}`} type="button" aria-pressed={periodView === "day"} onClick={() => setPeriodView("day")} disabled={calendarBusy}>日</button>
           <button className={`view-button ${periodView === "week" ? "active" : ""}`} type="button" aria-pressed={periodView === "week"} onClick={() => setPeriodView("week")} disabled={calendarBusy}>周</button>
@@ -174,10 +225,11 @@ export function CalendarSection({ connection, online, todayDate, eventFiles, tas
           <label className="calendar-all-day">时间安排<select value={allDay ? "yes" : "no"} onChange={(event) => setAllDay(event.target.value === "yes")} disabled={!connection || calendarBusy}><option value="no">定时</option><option value="yes">全天</option></select></label>
           <label>开始<input type="time" value={startTime} onChange={(event) => setStartTime(event.target.value)} onInput={(event) => setStartTime(event.currentTarget.value)} disabled={!connection || !selectedDate || calendarBusy || allDay} /></label>
           <label>结束<input type="time" value={endTime} onChange={(event) => setEndTime(event.target.value)} onInput={(event) => setEndTime(event.currentTarget.value)} disabled={!connection || !selectedDate || calendarBusy || allDay} /></label>
-          <label className="calendar-task-field">关联 Task（可选）
-            <select value={linkedTaskId} onChange={(event) => setLinkedTaskId(event.target.value)} disabled={!connection || calendarBusy}>
-              <option value="">不关联 Task</option>
-              {openTaskRecords.map((task) => <option key={task.id} value={task.id}>{task.data.title}</option>)}
+          <label className="calendar-task-field">所属项目（可选）<select value={projectId} onChange={(event) => selectProject(event.target.value)} disabled={!connection || calendarBusy || loadingProjects}><option value="">不关联项目</option>{linkableProjects.map((item) => <option key={item.record.id} value={item.record.id}>{item.record.data.name}</option>)}{projectId && !linkableProjects.some((item) => item.record.id === projectId) ? <option value={projectId} disabled>{projectNames.get(projectId) ?? "原项目"}（仅保留历史关联）</option> : null}</select></label>
+          <label className="calendar-task-field">关联待办（可选）
+            <select value={linkedTaskId} onChange={(event) => selectTask(event.target.value)} disabled={!connection || calendarBusy}>
+              <option value="">不关联待办</option>
+              {taskChoices.map((task) => <option key={task.id} value={task.id}>{task.data.title}</option>)}
             </select>
           </label>
           <label className="calendar-task-field">前台设备提醒
@@ -187,7 +239,7 @@ export function CalendarSection({ connection, online, todayDate, eventFiles, tas
           </label>
           <div className="calendar-form-actions">
             <small>{!selectedDate ? "正在定位工作区日期…" : invalidRange ? "请填写不同的开始、结束时间。" : allDay ? "全天安排" : endTime < startTime ? "结束时间在次日" : `${selectedDate} · ${connection?.timezone ?? "工作区时区"}`}</small>
-            <button className="primary-button" type="submit" disabled={!connection || !selectedDate || !title.trim() || invalidRange || calendarBusy || online === false}>{saving ? "保存中…" : eventType === "event" ? "添加日程" : "添加时间块"}</button>
+            <button className="primary-button" type="submit" disabled={!connection || !selectedDate || !title.trim() || invalidRange || calendarBusy || loadingProjects || online === false}>{saving ? "保存中…" : eventType === "event" ? "添加日程" : "添加时间块"}</button>
           </div>
         </form>
 
@@ -199,6 +251,8 @@ export function CalendarSection({ connection, online, todayDate, eventFiles, tas
                 : <ol>{events.map((record) => {
                   const item = eventItems.get(record.id);
                   if (!item) return null;
+                  const eventProjectId = calendarEventProjectId(record, taskFiles.map((task) => task.record));
+                  const linkedProject = eventProjectId ? projectNames.get(eventProjectId) : null;
                   const linkedTask = record.data.linked_entity_id ? taskNames.get(record.data.linked_entity_id) : null;
                   const isSaving = savingEventId === record.id;
                   return editingEventId === record.id ? (
@@ -210,10 +264,11 @@ export function CalendarSection({ connection, online, todayDate, eventFiles, tas
                         <label>全天<select value={editAllDay ? "yes" : "no"} onChange={(event) => setEditAllDay(event.target.value === "yes")} disabled={operationBusy}><option value="no">定时</option><option value="yes">全天</option></select></label>
                         <label>开始<input type="time" value={editStartTime} onChange={(event) => setEditStartTime(event.target.value)} onInput={(event) => setEditStartTime(event.currentTarget.value)} disabled={operationBusy || editAllDay} /></label>
                         <label>结束<input type="time" value={editEndTime} onChange={(event) => setEditEndTime(event.target.value)} onInput={(event) => setEditEndTime(event.currentTarget.value)} disabled={operationBusy || editAllDay} /></label>
-                        <label className="calendar-edit-task">关联 Task（可选）
-                          <select value={editLinkedTaskId} onChange={(event) => setEditLinkedTaskId(event.target.value)} disabled={operationBusy}>
-                            <option value="">不关联 Task</option>
-                            {linkableTaskRecords.map((task) => <option key={task.id} value={task.id}>{task.data.title}</option>)}
+                        <label className="calendar-edit-task">所属项目（可选）<select value={editProjectId} onChange={(event) => selectProject(event.target.value, true)} disabled={operationBusy || loadingProjects}><option value="">不关联项目</option>{linkableProjects.map((item) => <option key={item.record.id} value={item.record.id}>{item.record.data.name}</option>)}{editProjectId && !linkableProjects.some((item) => item.record.id === editProjectId) ? <option value={editProjectId}>{projectNames.get(editProjectId) ?? "原项目"}（历史关联）</option> : null}</select></label>
+                        <label className="calendar-edit-task">关联待办（可选）
+                          <select value={editLinkedTaskId} onChange={(event) => selectTask(event.target.value, true)} disabled={operationBusy}>
+                            <option value="">不关联待办</option>
+                            {editTaskChoices.map((task) => <option key={task.id} value={task.id}>{task.data.title}</option>)}
                           </select>
                         </label>
                         <label className="calendar-edit-task">前台设备提醒
@@ -225,7 +280,7 @@ export function CalendarSection({ connection, online, todayDate, eventFiles, tas
                           <small>{invalidEditRange ? "请填写不同的开始、结束时间。" : editAllDay ? "全天安排" : editEndTime < editStartTime ? "结束时间在次日" : "修改只应用于这条日程。"}</small>
                           <span>
                             <button className="text-button" type="button" onClick={() => setEditingEventId(null)} disabled={operationBusy}>取消编辑</button>
-                            <button className="primary-button" type="submit" disabled={!editTitle.trim() || invalidEditRange || operationBusy || online === false}>{isSaving ? "保存中…" : "保存修改"}</button>
+                            <button className="primary-button" type="submit" disabled={!editTitle.trim() || invalidEditRange || operationBusy || loadingProjects || online === false}>{isSaving ? "保存中…" : "保存修改"}</button>
                           </span>
                         </div>
                       </form>
@@ -237,7 +292,7 @@ export function CalendarSection({ connection, online, todayDate, eventFiles, tas
                         <CalendarCompletionCheckbox event={record} disabled={!connection || loading || calendarBusy || online === false || eventView !== "scheduled"} onChange={(completed) => onCompletionChange(item, completed)} />
                         <strong className="calendar-event-title">{record.data.title}</strong>
                         {record.data.completed ? <small className="calendar-completion-status">已完成</small> : null}
-                      </div><small>{record.data.event_type === "time_block" ? "时间块" : "日程"}{linkedTask ? ` · Task：${linkedTask}` : record.data.linked_entity_id ? " · Task 引用当前不可用" : ""}{record.data.reminder_offsets_minutes[0] === undefined ? "" : ` · ${reminderLabel(record.data.reminder_offsets_minutes[0])}`}</small></div>
+                      </div><small>{record.data.event_type === "time_block" ? "时间块" : "日程"}{linkedTask ? ` · 待办：${linkedTask}` : record.data.linked_entity_id ? " · 待办当前不可用" : ""}{record.data.reminder_offsets_minutes[0] === undefined ? "" : ` · ${reminderLabel(record.data.reminder_offsets_minutes[0])}`}</small>{eventProjectId ? <div className="calendar-project-link">{onOpenProject ? <button className="text-button" type="button" onClick={() => onOpenProject(eventProjectId)} disabled={calendarBusy}>项目 · {linkedProject ?? "原项目（当前不可用）"} ↗</button> : <small>项目 · {linkedProject ?? "原项目（当前不可用）"}</small>}</div> : null}</div>
                       <div className="calendar-event-actions">
 
                         {eventView === "scheduled" ? <>
