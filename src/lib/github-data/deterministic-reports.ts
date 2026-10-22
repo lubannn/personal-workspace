@@ -1,3 +1,4 @@
+import { calendarEventProjectId } from "./calendar-projects";
 import { calendarDateRange, type CalendarEventRecord } from "./calendar-events";
 import { recordPath } from "./protocol";
 import { projectMilestoneProgress, projectTaskProgress, type ProjectRecord } from "./projects";
@@ -18,12 +19,15 @@ export type ProjectReportSnapshot = {
 };
 
 export type DeterministicReport = {
+  projectId?: string | null;
+  projectName?: string | null;
   reportType: DeterministicReportType;
   periodStart: string;
   periodEnd: string;
   timezone: string;
   completedTasks: TaskRecord[];
   completedMilestones: MilestoneRecord[];
+  calendarEventProjectIds: Record<string, string | null>;
   calendarEvents: CalendarEventRecord[];
   activityEvents: ActivityEventRecord[];
   projectSnapshots: ProjectReportSnapshot[];
@@ -34,6 +38,7 @@ export type DeterministicReport = {
 };
 
 export function buildDeterministicReport(input: {
+  projectId?: string | null;
   reportType: DeterministicReportType;
   anchorDate: string;
   timezone: string;
@@ -45,34 +50,39 @@ export function buildDeterministicReport(input: {
   timeEntries?: TimeEntryRecord[];
 }): DeterministicReport {
   assertTimezone(input.timezone);
+  const projectId = input.projectId ?? null;
+  if (projectId !== null && !/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/.test(projectId)) throw new Error("INVALID_REPORT_PROJECT");
+  const calendarEventProjectIds = Object.fromEntries(input.calendarEvents.map((event) => [event.id, calendarEventProjectId(event, input.tasks)]));
+  const includedProject = (id: string | null) => projectId === null || id === projectId;
   const range = calendarDateRange(input.anchorDate, input.reportType === "weekly" ? "week" : "month");
   const inPeriod = (date: string) => date >= range.startDate && date <= range.endDate;
   const completedTasks = input.tasks
-    .filter((record) => record.deleted_at === null
+    .filter((record) => includedProject(record.data.project_id) && record.deleted_at === null
       && record.data.status === "done"
       && record.data.completed_at !== null
       && inPeriod(localDateForInstant(record.data.completed_at, input.timezone)))
     .sort((left, right) => String(left.data.completed_at).localeCompare(String(right.data.completed_at)) || left.id.localeCompare(right.id));
   const completedMilestones = input.milestones
-    .filter((record) => record.deleted_at === null
+    .filter((record) => includedProject(record.data.project_id) && record.deleted_at === null
       && record.data.status === "completed"
       && record.data.completed_at !== null
       && inPeriod(localDateForInstant(record.data.completed_at, input.timezone)))
     .sort((left, right) => String(left.data.completed_at).localeCompare(String(right.data.completed_at)) || left.id.localeCompare(right.id));
   const calendarEvents = input.calendarEvents
-    .filter((record) => record.deleted_at === null
+    .filter((record) => includedProject(calendarEventProjectIds[record.id] ?? null) && record.deleted_at === null
       && record.data.status === "confirmed"
       && record.data.local_start_date <= range.endDate
       && record.data.local_end_date >= range.startDate)
     .sort((left, right) => left.data.start_at.localeCompare(right.data.start_at) || left.id.localeCompare(right.id));
   const activityEvents = input.activityEvents
-    .filter((record) => inPeriod(localDateForInstant(record.data.occurred_at, input.timezone)))
+    .filter((record) => includedProject(record.data.entity_id) && inPeriod(localDateForInstant(record.data.occurred_at, input.timezone)))
     .sort((left, right) => left.data.occurred_at.localeCompare(right.data.occurred_at) || left.id.localeCompare(right.id));
-  const timeEntries = (input.timeEntries ?? []).filter((record) => record.deleted_at === null && inPeriod(record.data.local_date))
+  const timeEntries = (input.timeEntries ?? []).filter((record) => includedProject(record.data.project_id) && record.deleted_at === null && inPeriod(record.data.local_date))
     .sort((left, right) => left.data.local_date.localeCompare(right.data.local_date) || left.created_at.localeCompare(right.created_at) || left.id.localeCompare(right.id));
   const projectSnapshots = input.projects
-    .filter((record) => record.deleted_at === null && (
-      record.data.status === "planned"
+    .filter((record) => includedProject(record.id) && record.deleted_at === null && (
+      projectId !== null
+      || record.data.status === "planned"
       || record.data.status === "active"
       || record.data.status === "on_hold"
       || (record.data.status === "completed"
@@ -95,6 +105,9 @@ export function buildDeterministicReport(input: {
       || left.record.id.localeCompare(right.record.id));
 
   return {
+    projectId,
+    projectName: input.projects.find((project) => project.id === projectId)?.data.name ?? null,
+    calendarEventProjectIds,
     reportType: input.reportType,
     periodStart: range.startDate,
     periodEnd: range.endDate,
@@ -125,7 +138,7 @@ export function serializeDeterministicReportCsv(report: DeterministicReport) {
     localDateForInstant(String(record.data.completed_at), report.timezone), record.data.title, record.data.status, record.data.weight, "",
   ]);
   for (const record of report.calendarEvents) rows.push([
-    ...prefix, "calendar_event", "calendar_event", record.id, recordPath("calendar_event", record.id), "",
+    ...prefix, "calendar_event", "calendar_event", record.id, recordPath("calendar_event", record.id), report.calendarEventProjectIds[record.id] ?? "",
     record.data.local_start_date, record.data.title, record.data.event_type,
     record.data.all_day ? "" : Math.round((Date.parse(record.data.end_at) - Date.parse(record.data.start_at)) / 60_000), record.data.linked_entity_id ? `linked_task_id=${record.data.linked_entity_id}` : "",
   ]);
@@ -146,7 +159,7 @@ export function serializeDeterministicReportCsv(report: DeterministicReport) {
 }
 
 export function deterministicReportFileName(report: DeterministicReport) {
-  return `personal-workspace-${report.reportType}-${report.periodStart}-${report.periodEnd}.csv`;
+  return `personal-workspace-${report.reportType}${report.projectId ? `-${report.projectId}` : ""}-${report.periodStart}-${report.periodEnd}.csv`;
 }
 
 export function renderDeterministicReportMarkdown(report: DeterministicReport, audience: DeterministicReportAudience) {
@@ -158,6 +171,7 @@ export function renderDeterministicReportMarkdown(report: DeterministicReport, a
     "",
     `- 周期：${report.periodStart} → ${report.periodEnd}`,
     `- 时区：${report.timezone}`,
+    ...(report.projectId ? [`- 项目：${markdownText(report.projectName ?? report.projectId)} · \`project:${report.projectId}\``] : []),
     "- 生成方式：Personal Workspace 确定性事实汇总",
     "",
   ];
@@ -177,7 +191,7 @@ export function renderDeterministicReportMarkdown(report: DeterministicReport, a
       "## 已完成里程碑", "",
       ...markdownItems(report.completedMilestones.map((record) => `${markdownText(record.data.title)} — ${localDateForInstant(String(record.data.completed_at), report.timezone)} · 权重 ${record.data.weight} · \`milestone:${record.id}\``), "本周期没有完成里程碑。"), "",
       "## 日程与时间块", "",
-      ...markdownItems(report.calendarEvents.map((record) => `${markdownText(record.data.title)} — ${record.data.local_start_date} · ${record.data.event_type === "time_block" ? "时间块" : "日程"} · ${record.data.all_day ? "全天" : formatDuration(Math.round((Date.parse(record.data.end_at) - Date.parse(record.data.start_at)) / 60_000))} · \`calendar_event:${record.id}\``), "本周期没有已确认日程。"), "",
+      ...markdownItems(report.calendarEvents.map((record) => `${markdownText(record.data.title)} — ${record.data.local_start_date} · ${record.data.event_type === "time_block" ? "时间块" : "日程"} · ${record.data.all_day ? "全天" : formatDuration(Math.round((Date.parse(record.data.end_at) - Date.parse(record.data.start_at)) / 60_000))} · \`calendar_event:${record.id}\`${report.calendarEventProjectIds[record.id] ? ` · \`project:${report.calendarEventProjectIds[record.id]}\`` : ""}`), "本周期没有已确认日程。"), "",
       "## Project Activity", "",
       ...markdownItems(report.activityEvents.map((record) => `${markdownText(record.data.event_type)} — ${localDateForInstant(record.data.occurred_at, report.timezone)} · \`project:${record.data.entity_id}\` · \`activity_event:${record.id}\``), "本周期没有 Project Activity。"), "",
       "## 时间投入", "",
@@ -206,7 +220,7 @@ export function renderDeterministicReportMarkdown(report: DeterministicReport, a
 }
 
 export function deterministicReportMarkdownFileName(report: DeterministicReport, audience: DeterministicReportAudience) {
-  return `personal-workspace-${report.reportType}-${audience}-${report.periodStart}-${report.periodEnd}.md`;
+  return `personal-workspace-${report.reportType}-${audience}${report.projectId ? `-${report.projectId}` : ""}-${report.periodStart}-${report.periodEnd}.md`;
 }
 
 export function localDateForInstant(value: string, timezone: string) {

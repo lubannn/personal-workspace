@@ -248,6 +248,7 @@ ReportDraft 已进入 collection 加载、开放 JSON export、inspection、隔�
 - `local_start_date`, `local_end_date`
 - `location`, `status`
 - `linked_entity_type`, `linked_entity_id`
+- `project_id`：可选的直接项目归属；稳定 Project ID 或 `null`
 - `external_uid`, `external_etag`, `sync_status`
 - `recurrence_rule`, `recurrence_timezone`
 - `reminder_offsets_minutes`, `reminder_delivery`
@@ -264,6 +265,12 @@ ReportDraft 已进入 collection 加载、开放 JSON export、inspection、隔�
 内部 Calendar 首个切片使用保留的 `calendar_id = internal-default`，每条事件保存为 `data/calendar-events/<id>.json`。当前只开放单日、非重复、非全天且带明确起止时间的 `event` / `time_block`；时间同时保存 UTC instant、IANA timezone 和本地日期，避免跨设备把墙上时间误当成浏览器本地时区。
 
 CalendarEvent 可以通过 `linked_entity_type = task` 和 `linked_entity_id` 引用 Task，但事件写入是独立 Git 提交，绝不改写 Task 的 DDL、状态或耗时。开放导出会验证引用的 Task 同包存在。日/周/月读取视图都从同一批 canonical 记录按本地日期范围派生，不另存 projection；现已开放带版本递增和旧 blob SHA 冲突保护的编辑、取消/恢复，以及保留原状态的软删除/恢复。
+
+2026-10-22 项目／日程关联：日程创建与编辑可同时保留 `project_id` 和 Task 引用；项目页、日程筛选及报告共用 `calendarEventProjectId` 解析归属，每条日程只计入一次。直接 `project_id` 优先；显式 `null` 表示解除项目归属；旧 v1 记录缺少字段时，才从关联 Task 的 `project_id` 派生。旧数据不在读取时回写，编辑时保存用户确认的直接归属。Task 之后转移项目也不自动改写已经保存的直接日程归属；日程完成状态不影响项目任务进度。
+
+这是 schema v1 的可选字段增补，无须全库迁移，`SCHEMA_MIGRATIONS` 保持追加规则且当前无新增步骤。collection loading 保留字段缺失状态；开放导出／inspection 校验直接项目引用同包存在；恢复计划逐字保留原文件。测试覆盖旧记录读取、新字段往返、显式解除、导出检查、迁移 dry-run 和恢复，不对正式数据执行批量写入。
+
+报告可按项目筛选当前周期的任务、里程碑、日程、活动和耗时。日程 CSV 的 `project_id`、Markdown 来源引用和 ReportDraft 的 source snapshot 都保留解析后的项目归属；项目报告的 `scope_json.project_id` 记录筛选范围。旧 ReportDraft 缺少该字段仍可读取，已保存快照不因后续日程／待办变更而重算。
 
 首个提醒切片把相对开始时间的分钟偏移保存在 CalendarEvent 的 `reminder_offsets_minutes`，允许 `0 / 5 / 10 / 15 / 30 / 60 / 1440`；`reminder_delivery = foreground_notification` 明确表示它不是后台送达承诺。旧 v1 记录缺少这两个字段时按“无提醒 + 前台通知”读取，避免改写既有 Git 历史。触发时刻始终从已保存的 UTC `start_at` 减去偏移计算，编辑日程会随事件版本一起重算。
 

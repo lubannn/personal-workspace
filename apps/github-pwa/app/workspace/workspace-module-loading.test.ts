@@ -59,6 +59,8 @@ describe("workspace module data loading", () => {
 
   it("loads collection dependencies needed by linked forms and reports", () => {
     expect(WORKSPACE_MODULE_COLLECTIONS.calendar).toContain("tasks");
+    expect(WORKSPACE_MODULE_COLLECTIONS.calendar).toContain("projects");
+    expect(WORKSPACE_MODULE_COLLECTIONS.projects).toContain("calendar");
     expect(WORKSPACE_MODULE_COLLECTIONS.projects).toContain("tasks");
     expect(WORKSPACE_MODULE_COLLECTIONS.tasks).toEqual(["tasks", "projects"]);
     expect(WORKSPACE_MODULE_COLLECTIONS.habits).toEqual(["habits", "health"]);

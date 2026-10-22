@@ -1,3 +1,4 @@
+import { createProjectData } from "../../../../src/lib/github-data/projects";
 import { createElement, type ComponentProps } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
@@ -23,6 +24,18 @@ function capture(overrides: Partial<ComponentProps<typeof CaptureInboxSection>> 
   }));
 }
 describe("workbench controls", () => {
+  it("opens a project calendar link on the right day and exposes project selectors and the return link", () => {
+    const project = { record: createWorkspaceRecord({ entityType: "project", id: "project_synthetic", ownerId: "test_owner", data: createProjectData("合成关联项目", null) }), path: "synthetic", blobSha: "synthetic" };
+    const event = { record: createWorkspaceRecord({ entityType: "calendar_event", id: "calendar_synthetic", ownerId: "test_owner", data: createCalendarEventData({ title: "合成关联日程", eventType: "event", startAt: "2026-10-22T01:00:00Z", endAt: "2026-10-22T02:00:00Z", timezone: "UTC", localDate: "2026-10-22", projectId: project.record.id }) }), path: "synthetic", blobSha: "synthetic" };
+    const html = calendar({ projectFiles: [project], eventFiles: [event], navigation: { projectId: project.record.id, date: "2026-10-22" }, onOpenProject: () => {} });
+    expect(html).toContain("2026年10月22日");
+    expect(html).toContain("合成关联日程");
+    expect(html).toContain("所属项目（可选）");
+    expect(html).toContain('value="project_synthetic" selected=""');
+    expect(html).toContain("项目 · 合成关联项目");
+    expect(html).toContain("关联待办（可选）");
+  });
+
   it("keeps completed schedules visible with the same accessible checkbox in both modules", () => {
     const item = {
       record: setCalendarEventCompleted(createWorkspaceRecord({ entityType: "calendar_event", id: "calendar_event_synthetic", ownerId: "test_owner", data: createCalendarEventData({

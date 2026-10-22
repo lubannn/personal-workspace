@@ -704,6 +704,9 @@ export async function inspectPortableWorkspaceExport(value: unknown): Promise<Ex
         errors.push({ code: "DUPLICATE_CALENDAR_EVENT_ID", message: "导出包中存在重复 CalendarEvent ID。", path: file.path });
       }
       calendarEventIds.add(record.id);
+      if (record.data.project_id && !projectIds.has(record.data.project_id)) {
+        errors.push({ code: "CALENDAR_EVENT_PROJECT_MISSING", message: "CalendarEvent 引用的 Project 不在导出包中。", path: file.path });
+      }
       if (record.data.linked_entity_type === "task" && record.data.linked_entity_id && !taskIds.has(record.data.linked_entity_id)) {
         errors.push({ code: "CALENDAR_EVENT_TASK_MISSING", message: "CalendarEvent 引用的 Task 不在导出包中。", path: file.path });
       }

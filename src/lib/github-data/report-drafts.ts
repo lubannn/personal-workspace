@@ -22,6 +22,7 @@ export type ReportDraftData = {
   timezone: string;
   scope_json: {
     basis: "workspace-local-calendar";
+    project_id?: string | null;
     source_entity_types: Array<"task" | "project" | "milestone" | "calendar_event" | "activity_event" | "time_entry">;
   };
   facts_snapshot_json: {
@@ -67,9 +68,9 @@ export function createReportDraftData(
     })),
     ...report.calendarEvents.map((record): ReportDraftSourceSnapshot => ({
       entity_type: "calendar_event", id: record.id, version: record.version, title: record.data.title,
-      occurred_at: record.data.start_at, project_id: null, status: record.data.status,
-      value: Math.round((Date.parse(record.data.end_at) - Date.parse(record.data.start_at)) / 60_000),
-      details: { event_type: record.data.event_type, local_start_date: record.data.local_start_date, local_end_date: record.data.local_end_date, linked_entity_id: record.data.linked_entity_id },
+      occurred_at: record.data.start_at, project_id: report.calendarEventProjectIds[record.id] ?? null, status: record.data.status,
+      value: record.data.all_day ? null : Math.round((Date.parse(record.data.end_at) - Date.parse(record.data.start_at)) / 60_000),
+      details: { event_type: record.data.event_type, completed: record.data.completed, all_day: record.data.all_day, local_start_date: record.data.local_start_date, local_end_date: record.data.local_end_date, linked_entity_id: record.data.linked_entity_id },
     })),
     ...report.activityEvents.map((record): ReportDraftSourceSnapshot => ({
       entity_type: "activity_event", id: record.id, version: record.version, title: record.data.event_type,
@@ -93,7 +94,7 @@ export function createReportDraftData(
     period_start: report.periodStart,
     period_end: report.periodEnd,
     timezone: report.timezone,
-    scope_json: { basis: "workspace-local-calendar", source_entity_types: ["task", "project", "milestone", "calendar_event", "activity_event", "time_entry"] },
+    scope_json: { basis: "workspace-local-calendar", ...(report.projectId ? { project_id: report.projectId } : {}), source_entity_types: ["task", "project", "milestone", "calendar_event", "activity_event", "time_entry"] },
     facts_snapshot_json: {
       completed_task_count: report.completedTasks.length,
       completed_milestone_count: report.completedMilestones.length,
@@ -156,6 +157,7 @@ function isValidData(data: Record<string, unknown>): data is ReportDraftData {
     && typeof data.period_end === "string" && DATE_ONLY.test(data.period_end) && data.period_end >= data.period_start
     && validTimezone(data.timezone)
     && data.scope_json.basis === "workspace-local-calendar"
+    && (data.scope_json.project_id === undefined || data.scope_json.project_id === null || (typeof data.scope_json.project_id === "string" && STABLE_ID.test(data.scope_json.project_id)))
     && Array.isArray(data.scope_json.source_entity_types)
     && (sourceEntityTypes === "task,project,milestone,calendar_event,activity_event"
       || sourceEntityTypes === "task,project,milestone,calendar_event,activity_event,time_entry")
