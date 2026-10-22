@@ -206,8 +206,10 @@ export default function GitHubWorkspacePage() {
   const [revokingAll, setRevokingAll] = useState(false);
   const { draft: captureDraft, updateDraft: updateCaptureDraft, clearDraft: clearCaptureDraft, storageFailed: captureStorageFailed } = useCaptureDraft(connection?.repository ?? `${owner}/${repository}`);
   const capture = captureDraft.text;
+  const { draft: ideaDraft, updateDraft: updateIdeaDraft, clearDraft: clearIdeaDraft, storageFailed: ideaStorageFailed } = useCaptureDraft(`ideas:${connection?.repository ?? `${owner}/${repository}`}`);
   const captureWriteRef = useRef(false);
   const captureSubmissionRef = useRef<{ fingerprint: string; submission: CaptureSubmission } | null>(null);
+  const ideaSubmissionRef = useRef<{ fingerprint: string; submission: CaptureSubmission } | null>(null);
   const [captureView, setCaptureView] = useState<CaptureView>("inbox");
   const [taskTitle, setTaskTitle] = useState("");
   const [taskCategory, setTaskCategory] = useState<TaskCategory>("work");
@@ -644,7 +646,9 @@ export default function GitHubWorkspacePage() {
     setConnectionMethod(null);
     setToken("");
     clearCaptureDraft();
+    clearIdeaDraft();
     captureSubmissionRef.current = null;
+    ideaSubmissionRef.current = null;
     clearCollections();
     travel.clear();
     notices.clear();
@@ -716,28 +720,31 @@ export default function GitHubWorkspacePage() {
     }
   }
 
-  async function saveCapture() {
+  async function saveCapture(ideaText?: string) {
     const adapter = adapterRef.current;
-    const text = capture.trim();
-    if (!adapter || !connection || !text || captureWriteRef.current || online === false) return;
+    const directIdea = ideaText !== undefined;
+    const submittedDraft = directIdea ? { text: ideaText, kind: "idea" as const, date: null, time: null, endTime: null } : captureDraft;
+    const submissionRef = directIdea ? ideaSubmissionRef : captureSubmissionRef;
+    const text = submittedDraft.text.trim();
+    if (!adapter || !connection || !text || captureWriteRef.current || online === false) return false;
     captureWriteRef.current = true;
     setSaving(true);
     setErrorMessage("");
     setStatusMessage("");
     try {
       // Retry identity follows the user's draft, not date suggestions refreshed at midnight.
-      const fingerprint = JSON.stringify({ repository: connection.repository, ownerId: connection.ownerId, timezone: connection.timezone, draft: captureDraft });
-      const retry = captureSubmissionRef.current?.fingerprint === fingerprint;
+      const fingerprint = JSON.stringify({ repository: connection.repository, ownerId: connection.ownerId, timezone: connection.timezone, draft: submittedDraft });
+      const retry = submissionRef.current?.fingerprint === fingerprint;
       if (!retry) {
         const timestamp = new Date().toISOString();
         const suffix = `${timestamp.replaceAll(/\D/g, "").slice(0, 17)}_${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`;
         const today = localDateInTimezone(connection.timezone, new Date(timestamp));
-        const fields = captureFields.kind === "journal" && captureDraft.date == null ? { ...captureFields, date: today } : captureFields;
-        captureSubmissionRef.current = { fingerprint, submission: prepareCaptureSubmission(fields, { ownerId: connection.ownerId, suffix, timestamp, today }) };
+        const fields: CaptureFields = directIdea ? { rawText: text, kind: "idea", date: null, time: null, endTime: null, timezone: connection.timezone } : captureFields.kind === "journal" && captureDraft.date == null ? { ...captureFields, date: today } : captureFields;
+        submissionRef.current = { fingerprint, submission: prepareCaptureSubmission(fields, { ownerId: connection.ownerId, suffix, timestamp, today }) };
       }
-      const submission = captureSubmissionRef.current!.submission;
+      const submission = submissionRef.current!.submission;
       const result = await writeCaptureSubmission(adapter, submission, retry);
-      if (adapter !== adapterRef.current) return;
+      if (adapter !== adapterRef.current) return false;
       const synced = { record: submission.record, path: result.path, blobSha: result.blobSha };
       if (synced.record.entity_type === "task") {
         setTaskFiles((current) => [{ ...synced, record: synced.record as TaskRecord }, ...current.filter((item) => item.record.id !== synced.record.id)]);
@@ -746,13 +753,16 @@ export default function GitHubWorkspacePage() {
       else if (synced.record.entity_type === "calendar_event") setCalendarEventFiles((current) => [{ ...synced, record: synced.record as CalendarEventRecord }, ...current.filter((item) => item.record.id !== synced.record.id)]);
       else if (synced.record.entity_type === "journal_entry") rememberJournalEntry({ ...synced, record: synced.record as JournalEntryRecord }, adapter);
       else setCaptureFiles((current) => [{ ...synced, record: synced.record as CaptureRecord }, ...current.filter((item) => item.record.id !== synced.record.id)]);
-      clearCaptureDraft(captureDraft);
-      captureSubmissionRef.current = null;
+      if (directIdea) clearIdeaDraft(ideaDraft);
+      else clearCaptureDraft(captureDraft);
+      submissionRef.current = null;
       setSavedCapture({ path: result.path, commitSha: result.commitSha, text, label: submission.label, tab: submission.tab });
       setCaptureView("inbox");
       setStatusMessage(`已保存到${submission.label}，其他设备刷新后可读取。`);
+      return true;
     } catch (error) {
       if (adapter === adapterRef.current) setErrorMessage(error instanceof Error && error.message === "JOURNAL_DATE_NOT_WRITABLE" ? "日记只能写今天或昨天，请调整日记日期。草稿已保留。" : error instanceof Error && error.message.startsWith("CAPTURE_") ? "请检查内容、日期和时间后重试。草稿已保留。" : friendlyError(error));
+      return false;
     } finally {
       captureWriteRef.current = false;
       setSaving(false);
@@ -3037,7 +3047,8 @@ export default function GitHubWorkspacePage() {
 
 
       <WorkspaceTabPanel tab="ideas" activeTab={activeWorkspaceTab} mounted={workspaceTabReady && (activeWorkspaceTab === "ideas" || visitedWorkspaceTabs.has("ideas"))} key={connection ? `ideas:${connection.ownerId}:${connection.repository}` : "ideas:disconnected"}>
-        <CaptureInboxSection module="ideas" connection={connection} online={online} captureView={captureView}
+        <CaptureInboxSection module="ideas" ideaComposer={{ text: ideaDraft.text, onChange: (text) => updateIdeaDraft({ text }), onSave: () => saveCapture(ideaDraft.text), onClear: () => clearIdeaDraft(),
+          saving: saving || Boolean(savingCaptureId), connected: Boolean(connection), online, storageFailed: ideaStorageFailed }} connection={connection} online={online} captureView={captureView}
           inboxCaptures={captureModules.inbox.ideas}
           archivedCaptures={captureModules.archived.ideas}
           trashedCaptures={captureModules.trash.ideas}
