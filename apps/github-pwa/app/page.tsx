@@ -3175,6 +3175,7 @@ export default function GitHubWorkspacePage() {
 
       <WorkspaceTabPanel tab="learning" activeTab={activeWorkspaceTab} mounted={workspaceTabReady && (activeWorkspaceTab === "learning" || visitedWorkspaceTabs.has("learning"))} key={connection ? `learning:${connection.ownerId}:${connection.repository}` : "learning:disconnected"}>
       <LearningSection
+        todayDate={currentTaskDate}
         connection={connection}
         online={online}
         areaItems={learningAreaFiles}

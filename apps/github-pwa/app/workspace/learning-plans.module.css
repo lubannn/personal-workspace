@@ -1,0 +1,136 @@
+.root { min-width: 0; }
+.plans { min-width: 0; }
+.plans :global(.learning-form) { grid-template-columns: minmax(0, 1fr); }
+.plans :global(.learning-list p), .plans :global(.learning-list small) { grid-column: auto; }
+.plans :global(.learning-inline-edit) { display: block; }
+.plans :global(.learning-card) { min-width: 0; margin-top: 18px; padding: clamp(24px, 4vw, 40px); border: 1px solid var(--line); border-radius: 24px; background: rgba(250,249,245,.72); }
+.plans :global(.learning-card .card-heading h2) { font-size: 25px; }
+.plans :global(.learning-subtitle) { max-width: 650px; margin: 9px 0 0; color: var(--muted); font-size: 11px; line-height: 1.6; }
+.plans :global(.learning-header-actions), .plans :global(.learning-view-actions), .plans :global(.learning-item-actions) { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.plans :global(.learning-header-actions) { flex-shrink: 0; }
+.plans :global(.learning-card .primary-button), .plans :global(.learning-empty .secondary-button) { display: inline-flex; width: auto; align-items: center; justify-content: center; gap: 6px; min-height: 38px; font-size: 11px; }
+.plans :global(.learning-card .secondary-button), .plans :global(.learning-card .view-button) { font-size: 11px; }
+.plans :global(.learning-card button:disabled) { cursor: default; opacity: .4; }
+.plans :global(.learning-toolbar) { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-top: 22px; }
+.plans :global(.learning-offline-note) { color: var(--soft); font-size: 11px; }
+.plans :global(.learning-form) { display: grid; gap: 14px; margin-top: 18px; padding: 18px; border: 1px solid var(--line); border-radius: 14px; background: rgba(255,255,255,.38); }
+.plans :global(.learning-form label) { min-width: 0; display: grid; gap: 7px; color: var(--soft); font-size: 11px; }
+.plans :global(.learning-form label > span) { color: var(--muted); font-size: 10px; }
+.plans :global(.learning-form input), .plans :global(.learning-form textarea), .plans :global(.learning-form select) { min-width: 0; width: 100%; border: 1px solid var(--line); border-radius: 10px; padding: 10px 11px; background: rgba(255,255,255,.72); color: var(--ink); font-size: 13px; }
+.plans :global(.learning-form input), .plans :global(.learning-form select) { height: 42px; }
+.plans :global(.learning-form textarea) { min-height: 104px; resize: vertical; line-height: 1.65; }
+.plans :global(.learning-form input:focus), .plans :global(.learning-form textarea:focus) { border-color: var(--accent); background: white; }
+.plans :global(.learning-form input:disabled), .plans :global(.learning-form textarea:disabled) { opacity: .52; }
+.plans :global(.learning-settings) { border-top: 1px solid var(--line); padding-top: 12px; }
+.plans :global(.learning-card summary:focus-visible) { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 3px; }
+.plans :global(.learning-settings summary) { width: fit-content; color: var(--soft); cursor: pointer; font-size: 11px; line-height: 1.8; }
+.plans :global(.learning-settings summary > span) { margin-left: 8px; color: var(--muted); font-size: 10px; }
+.plans :global(.learning-settings-grid) { display: grid; grid-template-columns: minmax(140px, 1fr) minmax(100px, .7fr) minmax(130px, .8fr); gap: 12px; margin-top: 14px; }
+.plans :global(.learning-settings-grid > p) { grid-column: 1 / -1; margin: 0; color: var(--muted); font-size: 10px; line-height: 1.6; }
+.plans :global(.learning-color-field) { position: relative; min-width: 0; }
+.plans :global(.learning-color-field > span) { position: absolute; top: 15px; left: 12px; width: 12px; height: 12px; border: 1px solid var(--line); border-radius: 50%; }
+.plans :global(.learning-color-field > input) { padding-left: 32px; }
+.plans :global(.learning-form > footer) { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
+.plans :global(.learning-form > footer .primary-button), .plans :global(.learning-form > footer .secondary-button) { min-height: 42px; }
+.plans :global(.learning-empty) { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 44px 16px 26px; text-align: center; }
+.plans :global(.learning-empty > svg) { color: var(--accent); }
+.plans :global(.learning-empty > strong) { font: 500 17px/1.5 ui-serif, Georgia, "Songti SC", serif; }
+.plans :global(.learning-empty > p) { max-width: 360px; margin: 0; color: var(--muted); font-size: 11px; line-height: 1.7; }
+.plans :global(.learning-list) { margin: 18px 0 0; padding: 0; list-style: none; border-top: 1px solid var(--line); }
+.plans :global(.learning-list > li) { min-width: 0; display: grid; grid-template-columns: 42px minmax(0, 1fr) 36px; align-items: start; gap: 12px; padding: 18px 0; border-bottom: 1px solid var(--line); }
+.plans :global(.learning-list > li:last-child) { border-bottom: 0; padding-bottom: 0; }
+.plans :global(.learning-area-icon) { display: grid; place-items: center; width: 42px; min-height: 42px; padding: 6px; border: 1px solid var(--line); border-radius: 12px; background: rgba(255,255,255,.5); color: var(--accent); font-size: 18px; overflow-wrap: anywhere; }
+.plans :global(.learning-area-content) { min-width: 0; display: grid; gap: 5px; }
+.plans :global(.learning-title-button) { display: inline-flex; align-items: baseline; justify-self: start; gap: 8px; max-width: 100%; padding: 0; border: 0; background: transparent; color: var(--ink); text-align: left; overflow-wrap: anywhere; cursor: pointer; font: 500 17px/1.5 ui-serif, Georgia, "Songti SC", serif; }
+.plans :global(.learning-title-button > svg) { flex-shrink: 0; align-self: center; color: var(--muted); }
+.plans :global(.learning-title-button[aria-expanded="true"] > svg) { transform: rotate(180deg); }
+.plans :global(.learning-title-button:hover) { color: var(--accent); }
+.plans :global(.learning-plan-summary) { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px 28px; margin-top: 5px; }
+.plans :global(.learning-plan-summary p) { min-width: 0; display: grid; align-content: start; gap: 5px; margin: 0; color: var(--soft); font-size: 12px; line-height: 1.75; white-space: pre-wrap; overflow-wrap: anywhere; }
+.plans :global(.learning-plan-summary p > span) { color: var(--muted); font-size: 10px; }
+.plans :global(.learning-plan-summary em) { color: var(--muted); font-size: 11px; font-style: normal; }
+.plans :global(.learning-plan-summary .learning-next-step) { padding-left: 18px; border-left: 2px solid var(--accent-soft); }
+.plans :global(.learning-plan-summary .text-button) { justify-self: start; min-height: 0; padding: 0; text-align: left; color: var(--accent); font-size: 12px; }
+.plans :global(.learning-detail) { grid-column: 2 / -1; display: grid; gap: 18px; margin-top: 4px; padding: 18px 0 0; border-top: 1px dashed var(--line); }
+.plans :global(.learning-detail h3) { margin: 0 0 7px; color: var(--soft); font-size: 11px; font-weight: 600; }
+.plans :global(.learning-detail p) { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.7; }
+.plans :global(.learning-resource > a) { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; overflow-wrap: anywhere; color: var(--accent); font-size: 12px; line-height: 1.7; text-underline-offset: 3px; }
+.plans :global(.learning-resource > a > svg) { flex-shrink: 0; }
+.plans :global(.learning-notes > pre) { max-height: 320px; overflow: auto; margin: 0; color: var(--soft); font: inherit; font-size: 12px; line-height: 1.8; white-space: pre-wrap; overflow-wrap: anywhere; }
+.plans :global(.learning-detail > .text-button) { justify-self: start; }
+.plans :global(.learning-plan-fields) { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+.plans :global(.learning-name-field) { grid-column: 1 / -1; }
+.plans :global(.learning-form .learning-short-input) { min-height: 80px; }
+.plans :global(.learning-material-fields) { display: grid; gap: 14px; margin-top: 14px; }
+.plans :global(.learning-material-fields .learning-field-error) { margin: -6px 0 0; color: #7a4138; font-size: 11px; line-height: 1.6; }
+.plans :global(.learning-sr-only) { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.plans :global(.learning-icon-button) { display: inline-grid; place-items: center; width: 36px; height: 36px; padding: 0; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--soft); cursor: pointer; }
+.plans :global(.learning-icon-button:hover:not(:disabled)), .plans :global(.learning-icon-button[aria-expanded="true"]) { border-color: var(--line); background: var(--accent-soft); }
+.plans :global(.learning-manage-bar) { grid-column: 2 / -1; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 14px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: rgba(255,255,255,.38); }
+.plans :global(.learning-manage-bar > span) { min-width: 0; overflow-wrap: anywhere; color: var(--soft); font-size: 11px; }
+.plans :global(.learning-item-actions) { gap: 4px 14px; }
+.plans :global(.learning-card .text-button) { min-height: 32px; padding: 6px 0; border: 0; background: transparent; color: var(--soft); cursor: pointer; font-size: 11px; }
+.plans :global(.learning-card .text-button:hover:not(:disabled)) { color: var(--accent); }
+.plans :global(.learning-card .learning-destructive-button) { color: #7a4138; }
+.plans :global(.learning-inline-edit) { grid-column: 1 / -1; min-width: 0; }
+.plans :global(.learning-inline-edit > h3) { margin: 0; color: var(--soft); font-size: 12px; font-weight: 500; }
+.plans :global(.learning-inline-edit .learning-form) { margin-top: 10px; }
+.plans :global(.learning-generator > header h3) { margin: 0; font: 500 19px/1.4 ui-serif, Georgia, "Songti SC", serif; }
+.plans :global(.learning-generator > header p), .plans :global(.learning-planner-note) { margin: 6px 0 0; color: var(--soft); font-size: 11px; line-height: 1.75; overflow-wrap: anywhere; }
+.plans :global(.learning-field-error) { margin: 0; color: #7a4138; font-size: 11px; line-height: 1.65; }
+.plans :global(.learning-draft-notice) { display: grid; gap: 5px; padding: 14px; border: 1px solid #bac7b5; border-radius: 10px; background: var(--accent-soft); color: #40513d; }
+.plans :global(.learning-draft-notice strong) { font-size: 12px; }
+.plans :global(.learning-draft-notice span) { font-size: 11px; line-height: 1.7; }
+.plans :global(.learning-form .learning-regenerate) { justify-self: start; color: var(--accent); }
+.plans :global(.learning-roadmap-editor) { min-width: 0; display: grid; gap: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
+.plans :global(.learning-roadmap-meta) { display: flex; flex-wrap: wrap; gap: 5px 16px; color: var(--soft); font-size: 10px; line-height: 1.7; }
+.plans :global(.learning-roadmap-editor h3), .plans :global(.learning-roadmap-columns h3) { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; margin: 0; color: var(--ink); font-size: 12px; font-weight: 600; }
+.plans :global(.learning-roadmap-editor h3 small), .plans :global(.learning-roadmap-columns h3 small) { color: var(--muted); font-size: 10px; font-weight: 400; }
+.plans :global(.learning-stage-editor) { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.plans :global(.learning-stage-editor fieldset) { min-width: 0; display: grid; gap: 12px; margin: 0; padding: 14px; border: 1px solid var(--line); border-radius: 10px; }
+.plans :global(.learning-stage-editor legend) { padding: 0 5px; color: var(--soft); font-size: 11px; }
+.plans :global(.learning-action-editor) { display: grid; gap: 12px; }
+.plans :global(.learning-action-editor > div) { display: grid; grid-template-columns: minmax(0, 1fr) 130px; align-items: start; gap: 12px; }
+.plans :global(.learning-roadmap-summary) { min-width: 0; display: grid; gap: 16px; margin-top: 6px; }
+.plans :global(.learning-roadmap-goal) { display: grid; gap: 4px; margin: 0; color: var(--soft); font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; white-space: pre-wrap; }
+.plans :global(.learning-roadmap-goal > span) { color: var(--muted); font-size: 10px; }
+.plans :global(.learning-roadmap-columns) { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; }
+.plans :global(.learning-roadmap-columns > div) { min-width: 0; }
+.plans :global(.learning-stages), .plans :global(.learning-week-actions) { margin: 12px 0 0; padding: 0; list-style: none; }
+.plans :global(.learning-stages > li) { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 8px; margin-top: 12px; }
+.plans :global(.learning-stages > li > span) { padding-top: 1px; color: var(--accent); font: 11px/1.7 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.plans :global(.learning-stages strong) { display: block; color: var(--soft); font-size: 12px; font-weight: 500; overflow-wrap: anywhere; }
+.plans :global(.learning-stages p) { margin: 4px 0 0; color: var(--soft); font-size: 11px; line-height: 1.8; white-space: pre-wrap; overflow-wrap: anywhere; }
+.plans :global(.learning-week-actions > li) { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 10px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.plans :global(.learning-week-actions > li:first-child) { padding-top: 0; }
+.plans :global(.learning-week-actions > li > span) { color: var(--soft); font-size: 12px; line-height: 1.8; white-space: pre-wrap; overflow-wrap: anywhere; }
+.plans :global(.learning-week-actions small) { padding: 4px 7px; border-radius: 6px; background: var(--accent-soft); color: var(--accent); font-size: 10px; white-space: nowrap; }
+.plans :global(.learning-roadmap-source) { margin: 0; color: var(--muted); font-size: 10px; }
+@media (max-width: 780px) {
+.plans :global(.learning-card .card-heading) { display: flex; flex-wrap: wrap; gap: 14px; }
+.plans :global(.learning-header-actions), .plans :global(.learning-view-actions), .plans :global(.learning-item-actions) { justify-content: flex-start; }
+.plans :global(.learning-plan-summary), .plans :global(.learning-plan-fields), .plans :global(.learning-settings-grid), .plans :global(.learning-roadmap-columns), .plans :global(.learning-stage-editor) { grid-template-columns: 1fr; }
+.plans :global(.learning-planned-item .learning-area-content) { display: contents; }
+.plans :global(.learning-planned-item .learning-title-button) { grid-column: 2; align-self: center; }
+.plans :global(.learning-planned-item .learning-roadmap-summary) { grid-column: 1 / -1; grid-row: 2; }
+.plans :global(.learning-planned-item > .learning-icon-button) { grid-column: 3; grid-row: 1; }
+.plans :global(.learning-name-field) { grid-column: 1; }
+.plans :global(.learning-plan-summary .learning-next-step) { padding-left: 0; border-left: 0; }
+}
+@media (max-width: 480px) {
+.plans :global(.learning-settings-grid) { grid-template-columns: 1fr; }
+.plans :global(.learning-settings-grid > p) { grid-column: 1; }
+.plans :global(.learning-settings summary > span) { display: block; margin-left: 0; }
+.plans :global(.learning-form) { padding: 14px; }
+.plans :global(.learning-list > li) { grid-template-columns: 36px minmax(0, 1fr) 36px; gap: 10px; }
+.plans :global(.learning-area-icon) { width: 36px; min-height: 36px; font-size: 16px; }
+.plans :global(.learning-manage-bar), .plans :global(.learning-detail) { grid-column: 1 / -1; }
+.plans :global(.learning-card) { padding: 20px; }
+.plans :global(.learning-card .learning-plan-summary) { gap: 10px; }
+.plans :global(.learning-action-editor > div) { grid-template-columns: 1fr; }
+}
+.plans :global(.learning-card) { box-shadow: none; }
+.records { margin-top: 18px; border-top: 1px solid var(--line); padding-top: 16px; }
+.records > summary { width: fit-content; padding: 8px 0; color: var(--soft); font-size: 12px; cursor: pointer; }
+.records > summary > span { margin-left: 10px; color: var(--muted); font-size: 11px; }
+.records > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }

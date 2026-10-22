@@ -338,6 +338,8 @@ canonical 文件位于 `data/journal-import-checkpoints/<id>.json`，固定 `ver
 - `area_type`, `icon`, `color`, `status`, `settings_json`
 - 通用字段
 
+LearningArea v1 的 `settings_json.learning_plan` 可选，保存当前目标 `goal`、下一步 `next_step`、参考链接 `resource_url`，以及可选的模板规划 `roadmap`（`version = 1`、`source = template`）。roadmap 保存模板、水平、每周分钟预算、起步周周一日期、四个阶段和周行动。模板在浏览器本地生成，经用户调整并保存后才写入 canonical；旧记录无此配置时按空计划展示，其他 settings 与原说明保留。既有独立 Goal、Activity、Resource 保持原生命周期与父引用保护，通过“目标、练习与资料”入口管理。
+
 ### LearningGoal
 
 - `id`, `learning_area_id`, `title`, `description`
