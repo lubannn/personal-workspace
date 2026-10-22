@@ -75,4 +75,20 @@ describe("workbench controls", () => {
     expect(html).toContain('class="restore-button"');
     expect(html).not.toContain('class="row-more"');
   });
+  it("provides a direct idea composer above the ideas list without a destination selector", () => {
+    const ideaComposer = { text: "把笔记做成可检索的卡片", connected: true, online: true, saving: false, storageFailed: false, onChange: () => {}, onSave: async () => true, onClear: () => {} };
+    const html = capture({ module: "ideas", ideaComposer, inboxCaptures: [], visibleCaptures: [] });
+    expect(html).toContain('aria-label="新增想法"');
+    expect(html).toContain("写下想法");
+    expect(html).toMatch(/<button type="submit" class="primary-button">保存想法<\/button>/);
+    expect(html).not.toContain("随手记保存位置");
+    expect(html.indexOf('aria-label="新增想法"')).toBeLessThan(html.indexOf('aria-label="想法视图"'));
+    expect(html).not.toContain("在随手记中写下");
+    expect(capture()).not.toContain('aria-label="新增想法"');
+    expect(capture({ module: "ideas", ideaComposer, loadingCaptures: true })).toMatch(/<button type="submit" class="primary-button" disabled=""/);
+    for (const patch of [{ text: " " }, { connected: false }, { online: false }, { saving: true }]) {
+      expect(capture({ module: "ideas", ideaComposer: { ...ideaComposer, ...patch } })).toMatch(/<button type="submit" class="primary-button" disabled=""/);
+    }
+  });
+
 });
