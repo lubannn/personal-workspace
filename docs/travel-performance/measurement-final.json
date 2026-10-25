@@ -1,0 +1,2146 @@
+{
+  "baselineCommit": "decc49f78b81e8518a583bff05011f41196ebb29",
+  "date": "2026-10-25",
+  "node": "v24.19.0",
+  "playwright": "1.64.1",
+  "syntheticOnly": true,
+  "conditions": "Chromium 151.0.7922.173; CPU 4x; 1440x1000; API +100ms; uncompressed loopback static assets; service workers blocked; real browser HTTP cache enabled",
+  "applicationSourceSha256": {
+    "src/lib/github-data/github-contents.ts": "e9d7e6f9a4e30a33aaef19371fb15e0068164f4998bf941f5ffa76e986e657a7",
+    "src/lib/github-data/travel-sync.ts": "c0b6c9da22d61b35c286a9481d9b998ea34e1864d4d03ebeb8d13fbab2148ab3",
+    "apps/github-pwa/app/workspace/use-travel-visits.ts": "2f48ca6573bd8306674ef091ad5f9629696ba4fa6239ade032b490717413a7fe"
+  },
+  "measurements": {
+    "before": {
+      "count": 60,
+      "repetitions": 5,
+      "graphQL": true,
+      "results": [
+        {
+          "run": 0,
+          "cold": {
+            "totalMs": 4366,
+            "directoryMs": 109.0999999998603,
+            "bodyWindowMs": 1338.4000000001397,
+            "afterDataMs": 132.69999999995343,
+            "requests": 61,
+            "peakBodyRequests": 6,
+            "requestKinds": {
+              "directory": 1,
+              "file": 60
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 1497903,
+            "assetDecodedBytes": 1495203,
+            "longTaskMs": 859
+          },
+          "reload": {
+            "totalMs": 2509.4000000001397,
+            "directoryMs": 105.19999999995343,
+            "bodyWindowMs": 1324.1999999999534,
+            "afterDataMs": 136.60000000009313,
+            "requests": 61,
+            "peakBodyRequests": 6,
+            "requestKinds": {
+              "directory": 1,
+              "file": 60
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 562,
+            "assetDecodedBytes": 1495203,
+            "longTaskMs": 149
+          },
+          "repeat": {
+            "totalMs": 272.19999999995343,
+            "directoryMs": 0,
+            "bodyWindowMs": 0,
+            "afterDataMs": 272.19999999995343,
+            "requests": 0,
+            "peakBodyRequests": 0,
+            "requestKinds": {},
+            "otherDataRequests": [],
+            "assetTransferBytes": 562,
+            "assetDecodedBytes": 262,
+            "longTaskMs": 117
+          },
+          "refresh": {
+            "totalMs": 1661.2999999998137,
+            "directoryMs": 110.29999999981374,
+            "bodyWindowMs": 1352.4000000001397,
+            "afterDataMs": 100.0999999998603,
+            "requests": 61,
+            "peakBodyRequests": 6,
+            "requestKinds": {
+              "directory": 1,
+              "file": 60
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 0,
+            "assetDecodedBytes": 0,
+            "longTaskMs": 53
+          },
+          "firstClick": {
+            "totalMs": 2175.899999999907,
+            "directoryMs": 153.39999999990687,
+            "bodyWindowMs": 1560.9000000001397,
+            "afterDataMs": 141.5999999998603,
+            "requests": 61,
+            "peakBodyRequests": 6,
+            "requestKinds": {
+              "directory": 1,
+              "file": 60
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 562,
+            "assetDecodedBytes": 262,
+            "longTaskMs": 310
+          }
+        },
+        {
+          "run": 1,
+          "cold": {
+            "totalMs": 3672.7000000001863,
+            "directoryMs": 110.19999999995343,
+            "bodyWindowMs": 1358,
+            "afterDataMs": 131.30000000004657,
+            "requests": 61,
+            "peakBodyRequests": 6,
+            "requestKinds": {
+              "directory": 1,
+              "file": 60
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 1497903,
+            "assetDecodedBytes": 1495203,
+            "longTaskMs": 900
+          },
+          "reload": {
+            "totalMs": 2562,
+            "directoryMs": 111.10000000009313,
+            "bodyWindowMs": 1340.5999999998603,
+            "afterDataMs": 147.4000000001397,
+            "requests": 61,
+            "peakBodyRequests": 6,
+            "requestKinds": {
+              "directory": 1,
+              "file": 60
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 562,
+            "assetDecodedBytes": 1495203,
+            "longTaskMs": 143
+          },
+          "repeat": {
+            "totalMs": 254.39999999990687,
+            "directoryMs": 0,
+            "bodyWindowMs": 0,
+            "afterDataMs": 254.39999999990687,
+            "requests": 0,
+            "peakBodyRequests": 0,
+            "requestKinds": {},
+            "otherDataRequests": [],
+            "assetTransferBytes": 562,
+            "assetDecodedBytes": 262,
+            "longTaskMs": 99
+          },
+          "refresh": {
+            "totalMs": 1605.1999999999534,
+            "directoryMs": 111.30000000004657,
+            "bodyWindowMs": 1318,
+            "afterDataMs": 84.39999999990687,
+            "requests": 61,
+            "peakBodyRequests": 6,
+            "requestKinds": {
+              "directory": 1,
+              "file": 60
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 0,
+            "assetDecodedBytes": 0,
+            "longTaskMs": 56
+          },
+          "firstClick": {
+            "totalMs": 1881.5999999998603,
+            "directoryMs": 120.30000000004657,
+            "bodyWindowMs": 1384.1000000000931,
+            "afterDataMs": 139.29999999981374,
+            "requests": 61,
+            "peakBodyRequests": 6,
+            "requestKinds": {
+              "directory": 1,
+              "file": 60
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 562,
+            "assetDecodedBytes": 262,
+            "longTaskMs": 243
+          }
+        },
+        {
+          "run": 2,
+          "cold": {
+            "totalMs": 3704,
+            "directoryMs": 108.5,
+            "bodyWindowMs": 1288.3999999999069,
+            "afterDataMs": 115.80000000004657,
+            "requests": 61,
+            "peakBodyRequests": 6,
+            "requestKinds": {
+              "directory": 1,
+              "file": 60
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 1497903,
+            "assetDecodedBytes": 1495203,
+            "longTaskMs": 912
+          },
+          "reload": {
+            "totalMs": 2470.3000000000466,
+            "directoryMs": 105.5,
+            "bodyWindowMs": 1341.5,
+            "afterDataMs": 132.9000000001397,
+            "requests": 61,
+            "peakBodyRequests": 6,
+            "requestKinds": {
+              "directory": 1,
+              "file": 60
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 562,
+            "assetDecodedBytes": 1495203,
+            "longTaskMs": 66
+          },
+          "repeat": {
+            "totalMs": 375.0999999998603,
+            "directoryMs": 0,
+            "bodyWindowMs": 0,
+            "afterDataMs": 375.0999999998603,
+            "requests": 0,
+            "peakBodyRequests": 0,
+            "requestKinds": {},
+            "otherDataRequests": [],
+            "assetTransferBytes": 562,
+            "assetDecodedBytes": 262,
+            "longTaskMs": 152
+          },
+          "refresh": {
+            "totalMs": 1679.1999999999534,
+            "directoryMs": 113.69999999995343,
+            "bodyWindowMs": 1299.8000000000466,
+            "afterDataMs": 90.5,
+            "requests": 61,
+            "peakBodyRequests": 6,
+            "requestKinds": {
+              "directory": 1,
+              "file": 60
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 0,
+            "assetDecodedBytes": 0,
+            "longTaskMs": 60
+          },
+          "firstClick": {
+            "totalMs": 3538.600000000093,
+            "directoryMs": 273.19999999995343,
+            "bodyWindowMs": 2316.5,
+            "afterDataMs": 328.60000000009313,
+            "requests": 61,
+            "peakBodyRequests": 6,
+            "requestKinds": {
+              "directory": 1,
+              "file": 60
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 562,
+            "assetDecodedBytes": 262,
+            "longTaskMs": 802
+          }
+        },
+        {
+          "run": 3,
+          "cold": {
+            "totalMs": 3686.4000000001397,
+            "directoryMs": 107.29999999981374,
+            "bodyWindowMs": 1493.8000000000466,
+            "afterDataMs": 184.10000000009313,
+            "requests": 61,
+            "peakBodyRequests": 6,
+            "requestKinds": {
+              "directory": 1,
+              "file": 60
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 1497903,
+            "assetDecodedBytes": 1495203,
+            "longTaskMs": 926
+          },
+          "reload": {
+            "totalMs": 3422.9000000001397,
+            "directoryMs": 112.60000000009313,
+            "bodyWindowMs": 1330.5,
+            "afterDataMs": 117,
+            "requests": 61,
+            "peakBodyRequests": 6,
+            "requestKinds": {
+              "directory": 1,
+              "file": 60
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 562,
+            "assetDecodedBytes": 1495203,
+            "longTaskMs": 662
+          },
+          "repeat": {
+            "totalMs": 263.80000000004657,
+            "directoryMs": 0,
+            "bodyWindowMs": 0,
+            "afterDataMs": 263.80000000004657,
+            "requests": 0,
+            "peakBodyRequests": 0,
+            "requestKinds": {},
+            "otherDataRequests": [],
+            "assetTransferBytes": 562,
+            "assetDecodedBytes": 262,
+            "longTaskMs": 105
+          },
+          "refresh": {
+            "totalMs": 1674.3999999999069,
+            "directoryMs": 123,
+            "bodyWindowMs": 1327.5999999998603,
+            "afterDataMs": 121.80000000004657,
+            "requests": 61,
+            "peakBodyRequests": 6,
+            "requestKinds": {
+              "directory": 1,
+              "file": 60
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 0,
+            "assetDecodedBytes": 0,
+            "longTaskMs": 67
+          },
+          "firstClick": {
+            "totalMs": 2280.3000000000466,
+            "directoryMs": 159.5,
+            "bodyWindowMs": 1438.1999999999534,
+            "afterDataMs": 259.80000000004657,
+            "requests": 61,
+            "peakBodyRequests": 6,
+            "requestKinds": {
+              "directory": 1,
+              "file": 60
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 562,
+            "assetDecodedBytes": 262,
+            "longTaskMs": 476
+          }
+        },
+        {
+          "run": 4,
+          "cold": {
+            "totalMs": 4711.199999999953,
+            "directoryMs": 115,
+            "bodyWindowMs": 1669.0999999998603,
+            "afterDataMs": 180.4000000001397,
+            "requests": 61,
+            "peakBodyRequests": 6,
+            "requestKinds": {
+              "directory": 1,
+              "file": 60
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 1497903,
+            "assetDecodedBytes": 1495203,
+            "longTaskMs": 1357
+          },
+          "reload": {
+            "totalMs": 2870.600000000093,
+            "directoryMs": 110.60000000009313,
+            "bodyWindowMs": 1342.7999999998137,
+            "afterDataMs": 163.10000000009313,
+            "requests": 61,
+            "peakBodyRequests": 6,
+            "requestKinds": {
+              "directory": 1,
+              "file": 60
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 562,
+            "assetDecodedBytes": 1495203,
+            "longTaskMs": 396
+          },
+          "repeat": {
+            "totalMs": 327.4000000001397,
+            "directoryMs": 0,
+            "bodyWindowMs": 0,
+            "afterDataMs": 327.4000000001397,
+            "requests": 0,
+            "peakBodyRequests": 0,
+            "requestKinds": {},
+            "otherDataRequests": [],
+            "assetTransferBytes": 562,
+            "assetDecodedBytes": 262,
+            "longTaskMs": 159
+          },
+          "refresh": {
+            "totalMs": 1676.6000000000931,
+            "directoryMs": 113.5999999998603,
+            "bodyWindowMs": 1371.9000000001397,
+            "afterDataMs": 94,
+            "requests": 61,
+            "peakBodyRequests": 6,
+            "requestKinds": {
+              "directory": 1,
+              "file": 60
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 0,
+            "assetDecodedBytes": 0,
+            "longTaskMs": 59
+          },
+          "firstClick": {
+            "totalMs": 1914.3000000000466,
+            "directoryMs": 112.5,
+            "bodyWindowMs": 1383.1000000000931,
+            "afterDataMs": 182.30000000004657,
+            "requests": 61,
+            "peakBodyRequests": 6,
+            "requestKinds": {
+              "directory": 1,
+              "file": 60
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 562,
+            "assetDecodedBytes": 262,
+            "longTaskMs": 274
+          }
+        }
+      ],
+      "medians": {
+        "cold": {
+          "totalMs": 3704,
+          "directoryMs": 109,
+          "bodyWindowMs": 1358,
+          "afterDataMs": 133,
+          "requests": 61,
+          "peakBodyRequests": 6,
+          "assetTransferBytes": 1497903,
+          "assetDecodedBytes": 1495203,
+          "longTaskMs": 912
+        },
+        "reload": {
+          "totalMs": 2562,
+          "directoryMs": 111,
+          "bodyWindowMs": 1341,
+          "afterDataMs": 137,
+          "requests": 61,
+          "peakBodyRequests": 6,
+          "assetTransferBytes": 562,
+          "assetDecodedBytes": 1495203,
+          "longTaskMs": 149
+        },
+        "firstClick": {
+          "totalMs": 2176,
+          "directoryMs": 153,
+          "bodyWindowMs": 1438,
+          "afterDataMs": 182,
+          "requests": 61,
+          "peakBodyRequests": 6,
+          "assetTransferBytes": 562,
+          "assetDecodedBytes": 262,
+          "longTaskMs": 310
+        },
+        "repeat": {
+          "totalMs": 272,
+          "directoryMs": 0,
+          "bodyWindowMs": 0,
+          "afterDataMs": 272,
+          "requests": 0,
+          "peakBodyRequests": 0,
+          "assetTransferBytes": 562,
+          "assetDecodedBytes": 262,
+          "longTaskMs": 117
+        },
+        "refresh": {
+          "totalMs": 1674,
+          "directoryMs": 114,
+          "bodyWindowMs": 1328,
+          "afterDataMs": 94,
+          "requests": 61,
+          "peakBodyRequests": 6,
+          "assetTransferBytes": 0,
+          "assetDecodedBytes": 0,
+          "longTaskMs": 59
+        }
+      }
+    },
+    "after": {
+      "count": 60,
+      "repetitions": 5,
+      "graphQL": true,
+      "results": [
+        {
+          "run": 0,
+          "cold": {
+            "totalMs": 3215.4000000001397,
+            "directoryMs": 117.29999999981374,
+            "bodyWindowMs": 308.30000000004657,
+            "afterDataMs": 187.10000000009313,
+            "requests": 4,
+            "peakBodyRequests": 2,
+            "requestKinds": {
+              "directory": 1,
+              "graphql": 3
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 1498945,
+            "assetDecodedBytes": 1496245,
+            "longTaskMs": 1088
+          },
+          "reload": {
+            "totalMs": 1653.2999999998137,
+            "directoryMs": 109.30000000004657,
+            "bodyWindowMs": 235.69999999995343,
+            "afterDataMs": 160.0999999998603,
+            "requests": 4,
+            "peakBodyRequests": 2,
+            "requestKinds": {
+              "directory": 1,
+              "graphql": 3
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 562,
+            "assetDecodedBytes": 1496245,
+            "longTaskMs": 266
+          },
+          "repeat": {
+            "totalMs": 235.30000000004657,
+            "directoryMs": 0,
+            "bodyWindowMs": 0,
+            "afterDataMs": 235.30000000004657,
+            "requests": 0,
+            "peakBodyRequests": 0,
+            "requestKinds": {},
+            "otherDataRequests": [],
+            "assetTransferBytes": 562,
+            "assetDecodedBytes": 262,
+            "longTaskMs": 91
+          },
+          "refresh": {
+            "totalMs": 274.80000000004657,
+            "directoryMs": 110,
+            "bodyWindowMs": 0,
+            "afterDataMs": 74.60000000009313,
+            "requests": 1,
+            "peakBodyRequests": 0,
+            "requestKinds": {
+              "directory": 1
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 0,
+            "assetDecodedBytes": 0,
+            "longTaskMs": 58
+          },
+          "firstClick": {
+            "totalMs": 774.6999999999534,
+            "directoryMs": 119.10000000009313,
+            "bodyWindowMs": 258.0999999998603,
+            "afterDataMs": 147.69999999995343,
+            "requests": 4,
+            "peakBodyRequests": 2,
+            "requestKinds": {
+              "directory": 1,
+              "graphql": 3
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 562,
+            "assetDecodedBytes": 262,
+            "longTaskMs": 235
+          }
+        },
+        {
+          "run": 1,
+          "cold": {
+            "totalMs": 2712.8000000000466,
+            "directoryMs": 112.9000000001397,
+            "bodyWindowMs": 246.5,
+            "afterDataMs": 149.5,
+            "requests": 4,
+            "peakBodyRequests": 2,
+            "requestKinds": {
+              "directory": 1,
+              "graphql": 3
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 1498945,
+            "assetDecodedBytes": 1496245,
+            "longTaskMs": 910
+          },
+          "reload": {
+            "totalMs": 2014.1000000000931,
+            "directoryMs": 111,
+            "bodyWindowMs": 516.1999999999534,
+            "afterDataMs": 343,
+            "requests": 4,
+            "peakBodyRequests": 2,
+            "requestKinds": {
+              "directory": 1,
+              "graphql": 3
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 562,
+            "assetDecodedBytes": 1496245,
+            "longTaskMs": 601
+          },
+          "repeat": {
+            "totalMs": 451.89999999990687,
+            "directoryMs": 0,
+            "bodyWindowMs": 0,
+            "afterDataMs": 451.89999999990687,
+            "requests": 0,
+            "peakBodyRequests": 0,
+            "requestKinds": {},
+            "otherDataRequests": [],
+            "assetTransferBytes": 562,
+            "assetDecodedBytes": 262,
+            "longTaskMs": 159
+          },
+          "refresh": {
+            "totalMs": 324.20000000018626,
+            "directoryMs": 117.5,
+            "bodyWindowMs": 0,
+            "afterDataMs": 114.5,
+            "requests": 1,
+            "peakBodyRequests": 0,
+            "requestKinds": {
+              "directory": 1
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 0,
+            "assetDecodedBytes": 0,
+            "longTaskMs": 81
+          },
+          "firstClick": {
+            "totalMs": 842.5999999998603,
+            "directoryMs": 109.5,
+            "bodyWindowMs": 267.30000000004657,
+            "afterDataMs": 133.89999999990687,
+            "requests": 4,
+            "peakBodyRequests": 2,
+            "requestKinds": {
+              "directory": 1,
+              "graphql": 3
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 562,
+            "assetDecodedBytes": 262,
+            "longTaskMs": 212
+          }
+        },
+        {
+          "run": 2,
+          "cold": {
+            "totalMs": 2766.6999999999534,
+            "directoryMs": 110.9000000001397,
+            "bodyWindowMs": 275.69999999995343,
+            "afterDataMs": 202.89999999990687,
+            "requests": 4,
+            "peakBodyRequests": 2,
+            "requestKinds": {
+              "directory": 1,
+              "graphql": 3
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 1498945,
+            "assetDecodedBytes": 1496245,
+            "longTaskMs": 975
+          },
+          "reload": {
+            "totalMs": 1743.6000000000931,
+            "directoryMs": 109.5,
+            "bodyWindowMs": 240.69999999995343,
+            "afterDataMs": 144.60000000009313,
+            "requests": 4,
+            "peakBodyRequests": 2,
+            "requestKinds": {
+              "directory": 1,
+              "graphql": 3
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 562,
+            "assetDecodedBytes": 1496245,
+            "longTaskMs": 241
+          },
+          "repeat": {
+            "totalMs": 259.80000000004657,
+            "directoryMs": 0,
+            "bodyWindowMs": 0,
+            "afterDataMs": 259.80000000004657,
+            "requests": 0,
+            "peakBodyRequests": 0,
+            "requestKinds": {},
+            "otherDataRequests": [],
+            "assetTransferBytes": 562,
+            "assetDecodedBytes": 262,
+            "longTaskMs": 90
+          },
+          "refresh": {
+            "totalMs": 304,
+            "directoryMs": 113,
+            "bodyWindowMs": 0,
+            "afterDataMs": 74.20000000018626,
+            "requests": 1,
+            "peakBodyRequests": 0,
+            "requestKinds": {
+              "directory": 1
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 0,
+            "assetDecodedBytes": 0,
+            "longTaskMs": 62
+          },
+          "firstClick": {
+            "totalMs": 974.3999999999069,
+            "directoryMs": 127.69999999995343,
+            "bodyWindowMs": 279.5,
+            "afterDataMs": 149.39999999990687,
+            "requests": 4,
+            "peakBodyRequests": 2,
+            "requestKinds": {
+              "directory": 1,
+              "graphql": 3
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 562,
+            "assetDecodedBytes": 262,
+            "longTaskMs": 262
+          }
+        },
+        {
+          "run": 3,
+          "cold": {
+            "totalMs": 2820,
+            "directoryMs": 113.5999999998603,
+            "bodyWindowMs": 239.80000000004657,
+            "afterDataMs": 122.60000000009313,
+            "requests": 4,
+            "peakBodyRequests": 2,
+            "requestKinds": {
+              "directory": 1,
+              "graphql": 3
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 1498945,
+            "assetDecodedBytes": 1496245,
+            "longTaskMs": 1373
+          },
+          "reload": {
+            "totalMs": 1401,
+            "directoryMs": 108.80000000004657,
+            "bodyWindowMs": 233.5,
+            "afterDataMs": 136.69999999995343,
+            "requests": 4,
+            "peakBodyRequests": 2,
+            "requestKinds": {
+              "directory": 1,
+              "graphql": 3
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 562,
+            "assetDecodedBytes": 1496245,
+            "longTaskMs": 177
+          },
+          "repeat": {
+            "totalMs": 267.0999999998603,
+            "directoryMs": 0,
+            "bodyWindowMs": 0,
+            "afterDataMs": 267.0999999998603,
+            "requests": 0,
+            "peakBodyRequests": 0,
+            "requestKinds": {},
+            "otherDataRequests": [],
+            "assetTransferBytes": 562,
+            "assetDecodedBytes": 262,
+            "longTaskMs": 97
+          },
+          "refresh": {
+            "totalMs": 249.19999999995343,
+            "directoryMs": 113.60000000009313,
+            "bodyWindowMs": 0,
+            "afterDataMs": 57.699999999953434,
+            "requests": 1,
+            "peakBodyRequests": 0,
+            "requestKinds": {
+              "directory": 1
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 0,
+            "assetDecodedBytes": 0,
+            "longTaskMs": 52
+          },
+          "firstClick": {
+            "totalMs": 822.3000000000466,
+            "directoryMs": 128.69999999995343,
+            "bodyWindowMs": 270.5999999998603,
+            "afterDataMs": 181.9000000001397,
+            "requests": 4,
+            "peakBodyRequests": 2,
+            "requestKinds": {
+              "directory": 1,
+              "graphql": 3
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 562,
+            "assetDecodedBytes": 262,
+            "longTaskMs": 335
+          }
+        },
+        {
+          "run": 4,
+          "cold": {
+            "totalMs": 2779.8000000000466,
+            "directoryMs": 108.89999999990687,
+            "bodyWindowMs": 252.10000000009313,
+            "afterDataMs": 155,
+            "requests": 4,
+            "peakBodyRequests": 2,
+            "requestKinds": {
+              "directory": 1,
+              "graphql": 3
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 1498945,
+            "assetDecodedBytes": 1496245,
+            "longTaskMs": 947
+          },
+          "reload": {
+            "totalMs": 1442.3999999999069,
+            "directoryMs": 108.5999999998603,
+            "bodyWindowMs": 236.80000000004657,
+            "afterDataMs": 139.39999999990687,
+            "requests": 4,
+            "peakBodyRequests": 2,
+            "requestKinds": {
+              "directory": 1,
+              "graphql": 3
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 562,
+            "assetDecodedBytes": 1496245,
+            "longTaskMs": 137
+          },
+          "repeat": {
+            "totalMs": 271.60000000009313,
+            "directoryMs": 0,
+            "bodyWindowMs": 0,
+            "afterDataMs": 271.60000000009313,
+            "requests": 0,
+            "peakBodyRequests": 0,
+            "requestKinds": {},
+            "otherDataRequests": [],
+            "assetTransferBytes": 562,
+            "assetDecodedBytes": 262,
+            "longTaskMs": 100
+          },
+          "refresh": {
+            "totalMs": 307.60000000009313,
+            "directoryMs": 118.79999999981374,
+            "bodyWindowMs": 0,
+            "afterDataMs": 89.20000000018626,
+            "requests": 1,
+            "peakBodyRequests": 0,
+            "requestKinds": {
+              "directory": 1
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 0,
+            "assetDecodedBytes": 0,
+            "longTaskMs": 65
+          },
+          "firstClick": {
+            "totalMs": 778.1999999999534,
+            "directoryMs": 124.5,
+            "bodyWindowMs": 254.4000000001397,
+            "afterDataMs": 169.29999999981374,
+            "requests": 4,
+            "peakBodyRequests": 2,
+            "requestKinds": {
+              "directory": 1,
+              "graphql": 3
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 562,
+            "assetDecodedBytes": 262,
+            "longTaskMs": 307
+          }
+        }
+      ],
+      "medians": {
+        "cold": {
+          "totalMs": 2780,
+          "directoryMs": 113,
+          "bodyWindowMs": 252,
+          "afterDataMs": 155,
+          "requests": 4,
+          "peakBodyRequests": 2,
+          "assetTransferBytes": 1498945,
+          "assetDecodedBytes": 1496245,
+          "longTaskMs": 975
+        },
+        "reload": {
+          "totalMs": 1653,
+          "directoryMs": 109,
+          "bodyWindowMs": 237,
+          "afterDataMs": 145,
+          "requests": 4,
+          "peakBodyRequests": 2,
+          "assetTransferBytes": 562,
+          "assetDecodedBytes": 1496245,
+          "longTaskMs": 241
+        },
+        "firstClick": {
+          "totalMs": 822,
+          "directoryMs": 125,
+          "bodyWindowMs": 267,
+          "afterDataMs": 149,
+          "requests": 4,
+          "peakBodyRequests": 2,
+          "assetTransferBytes": 562,
+          "assetDecodedBytes": 262,
+          "longTaskMs": 262
+        },
+        "repeat": {
+          "totalMs": 267,
+          "directoryMs": 0,
+          "bodyWindowMs": 0,
+          "afterDataMs": 267,
+          "requests": 0,
+          "peakBodyRequests": 0,
+          "assetTransferBytes": 562,
+          "assetDecodedBytes": 262,
+          "longTaskMs": 97
+        },
+        "refresh": {
+          "totalMs": 304,
+          "directoryMs": 114,
+          "bodyWindowMs": 0,
+          "afterDataMs": 75,
+          "requests": 1,
+          "peakBodyRequests": 0,
+          "assetTransferBytes": 0,
+          "assetDecodedBytes": 0,
+          "longTaskMs": 62
+        }
+      }
+    },
+    "before-rest": {
+      "count": 60,
+      "repetitions": 5,
+      "graphQL": false,
+      "results": [
+        {
+          "run": 0,
+          "cold": {
+            "totalMs": 4014.6999999999534,
+            "directoryMs": 107.60000000009313,
+            "bodyWindowMs": 1364.0999999998603,
+            "afterDataMs": 186.10000000009313,
+            "requests": 61,
+            "peakBodyRequests": 6,
+            "requestKinds": {
+              "directory": 1,
+              "file": 60
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 1497903,
+            "assetDecodedBytes": 1495203,
+            "longTaskMs": 1012
+          },
+          "reload": {
+            "totalMs": 2636.5,
+            "directoryMs": 111.29999999981374,
+            "bodyWindowMs": 1350.4000000001397,
+            "afterDataMs": 126.39999999990687,
+            "requests": 61,
+            "peakBodyRequests": 6,
+            "requestKinds": {
+              "directory": 1,
+              "file": 60
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 562,
+            "assetDecodedBytes": 1495203,
+            "longTaskMs": 137
+          },
+          "repeat": {
+            "totalMs": 273.20000000018626,
+            "directoryMs": 0,
+            "bodyWindowMs": 0,
+            "afterDataMs": 273.20000000018626,
+            "requests": 0,
+            "peakBodyRequests": 0,
+            "requestKinds": {},
+            "otherDataRequests": [],
+            "assetTransferBytes": 562,
+            "assetDecodedBytes": 262,
+            "longTaskMs": 104
+          },
+          "refresh": {
+            "totalMs": 1690.4000000001397,
+            "directoryMs": 123.19999999995343,
+            "bodyWindowMs": 1389.4000000001397,
+            "afterDataMs": 81,
+            "requests": 61,
+            "peakBodyRequests": 6,
+            "requestKinds": {
+              "directory": 1,
+              "file": 60
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 0,
+            "assetDecodedBytes": 0,
+            "longTaskMs": 67
+          },
+          "firstClick": {
+            "totalMs": 1907.8999999999069,
+            "directoryMs": 125.79999999981374,
+            "bodyWindowMs": 1391.5,
+            "afterDataMs": 146,
+            "requests": 61,
+            "peakBodyRequests": 6,
+            "requestKinds": {
+              "directory": 1,
+              "file": 60
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 562,
+            "assetDecodedBytes": 262,
+            "longTaskMs": 282
+          }
+        },
+        {
+          "run": 1,
+          "cold": {
+            "totalMs": 3933.8000000000466,
+            "directoryMs": 112.29999999981374,
+            "bodyWindowMs": 1407.5,
+            "afterDataMs": 165.4000000001397,
+            "requests": 61,
+            "peakBodyRequests": 6,
+            "requestKinds": {
+              "directory": 1,
+              "file": 60
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 1497903,
+            "assetDecodedBytes": 1495203,
+            "longTaskMs": 1346
+          },
+          "reload": {
+            "totalMs": 2654.100000000093,
+            "directoryMs": 106.19999999995343,
+            "bodyWindowMs": 1405,
+            "afterDataMs": 122.9000000001397,
+            "requests": 61,
+            "peakBodyRequests": 6,
+            "requestKinds": {
+              "directory": 1,
+              "file": 60
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 562,
+            "assetDecodedBytes": 1495203,
+            "longTaskMs": 208
+          },
+          "repeat": {
+            "totalMs": 274.30000000004657,
+            "directoryMs": 0,
+            "bodyWindowMs": 0,
+            "afterDataMs": 274.30000000004657,
+            "requests": 0,
+            "peakBodyRequests": 0,
+            "requestKinds": {},
+            "otherDataRequests": [],
+            "assetTransferBytes": 562,
+            "assetDecodedBytes": 262,
+            "longTaskMs": 90
+          },
+          "refresh": {
+            "totalMs": 1775.8000000000466,
+            "directoryMs": 252.30000000004657,
+            "bodyWindowMs": 1342.8000000000466,
+            "afterDataMs": 72,
+            "requests": 61,
+            "peakBodyRequests": 6,
+            "requestKinds": {
+              "directory": 1,
+              "file": 60
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 0,
+            "assetDecodedBytes": 0,
+            "longTaskMs": 54
+          },
+          "firstClick": {
+            "totalMs": 2000,
+            "directoryMs": 134.10000000009313,
+            "bodyWindowMs": 1418.8000000000466,
+            "afterDataMs": 163.89999999990687,
+            "requests": 61,
+            "peakBodyRequests": 6,
+            "requestKinds": {
+              "directory": 1,
+              "file": 60
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 562,
+            "assetDecodedBytes": 262,
+            "longTaskMs": 303
+          }
+        },
+        {
+          "run": 2,
+          "cold": {
+            "totalMs": 3600.5,
+            "directoryMs": 110.30000000004657,
+            "bodyWindowMs": 1379.7999999998137,
+            "afterDataMs": 182.60000000009313,
+            "requests": 61,
+            "peakBodyRequests": 6,
+            "requestKinds": {
+              "directory": 1,
+              "file": 60
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 1497903,
+            "assetDecodedBytes": 1495203,
+            "longTaskMs": 649
+          },
+          "reload": {
+            "totalMs": 2609.8000000000466,
+            "directoryMs": 105.0999999998603,
+            "bodyWindowMs": 1394,
+            "afterDataMs": 149.10000000009313,
+            "requests": 61,
+            "peakBodyRequests": 6,
+            "requestKinds": {
+              "directory": 1,
+              "file": 60
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 562,
+            "assetDecodedBytes": 1495203,
+            "longTaskMs": 143
+          },
+          "repeat": {
+            "totalMs": 341.89999999990687,
+            "directoryMs": 0,
+            "bodyWindowMs": 0,
+            "afterDataMs": 341.89999999990687,
+            "requests": 0,
+            "peakBodyRequests": 0,
+            "requestKinds": {},
+            "otherDataRequests": [],
+            "assetTransferBytes": 562,
+            "assetDecodedBytes": 262,
+            "longTaskMs": 92
+          },
+          "refresh": {
+            "totalMs": 1732.1000000000931,
+            "directoryMs": 119.80000000004657,
+            "bodyWindowMs": 1380.8999999999069,
+            "afterDataMs": 88.20000000018626,
+            "requests": 61,
+            "peakBodyRequests": 6,
+            "requestKinds": {
+              "directory": 1,
+              "file": 60
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 0,
+            "assetDecodedBytes": 0,
+            "longTaskMs": 72
+          },
+          "firstClick": {
+            "totalMs": 1838.6999999999534,
+            "directoryMs": 121.10000000009313,
+            "bodyWindowMs": 1291.6999999999534,
+            "afterDataMs": 204.30000000004657,
+            "requests": 61,
+            "peakBodyRequests": 6,
+            "requestKinds": {
+              "directory": 1,
+              "file": 60
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 562,
+            "assetDecodedBytes": 262,
+            "longTaskMs": 306
+          }
+        },
+        {
+          "run": 3,
+          "cold": {
+            "totalMs": 3830.1999999999534,
+            "directoryMs": 109.69999999995343,
+            "bodyWindowMs": 1370.6000000000931,
+            "afterDataMs": 149.69999999995343,
+            "requests": 61,
+            "peakBodyRequests": 6,
+            "requestKinds": {
+              "directory": 1,
+              "file": 60
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 1497903,
+            "assetDecodedBytes": 1495203,
+            "longTaskMs": 1058
+          },
+          "reload": {
+            "totalMs": 2639.8000000000466,
+            "directoryMs": 107.4000000001397,
+            "bodyWindowMs": 1404.3999999999069,
+            "afterDataMs": 151.30000000004657,
+            "requests": 61,
+            "peakBodyRequests": 6,
+            "requestKinds": {
+              "directory": 1,
+              "file": 60
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 562,
+            "assetDecodedBytes": 1495203,
+            "longTaskMs": 83
+          },
+          "repeat": {
+            "totalMs": 263.10000000009313,
+            "directoryMs": 0,
+            "bodyWindowMs": 0,
+            "afterDataMs": 263.10000000009313,
+            "requests": 0,
+            "peakBodyRequests": 0,
+            "requestKinds": {},
+            "otherDataRequests": [],
+            "assetTransferBytes": 562,
+            "assetDecodedBytes": 262,
+            "longTaskMs": 95
+          },
+          "refresh": {
+            "totalMs": 1668.6999999999534,
+            "directoryMs": 109.5,
+            "bodyWindowMs": 1365.5,
+            "afterDataMs": 86.4000000001397,
+            "requests": 61,
+            "peakBodyRequests": 6,
+            "requestKinds": {
+              "directory": 1,
+              "file": 60
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 0,
+            "assetDecodedBytes": 0,
+            "longTaskMs": 0
+          },
+          "firstClick": {
+            "totalMs": 1847.1999999999534,
+            "directoryMs": 132.4000000001397,
+            "bodyWindowMs": 1344.7999999998137,
+            "afterDataMs": 123,
+            "requests": 61,
+            "peakBodyRequests": 6,
+            "requestKinds": {
+              "directory": 1,
+              "file": 60
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 562,
+            "assetDecodedBytes": 262,
+            "longTaskMs": 236
+          }
+        },
+        {
+          "run": 4,
+          "cold": {
+            "totalMs": 3912.9000000001397,
+            "directoryMs": 113.5999999998603,
+            "bodyWindowMs": 1417.1000000000931,
+            "afterDataMs": 180.30000000004657,
+            "requests": 61,
+            "peakBodyRequests": 6,
+            "requestKinds": {
+              "directory": 1,
+              "file": 60
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 1497903,
+            "assetDecodedBytes": 1495203,
+            "longTaskMs": 1027
+          },
+          "reload": {
+            "totalMs": 2785.5999999998603,
+            "directoryMs": 108.10000000009313,
+            "bodyWindowMs": 1361.8999999999069,
+            "afterDataMs": 173.5,
+            "requests": 61,
+            "peakBodyRequests": 6,
+            "requestKinds": {
+              "directory": 1,
+              "file": 60
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 562,
+            "assetDecodedBytes": 1495203,
+            "longTaskMs": 201
+          },
+          "repeat": {
+            "totalMs": 291.80000000004657,
+            "directoryMs": 0,
+            "bodyWindowMs": 0,
+            "afterDataMs": 291.80000000004657,
+            "requests": 0,
+            "peakBodyRequests": 0,
+            "requestKinds": {},
+            "otherDataRequests": [],
+            "assetTransferBytes": 562,
+            "assetDecodedBytes": 262,
+            "longTaskMs": 106
+          },
+          "refresh": {
+            "totalMs": 1628,
+            "directoryMs": 110.30000000004657,
+            "bodyWindowMs": 1344,
+            "afterDataMs": 75,
+            "requests": 61,
+            "peakBodyRequests": 6,
+            "requestKinds": {
+              "directory": 1,
+              "file": 60
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 0,
+            "assetDecodedBytes": 0,
+            "longTaskMs": 62
+          },
+          "firstClick": {
+            "totalMs": 1889.4000000001397,
+            "directoryMs": 117.5999999998603,
+            "bodyWindowMs": 1398.1999999999534,
+            "afterDataMs": 134.9000000001397,
+            "requests": 61,
+            "peakBodyRequests": 6,
+            "requestKinds": {
+              "directory": 1,
+              "file": 60
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 562,
+            "assetDecodedBytes": 262,
+            "longTaskMs": 234
+          }
+        }
+      ],
+      "medians": {
+        "cold": {
+          "totalMs": 3913,
+          "directoryMs": 110,
+          "bodyWindowMs": 1380,
+          "afterDataMs": 180,
+          "requests": 61,
+          "peakBodyRequests": 6,
+          "assetTransferBytes": 1497903,
+          "assetDecodedBytes": 1495203,
+          "longTaskMs": 1027
+        },
+        "reload": {
+          "totalMs": 2640,
+          "directoryMs": 107,
+          "bodyWindowMs": 1394,
+          "afterDataMs": 149,
+          "requests": 61,
+          "peakBodyRequests": 6,
+          "assetTransferBytes": 562,
+          "assetDecodedBytes": 1495203,
+          "longTaskMs": 143
+        },
+        "firstClick": {
+          "totalMs": 1889,
+          "directoryMs": 126,
+          "bodyWindowMs": 1392,
+          "afterDataMs": 146,
+          "requests": 61,
+          "peakBodyRequests": 6,
+          "assetTransferBytes": 562,
+          "assetDecodedBytes": 262,
+          "longTaskMs": 282
+        },
+        "repeat": {
+          "totalMs": 274,
+          "directoryMs": 0,
+          "bodyWindowMs": 0,
+          "afterDataMs": 274,
+          "requests": 0,
+          "peakBodyRequests": 0,
+          "assetTransferBytes": 562,
+          "assetDecodedBytes": 262,
+          "longTaskMs": 95
+        },
+        "refresh": {
+          "totalMs": 1690,
+          "directoryMs": 120,
+          "bodyWindowMs": 1366,
+          "afterDataMs": 81,
+          "requests": 61,
+          "peakBodyRequests": 6,
+          "assetTransferBytes": 0,
+          "assetDecodedBytes": 0,
+          "longTaskMs": 62
+        }
+      }
+    },
+    "after-rest": {
+      "count": 60,
+      "repetitions": 5,
+      "graphQL": false,
+      "results": [
+        {
+          "run": 0,
+          "cold": {
+            "totalMs": 4461,
+            "directoryMs": 111.19999999995343,
+            "bodyWindowMs": 1317.9000000001397,
+            "afterDataMs": 125.39999999990687,
+            "requests": 62,
+            "peakBodyRequests": 6,
+            "requestKinds": {
+              "directory": 1,
+              "graphql": 1,
+              "blob": 60
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 1498945,
+            "assetDecodedBytes": 1496245,
+            "longTaskMs": 1090
+          },
+          "reload": {
+            "totalMs": 2565.2999999998137,
+            "directoryMs": 107.19999999995343,
+            "bodyWindowMs": 1320.1000000000931,
+            "afterDataMs": 98.5999999998603,
+            "requests": 62,
+            "peakBodyRequests": 6,
+            "requestKinds": {
+              "directory": 1,
+              "graphql": 1,
+              "blob": 60
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 562,
+            "assetDecodedBytes": 1496245,
+            "longTaskMs": 177
+          },
+          "repeat": {
+            "totalMs": 275,
+            "directoryMs": 0,
+            "bodyWindowMs": 0,
+            "afterDataMs": 275,
+            "requests": 0,
+            "peakBodyRequests": 0,
+            "requestKinds": {},
+            "otherDataRequests": [],
+            "assetTransferBytes": 562,
+            "assetDecodedBytes": 262,
+            "longTaskMs": 107
+          },
+          "refresh": {
+            "totalMs": 264.69999999995343,
+            "directoryMs": 113.0999999998603,
+            "bodyWindowMs": 0,
+            "afterDataMs": 48,
+            "requests": 1,
+            "peakBodyRequests": 0,
+            "requestKinds": {
+              "directory": 1
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 0,
+            "assetDecodedBytes": 0,
+            "longTaskMs": 59
+          },
+          "firstClick": {
+            "totalMs": 1978.8000000000466,
+            "directoryMs": 131.5,
+            "bodyWindowMs": 1384.1999999999534,
+            "afterDataMs": 192.20000000018626,
+            "requests": 62,
+            "peakBodyRequests": 6,
+            "requestKinds": {
+              "directory": 1,
+              "graphql": 1,
+              "blob": 60
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 562,
+            "assetDecodedBytes": 262,
+            "longTaskMs": 336
+          }
+        },
+        {
+          "run": 1,
+          "cold": {
+            "totalMs": 4530.800000000047,
+            "directoryMs": 110.19999999995343,
+            "bodyWindowMs": 1293.4000000001397,
+            "afterDataMs": 161.39999999990687,
+            "requests": 62,
+            "peakBodyRequests": 6,
+            "requestKinds": {
+              "directory": 1,
+              "graphql": 1,
+              "blob": 60
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 1498945,
+            "assetDecodedBytes": 1496245,
+            "longTaskMs": 1448
+          },
+          "reload": {
+            "totalMs": 2590.5,
+            "directoryMs": 107.80000000004657,
+            "bodyWindowMs": 1310.3999999999069,
+            "afterDataMs": 135.19999999995343,
+            "requests": 62,
+            "peakBodyRequests": 6,
+            "requestKinds": {
+              "directory": 1,
+              "graphql": 1,
+              "blob": 60
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 562,
+            "assetDecodedBytes": 1496245,
+            "longTaskMs": 174
+          },
+          "repeat": {
+            "totalMs": 276.0999999998603,
+            "directoryMs": 0,
+            "bodyWindowMs": 0,
+            "afterDataMs": 276.0999999998603,
+            "requests": 0,
+            "peakBodyRequests": 0,
+            "requestKinds": {},
+            "otherDataRequests": [],
+            "assetTransferBytes": 562,
+            "assetDecodedBytes": 262,
+            "longTaskMs": 111
+          },
+          "refresh": {
+            "totalMs": 293.9000000001397,
+            "directoryMs": 115.30000000004657,
+            "bodyWindowMs": 0,
+            "afterDataMs": 79.60000000009313,
+            "requests": 1,
+            "peakBodyRequests": 0,
+            "requestKinds": {
+              "directory": 1
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 0,
+            "assetDecodedBytes": 0,
+            "longTaskMs": 77
+          },
+          "firstClick": {
+            "totalMs": 1864.5,
+            "directoryMs": 114.10000000009313,
+            "bodyWindowMs": 1348,
+            "afterDataMs": 173.69999999995343,
+            "requests": 62,
+            "peakBodyRequests": 6,
+            "requestKinds": {
+              "directory": 1,
+              "graphql": 1,
+              "blob": 60
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 562,
+            "assetDecodedBytes": 262,
+            "longTaskMs": 312
+          }
+        },
+        {
+          "run": 2,
+          "cold": {
+            "totalMs": 3768.5,
+            "directoryMs": 108,
+            "bodyWindowMs": 1319.6999999999534,
+            "afterDataMs": 170.0999999998603,
+            "requests": 62,
+            "peakBodyRequests": 6,
+            "requestKinds": {
+              "directory": 1,
+              "graphql": 1,
+              "blob": 60
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 1498945,
+            "assetDecodedBytes": 1496245,
+            "longTaskMs": 994
+          },
+          "reload": {
+            "totalMs": 3205.1999999999534,
+            "directoryMs": 106.69999999995343,
+            "bodyWindowMs": 1486.6999999999534,
+            "afterDataMs": 460.19999999995343,
+            "requests": 62,
+            "peakBodyRequests": 6,
+            "requestKinds": {
+              "directory": 1,
+              "graphql": 1,
+              "blob": 60
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 562,
+            "assetDecodedBytes": 1496245,
+            "longTaskMs": 565
+          },
+          "repeat": {
+            "totalMs": 367.30000000004657,
+            "directoryMs": 0,
+            "bodyWindowMs": 0,
+            "afterDataMs": 367.30000000004657,
+            "requests": 0,
+            "peakBodyRequests": 0,
+            "requestKinds": {},
+            "otherDataRequests": [],
+            "assetTransferBytes": 562,
+            "assetDecodedBytes": 262,
+            "longTaskMs": 95
+          },
+          "refresh": {
+            "totalMs": 571.8999999999069,
+            "directoryMs": 121.4000000001397,
+            "bodyWindowMs": 0,
+            "afterDataMs": 91.79999999981374,
+            "requests": 1,
+            "peakBodyRequests": 0,
+            "requestKinds": {
+              "directory": 1
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 0,
+            "assetDecodedBytes": 0,
+            "longTaskMs": 84
+          },
+          "firstClick": {
+            "totalMs": 2330.2999999998137,
+            "directoryMs": 119.9000000001397,
+            "bodyWindowMs": 1807.6999999999534,
+            "afterDataMs": 148.5999999998603,
+            "requests": 62,
+            "peakBodyRequests": 6,
+            "requestKinds": {
+              "directory": 1,
+              "graphql": 1,
+              "blob": 60
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 562,
+            "assetDecodedBytes": 262,
+            "longTaskMs": 725
+          }
+        },
+        {
+          "run": 3,
+          "cold": {
+            "totalMs": 3588.5,
+            "directoryMs": 106.89999999990687,
+            "bodyWindowMs": 1292.2000000001863,
+            "afterDataMs": 128.39999999990687,
+            "requests": 62,
+            "peakBodyRequests": 6,
+            "requestKinds": {
+              "directory": 1,
+              "graphql": 1,
+              "blob": 60
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 1498945,
+            "assetDecodedBytes": 1496245,
+            "longTaskMs": 1049
+          },
+          "reload": {
+            "totalMs": 2386.4000000001397,
+            "directoryMs": 106.5,
+            "bodyWindowMs": 1272.5,
+            "afterDataMs": 120.10000000009313,
+            "requests": 62,
+            "peakBodyRequests": 6,
+            "requestKinds": {
+              "directory": 1,
+              "graphql": 1,
+              "blob": 60
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 562,
+            "assetDecodedBytes": 1496245,
+            "longTaskMs": 123
+          },
+          "repeat": {
+            "totalMs": 240.69999999995343,
+            "directoryMs": 0,
+            "bodyWindowMs": 0,
+            "afterDataMs": 240.69999999995343,
+            "requests": 0,
+            "peakBodyRequests": 0,
+            "requestKinds": {},
+            "otherDataRequests": [],
+            "assetTransferBytes": 562,
+            "assetDecodedBytes": 262,
+            "longTaskMs": 103
+          },
+          "refresh": {
+            "totalMs": 278.19999999995343,
+            "directoryMs": 110.5,
+            "bodyWindowMs": 0,
+            "afterDataMs": 76.10000000009313,
+            "requests": 1,
+            "peakBodyRequests": 0,
+            "requestKinds": {
+              "directory": 1
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 0,
+            "assetDecodedBytes": 0,
+            "longTaskMs": 72
+          },
+          "firstClick": {
+            "totalMs": 1885.3000000000466,
+            "directoryMs": 128.5,
+            "bodyWindowMs": 1349.7999999998137,
+            "afterDataMs": 162.9000000001397,
+            "requests": 62,
+            "peakBodyRequests": 6,
+            "requestKinds": {
+              "directory": 1,
+              "graphql": 1,
+              "blob": 60
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 562,
+            "assetDecodedBytes": 262,
+            "longTaskMs": 284
+          }
+        },
+        {
+          "run": 4,
+          "cold": {
+            "totalMs": 3862.9000000001397,
+            "directoryMs": 114,
+            "bodyWindowMs": 1322,
+            "afterDataMs": 172.80000000004657,
+            "requests": 62,
+            "peakBodyRequests": 6,
+            "requestKinds": {
+              "directory": 1,
+              "graphql": 1,
+              "blob": 60
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 1498945,
+            "assetDecodedBytes": 1496245,
+            "longTaskMs": 987
+          },
+          "reload": {
+            "totalMs": 2597.5,
+            "directoryMs": 107.5,
+            "bodyWindowMs": 1315.7999999998137,
+            "afterDataMs": 132.20000000018626,
+            "requests": 62,
+            "peakBodyRequests": 6,
+            "requestKinds": {
+              "directory": 1,
+              "graphql": 1,
+              "blob": 60
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 562,
+            "assetDecodedBytes": 1496245,
+            "longTaskMs": 243
+          },
+          "repeat": {
+            "totalMs": 245.5,
+            "directoryMs": 0,
+            "bodyWindowMs": 0,
+            "afterDataMs": 245.5,
+            "requests": 0,
+            "peakBodyRequests": 0,
+            "requestKinds": {},
+            "otherDataRequests": [],
+            "assetTransferBytes": 562,
+            "assetDecodedBytes": 262,
+            "longTaskMs": 89
+          },
+          "refresh": {
+            "totalMs": 257,
+            "directoryMs": 111,
+            "bodyWindowMs": 0,
+            "afterDataMs": 67.19999999995343,
+            "requests": 1,
+            "peakBodyRequests": 0,
+            "requestKinds": {
+              "directory": 1
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 0,
+            "assetDecodedBytes": 0,
+            "longTaskMs": 67
+          },
+          "firstClick": {
+            "totalMs": 1893.1000000000931,
+            "directoryMs": 123.19999999995343,
+            "bodyWindowMs": 1366.0999999998603,
+            "afterDataMs": 154.10000000009313,
+            "requests": 62,
+            "peakBodyRequests": 6,
+            "requestKinds": {
+              "directory": 1,
+              "graphql": 1,
+              "blob": 60
+            },
+            "otherDataRequests": [],
+            "assetTransferBytes": 562,
+            "assetDecodedBytes": 262,
+            "longTaskMs": 309
+          }
+        }
+      ],
+      "medians": {
+        "cold": {
+          "totalMs": 3863,
+          "directoryMs": 110,
+          "bodyWindowMs": 1318,
+          "afterDataMs": 161,
+          "requests": 62,
+          "peakBodyRequests": 6,
+          "assetTransferBytes": 1498945,
+          "assetDecodedBytes": 1496245,
+          "longTaskMs": 1049
+        },
+        "reload": {
+          "totalMs": 2591,
+          "directoryMs": 107,
+          "bodyWindowMs": 1316,
+          "afterDataMs": 132,
+          "requests": 62,
+          "peakBodyRequests": 6,
+          "assetTransferBytes": 562,
+          "assetDecodedBytes": 1496245,
+          "longTaskMs": 177
+        },
+        "firstClick": {
+          "totalMs": 1893,
+          "directoryMs": 123,
+          "bodyWindowMs": 1366,
+          "afterDataMs": 163,
+          "requests": 62,
+          "peakBodyRequests": 6,
+          "assetTransferBytes": 562,
+          "assetDecodedBytes": 262,
+          "longTaskMs": 312
+        },
+        "repeat": {
+          "totalMs": 275,
+          "directoryMs": 0,
+          "bodyWindowMs": 0,
+          "afterDataMs": 275,
+          "requests": 0,
+          "peakBodyRequests": 0,
+          "assetTransferBytes": 562,
+          "assetDecodedBytes": 262,
+          "longTaskMs": 103
+        },
+        "refresh": {
+          "totalMs": 278,
+          "directoryMs": 113,
+          "bodyWindowMs": 0,
+          "afterDataMs": 76,
+          "requests": 1,
+          "peakBodyRequests": 0,
+          "assetTransferBytes": 0,
+          "assetDecodedBytes": 0,
+          "longTaskMs": 72
+        }
+      }
+    }
+  },
+  "verification": {
+    "graphQL": {
+      "maps": [
+        {
+          "width": 1440,
+          "id": "440000",
+          "labels": 21,
+          "totalMs": 1135,
+          "overlap": false,
+          "clipped": false,
+          "overflow": false,
+          "strokeNone": true
+        },
+        {
+          "width": 1440,
+          "id": "650000",
+          "labels": 23,
+          "totalMs": 868.4000000001397,
+          "overlap": false,
+          "clipped": false,
+          "overflow": false,
+          "strokeNone": true
+        },
+        {
+          "width": 1440,
+          "id": "520000",
+          "labels": 9,
+          "totalMs": 424.89999999990687,
+          "overlap": false,
+          "clipped": false,
+          "overflow": false,
+          "strokeNone": true
+        },
+        {
+          "width": 1440,
+          "id": "710000",
+          "labels": 22,
+          "totalMs": 862.8999999999069,
+          "overlap": false,
+          "clipped": false,
+          "overflow": false,
+          "strokeNone": true
+        },
+        {
+          "width": 390,
+          "id": "440000",
+          "labels": 21,
+          "totalMs": 447.5,
+          "overlap": false,
+          "clipped": false,
+          "overflow": false,
+          "strokeNone": true
+        },
+        {
+          "width": 390,
+          "id": "650000",
+          "labels": 23,
+          "totalMs": 347.80000000004657,
+          "overlap": false,
+          "clipped": false,
+          "overflow": false,
+          "strokeNone": true
+        },
+        {
+          "width": 390,
+          "id": "520000",
+          "labels": 9,
+          "totalMs": 213.5,
+          "overlap": false,
+          "clipped": false,
+          "overflow": false,
+          "strokeNone": true
+        },
+        {
+          "width": 390,
+          "id": "710000",
+          "labels": 22,
+          "totalMs": 330.19999999995343,
+          "overlap": false,
+          "clipped": false,
+          "overflow": false,
+          "strokeNone": true
+        },
+        {
+          "width": 320,
+          "id": "440000",
+          "labels": 21,
+          "totalMs": 433.89999999990687,
+          "overlap": false,
+          "clipped": false,
+          "overflow": false,
+          "strokeNone": true
+        },
+        {
+          "width": 320,
+          "id": "650000",
+          "labels": 23,
+          "totalMs": 309.30000000004657,
+          "overlap": false,
+          "clipped": false,
+          "overflow": false,
+          "strokeNone": true
+        },
+        {
+          "width": 320,
+          "id": "520000",
+          "labels": 9,
+          "totalMs": 234.4000000001397,
+          "overlap": false,
+          "clipped": false,
+          "overflow": false,
+          "strokeNone": true
+        },
+        {
+          "width": 320,
+          "id": "710000",
+          "labels": 22,
+          "totalMs": 324.30000000004657,
+          "overlap": false,
+          "clipped": false,
+          "overflow": false,
+          "strokeNone": true
+        }
+      ],
+      "checks": [
+        "34 national regions; complete non-overlapping city labels, leaders and no white stroke at 1440/390/320; same-tab national reset",
+        "repeat navigation has no data re-read and preserves draft; edit/save, conflict draft recovery, soft delete/restore",
+        "refresh revalidates authorization, recovers, detects external updates and removals without stale resurrection",
+        "map failure retains full city list and recovers; rapid province changes end at the requested province",
+        "a delayed unrelated notice read does not serialize travel; no journal or health requests",
+        "rate limit and corrupt/incomplete batch block writes and partial snapshots, then recover on explicit retry",
+        "in-flight tab repeats issue one directory load; logout cancels queued bodies and clears records; restored session reads its own bodies again"
+      ],
+      "screenshots": "docs/travel-performance/"
+    },
+    "rest": {
+      "maps": [
+        {
+          "width": 1440,
+          "id": "440000",
+          "labels": 21,
+          "totalMs": 999.8999999999069,
+          "overlap": false,
+          "clipped": false,
+          "overflow": false,
+          "strokeNone": true
+        },
+        {
+          "width": 1440,
+          "id": "650000",
+          "labels": 23,
+          "totalMs": 847.3000000000466,
+          "overlap": false,
+          "clipped": false,
+          "overflow": false,
+          "strokeNone": true
+        },
+        {
+          "width": 1440,
+          "id": "520000",
+          "labels": 9,
+          "totalMs": 387.5,
+          "overlap": false,
+          "clipped": false,
+          "overflow": false,
+          "strokeNone": true
+        },
+        {
+          "width": 1440,
+          "id": "710000",
+          "labels": 22,
+          "totalMs": 828.1999999999534,
+          "overlap": false,
+          "clipped": false,
+          "overflow": false,
+          "strokeNone": true
+        },
+        {
+          "width": 390,
+          "id": "440000",
+          "labels": 21,
+          "totalMs": 470.5,
+          "overlap": false,
+          "clipped": false,
+          "overflow": false,
+          "strokeNone": true
+        },
+        {
+          "width": 390,
+          "id": "650000",
+          "labels": 23,
+          "totalMs": 314.80000000004657,
+          "overlap": false,
+          "clipped": false,
+          "overflow": false,
+          "strokeNone": true
+        },
+        {
+          "width": 390,
+          "id": "520000",
+          "labels": 9,
+          "totalMs": 257.19999999995343,
+          "overlap": false,
+          "clipped": false,
+          "overflow": false,
+          "strokeNone": true
+        },
+        {
+          "width": 390,
+          "id": "710000",
+          "labels": 22,
+          "totalMs": 367,
+          "overlap": false,
+          "clipped": false,
+          "overflow": false,
+          "strokeNone": true
+        },
+        {
+          "width": 320,
+          "id": "440000",
+          "labels": 21,
+          "totalMs": 552.5,
+          "overlap": false,
+          "clipped": false,
+          "overflow": false,
+          "strokeNone": true
+        },
+        {
+          "width": 320,
+          "id": "650000",
+          "labels": 23,
+          "totalMs": 511.4000000001397,
+          "overlap": false,
+          "clipped": false,
+          "overflow": false,
+          "strokeNone": true
+        },
+        {
+          "width": 320,
+          "id": "520000",
+          "labels": 9,
+          "totalMs": 234.9000000001397,
+          "overlap": false,
+          "clipped": false,
+          "overflow": false,
+          "strokeNone": true
+        },
+        {
+          "width": 320,
+          "id": "710000",
+          "labels": 22,
+          "totalMs": 268.89999999990687,
+          "overlap": false,
+          "clipped": false,
+          "overflow": false,
+          "strokeNone": true
+        }
+      ],
+      "checks": [
+        "34 national regions; complete non-overlapping city labels, leaders and no white stroke at 1440/390/320; same-tab national reset",
+        "repeat navigation has no data re-read and preserves draft; edit/save, conflict draft recovery, soft delete/restore",
+        "refresh revalidates authorization, recovers, detects external updates and removals without stale resurrection",
+        "map failure retains full city list and recovers; rapid province changes end at the requested province",
+        "a delayed unrelated notice read does not serialize travel; no journal or health requests",
+        "rate limit and corrupt/incomplete batch block writes and partial snapshots, then recover on explicit retry",
+        "in-flight tab repeats issue one directory load; logout cancels queued bodies and clears records; restored session reads its own bodies again"
+      ],
+      "screenshots": "docs/travel-performance/"
+    }
+  }
+}

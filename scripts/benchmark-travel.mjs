@@ -27,16 +27,25 @@ for (let i = 0; i < count; i++) {
     data: { travel_visit_version: 2, province_id: "330000", city: "杭州市", start_date: "2026-10-01", end_date: "2026-10-02", notes: `合成旅行 ${i}` },
   }));
 }
-let failure = "", graphQL = !process.argv.includes("--rest-only"), unknown = [], noticesDelay = 0, mapFailure = false;
+let failure = "", graphQL = !process.argv.includes("--rest-only"), unknown = [], noticesDelay = 0, mapFailure = false, bodyDelay = 0;
 const json = (res, data, status = 200) => { res.writeHead(status, { "content-type": "application/json", "cache-control": "no-store" }); res.end(JSON.stringify(data)); };
 const sleep = ms => new Promise(done => setTimeout(done, ms));
-const server = createServer(async (req, res) => {
+const server = createServer((req, res) => {
+  void serve(req, res).catch(error => {
+    // Canceled browser reads can close the incoming body before the delayed
+    // fixture consumes it. That is the expected logout/abort path, not a crash.
+    if (req.aborted || res.destroyed) return;
+    unknown.push(`fixture failure: ${error.message}`); json(res, {}, 500);
+  });
+});
+async function serve(req, res) {
   const url = new URL(req.url, "http://localhost");
   if (url.pathname.startsWith("/__fixture/")) {
     const path = url.pathname.slice("/__fixture".length);
-    await sleep(delay);
+    await sleep(delay + (/graphql|git\/blobs|travel-visits\/.+\.json/.test(path) ? bodyDelay : 0));
     if (path === "/auth/status") return json(res, { configured: true, authenticated: true, login: "synthetic" });
     if (path === "/auth/token") return json(res, { accessToken: "synthetic-never-valid" });
+    if (path === "/auth/logout") return json(res, { ok: true });
     if (path === "/graphql") {
       if (!graphQL) return json(res, {}, 403);
       if (failure === "rate") return json(res, { errors: [{ type: "RATE_LIMITED", message: "synthetic rate limit" }] });
@@ -72,7 +81,8 @@ const server = createServer(async (req, res) => {
     const blob = path.match(/\/git\/blobs\/([a-f0-9]{40})$/);
     if (blob) {
       const file = [...files.values()].find(file => file.sha === blob[1]);
-      if (file) return json(res, { sha: file.sha, size: file.size, encoding: "base64", content: Buffer.from(file.text).toString("base64") });
+      if (failure === "rate") return json(res, {}, 429);
+      if (file) return json(res, { sha: file.sha, size: file.size, encoding: "base64", content: Buffer.from(failure === "corrupt" ? "{}" : file.text).toString("base64") });
     }
     unknown.push(path); return json(res, {}, 404);
   }
@@ -86,7 +96,7 @@ const server = createServer(async (req, res) => {
     if (preview && extname(target) === ".html") data = Buffer.from(data.toString().replace("<head>", `<head><script>(${installFixture.toString()})();if(!location.hash)location.hash='#workspace-panel-travel';</script>`));
     res.writeHead(200, { "content-type": ({ ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".json": "application/json", ".svg": "image/svg+xml" })[extname(target)] ?? "application/octet-stream", "cache-control": url.pathname.includes("/_next/static/") ? "public, max-age=31536000, immutable" : "no-cache" }); res.end(data);
   } catch { res.writeHead(404); res.end(); }
-});
+}
 await new Promise(done => server.listen(preview ? Number(arg("--port", "4173")) : 0, preview ? "0.0.0.0" : "127.0.0.1", done));
 const origin = `http://127.0.0.1:${server.address().port}`;
 if (preview) {
@@ -126,10 +136,13 @@ async function snapshot(page, start, end) {
   return page.evaluate(({ start, end }) => {
     const requests = window.__fetches.filter(r => r.start >= start && r.start < end);
     const reads = requests.filter(r => /travel-visits|graphql|git\/blobs/.test(r.url));
+    const events = reads.filter(r => /graphql|git\/blobs|travel-visits\/.+\.json/.test(r.url)).flatMap(r => [[r.start, 1], [r.end ?? end, -1]]).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    let active = 0, peakBodyRequests = 0;
+    for (const [, step] of events) { active += step; peakBodyRequests = Math.max(peakBodyRequests, active); }
     const directory = reads.find(r => /\/contents\/data\/travel-visits\?/.test(r.url));
     const last = Math.max(directory?.end ?? start, ...reads.map(r => r.end ?? start));
     const resources = performance.getEntriesByType("resource").filter(r => r.startTime >= start && r.startTime < end && !r.name.includes("/__fixture/"));
-    return { totalMs: end - start, directoryMs: directory ? directory.end - directory.start : 0, bodyWindowMs: last - (directory?.end ?? last), afterDataMs: end - last, requests: reads.length, requestKinds: reads.reduce((counts, r) => { const kind = r.url.includes("graphql") ? "graphql" : r.url.includes("git/blobs") ? "blob" : r.url.includes(".json") ? "file" : "directory"; counts[kind] = (counts[kind] ?? 0) + 1; return counts; }, {}), otherDataRequests: requests.filter(r => /\/contents\/data\//.test(r.url) && !r.url.includes("travel-visits")).map(r => r.url), assetTransferBytes: resources.reduce((n, r) => n + r.transferSize, 0), assetDecodedBytes: resources.reduce((n, r) => n + r.decodedBodySize, 0), longTaskMs: window.__longTasks.filter(r => r.start >= start && r.start < end).reduce((n, r) => n + r.duration, 0), requestsDetail: reads };
+    return { totalMs: end - start, directoryMs: directory ? directory.end - directory.start : 0, bodyWindowMs: last - (directory?.end ?? last), afterDataMs: end - last, requests: reads.length, peakBodyRequests, requestKinds: reads.reduce((counts, r) => { const kind = r.url.includes("graphql") ? "graphql" : r.url.includes("git/blobs") ? "blob" : r.url.includes(".json") ? "file" : "directory"; counts[kind] = (counts[kind] ?? 0) + 1; return counts; }, {}), otherDataRequests: requests.filter(r => /\/contents\/data\//.test(r.url) && !r.url.includes("travel-visits")).map(r => r.url), assetTransferBytes: resources.reduce((n, r) => n + r.transferSize, 0), assetDecodedBytes: resources.reduce((n, r) => n + r.decodedBodySize, 0), longTaskMs: window.__longTasks.filter(r => r.start >= start && r.start < end).reduce((n, r) => n + r.duration, 0), requestsDetail: reads };
   }, { start, end });
 }
 async function verify() {
@@ -235,6 +248,25 @@ async function verify() {
     assert.deepEqual(invalid.errors, []); await invalid.context.close();
   }
   report.checks.push("rate limit and corrupt/incomplete batch block writes and partial snapshots, then recover on explicit retry");
+  bodyDelay = 1500;
+  const clearing = await newPage(); await clearing.page.goto(`${origin}/#workspace-panel-travel`);
+  await clearing.page.waitForFunction(rest => window.__fetches.some(r => r.url.includes(rest ? "/git/blobs/" : "/graphql") && !r.end), !graphQL);
+  for (let i = 0; i < 2; i++) {
+    await clearing.page.getByRole("tab", { name: "通告", exact: true }).click();
+    await clearing.page.getByRole("tab", { name: "旅行", exact: true }).click();
+  }
+  assert.equal(await clearing.page.evaluate(() => window.__fetches.filter(r => /\/contents\/data\/travel-visits\?/.test(r.url)).length), 1);
+  await clearing.page.locator(".header-connection summary").click();
+  await clearing.page.getByRole("button", { name: "退出当前设备", exact: true }).click();
+  await clearing.page.getByRole("heading", { name: "连接你的数据仓库", exact: true }).waitFor();
+  const requestsAtClear = await clearing.page.evaluate(() => window.__fetches.filter(r => /travel-visits|graphql|git\/blobs/.test(r.url)).length);
+  await clearing.page.waitForTimeout(1700);
+  assert.equal(await clearing.page.locator(".travel-visit-list .travel-records > li").count(), 0);
+  assert.equal(await clearing.page.evaluate(() => window.__fetches.filter(r => /travel-visits|graphql|git\/blobs/.test(r.url)).length), requestsAtClear);
+  bodyDelay = 0; await clearing.page.reload(); await ready(clearing.page);
+  assert.ok(await clearing.page.evaluate(() => window.__fetches.some(r => /graphql|git\/blobs/.test(r.url))));
+  assert.deepEqual(clearing.errors, []); await clearing.context.close();
+  report.checks.push("in-flight tab repeats issue one directory load; logout cancels queued bodies and clears records; restored session reads its own bodies again");
   report.screenshots = screenshots;
   return report;
 }

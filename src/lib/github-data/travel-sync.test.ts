@@ -1,9 +1,9 @@
 import { createHash } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { GitHubContentsAdapter } from "./github-contents";
 import { readTravelVisits, writeTravelVisit } from "./travel-sync";
 import { createWorkspaceRecord, serializeRecord } from "./protocol";
-import { visitedTravelProvinces } from "./travel-visits";
+import { createTravelVisitData, visitedTravelProvinces } from "./travel-visits";
 
 const blobSha = (text: string) => createHash("sha1").update(`blob ${Buffer.byteLength(text)}\0${text}`).digest("hex");
 function cloud(graphQL = true) {
@@ -48,11 +48,70 @@ function cloud(graphQL = true) {
     const file = files.get(path);
     return file ? response({ type: "file", path, sha: file.sha, size: Buffer.byteLength(file.text), encoding: "base64", content: Buffer.from(file.text).toString("base64") }) : response({}, 404);
   };
-  const adapter = () => new GitHubContentsAdapter({ owner: "example", repository: "synthetic-data", branch: "main", token: "fake-token" }, fetcher);
-  return { adapter, files, requests, setDirectoryStatus: (status: number) => { directoryStatus = status; } };
+  const adapter = (transport = fetcher) => new GitHubContentsAdapter({ owner: "example", repository: "synthetic-data", branch: "main", token: "fake-token" }, transport);
+  return { adapter, fetcher, files, requests, setDirectoryStatus: (status: number) => { directoryStatus = status; } };
 }
 const fields = { province_id: "330000", city: "同名城市", start_date: "2026-10-06", end_date: "2026-10-08", notes: "西湖\n提前预约" };
+function seed(remote: ReturnType<typeof cloud>, count: number) {
+  for (let i = 0; i < count; i++) {
+    const id = `travel_${i}`, path = `data/travel-visits/${id}.json`;
+    const text = serializeRecord(createWorkspaceRecord({ entityType: "travel_visit", id, ownerId: "test_owner", data: createTravelVisitData(fields) }));
+    remote.files.set(path, { text, sha: blobSha(text) });
+  }
+}
 describe("travel cloud synchronization", () => {
+  it("keeps REST travel at six active reads, probes only once, and caches only verified bodies", async () => {
+    const remote = cloud(false); seed(remote, 60);
+    let active = 0, peak = 0;
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const adapter = remote.adapter(async (url, init) => {
+      if (!String(url).includes("/git/blobs/")) return remote.fetcher(url, init);
+      active++; peak = Math.max(peak, active);
+      try { await gate; return await remote.fetcher(url, init); }
+      finally { active--; }
+    });
+    const pending = readTravelVisits(adapter, "test_owner");
+    await vi.waitFor(() => expect(active).toBe(6));
+    expect(remote.requests).toEqual(["GET data/travel-visits", "POST graphql"]);
+    release(); expect(await pending).toHaveLength(60);
+    expect(peak).toBe(6);
+    expect(remote.requests.filter(r => r === "POST graphql")).toHaveLength(1);
+    expect(remote.requests.filter(r => r.startsWith("GET blob/"))).toHaveLength(60);
+    remote.requests.length = 0;
+    expect(await readTravelVisits(adapter, "test_owner")).toHaveLength(60);
+    expect(remote.requests).toEqual(["GET data/travel-visits"]);
+  });
+  it.each([true, false])("cancels obsolete reads without queued requests or cache pollution, then retries (GraphQL: %s)", async graphQL => {
+    const remote = cloud(graphQL); seed(remote, 60);
+    const controller = new AbortController();
+    const reason = new Error("Travel session cleared");
+    let started = 0;
+    const adapter = remote.adapter(async (url, init) => {
+      const isBody = String(url).includes("/git/blobs/") || (graphQL && String(url).endsWith("/graphql"));
+      if (isBody && !controller.signal.aborted) {
+        started++;
+        await new Promise<void>((_resolve, reject) => init?.signal?.addEventListener("abort", () => reject(reason), { once: true }));
+      }
+      return remote.fetcher(url, init);
+    });
+    const pending = readTravelVisits(adapter, "test_owner", { signal: controller.signal });
+    const rejected = expect(pending).rejects.toBe(reason);
+    await vi.waitFor(() => expect(started).toBe(graphQL ? 1 : 6));
+    controller.abort(reason); await rejected;
+    expect(started).toBe(graphQL ? 1 : 6);
+    remote.requests.length = 0;
+    expect(await readTravelVisits(adapter, "test_owner")).toHaveLength(60);
+    expect(remote.requests.filter(r => r === "POST graphql")).toHaveLength(graphQL ? 3 : 0);
+    expect(remote.requests.filter(r => r.startsWith("GET blob/"))).toHaveLength(graphQL ? 0 : 60);
+  });
+  it("stops an obsolete directory response before any body reads", async () => {
+    const remote = cloud(); seed(remote, 1);
+    let current = true;
+    const adapter = remote.adapter(async (url, init) => { const response = await remote.fetcher(url, init); current = false; return response; });
+    await expect(readTravelVisits(adapter, "test_owner", { isCurrent: () => current })).rejects.toThrow("TRAVEL_LOAD_CANCELLED");
+    expect(remote.requests).toEqual(["GET data/travel-visits"]);
+  });
   it.each([true, false])("revalidates the directory and reuses only unchanged SHA bodies (GraphQL: %s)", async graphQL => {
     const remote = cloud(graphQL), adapter = remote.adapter();
     const stored = await writeTravelVisit(adapter, "test_owner", { kind: "save", fields, id: "travel_cached" });
@@ -74,14 +133,7 @@ describe("travel cloud synchronization", () => {
   });
   it("batches cold bodies and keeps cache isolated to the authenticated adapter", async () => {
     const remote = cloud(), adapter = remote.adapter();
-    for (let i = 0; i < 60; i++) {
-      const id = `travel_${i}`, path = `data/travel-visits/${id}.json`;
-      const text = serializeRecord(createWorkspaceRecord({ entityType: "travel_visit", id, ownerId: "test_owner", data: fields }));
-      // Include the required business version, just as the writer does.
-      const record = JSON.parse(text); record.data.travel_visit_version = 2;
-      const body = JSON.stringify(record);
-      remote.files.set(path, { text: body, sha: blobSha(body) });
-    }
+    seed(remote, 60);
     expect(await readTravelVisits(adapter, "test_owner")).toHaveLength(60);
     expect(remote.requests).toEqual(["GET data/travel-visits", "POST graphql", "POST graphql", "POST graphql"]);
     remote.requests.length = 0;

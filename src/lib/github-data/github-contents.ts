@@ -91,7 +91,13 @@ export type GitHubDirectoryItem = {
 };
 
 type ListedBlob = Pick<GitHubDirectoryItem, "path" | "blobSha" | "sizeBytes">;
-export type BlobReadOptions = { maxBatchFiles?: number; onBatch?: (files: GitHubStoredFile[]) => void };
+export type BlobReadOptions = {
+  maxBatchFiles?: number;
+  onBatch?: (files: GitHubStoredFile[]) => void;
+  // A collection can retain its existing bounded REST reader. Run it once,
+  // after this call's GraphQL work settles, never once per concurrent batch.
+  readRestFiles?: (files: readonly ListedBlob[], assertCurrent: () => void, signal?: AbortSignal) => Promise<GitHubStoredFile[]>;
+};
 
 export type GitHubRepositoryStatus = {
   fullName: string;
@@ -393,7 +399,7 @@ export class GitHubContentsAdapter {
     return records;
   }
 
-  private async readGraphQLBlobBatch(files: readonly ListedBlob[], assertCurrent: () => void, signal?: AbortSignal): Promise<GitHubStoredFile[] | null> {
+  private async readGraphQLBlobBatch(files: readonly ListedBlob[], assertCurrent: () => void, signal?: AbortSignal, deferredRest?: ListedBlob[]): Promise<GitHubStoredFile[] | null> {
     const variables: Record<string, string> = { owner: this.config.owner, repository: this.config.repository };
     files.forEach((file, index) => { variables[`oid${index}`] = file.blobSha; });
     // Read immutable objects already returned by the authenticated directory
@@ -444,7 +450,8 @@ export class GitHubContentsAdapter {
       }
       records.push({ path: file.path, blobSha: file.blobSha, sizeBytes: blob.byteSize, text: blob.text });
     }
-    records.push(...await this.readRestBlobBatch(truncated, assertCurrent, signal));
+    if (deferredRest) deferredRest.push(...truncated);
+    else records.push(...await this.readRestBlobBatch(truncated, assertCurrent, signal));
     return records;
   }
 
@@ -466,6 +473,7 @@ export class GitHubContentsAdapter {
     const uncached = [...new Map(files.filter((file) => !this.blobTextCache.has(file.blobSha)).map((file) => [file.blobSha, file])).values()];
     const large = uncached.filter(file => file.sizeBytes > GRAPHQL_BLOB_TEXT_LIMIT);
     const missing = uncached.filter(file => file.sizeBytes <= GRAPHQL_BLOB_TEXT_LIMIT);
+    const deferredRest: ListedBlob[] | undefined = options.readRestFiles ? [...large] : undefined;
     let nextIndex = 0;
     const readNextBatches = async () => {
       while (nextIndex < missing.length) {
@@ -486,17 +494,18 @@ export class GitHubContentsAdapter {
         assertCurrent();
         if (this.graphQLAvailable === undefined) {
           this.graphQLFirstReadSignal = signal;
-          this.graphQLFirstRead = this.readGraphQLBlobBatch(batch, assertCurrent, signal).then((result) => {
+          this.graphQLFirstRead = this.readGraphQLBlobBatch(batch, assertCurrent, signal, deferredRest).then((result) => {
             this.graphQLAvailable = result !== null;
             return result;
           });
           try { records = await this.graphQLFirstRead; }
           finally { this.graphQLFirstRead = null; this.graphQLFirstReadSignal = undefined; }
         } else if (this.graphQLAvailable) {
-          records = await this.readGraphQLBlobBatch(batch, assertCurrent, signal);
+          records = await this.readGraphQLBlobBatch(batch, assertCurrent, signal, deferredRest);
           if (records === null) this.graphQLAvailable = false;
         }
         const usedRest = records === null;
+        if (records === null && deferredRest) { deferredRest.push(...batch); records = []; }
         records ??= await this.readRestBlobBatch(batch, assertCurrent, signal, options.onBatch);
         assertCurrent();
         for (const record of records) this.blobTextCache.set(record.blobSha, { blobSha: record.blobSha, sizeBytes: record.sizeBytes, text: record.text });
@@ -508,11 +517,22 @@ export class GitHubContentsAdapter {
       // They all await the single capability probe before scheduling more work.
       await Promise.all([
         ...Array.from({ length: Math.min(BLOB_READ_CONCURRENCY, Math.ceil(missing.length / batchSize)) }, readNextBatches),
-        ...(large.length ? [this.readRestBlobBatch(large, assertCurrent, signal, options.onBatch).then(records => {
+        ...(!deferredRest && large.length ? [this.readRestBlobBatch(large, assertCurrent, signal, options.onBatch).then(records => {
           assertCurrent();
           for (const record of records) this.blobTextCache.set(record.blobSha, { blobSha: record.blobSha, sizeBytes: record.sizeBytes, text: record.text });
         })] : []),
       ]);
+      if (deferredRest?.length && options.readRestFiles) {
+        assertCurrent();
+        const records = await options.readRestFiles(deferredRest, assertCurrent, signal);
+        assertCurrent();
+        if (records.length !== deferredRest.length || records.some((record, index) => {
+          const expected = deferredRest[index];
+          return record.path !== expected.path || record.blobSha !== expected.blobSha || record.sizeBytes !== expected.sizeBytes;
+        })) throw new GitHubDataError("Incomplete REST blob collection.", 500, "GITHUB_INVALID_RESPONSE");
+        for (const record of records) this.blobTextCache.set(record.blobSha, { blobSha: record.blobSha, sizeBytes: record.sizeBytes, text: record.text });
+        options.onBatch?.(records);
+      }
     } catch (error) {
       failed = true;
       throw error;

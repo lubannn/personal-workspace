@@ -14,7 +14,10 @@ export function useTravelVisits(adapterRef: MutableRefObject<GitHubContentsAdapt
   const [error, setError] = useState("");
   const operationRef = useRef<object | null>(null);
   const requestRef = useRef(0);
+  const loadControllerRef = useRef<AbortController | null>(null);
   const clear = useCallback(() => {
+    loadControllerRef.current?.abort();
+    loadControllerRef.current = null;
     requestRef.current++;
     operationRef.current = null;
     setFiles([]); setReady(false); setLoading(false); setSaving(false); setError("");
@@ -24,9 +27,14 @@ export function useTravelVisits(adapterRef: MutableRefObject<GitHubContentsAdapt
     const request = ++requestRef.current;
     const operation = {};
     operationRef.current = operation;
+    const controller = new AbortController();
+    loadControllerRef.current = controller;
     setLoading(true); setError("");
     try {
-      const records = await readTravelVisits(adapter, connection.ownerId);
+      const records = await readTravelVisits(adapter, connection.ownerId, {
+        isCurrent: () => adapterRef.current === adapter && requestRef.current === request,
+        signal: controller.signal,
+      });
       if (adapterRef.current !== adapter || requestRef.current !== request) return false;
       setFiles(records); setReady(true);
       return true;
@@ -37,6 +45,7 @@ export function useTravelVisits(adapterRef: MutableRefObject<GitHubContentsAdapt
       }
       return false;
     } finally {
+      if (loadControllerRef.current === controller) loadControllerRef.current = null;
       if (operationRef.current === operation) { operationRef.current = null; setLoading(false); }
     }
   }, [adapterRef, connection]);
