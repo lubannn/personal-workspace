@@ -11,19 +11,17 @@ export async function readTravelVisits(adapter: GitHubContentsAdapter, ownerId: 
     if (error instanceof GitHubDataError && error.code === "GITHUB_NOT_FOUND") return [];
     throw error;
   }
-  const files: SyncedTravelVisit[] = [];
   const candidates = items.filter(item => item.type === "file" && item.name.endsWith(".json"));
-  // Bounded concurrent reads; invalid files fail the snapshot rather than silently
-  // changing the visited count or allowing edits against incomplete data.
-  for (let i = 0; i < candidates.length; i += 6) {
-    files.push(...await Promise.all(candidates.slice(i, i + 6).map(async item => {
-      const file = await adapter.readText(item.path);
-      const record = parseTravelVisitRecord(file.text);
-      if (record.owner_id !== ownerId || recordPath("travel_visit", record.id) !== item.path || file.blobSha !== item.blobSha) throw new Error("TRAVEL_SNAPSHOT_CHANGED");
-      return { record, path: file.path, blobSha: file.blobSha };
-    })));
-  }
-  return files;
+  // Always authenticate and re-list first. Reuse the adapter's bounded, SHA-pinned
+  // batch reader and session-only body cache, including its REST fallback.
+  // Validate the entire snapshot before publishing any records or enabling edits.
+  const files = await adapter.readBlobTexts(candidates);
+  return files.map((file, index) => {
+    const item = candidates[index];
+    const record = parseTravelVisitRecord(file.text);
+    if (record.owner_id !== ownerId || recordPath("travel_visit", record.id) !== item.path || file.path !== item.path || file.blobSha !== item.blobSha) throw new Error("TRAVEL_SNAPSHOT_CHANGED");
+    return { record, path: file.path, blobSha: file.blobSha };
+  });
 }
 
 export async function writeTravelVisit(adapter: GitHubContentsAdapter, ownerId: string, input:
