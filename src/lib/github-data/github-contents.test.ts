@@ -192,6 +192,40 @@ describe("GitHub contents adapter", () => {
     expect(maxActive).toBe(4);
   });
 
+  it("settles this call's GraphQL requests before invoking one collection REST reader", async () => {
+    let calls = 0, active = 0;
+    const fetcher = vi.fn<typeof fetch>(async (_, init) => {
+      const call = ++calls;
+      active++;
+      await new Promise<void>(resolve => setTimeout(resolve, call === 3 ? 10 : 1));
+      active--;
+      return call === 2 ? jsonResponse({}, 403) : jsonResponse(blobQueryResponse(init));
+    });
+    const rest = vi.fn(async (files: readonly ReturnType<typeof listedBlob>[]) => {
+      expect(active).toBe(0);
+      return files.map(file => ({ ...file, text: "{}" }));
+    });
+    const adapter = new GitHubContentsAdapter({ owner: "owner", repository: "data", token: "test-token" }, fetcher);
+    const files = Array.from({ length: 100 }, (_, i) => listedBlob(i));
+    expect(await adapter.readBlobTexts(files, undefined, undefined, { readRestFiles: rest })).toHaveLength(100);
+    expect(rest).toHaveBeenCalledTimes(1);
+    expect(rest.mock.calls[0][0]).toHaveLength(25);
+    const before = fetcher.mock.calls.length;
+    await adapter.readBlobTexts(files);
+    expect(fetcher).toHaveBeenCalledTimes(before);
+  });
+
+  it("rejects an incomplete collection REST reader without caching its output", async () => {
+    const fetcher = vi.fn<typeof fetch>(async () => jsonResponse({}, 403));
+    const adapter = new GitHubContentsAdapter({ owner: "owner", repository: "data", token: "test-token" }, fetcher);
+    const files = [listedBlob(1)];
+    await expect(adapter.readBlobTexts(files, undefined, undefined, { readRestFiles: async () => [] })).rejects.toMatchObject({ code: "GITHUB_INVALID_RESPONSE" });
+    const rest = vi.fn(async () => files.map(file => ({ ...file, text: "{}" })));
+    expect(await adapter.readBlobTexts(files, undefined, undefined, { readRestFiles: rest })).toHaveLength(1);
+    expect(rest).toHaveBeenCalledTimes(1);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
   it("stops queued query batches after a concurrent batch fails", async () => {
     let calls = 0;
     const fetcher = vi.fn<typeof fetch>(async (_, init) => {
