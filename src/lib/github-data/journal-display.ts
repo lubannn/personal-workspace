@@ -1,6 +1,18 @@
 import { parseJournalSegmentsMarkdown } from "./journal-segment-codec";
+import type { JournalEntryRecord } from "./journal-entries";
 
 export type JournalDisplaySegment = { time: string | null; body: string };
+
+// Reading order is distinct from save/load order. Flatten imported days so a
+// later backfill can sit between their time segments, without rewriting records.
+export function journalDisplayTimeline<T extends { record: JournalEntryRecord; segments: JournalDisplaySegment[] }>(entries: readonly T[]) {
+  return entries.flatMap((entry) => entry.segments.map((segment, segmentIndex) => ({ entry, segment, segmentIndex })))
+    .sort((left, right) => right.entry.record.data.journal_date.localeCompare(left.entry.record.data.journal_date)
+      || (left.segment.time ?? "24:00").localeCompare(right.segment.time ?? "24:00")
+      || Date.parse(left.entry.record.data.first_entry_at) - Date.parse(right.entry.record.data.first_entry_at)
+      || left.entry.record.id.localeCompare(right.entry.record.id)
+      || left.segmentIndex - right.segmentIndex);
+}
 
 export function journalDisplaySegments(markdown: string, submittedTime: string | null = null): JournalDisplaySegment[] {
   if (!markdown.startsWith("<!-- pw-journal-segments:v1:")) return [{ time: submittedTime, body: markdown }];

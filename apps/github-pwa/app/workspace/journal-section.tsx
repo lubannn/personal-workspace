@@ -4,7 +4,7 @@ import { useMemo, useRef, useState, type FormEvent } from "react";
 import type { GitHubContentsAdapter } from "../../../../src/lib/github-data/github-contents";
 import type { GitHubDirectoryItem } from "../../../../src/lib/github-data/github-contents";
 import { journalCatalogDates } from "../../../../src/lib/github-data/journal-archive-catalog";
-import { searchJournalDisplaySegments } from "../../../../src/lib/github-data/journal-display";
+import { journalDisplayTimeline, searchJournalDisplaySegments } from "../../../../src/lib/github-data/journal-display";
 import { activeJournalEntries, canWriteJournalDate, filterJournalEntries, journalEntrySubmittedTime, journalMonthDays, previousJournalDate, shiftJournalMonth, trashedJournalEntries, type JournalDateChoice } from "../../../../src/lib/github-data/journal-entries";
 import { JournalStatistics } from "./journal-statistics";
 import { JournalAchievements } from "./journal-achievements";
@@ -61,6 +61,7 @@ export function JournalSection({ connection, adapter, online, todayDate, journal
     const matches = filtered.map((record) => ({ ...byId.get(record.id)!, segments: searchJournalDisplaySegments(record.data.body_markdown, searchQuery, journalEntrySubmittedTime(record).slice(0, 5)) })).filter((item) => item.segments.length > 0);
     return recentView && !searchQuery.trim() ? matches.slice(0, 3) : matches;
   }, [byId, displayedMonth, recentView, records, searchQuery, selectedDay, view]);
+  const timeline = useMemo(() => journalDisplayTimeline(visible), [visible]);
   const busy = saving || Boolean(savingId);
   const selectedDate = editingId ? journalDate : dateChoice === "yesterday" && todayDate ? previousJournalDate(todayDate) : todayDate;
   const writable = canWriteJournalDate(selectedDate, todayDate);
@@ -141,12 +142,12 @@ export function JournalSection({ connection, adapter, online, todayDate, journal
         <div className="journal-results-header"><div><p className="eyebrow">Journal archive</p><h3>{recentView ? "最近日记" : selectedDay ? `${selectedDay} 的日记` : `${displayedMonth.replace("-", "年")}月的日记`}</h3></div><div className="journal-results-tools"><span className="journal-result-count" aria-live="polite">{visible.length} 篇</span><label className="journal-browser-search"><input type="search" aria-label={recentView ? "搜索已加载日记" : selectedDay ? "搜索当天日记" : "搜索本月日记"} aria-describedby="journal-search-scope" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} maxLength={200} placeholder="搜索内容" disabled={!connection} /><span id="journal-search-scope">{recentView ? "搜索已加载日记" : selectedDay ? "搜索当天日记" : "搜索本月日记"}</span></label></div></div>
         {loadError && resultsLoaded ? <p className="empty-note" role="alert">读取未完成，已保留读取到的日记：{loadError}</p> : null}
         {!recentView && !monthLoaded && resultsLoaded && !loadError ? <p className="journal-load-progress" role="status">已显示读取到的日记，正在补全该月…</p> : null}
-        {!connection ? <p className="empty-note">连接后显示 Private 仓库中的日记。</p> : loadError && !resultsLoaded ? <p className="empty-note" role="alert">日记读取失败：{loadError}。请重试。</p> : !resultsLoaded ? <p className="empty-note">{recentView ? "正在读取最近日记…" : loading ? "正在读取该月日记…" : "正在准备该月日记…"}</p> : source.length === 0 ? <p className="empty-note">{view === "active" ? "还没有日记。" : "日记回收站是空的。"}</p> : visible.length === 0 ? <p className="empty-note">{!recentView && !monthLoaded && !loadError ? "暂未找到匹配日记，正在继续读取该月…" : "这段时间没有符合条件的日记。"}</p> : <ol className="journal-list">{visible.map((item, itemIndex) => {
+        {!connection ? <p className="empty-note">连接后显示 Private 仓库中的日记。</p> : loadError && !resultsLoaded ? <p className="empty-note" role="alert">日记读取失败：{loadError}。请重试。</p> : !resultsLoaded ? <p className="empty-note">{recentView ? "正在读取最近日记…" : loading ? "正在读取该月日记…" : "正在准备该月日记…"}</p> : source.length === 0 ? <p className="empty-note">{view === "active" ? "还没有日记。" : "日记回收站是空的。"}</p> : visible.length === 0 ? <p className="empty-note">{!recentView && !monthLoaded && !loadError ? "暂未找到匹配日记，正在继续读取该月…" : "这段时间没有符合条件的日记。"}</p> : <ol className="journal-list">{timeline.map(({ entry: item, segment, segmentIndex }, itemIndex) => {
       const canManage = canWriteJournalDate(item.record.data.journal_date, todayDate);
-      const startsDay = itemIndex === 0 || visible[itemIndex - 1].record.data.journal_date !== item.record.data.journal_date;
-      return <li key={item.record.id} className={startsDay ? "journal-day-start" : undefined}>
+      const startsDay = itemIndex === 0 || timeline[itemIndex - 1].entry.record.data.journal_date !== item.record.data.journal_date;
+      return <li key={`${item.record.id}-${segmentIndex}`} className={startsDay ? "journal-day-start" : undefined}>
         {startsDay ? <span className="journal-day-heading">{item.record.data.journal_date}</span> : null}
-        <div className="journal-entry-content"><div className="journal-readable-segments">{item.segments.map((segment, index) => <div className={`journal-readable-segment${segment.time ? "" : " untimed"}`} key={`${item.record.id}-${index}`}>{segment.time ? <time>{segment.time}</time> : null}<p>{segment.body}</p></div>)}</div></div>
+        <div className="journal-entry-content"><div className="journal-readable-segments"><div className={`journal-readable-segment${segment.time ? "" : " untimed"}`}>{segment.time ? <time>{segment.time}</time> : null}<p>{segment.body}</p></div></div></div>
         {canManage && view === "active" ? <div className="journal-item-actions"><button className="text-button" type="button" onClick={() => beginEdit(item)} disabled={busy}>编辑</button></div> : null}
       </li>;
     })}</ol>}
