@@ -1,4 +1,5 @@
 import { authenticatedGitHubUser, validAuthenticatedMutation, type AuthEnv } from "./auth";
+import { runCorosManualDrain } from "./coros-manual-drain";
 import {
   createCorosAuthorization,
   discoverCorosOAuth,
@@ -274,14 +275,18 @@ export async function handleCorosConnectionRequest(request: Request, env: CorosC
       if (user.id !== env.COROS_GITHUB_USER_ID) return json({ error: "COROS_SYNC_ACCOUNT_NOT_CONFIGURED" }, 409);
       let recentOnly = false;
       let verifyHistoricalCoverage = false;
+      let batchLimit = 1;
       if (request.headers.get("content-type")?.startsWith("application/json")) {
         if (Number(request.headers.get("content-length")) > 1024) return json({ error: "COROS_SYNC_REQUEST_INVALID" }, 400);
-        const body = await request.json().catch(() => null) as { recentOnly?: unknown; verifyHistoricalCoverage?: unknown } | null;
+        const body = await request.json().catch(() => null) as { recentOnly?: unknown; verifyHistoricalCoverage?: unknown; batchLimit?: unknown } | null;
         if (!body || typeof body !== "object" || Array.isArray(body) || typeof body.recentOnly !== "boolean") return json({ error: "COROS_SYNC_REQUEST_INVALID" }, 400);
         if (body.verifyHistoricalCoverage !== undefined && typeof body.verifyHistoricalCoverage !== "boolean") return json({ error: "COROS_SYNC_REQUEST_INVALID" }, 400);
         recentOnly = body.recentOnly;
         verifyHistoricalCoverage = body.verifyHistoricalCoverage === true && !recentOnly;
+        if (body.batchLimit !== undefined && (body.batchLimit !== 1 && body.batchLimit !== 2 || body.batchLimit === 2 && !recentOnly)) return json({ error: "COROS_SYNC_REQUEST_INVALID" }, 400);
+        batchLimit = body.batchLimit === 2 ? 2 : 1;
       }
+      if (recentOnly && batchLimit === 2) return json(await runCorosManualDrain(env, batchLimit));
       return json(await runCorosSync(env, new Date(), undefined, { forceDue: true, ...(recentOnly ? { recentOnly } : {}), ...(verifyHistoricalCoverage ? { verifyHistoricalCoverage } : {}) }));
     }
     case "/coros/conflicts": {

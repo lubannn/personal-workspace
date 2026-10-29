@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { readCookie, type ConnectionMethod } from "./page-model";
 import { drainCorosHistory } from "./coros-history-client";
-import { createCorosRefreshUpdates } from "./coros-refresh-updates";
+import { createCorosRefreshPublisher, createCorosRefreshUpdates } from "./coros-refresh-updates";
 import { corosDeferredSyncMessage, corosSyncErrorMessage } from "./coros-history-settings";
 
 function friendlyError(code: string) {
@@ -29,7 +29,9 @@ export function CorosRefreshButton({ connectionMethod, disabled = false }: { con
     const current = new AbortController(); controller.current = current;
     setBusy(true); setMessage("正在从 COROS 读取近期睡眠与运动…");
     window.dispatchEvent(new CustomEvent("coros-sync-running", { detail: { running: true } }));
-    const updates = createCorosRefreshUpdates(detail => window.dispatchEvent(new CustomEvent("coros-sync-updated", { detail })));
+    const updates = createCorosRefreshUpdates(createCorosRefreshPublisher(detail => {
+      if (!current.signal.aborted) window.dispatchEvent(new CustomEvent("coros-sync-updated", { detail }));
+    }));
     try {
       const result = await drainCorosHistory({ csrf, signal: current.signal, recentOnly: true, onUpdate: update => {
         updates.update(update);
