@@ -8,7 +8,7 @@ export type JournalDisplaySegment = { time: string | null; body: string };
 export function journalDisplayTimeline<T extends { record: JournalEntryRecord; segments: JournalDisplaySegment[] }>(entries: readonly T[]) {
   return entries.flatMap((entry) => entry.segments.map((segment, segmentIndex) => ({ entry, segment, segmentIndex })))
     .sort((left, right) => right.entry.record.data.journal_date.localeCompare(left.entry.record.data.journal_date)
-      || (left.segment.time ?? "24:00").localeCompare(right.segment.time ?? "24:00")
+      || (right.segment.time ?? "").localeCompare(left.segment.time ?? "")
       || Date.parse(left.entry.record.data.first_entry_at) - Date.parse(right.entry.record.data.first_entry_at)
       || left.entry.record.id.localeCompare(right.entry.record.id)
       || left.segmentIndex - right.segmentIndex);

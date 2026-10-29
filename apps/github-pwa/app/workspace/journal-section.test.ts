@@ -18,14 +18,14 @@ function savedEntry(id: string, date: string, timestamp: string, bodyMarkdown: s
 function readingList(markup: string) { return markup.match(/<ol class="journal-list">([\s\S]*?)<\/ol>/)?.[1] ?? ""; }
 
 describe("journal reading chronology", () => {
-  it("renders yesterday's next-day morning backfill before yesterday's evening diary", () => {
+  it("renders yesterday's diaries in descending displayed time despite a next-day morning backfill", () => {
     const evening = savedEntry("evening", "2026-10-27", "2026-10-27T14:08:00Z", "晚上记录");
     const morning = savedEntry("backfill", "2026-10-27", "2026-10-28T01:21:00Z", "补写早晨");
     const noon = savedEntry("noon", "2026-10-27", "2026-10-27T04:00:00Z", "中午记录");
     const list = readingList(renderJournal({ todayDate: "2026-10-28", journalEntryFiles: [evening, morning, noon] }));
-    expect(list.indexOf("补写早晨")).toBeLessThan(list.indexOf("中午记录"));
-    expect(list.indexOf("中午记录")).toBeLessThan(list.indexOf("晚上记录"));
-    expect(list.match(/<time>(.*?)<\/time>/g)).toEqual(["<time>09:21</time>", "<time>12:00</time>", "<time>22:08</time>"]);
+    expect(list.indexOf("晚上记录")).toBeLessThan(list.indexOf("中午记录"));
+    expect(list.indexOf("中午记录")).toBeLessThan(list.indexOf("补写早晨"));
+    expect(list.match(/<time>(.*?)<\/time>/g)).toEqual(["<time>22:08</time>", "<time>12:00</time>", "<time>09:21</time>"]);
     expect(list.match(/class="journal-day-heading"/g)).toHaveLength(1);
     expect(list.match(/>编辑<\/button>/g)).toHaveLength(3);
   });
@@ -36,7 +36,7 @@ describe("journal reading chronology", () => {
     ]);
     const entries = [savedEntry("imported", "2026-10-27", "2026-10-28T04:00:00Z", body), savedEntry("morning", "2026-10-27", "2026-10-28T01:21:00Z", "补写早晨"), savedEntry("today", "2026-10-28", "2026-10-28T00:00:00Z", "今天记录")];
     const list = readingList(renderJournal({ todayDate: "2026-10-28", journalEntryFiles: entries }));
-    const positions = ["今天记录", "历史清晨", "补写早晨", "历史晚上"].map((text) => list.indexOf(text));
+    const positions = ["今天记录", "历史晚上", "补写早晨", "历史清晨"].map((text) => list.indexOf(text));
     expect(positions.every((position) => position >= 0)).toBe(true);
     expect(positions).toEqual([...positions].sort((a, b) => a - b));
     expect(list.match(/class="journal-day-heading"/g)).toHaveLength(2);
@@ -48,8 +48,8 @@ describe("journal reading chronology", () => {
     const list = readingList(markup);
     expect(list).not.toContain("不应多加载或多显示");
     expect(list.match(/<time>/g)).toHaveLength(3);
-    expect(list.indexOf("正文1")).toBeLessThan(list.indexOf("正文2"));
-    expect(list.indexOf("正文2")).toBeLessThan(list.indexOf("正文3"));
+    expect(list.indexOf("正文3")).toBeLessThan(list.indexOf("正文2"));
+    expect(list.indexOf("正文2")).toBeLessThan(list.indexOf("正文1"));
   });
 });
 
