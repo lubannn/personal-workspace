@@ -11,11 +11,11 @@ function timelineEntry(id: string, date: string, timestamp: string, body = id) {
 }
 
 describe("journal displayed-time reading order", () => {
-  it("places a next-day 09:21 backfill before the same day's 22:08 entry", () => {
+  it("places a next-day 09:21 backfill after the same day's 22:08 entry in descending displayed time", () => {
     const morning = timelineEntry("morning_backfill", "2026-10-27", "2026-10-28T01:21:00Z");
     const evening = timelineEntry("evening", "2026-10-27", "2026-10-27T14:08:00Z");
     expect(journalDisplayTimeline([evening, morning]).map((row) => [row.segment.time, row.entry.record.id]))
-      .toEqual([["09:21", "morning_backfill"], ["22:08", "evening"]]);
+      .toEqual([["22:08", "evening"], ["09:21", "morning_backfill"]]);
   });
   it("interleaves imported segments and modern entries, while keeping newer dates first", () => {
     const importedBody = renderJournalSegmentsMarkdown("imported", [
@@ -29,9 +29,9 @@ describe("journal displayed-time reading order", () => {
     const snapshot = JSON.stringify(entries);
     const rows = journalDisplayTimeline(entries);
     expect(rows.map((row) => [row.entry.record.data.journal_date, row.segment.time, row.segment.body]))
-      .toEqual([["2026-10-28", "08:00", "today"], ["2026-10-27", "07:00", "清晨"], ["2026-10-27", "09:21", "backfill"], ["2026-10-27", "22:08", "晚上"]]);
+      .toEqual([["2026-10-28", "08:00", "today"], ["2026-10-27", "22:08", "晚上"], ["2026-10-27", "09:21", "backfill"], ["2026-10-27", "07:00", "清晨"]]);
     expect(rows[1].entry).toBe(imported);
-    expect(rows[1].segmentIndex).toBe(1);
+    expect(rows[1].segmentIndex).toBe(0);
     expect(JSON.stringify(entries)).toBe(snapshot);
   });
   it("keeps duplicate displayed minutes and deterministically orders them without merging", () => {
@@ -46,12 +46,12 @@ describe("journal displayed-time reading order", () => {
   it("does not invent times for untimed imports and retains all repeated-time segments", () => {
     const entry = timelineEntry("imported", "2026-10-27", "2026-10-28T01:21:00Z");
     entry.segments = [{ time: null, body: "未记时间" }, { time: "15:20", body: "第二段" }, { time: "00:00", body: "午夜" }, { time: "15:20", body: "第三段" }];
-    expect(journalDisplayTimeline([entry]).map((row) => row.segment.body)).toEqual(["午夜", "第二段", "第三段", "未记时间"]);
+    expect(journalDisplayTimeline([entry]).map((row) => row.segment.body)).toEqual(["第二段", "第三段", "午夜", "未记时间"]);
   });
   it("sorts only the matching search results and does not bring back other segments", () => {
     const entry = timelineEntry("entry", "2026-10-27", "2026-10-28T01:21:00Z");
     entry.segments = [{ time: "22:08", body: "搜索命中" }, { time: "07:00", body: "清晨也搜索命中" }];
-    expect(journalDisplayTimeline([entry]).map((row) => row.segment.time)).toEqual(["07:00", "22:08"]);
+    expect(journalDisplayTimeline([entry]).map((row) => row.segment.time)).toEqual(["22:08", "07:00"]);
     expect(journalDisplayTimeline([])).toEqual([]);
   });
 });
