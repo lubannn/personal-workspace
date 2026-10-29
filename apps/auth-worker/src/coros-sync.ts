@@ -39,6 +39,8 @@ export type CorosSyncRunResult = {
   continuation?: { detailsRead: number };
   /** A failed source is gated independently; another eligible source can proceed. */
   remainingWork?: boolean;
+  /** Compact committed results from a bounded manual request; progress is sent once. */
+  completedBatches?: NonNullable<SyncProgress["lastBatch"]>[];
 };
 export type CorosDrainResult = CorosSyncRunResult;
 

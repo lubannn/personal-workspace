@@ -24,7 +24,7 @@ function abortableDelay(milliseconds: number, signal: AbortSignal) {
   });
 }
 
-/** User-started continuation. Every request awaits one guarded server batch. */
+/** User-started continuation. Requests await bounded, independently guarded windows. */
 export async function drainCorosHistory({ csrf, signal, onUpdate, fetcher = fetch, recentOnly = false }: Options): Promise<CorosHistoryResult> {
   if (!csrf) throw new Error("COROS_AUTH_REQUIRED");
   async function post(path: "/coros/sync" | "/coros/daily" | "/coros/drain") {
@@ -35,7 +35,7 @@ export async function drainCorosHistory({ csrf, signal, onUpdate, fetcher = fetc
       try {
         response = await fetcher(path, { method: "POST", credentials: "same-origin", cache: "no-store",
           headers: { accept: "application/json", "x-pw-csrf": csrf, ...(path === "/coros/drain" ? { "content-type": "application/json" } : {}) },
-          ...(path === "/coros/drain" ? { body: JSON.stringify({ recentOnly, ...(!recentOnly ? { verifyHistoricalCoverage: true } : {}) }) } : {}), signal });
+          ...(path === "/coros/drain" ? { body: JSON.stringify({ recentOnly, ...(recentOnly ? { batchLimit: Math.min(2, 12 - processed) } : { verifyHistoricalCoverage: true }) }) } : {}), signal });
       } catch (error) {
         signal.throwIfAborted();
         if (!canRetry) throw error;
@@ -70,8 +70,19 @@ export async function drainCorosHistory({ csrf, signal, onUpdate, fetcher = fetc
     const result = await post("/coros/drain");
     if (!["processed", "busy", "complete", "deferred", "error"].includes(String(result.status))) throw new Error("COROS_SYNC_RESPONSE_INVALID");
     const update = result as CorosSyncRunResult;
-    if (update.status === "processed") processed += 1;
-    onUpdate(update, processed);
+    if (update.completedBatches !== undefined) {
+      if (!recentOnly || !Array.isArray(update.completedBatches) || update.completedBatches.length > Math.min(2, maxWindows - processed)
+        || (update.status === "processed" && !update.completedBatches.length) || update.completedBatches.some(batch =>
+        !batch || !["sleep", "workout", "health"].includes(batch.domain) || ![batch.created, batch.updated ?? 0, batch.unchanged, batch.conflicts].every(value => Number.isSafeInteger(value) && value >= 0))) throw new Error("COROS_SYNC_RESPONSE_INVALID");
+      for (const batch of update.completedBatches) {
+        processed++;
+        onUpdate({ status: "processed", batch, progress: update.progress }, processed);
+      }
+      if (update.status !== "processed") onUpdate(update, processed);
+    } else {
+      if (update.status === "processed") processed += 1;
+      onUpdate(update, processed);
+    }
     if (recentOnly && update.status === "processed" && update.progress?.request && (["sleep", "workout"] as const).every(domain =>
       update.progress!.domains[domain].recentRequestSequence === update.progress!.request!.sequence)
       && (!update.progress.health || (update.progress.health.recentRequestSequence === update.progress.request.sequence

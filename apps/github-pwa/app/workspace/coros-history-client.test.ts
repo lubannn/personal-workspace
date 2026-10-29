@@ -206,6 +206,38 @@ describe("explicit COROS history continuation", () => {
 
 
 describe("immediate recent COROS update", () => {
+  const committed = (domain: "sleep" | "workout" | "health") => ({ domain, from: "2024-01-30", through: "2024-02-01", created: 1, unchanged: 0, conflicts: 0 });
+  it("reports each committed batch once and completes two recent domains in one drain request", async () => {
+    const p = initialSyncProgress("2024-01-01", "Asia/Shanghai"); p.request = { sequence: 2, through: "2024-02-01" };
+    p.domains.sleep.recentRequestSequence = 2; p.domains.workout.recentRequestSequence = 2;
+    const batches = [committed("sleep"), committed("workout")];
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(response("requested"))
+      .mockResolvedValueOnce(Response.json({ status: "processed", progress: p, batch: batches[1], completedBatches: batches }));
+    const input = options(fetcher);
+    expect(await drainCorosHistory({ ...input, recentOnly: true })).toMatchObject({ status: "complete" });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(input.onUpdate.mock.calls.map(([update, count]) => [update.batch.domain, count])).toEqual([["sleep", 1], ["workout", 2]]);
+  });
+  it("publishes an earlier committed batch before reporting a later deferred window", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(response("requested"))
+      .mockResolvedValueOnce(Response.json({ status: "deferred", completedBatches: [committed("sleep")], retryAt: "2030-01-01T01:00:00Z" }));
+    const input = options(fetcher);
+    expect(await drainCorosHistory({ ...input, recentOnly: true })).toMatchObject({ status: "deferred" });
+    expect(input.onUpdate.mock.calls.map(([update, count]) => [update.status, count])).toEqual([["processed", 1], ["deferred", 1]]);
+  });
+  it("counts bundled windows toward the existing twelve-window cap", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(async path => path === "/coros/sync" ? response("requested")
+      : Response.json({ status: "processed", completedBatches: [committed("health"), committed("health")] }));
+    const input = options(fetcher);
+    expect(await drainCorosHistory({ ...input, recentOnly: true })).toEqual({ status: "limit" });
+    expect(fetcher).toHaveBeenCalledTimes(7); expect(input.onUpdate).toHaveBeenCalledTimes(12);
+  });
+  it.each([{ completedBatches: [] }, { completedBatches: [committed("health"), committed("health"), committed("health")] }, { completedBatches: [{ ...committed("health"), created: -1 }] }])("rejects malformed processed bundle results", async ({ completedBatches }) => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(response("requested"))
+      .mockResolvedValueOnce(Response.json({ status: "processed", completedBatches }));
+    await expect(drainCorosHistory({ ...options(fetcher), recentOnly: true })).rejects.toThrow("COROS_SYNC_RESPONSE_INVALID");
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
   it("drains recent sleep and workouts immediately and stops before historical backlog", async () => {
     const progress = initialSyncProgress("2024-01-01", "Asia/Shanghai");
     progress.request = { sequence: 2, through: "2024-02-01" };
@@ -221,7 +253,7 @@ describe("immediate recent COROS update", () => {
     expect(vi.getTimerCount()).toBe(0);
     await expect(run).resolves.toMatchObject({ status: "complete" });
     expect(fetcher).toHaveBeenCalledTimes(3);
-    expect(fetcher.mock.calls[1][1]).toMatchObject({ body: JSON.stringify({ recentOnly: true }), headers: { "content-type": "application/json" } });
+    expect(fetcher.mock.calls[1][1]).toMatchObject({ body: JSON.stringify({ recentOnly: true, batchLimit: 2 }), headers: { "content-type": "application/json" } });
     expect(complete.domains.sleep.backfillNext).toBe("2024-01-01");
   });
   it("rechecks a busy task promptly rather than sleeping until the ten-minute lease ends", async () => {
