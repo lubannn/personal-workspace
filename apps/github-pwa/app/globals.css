@@ -408,6 +408,56 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .journal-browser-search input { min-width: 0; }
 .journal-browser-meta { min-height: 42px; display: flex; align-items: center; justify-content: flex-end; gap: 9px; color: var(--muted); font-size: 9px; white-space: nowrap; }
 .journal-list { margin: 16px 0 0; padding: 0; list-style: none; }
+.journal-search-scope-button { white-space: nowrap; font-size: 11px; }
+.journal-year-overview .text-button, .journal-global-results .text-button, .journal-search-scope-button { min-height: 29px; padding: 5px 11px; border: 1px solid #dddcd2; border-radius: 999px; background: #fcfcf8; color: #66715d; font: 500 11px/1.4 ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif; cursor: pointer; white-space: nowrap; }
+.journal-year-overview .text-button:hover, .journal-global-results .text-button:hover, .journal-search-scope-button:hover { background: #eef2e8; border-color: #becdb2; }
+.journal-global-results .text-button:disabled { opacity: .5; cursor: not-allowed; }
+.journal-search-scope-button[aria-pressed="true"] { background: #e9eee4; border-color: #cbd7c1; color: #415b3b; }
+.journal-year-overview { margin-top: 22px; }
+.journal-year-heading, .journal-year-heading > div:last-child { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
+.journal-year-heading h3 { margin: 4px 0 16px; font-size: 24px; font-weight: 600; }
+.journal-year-heading > div:last-child > span { color: var(--soft); font-size: 12px; font-variant-numeric: tabular-nums; }
+.journal-year-layout { display: grid; grid-template-columns: 140px minmax(0,1fr); gap: 22px; margin-top: 12px; }
+.journal-year-nav { display: flex; flex-direction: column; gap: 4px; align-self: start; max-height: 620px; overflow-y: auto; }
+.journal-year-nav button { display: flex; justify-content: space-between; align-items: center; gap: 12px; border: 1px solid transparent; border-radius: 12px; padding: 12px; background: transparent; color: var(--ink); font: inherit; font-size: 13px; font-variant-numeric: tabular-nums; cursor: pointer; }
+.journal-year-nav button span { font-size: 11px; color: var(--soft); white-space: nowrap; }
+.journal-year-nav button[aria-pressed="true"] { background: #e5ecdf; border-color: #cbd7c1; color: #364e31; }
+.journal-year-months { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 14px; }
+.journal-year-month { min-width: 0; border: 1px solid var(--line); border-radius: 17px; background: #fffefa; padding: 14px; box-shadow: 0 2px 8px #242b1c04; }
+.journal-year-month header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
+.journal-year-month header button { background: none; border: 0; padding: 4px; font: inherit; font-size: 13px; font-weight: 600; color: var(--ink); cursor: pointer; }
+.journal-year-month header span { color: var(--soft); font-size: 10px; font-variant-numeric: tabular-nums; }
+.journal-year-days { display: grid; grid-template-columns: repeat(7,minmax(0,1fr)); gap: 4px; align-items: center; }
+.journal-year-days button, .journal-year-days > span { display: grid; place-items: center; min-width: 0; aspect-ratio: 1; border-radius: 50%; border: 1px solid transparent; font: inherit; font-size: 11px; font-variant-numeric: tabular-nums; background: none; color: #727a6c; }
+.journal-year-days .weekday { aspect-ratio: auto; font-size: 9px; color: #727a6c; padding: 3px 0 7px; }
+.journal-year-days button { cursor: pointer; }
+.journal-year-days button { width: min(30px,100%); max-height: 30px; justify-self: center; }
+.journal-year-days > span:not(.weekday) { aspect-ratio: auto; height: 30px; }
+.journal-year-days button.has-entry { background: #637e4c; color: white; }
+.journal-year-days button.today { outline: 1px solid #647950; outline-offset: 2px; }
+.journal-year-days button:hover, .journal-year-month header button:hover { background: #e4ecda; color: #334b2e; }
+.journal-year-days button:focus-visible, .journal-year-nav button:focus-visible { outline: 2px solid #647950; outline-offset: 2px; }
+.journal-search-index-status { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; padding: 12px 14px; border: 1px solid #dce4d5; border-radius: 13px; background: #f1f4ec; color: #506445; font-size: 11px; }
+.journal-search-index-status strong { font-weight: 600; }
+.journal-search-build { padding: 14px 0; }
+.journal-search-build p { margin: 0 0 12px; color: var(--soft); font-size: 12px; line-height: 1.8; }
+.journal-search-summary { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin: 14px 0; color: var(--soft); font-size: 11px; }
+.journal-global-match-list { list-style: none; margin: 0 0 16px; padding: 0; }
+.journal-global-match-list li { padding: 15px 0; border-top: 1px solid var(--line); }
+.journal-global-match-list header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.journal-global-match-list header > span { color: var(--soft); font-size: 11px; font-variant-numeric: tabular-nums; }
+.journal-global-match-list p { margin: 0; font-size: 14px; line-height: 1.85; white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (max-width: 1050px) { .journal-year-months { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+@media (max-width: 650px) {
+  .journal-year-layout { grid-template-columns: 1fr; gap: 14px; }
+  .journal-year-nav { flex-direction: row; max-width: 100%; overflow-x: auto; padding-bottom: 5px; }
+  .journal-year-nav button { flex: 0 0 auto; gap: 8px; padding: 9px 12px; }
+  .journal-year-months { grid-template-columns: 1fr; gap: 12px; }
+  .journal-year-month { padding: 16px 20px; }
+  .journal-year-days { gap: 7px; }
+  .journal-year-days button { width: min(34px,100%); max-height: 34px; font-size: 12px; }
+  .journal-results-tools { flex-wrap: wrap; gap: 8px; max-width: 100%; }
+}
 .journal-statistics { display: grid; gap: 8px; }
 .journal-statistics-counts { display: flex; flex-wrap: wrap; gap: 8px; }
 .journal-statistics-counts .view-button { cursor: default; font-variant-numeric: tabular-nums; }

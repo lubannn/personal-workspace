@@ -8,6 +8,8 @@ import { journalDisplayTimeline, searchJournalDisplaySegments } from "../../../.
 import { activeJournalEntries, canWriteJournalDate, filterJournalEntries, journalEntrySubmittedTime, journalMonthDays, previousJournalDate, shiftJournalMonth, trashedJournalEntries, type JournalDateChoice } from "../../../../src/lib/github-data/journal-entries";
 import { JournalStatistics } from "./journal-statistics";
 import { JournalAchievements } from "./journal-achievements";
+import { JournalYearCalendar } from "./journal-year-calendar";
+import { JournalGlobalSearch } from "./journal-global-search";
 import type { Connection, SyncedJournalEntry } from "./page-model";
 
 type JournalFields = { journalDate: string; dateChoice?: JournalDateChoice; bodyMarkdown: string };
@@ -45,6 +47,10 @@ export function JournalSection({ connection, adapter, online, todayDate, journal
   const [pickerMonth, setPickerMonth] = useState("");
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [searchAll, setSearchAll] = useState(false);
+  const [yearOverview, setYearOverview] = useState(false);
+  const resultsTitleRef = useRef<HTMLHeadingElement>(null);
+  const yearButtonRef = useRef<HTMLButtonElement>(null);
   const records = useMemo(() => journalEntryFiles.map((item) => item.record), [journalEntryFiles]);
   const byId = useMemo(() => new Map(journalEntryFiles.map((item) => [item.record.id, item])), [journalEntryFiles]);
   const active = useMemo(() => activeJournalEntries(records).map((record) => byId.get(record.id)!), [byId, records]);
@@ -57,10 +63,11 @@ export function JournalSection({ connection, adapter, online, todayDate, journal
   const hasVisibleMonthEntries = source.some((item) => item.record.data.journal_date.startsWith(`${displayedMonth}-`) && (!selectedDay || item.record.data.journal_date === selectedDay));
   const resultsLoaded = recentView ? source.length > 0 || (!loading && !loadError) : monthLoaded || hasVisibleMonthEntries;
   const visible = useMemo(() => {
+    if (searchAll) return [];
     const filtered = filterJournalEntries(records, { view, month: recentView ? undefined : displayedMonth }).filter((record) => !selectedDay || record.data.journal_date === selectedDay);
     const matches = filtered.map((record) => ({ ...byId.get(record.id)!, segments: searchJournalDisplaySegments(record.data.body_markdown, searchQuery, journalEntrySubmittedTime(record).slice(0, 5)) })).filter((item) => item.segments.length > 0);
     return recentView && !searchQuery.trim() ? matches.slice(0, 3) : matches;
-  }, [byId, displayedMonth, recentView, records, searchQuery, selectedDay, view]);
+  }, [byId, displayedMonth, recentView, records, searchQuery, searchAll, selectedDay, view]);
   const timeline = useMemo(() => journalDisplayTimeline(visible), [visible]);
   const busy = saving || Boolean(savingId);
   const selectedDate = editingId ? journalDate : dateChoice === "yesterday" && todayDate ? previousJournalDate(todayDate) : todayDate;
@@ -78,10 +85,19 @@ export function JournalSection({ connection, adapter, online, todayDate, journal
   }, [catalogDates, currentMonth, displayedYear]);
 
   function browseMonth(next: string) {
+    setYearOverview(false);
+    setSearchAll(false);
     setMonth(next);
     setSelectedDay(null);
     setMonthPickerOpen(false);
     if (next) onBrowseMonth(next);
+  }
+
+  function openDay(date: string) {
+    setSearchQuery("");
+    browseMonth(date.slice(0, 7));
+    setSelectedDay(date);
+    requestAnimationFrame(() => resultsTitleRef.current?.focus());
   }
 
   function toggleMonthPicker() {
@@ -129,7 +145,7 @@ export function JournalSection({ connection, adapter, online, todayDate, journal
         <button className="secondary-button" type="button" onClick={() => onRefresh(recentView ? undefined : displayedMonth)} disabled={!connection || loading}>{loading ? "刷新中…" : "从 GitHub 刷新"}</button>
       </div>
     </div>
-    {view === "active" ? <form className="journal-form" onSubmit={submit}>
+    {view === "active" && !yearOverview ? <form className="journal-form" onSubmit={submit}>
       <div className="journal-form-meta">
         <label>写入日期<select value={selectedDate} onChange={(event) => setDateChoice(event.target.value === todayDate ? "today" : "yesterday")} disabled={!connection || busy || Boolean(editingId) || !todayDate}><option value={todayDate}>今天 · {todayDate}</option>{todayDate ? <option value={previousJournalDate(todayDate)}>昨天 · {previousJournalDate(todayDate)}</option> : null}</select></label>
         <div className="journal-form-actions">{editingId ? <button className="secondary-button" type="button" onClick={resetForm} disabled={busy}>取消编辑</button> : null}<button className="primary-button" type="submit" disabled={!connection || !writable || !bodyMarkdown.trim() || busy || online === false}>{busy ? "保存中…" : editingId ? "保存修订" : "保存日记"}</button></div>
@@ -137,9 +153,12 @@ export function JournalSection({ connection, adapter, online, todayDate, journal
       <label className="journal-body">Markdown 正文<textarea value={bodyMarkdown} onChange={(event) => setBodyMarkdown(event.target.value)} maxLength={2_000_000} placeholder="今天发生了什么？" disabled={!connection || busy} /></label>
       {!writable && selectedDate ? <p className="journal-form-warning" role="alert">该日期已不能修改，请取消编辑。</p> : null}
     </form> : null}
-    <div className="journal-explorer">
+    {yearOverview && connection ? <JournalYearCalendar statistics={statistics} complete={complete} knownDates={daysWithEntries} todayDate={todayDate}
+      onMonth={(next) => { setSearchQuery(""); browseMonth(next); requestAnimationFrame(() => resultsTitleRef.current?.focus()); }} onDay={openDay}
+      onClose={() => { setYearOverview(false); requestAnimationFrame(() => yearButtonRef.current?.focus()); }} /> : <div className="journal-explorer">
       <div className="journal-results">
-        <div className="journal-results-header"><div><p className="eyebrow">Journal archive</p><h3>{recentView ? "最近日记" : selectedDay ? `${selectedDay} 的日记` : `${displayedMonth.replace("-", "年")}月的日记`}</h3></div><div className="journal-results-tools"><span className="journal-result-count" aria-live="polite">{visible.length} 篇</span><label className="journal-browser-search"><input type="search" aria-label={recentView ? "搜索已加载日记" : selectedDay ? "搜索当天日记" : "搜索本月日记"} aria-describedby="journal-search-scope" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} maxLength={200} placeholder="搜索内容" disabled={!connection} /><span id="journal-search-scope">{recentView ? "搜索已加载日记" : selectedDay ? "搜索当天日记" : "搜索本月日记"}</span></label></div></div>
+        <div className="journal-results-header"><div><p className="eyebrow">Journal archive</p><h3 ref={resultsTitleRef} tabIndex={-1}>{searchAll ? "搜索全部日记" : recentView ? "最近日记" : selectedDay ? `${selectedDay} 的日记` : `${displayedMonth.replace("-", "年")}月的日记`}</h3></div><div className="journal-results-tools">{!searchAll ? <span className="journal-result-count" aria-live="polite">{visible.length} 篇</span> : null}<label className="journal-browser-search"><input type="search" aria-label={searchAll ? "搜索全部日记" : recentView ? "搜索已加载日记" : selectedDay ? "搜索当天日记" : "搜索本月日记"} aria-describedby="journal-search-scope" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} maxLength={200} placeholder={searchAll ? "搜索全部日记" : "搜索内容"} disabled={!connection} /><span id="journal-search-scope">{searchAll ? "覆盖全部年份 · 按分段匹配" : recentView ? "搜索已加载日记" : selectedDay ? "搜索当天日记" : "搜索本月日记"}</span></label><button type="button" className="text-button journal-search-scope-button" aria-pressed={searchAll} disabled={!connection} onClick={() => setSearchAll((value) => !value)}>{searchAll ? "返回当前列表" : "搜索全部日记"}</button></div></div>
+        {searchAll ? connection && adapter && catalogReady ? <JournalGlobalSearch adapter={adapter} ownerId={connection.ownerId} catalog={journalEntryCatalog} loaded={journalEntryFiles} query={searchQuery} busy={loading || busy} onDay={openDay} /> : <p className="empty-note">等待已认证的日记目录，随后读取私有搜索索引…</p> : <>
         {loadError && resultsLoaded ? <p className="empty-note" role="alert">读取未完成，已保留读取到的日记：{loadError}</p> : null}
         {!recentView && !monthLoaded && resultsLoaded && !loadError ? <p className="journal-load-progress" role="status">已显示读取到的日记，正在补全该月…</p> : null}
         {!connection ? <p className="empty-note">连接后显示 Private 仓库中的日记。</p> : loadError && !resultsLoaded ? <p className="empty-note" role="alert">日记读取失败：{loadError}。请重试。</p> : !resultsLoaded ? <p className="empty-note">{recentView ? "正在读取最近日记…" : loading ? "正在读取该月日记…" : "正在准备该月日记…"}</p> : source.length === 0 ? <p className="empty-note">{view === "active" ? "还没有日记。" : "日记回收站是空的。"}</p> : visible.length === 0 ? <p className="empty-note">{!recentView && !monthLoaded && !loadError ? "暂未找到匹配日记，正在继续读取该月…" : "这段时间没有符合条件的日记。"}</p> : <ol className="journal-list">{timeline.map(({ entry: item, segment, segmentIndex }, itemIndex) => {
@@ -151,14 +170,15 @@ export function JournalSection({ connection, adapter, online, todayDate, journal
         {canManage && view === "active" ? <div className="journal-item-actions"><button className="text-button" type="button" onClick={() => beginEdit(item)} disabled={busy}>编辑</button></div> : null}
       </li>;
     })}</ol>}
+        </>}
       </div>
       <aside className="journal-calendar" aria-label="日记月历">
         <div className="journal-calendar-heading"><button type="button" aria-label="上一个月" onClick={() => browseMonth(shiftJournalMonth(displayedMonth, -1))} disabled={!connection || !displayedMonth}>‹</button><button ref={monthButtonRef} type="button" className="journal-calendar-month" onClick={toggleMonthPicker} aria-label={`选择年份和月份，查看 ${displayedMonth} 全部日记`} aria-expanded={monthPickerOpen} aria-controls="journal-month-picker" disabled={!connection || !displayedMonth}>{displayedMonth.replace("-", "年")}月 <span aria-hidden="true">⌄</span></button><button type="button" aria-label="下一个月" onClick={() => browseMonth(shiftJournalMonth(displayedMonth, 1))} disabled={!connection || !displayedMonth}>›</button></div>
         {monthPickerOpen ? <form className="journal-calendar-picker" id="journal-month-picker" onSubmit={applyMonthSelection} onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); setMonthPickerOpen(false); monthButtonRef.current?.focus(); } }} aria-label="跳转到年份和月份"><label>年份<select aria-label="选择年份" value={pickerYear} onChange={(event) => setPickerYear(event.target.value)}>{yearOptions.map((year) => <option key={year} value={year}>{year} 年</option>)}</select></label><label>月份<select aria-label="选择月份" value={pickerMonth} onChange={(event) => setPickerMonth(event.target.value)}>{Array.from({ length: 12 }, (_, index) => String(index + 1).padStart(2, "0")).map((value) => <option key={value} value={value}>{Number(value)} 月</option>)}</select></label><button className="secondary-button" type="submit">查看整月</button></form> : null}
-        <div className="journal-calendar-shortcuts"><button type="button" className="text-button" onClick={() => browseMonth(currentMonth)} disabled={!connection || !currentMonth || (displayedMonth === currentMonth && !selectedDay)}>本月</button><button type="button" className="text-button" onClick={() => { setMonth(""); setSelectedDay(null); setSearchQuery(""); setMonthPickerOpen(false); onBrowseRecent(); }} disabled={!connection}>最近日记</button></div>
+        <div className="journal-calendar-shortcuts"><button type="button" className="text-button" ref={yearButtonRef} onClick={() => setYearOverview(true)} disabled={!connection || !todayDate}>全部日历</button><button type="button" className="text-button" onClick={() => browseMonth(currentMonth)} disabled={!connection || !currentMonth || (displayedMonth === currentMonth && !selectedDay)}>本月</button><button type="button" className="text-button" onClick={() => { setMonth(""); setSelectedDay(null); setSearchAll(false); setSearchQuery(""); setMonthPickerOpen(false); onBrowseRecent(); }} disabled={!connection}>最近日记</button></div>
         <div className="journal-calendar-grid" role="group" aria-label={`${displayedMonth} 日期`}>{["一", "二", "三", "四", "五", "六", "日"].map((day) => <span className="journal-calendar-weekday" key={day}>{day}</span>)}{monthDays.map((date, index) => date ? <button key={date} type="button" className={["journal-calendar-day", daysWithEntries.has(date) ? "has-entry" : "", date === selectedDay ? "selected" : "", date === todayDate ? "today" : ""].filter(Boolean).join(" ")} aria-label={`${date}${daysWithEntries.has(date) ? "，有日记" : "，无日记"}`} aria-pressed={date === selectedDay} onClick={() => { browseMonth(displayedMonth); setSelectedDay(date); }} disabled={!connection}>{Number(date.slice(-2))}</button> : <span key={`blank-${index}`} aria-hidden="true" />)}</div>
       </aside>
-    </div>
+    </div>}
     <JournalAchievements statistics={statistics} complete={complete} todayDate={todayDate} connected={Boolean(connection)} />
   </section>}</JournalStatistics>;
 }
