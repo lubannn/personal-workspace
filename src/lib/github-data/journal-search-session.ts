@@ -1,7 +1,7 @@
 import { GitHubDataError, type GitHubContentsAdapter, type GitHubDirectoryItem } from "./github-contents";
 import type { JournalEntryRecord } from "./journal-entries";
 import { recordPath } from "./protocol";
-import { emptyJournalSearchIndex, journalSearchFile, journalSearchSource, JOURNAL_SEARCH_PATH, packJournalSearch, unpackJournalSearch, verifiedJournalSearch, type JournalSearchIndex } from "./journal-search";
+import { emptyJournalSearchIndex, journalSearchFile, journalSearchSource, JOURNAL_SEARCH_PATH, packJournalSearchAsync, unpackJournalSearch, verifiedJournalSearch, type JournalSearchIndex } from "./journal-search";
 
 type Source = { record: JournalEntryRecord; path: string; blobSha: string };
 type State = { index: JournalSearchIndex; ready: boolean; reading: boolean; running: boolean; syncing: boolean; error: string; syncError: string };
@@ -107,7 +107,9 @@ export class JournalSearchSession {
     if (!Object.keys(index.files).length) return;
     this.publish({ syncing: true, syncError: "" });
     try {
-      const result = await this.adapter.writeText({ path: JOURNAL_SEARCH_PATH, text: packJournalSearch(index), expectedBlobSha: this.blobSha, message: "journal: update private incremental search index" });
+      const text = await packJournalSearchAsync(index);
+      if (!this.listeners.size || this.busy) return;
+      const result = await this.adapter.writeText({ path: JOURNAL_SEARCH_PATH, text, expectedBlobSha: this.blobSha, message: "journal: update private incremental search index" });
       this.blobSha = result.blobSha;
       if (this.state.index === source) { this.dirty = false; this.publish({ index }); }
     } catch { this.publish({ syncError: "索引保留在本次会话，尚未同步。请先重新核对索引，再继续；不会盲目覆盖其他设备的更新。" }); }

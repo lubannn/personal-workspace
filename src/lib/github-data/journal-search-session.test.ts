@@ -93,4 +93,9 @@ describe("incremental journal search sessions", () => {
     session.setSources(candidates(sources), []); await session.load(); await session.build();
     expect(api.readBlobTexts.mock.calls.map(([files]) => files.length)).toEqual([1, 1]);
   });
+  it("rechecks the active session after asynchronous compression before any upload", async () => {
+    const { session, api, sources } = fixture(1); await session.load(); session.setSources(candidates(sources), sources);
+    const pending = session.sync(); cleanups.splice(0).forEach((stop) => stop()); await pending;
+    expect(api.writeText).not.toHaveBeenCalled();
+  });
 });

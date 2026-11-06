@@ -75,15 +75,28 @@ function validateIndex(value: unknown, ownerId: string): JournalSearchIndex {
   return index;
 }
 
-export function packJournalSearch(index: JournalSearchIndex) {
+function rawJournalSearch(index: JournalSearchIndex) {
   validateIndex(index, index.ownerId);
   const raw = strToU8(JSON.stringify(index));
   if (raw.length > MAX_RAW_BYTES) throw new Error("JOURNAL_SEARCH_INDEX_TOO_LARGE");
-  const bytes = gzipSync(raw);
+  return raw;
+}
+function searchEnvelope(bytes: Uint8Array, rawLength: number) {
   if (bytes.length > MAX_PACKED_BYTES) throw new Error("JOURNAL_SEARCH_INDEX_TOO_LARGE");
   let binary = "";
   for (let offset = 0; offset < bytes.length; offset += 16384) binary += String.fromCharCode(...bytes.subarray(offset, offset + 16384));
-  return JSON.stringify({ format: "journal-search-gzip-v1", bytes: raw.length, payload: btoa(binary) }) + "\n";
+  return JSON.stringify({ format: "journal-search-gzip-v1", bytes: rawLength, payload: btoa(binary) }) + "\n";
+}
+export function packJournalSearch(index: JournalSearchIndex) {
+  const raw = rawJournalSearch(index);
+  return searchEnvelope(gzipSync(raw), raw.length);
+}
+// Native asynchronous compression keeps shared-index updates from blocking typing.
+export async function packJournalSearchAsync(index: JournalSearchIndex) {
+  if (typeof CompressionStream === "undefined") return packJournalSearch(index);
+  const raw = rawJournalSearch(index);
+  const stream = new Blob([new Uint8Array(raw)]).stream().pipeThrough(new CompressionStream("gzip"));
+  return searchEnvelope(new Uint8Array(await new Response(stream).arrayBuffer()), raw.length);
 }
 
 export function unpackJournalSearch(text: string, ownerId: string) {

@@ -63,10 +63,11 @@ export function JournalSection({ connection, adapter, online, todayDate, journal
   const hasVisibleMonthEntries = source.some((item) => item.record.data.journal_date.startsWith(`${displayedMonth}-`) && (!selectedDay || item.record.data.journal_date === selectedDay));
   const resultsLoaded = recentView ? source.length > 0 || (!loading && !loadError) : monthLoaded || hasVisibleMonthEntries;
   const visible = useMemo(() => {
+    if (searchAll) return [];
     const filtered = filterJournalEntries(records, { view, month: recentView ? undefined : displayedMonth }).filter((record) => !selectedDay || record.data.journal_date === selectedDay);
     const matches = filtered.map((record) => ({ ...byId.get(record.id)!, segments: searchJournalDisplaySegments(record.data.body_markdown, searchQuery, journalEntrySubmittedTime(record).slice(0, 5)) })).filter((item) => item.segments.length > 0);
     return recentView && !searchQuery.trim() ? matches.slice(0, 3) : matches;
-  }, [byId, displayedMonth, recentView, records, searchQuery, selectedDay, view]);
+  }, [byId, displayedMonth, recentView, records, searchQuery, searchAll, selectedDay, view]);
   const timeline = useMemo(() => journalDisplayTimeline(visible), [visible]);
   const busy = saving || Boolean(savingId);
   const selectedDate = editingId ? journalDate : dateChoice === "yesterday" && todayDate ? previousJournalDate(todayDate) : todayDate;

@@ -1,8 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createJournalEntryData } from "./journal-entries";
 import { createWorkspaceRecord, recordPath, serializeRecord } from "./protocol";
 import { createJournalSegmentSnapshot, renderJournalSegmentsMarkdown } from "./journal-segment-codec";
-import { emptyJournalSearchIndex, journalSearchFile, journalSearchSource, packJournalSearch, prepareJournalSearch, searchAllJournals, unpackJournalSearch, verifiedJournalSearch } from "./journal-search";
+import { emptyJournalSearchIndex, journalSearchFile, journalSearchSource, packJournalSearch, packJournalSearchAsync, prepareJournalSearch, searchAllJournals, unpackJournalSearch, verifiedJournalSearch } from "./journal-search";
 const owner = "synthetic";
 const blobSha = "a".repeat(40);
 function record(id = "one", date = "2013-06-07", body = "今天去游泳。 Hello WORLD！") {
@@ -59,5 +59,15 @@ describe("private full journal search", () => {
     const rows = Array.from({ length: 200 }, () => row);
     expect(searchAllJournals(rows, "游泳", 30)).toMatchObject({ total: 200, rows: Array(30).fill(row) });
     expect(() => searchAllJournals(rows, "游泳", 1001)).toThrow();
+  });
+  it("supports native asynchronous compression and a compatible fallback", async () => {
+    expect(unpackJournalSearch(await packJournalSearchAsync(index()), owner)).toEqual(index());
+    try { vi.stubGlobal("CompressionStream", undefined); expect(unpackJournalSearch(await packJournalSearchAsync(index()), owner)).toEqual(index()); }
+    finally { vi.unstubAllGlobals(); }
+  });
+  it("reuses unchanged per-file normalized text when another entry changes", () => {
+    const value = index(); const first = prepareJournalSearch(value);
+    const next = prepareJournalSearch({ ...value, files: { ...value.files } });
+    expect(next[0]).toBe(first[0]);
   });
 });
