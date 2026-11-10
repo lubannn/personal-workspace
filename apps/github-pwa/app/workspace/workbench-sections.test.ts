@@ -113,7 +113,7 @@ describe("workbench controls", () => {
     delete record.data.idea_classification;
     expect(initialCaptureEditorFields(record, "UTC")).toMatchObject({ date: null, time: null, ideaCategory: "auto" });
   });
-  it("displays persisted idea categories and keeps legacy ideas unclassified without writing", () => {
+  it("displays persisted and locally derived historical idea categories without writing", () => {
     const makeIdea = (id: string, text: string) => ({ record: createWorkspaceRecord({ entityType: "capture", id, ownerId: "test_owner", data: createCaptureData({ rawText: text, kind: "idea", date: null, time: null, timezone: "UTC" }) }), path: `data/captures/${id}.json`, blobSha: "synthetic" });
     const work = makeIdea("idea_work", "给客户准备产品方案");
     const life = makeIdea("idea_life", "为家人准备旅行计划");
@@ -122,7 +122,9 @@ describe("workbench controls", () => {
     const html = capture({ module: "ideas", visibleCaptures: [work, life, legacy] });
     expect(html).toContain("自动 · 工作");
     expect(html).toContain("自动 · 生活");
-    expect(html).toContain('class="idea-category-badge unclassified">待分类</span>');
+    expect(html).toContain("本地推算 · 工作");
+    expect(html).toContain('1 条历史想法已用本地规则判断分类');
+    expect(html).toContain('工作 2</button>');
     expect(legacy.record.data.idea_classification).toBeUndefined();
     expect(capture()).not.toContain('aria-label="按想法分类筛选"');
   });

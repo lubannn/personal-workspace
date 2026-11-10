@@ -39,3 +39,8 @@ export function isIdeaClassification(value: unknown): value is IdeaClassificatio
     && ((item.source === "automatic" && item.classifier_version === "local-rules-v1")
       || (item.source === "manual" && item.classifier_version === null));
 }
+
+/** Derive missing historical metadata for display only; never mutate or backfill records. */
+export function getIdeaClassification(data: { raw_text: string; idea_classification?: IdeaClassification }): IdeaClassification {
+  return data.idea_classification ?? createIdeaClassification(data.raw_text);
+}

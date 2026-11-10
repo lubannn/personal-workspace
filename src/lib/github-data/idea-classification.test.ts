@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyIdea, createIdeaClassification, isIdeaClassification, type IdeaCategoryChoice } from "./idea-classification";
+import { classifyIdea, createIdeaClassification, getIdeaClassification, isIdeaClassification, type IdeaCategoryChoice } from "./idea-classification";
 
 describe("conservative local idea classification", () => {
   it.each([
@@ -48,5 +48,32 @@ describe("conservative local idea classification", () => {
     { category: "life", source: "manual" },
   ])("rejects malformed classification %j", (value) => {
     expect(isIdeaClassification(value)).toBe(false);
+  });
+});
+
+describe("read-time historical idea classification", () => {
+  it.each([
+    ["  客户会议可以缩短一些\n ", "work"],
+    ["和家人规划旅行", "life"],
+    ["开完公司会议后去跑步", "unclassified"],
+    ["试试新的方法", "unclassified"],
+  ])("derives %s locally without changing legacy data", (raw_text, category) => {
+    const data = Object.freeze({ raw_text });
+    const before = JSON.stringify(data);
+    expect(getIdeaClassification(data)).toEqual({ category, source: "automatic", classifier_version: "local-rules-v1" });
+    expect(JSON.stringify(data)).toBe(before);
+    expect(data).not.toHaveProperty("idea_classification");
+    expect(getIdeaClassification(data)).toEqual(getIdeaClassification(data));
+  });
+  it("preserves every existing automatic or manual category, even when text suggests otherwise", () => {
+    for (const category of ["work", "life", "unclassified"] as const) {
+      for (const source of ["automatic", "manual"] as const) {
+        const idea_classification = Object.freeze({ category, source, classifier_version: source === "automatic" ? "local-rules-v1" as const : null });
+        const data = Object.freeze({ raw_text: "客户会议", idea_classification });
+        const before = JSON.stringify(data);
+        expect(getIdeaClassification(data)).toBe(idea_classification);
+        expect(JSON.stringify(data)).toBe(before);
+      }
+    }
   });
 });
