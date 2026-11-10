@@ -14,6 +14,7 @@ import { historicalWindow, dateOnly, extendSyncHistory, initialSyncProgress, par
 import { readCorosConflictView } from "./coros-sync-conflict-view";
 import { runCorosSync } from "./coros-sync";
 import { clearRejectedCredentialBackoff } from "./coros-credential-backoff";
+import { hasReachedCorosDailySyncTime } from "./coros-daily-schedule";
 
 const OAUTH_ATTEMPT_SECONDS = 10 * 60;
 const RESPONSE_HEADERS = {
@@ -235,16 +236,19 @@ async function controlSync(request: Request, env: CorosConnectionEnv, userId: st
   } else if (row.state !== "enabled") {
     return json({ error: "COROS_SYNC_PAUSED" }, 409);
   }
-  // Queue columns are independent of leased progress. Concurrent logins claim the date once;
-  // explicit refreshes append a request without resetting history or cancelling the active batch.
-  const today = todayInTimezone(now, env.COROS_SYNC_TIMEZONE ?? "Asia/Shanghai");
+  // Manual updates and resumes before 09:30 leave the regular morning slot available.
+  // The legacy daily route retains its once-per-day continuation behavior.
+  const timezone = env.COROS_SYNC_TIMEZONE ?? "Asia/Shanghai";
+  const today = todayInTimezone(now, timezone);
+  const claimDaily = action === "daily" || hasReachedCorosDailySyncTime(now, timezone);
   const queued = await env.DB!.prepare(`UPDATE coros_sync_jobs SET request_seq = request_seq + 1,
     requested_through = MAX(COALESCE(requested_through, ?1), ?1),
-    daily_requested_date = MAX(COALESCE(daily_requested_date, ?1), ?1), next_run_at = ?2, updated_at = ?2
+    daily_requested_date = CASE WHEN ?4 THEN MAX(COALESCE(daily_requested_date, ?1), ?1) ELSE daily_requested_date END,
+    next_run_at = ?2, updated_at = ?2
     WHERE github_user_id = ?3
     AND EXISTS (SELECT 1 FROM coros_connections WHERE github_user_id = ?3 AND state = 'enabled')
     ${action === "daily" ? "AND (daily_requested_date IS NULL OR daily_requested_date < ?1)" : ""}`)
-    .bind(today, now.toISOString(), userId).run();
+    .bind(today, now.toISOString(), userId, Number(claimDaily)).run();
   if (!queued.success) throw new Error("COROS_SYNC_QUEUE_FAILED");
   return json({ state: "enabled", queued: queued.meta?.changes === 1 });
 }

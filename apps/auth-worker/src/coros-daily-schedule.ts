@@ -1,14 +1,18 @@
 import { historicalWindow, parseSyncProgress, readSyncJob, syncProgressDomains, todayInTimezone, type CorosSyncEnv } from "./coros-sync-state";
 
+export function hasReachedCorosDailySyncTime(now: Date, timezone: string): boolean {
+  const localTime = new Intl.DateTimeFormat("en", { timeZone: timezone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(now);
+  const hour = Number(localTime.find(part => part.type === "hour")!.value);
+  const minute = Number(localTime.find(part => part.type === "minute")!.value);
+  return hour * 60 + minute >= 9 * 60 + 30;
+}
+
 /** One regular observation at 09:30 local time after the initial backfill.
  * The ten-minute dispatcher only continues an existing request between observations. */
 export async function queueScheduledCorosDailySync(env: CorosSyncEnv, now = new Date()) {
   if (!env.DB || !env.COROS_GITHUB_USER_ID) return false;
   const timezone = env.COROS_SYNC_TIMEZONE ?? "Asia/Shanghai";
-  const localTime = new Intl.DateTimeFormat("en", { timeZone: timezone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(now);
-  const hour = Number(localTime.find(part => part.type === "hour")!.value);
-  const minute = Number(localTime.find(part => part.type === "minute")!.value);
-  if (hour * 60 + minute < 9 * 60 + 30) return false;
+  if (!hasReachedCorosDailySyncTime(now, timezone)) return false;
   const job = await readSyncJob(env.DB, env.COROS_GITHUB_USER_ID);
   if (!job) return false;
   const today = todayInTimezone(now, timezone);
