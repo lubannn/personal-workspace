@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { authenticatedGitHubUser } from "./auth";
 import { handleCorosConnectionRequest } from "./coros-connection";
-import { initialSyncProgress } from "./coros-sync-state";
+import { queueScheduledCorosDailySync } from "./coros-daily-schedule";
+import { initializeBulkHealthProgress } from "./coros-health-history";
+import { acceptSyncRequest, initializeActivityProgress, initialSyncProgress, nextSyncWindow, recordCheckedRange, syncProgressDomains } from "./coros-sync-state";
 import { SYNC_TEST_NOW, SYNC_TEST_ORIGIN, SYNC_TEST_USER, syncTestDatabase } from "./coros-sync-test-helpers";
 
 vi.mock("./auth", async importOriginal => ({ ...await importOriginal<typeof import("./auth")>(), authenticatedGitHubUser: vi.fn() }));
@@ -189,6 +191,39 @@ describe("COROS synchronization controls", () => {
     expect(fixture.saved()?.next_run_at).toBe(SYNC_TEST_NOW);
     expect(fixture.saved()?.lease_token).toBe("concurrent-worker");
     expect(queueState()).toMatchObject({ request_seq: 2, requested_through: "2024-02-01" });
+  });
+
+  it("rechecks today's sleep at 09:30 after an overnight manual update", async () => {
+    fixture.connection();
+    const progress = initialSyncProgress("2024-01-01", "Asia/Shanghai");
+    progress.verifyHistoricalCoverage = true;
+    progress.health = { ...progress.domains.sleep };
+    initializeActivityProgress(progress);
+    initializeBulkHealthProgress(progress);
+    fixture.job(progress);
+
+    vi.setSystemTime("2024-01-31T16:13:00.000Z"); // February 1, 00:13 in Shanghai.
+    const early = await handleCorosConnectionRequest(request("sync"), fixture.env);
+    expect(await early.json()).toMatchObject({ queued: true });
+    const earlyJob = fixture.saved()!;
+    expect(earlyJob).toMatchObject({ request_seq: 2, daily_requested_date: null });
+    acceptSyncRequest(progress, earlyJob);
+    for (const domain of syncProgressDomains(progress)) {
+      recordCheckedRange(domain, "2024-01-01", "2024-02-01");
+      domain.recentThrough = "2024-02-01";
+      domain.recentRequestSequence = earlyJob.request_seq;
+    }
+    fixture.saveProgress(progress);
+
+    vi.setSystemTime("2024-02-01T01:30:00.000Z");
+    expect(await queueScheduledCorosDailySync(fixture.env)).toBe(true);
+    const morningJob = fixture.saved()!;
+    expect(morningJob).toMatchObject({ request_seq: 3, daily_requested_date: "2024-02-01" });
+    acceptSyncRequest(progress, morningJob);
+    expect(nextSyncWindow(progress, new Date(), { source: "sleep", recent: true })).toMatchObject({
+      domain: "sleep", through: "2024-02-01",
+    });
+    expect(await queueScheduledCorosDailySync(fixture.env)).toBe(false);
   });
 
   it.each(["sync", "daily"])("does not turn a paused connection on through the %s route", async action => {
