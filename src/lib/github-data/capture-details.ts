@@ -1,3 +1,4 @@
+import { createIdeaClassification, type IdeaCategoryChoice } from "./idea-classification";
 import { updateWorkspaceRecord } from "./protocol";
 import type { CaptureData, CaptureRecord } from "./workspace";
 
@@ -6,7 +7,7 @@ export type CaptureKind = typeof CAPTURE_KINDS[number];
 export const CAPTURE_KIND_LABELS: Record<CaptureKind, string> = {
   note: "随记", todo: "待办", schedule: "日程", deadline: "截止待办", idea: "想法", journal: "日记",
 };
-export type CaptureFields = { rawText: string; kind: CaptureKind; date: string | null; time: string | null; endTime?: string | null; timezone: string };
+export type CaptureFields = { rawText: string; kind: CaptureKind; date: string | null; time: string | null; endTime?: string | null; timezone: string; ideaCategory?: IdeaCategoryChoice };
 export type CaptureSuggestion = Omit<CaptureFields, "rawText" | "timezone"> & { warning: string | null; reason: string };
 
 export function isCaptureDate(value: unknown): value is string {
@@ -158,15 +159,25 @@ export function suggestCapture(text: string, now = new Date(), timezone = "Asia/
 }
 
 export function createCaptureData(fields: CaptureFields, status: CaptureData["status"] = "inbox"): CaptureData {
-  const text = fields.rawText.trim();
-  if (!text || text.length > 10_000 || !CAPTURE_KINDS.includes(fields.kind)
+  const text = fields.kind === "idea" ? fields.rawText : fields.rawText.trim();
+  if (!text.trim() || text.length > 10_000 || !CAPTURE_KINDS.includes(fields.kind)
+    || (fields.ideaCategory !== undefined && !["auto", "work", "life", "unclassified"].includes(fields.ideaCategory))
     || (fields.date !== null && !isCaptureDate(fields.date)) || (fields.time !== null && !isCaptureTime(fields.time))
     || (fields.time !== null && fields.date === null) || !isCaptureTimezone(fields.timezone)) throw new Error("INVALID_CAPTURE_DETAILS");
-  return { raw_text: text, status, kind: fields.kind, noted_date: fields.date, noted_time: fields.time, timezone: fields.timezone };
+  return { raw_text: text, status, kind: fields.kind, noted_date: fields.date, noted_time: fields.time, timezone: fields.timezone,
+    ...(fields.kind === "idea" ? { idea_classification: createIdeaClassification(text, fields.ideaCategory) } : {}),
+  };
 }
 export function updateCaptureDetails(record: CaptureRecord, fields: CaptureFields, timestamp?: string): CaptureRecord {
   if (record.deleted_at !== null) throw new Error("CAPTURE_IN_TRASH");
-  return updateWorkspaceRecord(record, { ...record.data, ...createCaptureData(fields, record.data.status) }, timestamp);
+  const data = { ...record.data, ...createCaptureData(fields, record.data.status) };
+  if (fields.kind !== "idea") delete data.idea_classification;
+  else if (fields.ideaCategory === undefined && record.data.kind === "idea" && record.data.idea_classification
+    && (record.data.idea_classification.source === "manual" || fields.rawText === record.data.raw_text)) {
+    // An unrelated edit must not override a manual choice or silently rerun existing metadata.
+    data.idea_classification = record.data.idea_classification;
+  }
+  return updateWorkspaceRecord(record, data, timestamp);
 }
 export function captureMatches(record: CaptureRecord, query: string, kind: CaptureKind | "all" = "all") {
   if (kind !== "all" && (record.data.kind ?? "note") !== kind) return false;

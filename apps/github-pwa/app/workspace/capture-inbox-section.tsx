@@ -4,7 +4,10 @@ import styles from "../workbench.module.css";
 
 import { useMemo, useState } from "react";
 import { CAPTURE_KINDS, captureMatches, suggestCapture, type CaptureFields } from "../../../../src/lib/github-data/capture-details";
+import type { CaptureRecord } from "../../../../src/lib/github-data/workspace";
 import { CAPTURE_DESTINATIONS } from "../../../../src/lib/github-data/capture-routing";
+import { IdeaCategoryControl } from "./idea-category-control";
+import { IDEA_CATEGORY_LABELS, type IdeaCategory } from "../../../../src/lib/github-data/idea-classification";
 import { IdeaComposer, type IdeaComposerProps } from "./idea-composer";
 import type { WorkspaceTabId } from "./workspace-tab-navigation";
 import { formatCaptureTime, type Connection, type SyncedCapture } from "./page-model";
@@ -22,19 +25,30 @@ type Props = {
   onEdit: (item: SyncedCapture, fields: CaptureFields) => Promise<boolean>;
 };
 
+export function initialCaptureEditorFields(record: CaptureRecord, timezone: string): CaptureFields {
+  const data = record.data;
+  const suggestion = suggestCapture(data.raw_text, /^(?:日记|journal)\s*[:：]/i.test(data.raw_text.trim()) ? new Date() : new Date(record.created_at), timezone);
+  const kind = data.kind ?? suggestion.kind;
+  return {
+    rawText: data.raw_text, kind,
+    // Correcting an idea's category must never invent scheduling metadata from its prose.
+    date: kind === "idea" ? data.noted_date ?? null : data.noted_date ?? suggestion.date,
+    time: kind === "journal" ? null : kind === "idea" ? data.noted_time ?? null : data.noted_time ?? suggestion.time,
+    endTime: kind === "idea" ? null : suggestion.endTime,
+    timezone: data.timezone ?? timezone,
+    ideaCategory: data.idea_classification?.source === "manual" ? data.idea_classification.category : "auto",
+  };
+}
+
 function CaptureEditor({ item, timezone, saving, online, onSave, onCancel }: {
   item: SyncedCapture; timezone: string; saving: boolean; online: boolean | null;
   onSave: Props["onEdit"]; onCancel: () => void;
 }) {
   // Keep the SHA from when editing began, even if another device's version is refreshed underneath.
   const [snapshot] = useState(item);
-  const [manualDestination, setManualDestination] = useState(false);
+  const [manualDestination, setManualDestination] = useState(item.record.data.kind === "idea");
   function recognize(text: string) { return suggestCapture(text, /^(?:日记|journal)\s*[:：]/i.test(text.trim()) ? new Date() : new Date(snapshot.record.created_at), timezone); }
-  const [fields, setFields] = useState<CaptureFields>(() => {
-    const suggestion = recognize(item.record.data.raw_text);
-    const kind = item.record.data.kind ?? suggestion.kind;
-    return { rawText: item.record.data.raw_text, kind, date: item.record.data.noted_date ?? suggestion.date, time: kind === "journal" ? null : item.record.data.noted_time ?? suggestion.time, endTime: suggestion.endTime, timezone: item.record.data.timezone ?? timezone };
-  });
+  const [fields, setFields] = useState(() => initialCaptureEditorFields(item.record, timezone));
   const target = CAPTURE_DESTINATIONS[fields.kind];
   const transfers = ["todo", "deadline", "schedule", "journal"].includes(fields.kind);
   return <form className="capture-edit-form" onSubmit={async (event) => { event.preventDefault(); if (await onSave(snapshot, fields)) onCancel(); }}>
@@ -45,6 +59,7 @@ function CaptureEditor({ item, timezone, saving, online, onSave, onCancel }: {
       {fields.kind !== "journal" ? <label>时间<input type="time" value={fields.time ?? ""} disabled={saving} onChange={(event) => setFields({ ...fields, time: event.target.value || null })} /></label> : null}
       {fields.kind === "schedule" && fields.time ? <label>结束<input type="time" value={fields.endTime ?? ""} disabled={saving} onChange={(event) => setFields({ ...fields, endTime: event.target.value || null })} /></label> : null}
     </div>
+    {fields.kind === "idea" ? <IdeaCategoryControl text={fields.rawText} choice={fields.ideaCategory ?? "auto"} disabled={saving} onChange={(ideaCategory) => setFields({ ...fields, ideaCategory })} /> : null}
     <div className="capture-edit-actions">
       <button className="view-button" type="button" disabled={saving} onClick={() => { setManualDestination(false); const suggestion = recognize(fields.rawText); setFields({ ...fields, kind: suggestion.kind, date: suggestion.date, time: suggestion.time, endTime: suggestion.endTime }); }}>自动识别保存位置</button>
       <button className="view-button" type="button" disabled={saving} onClick={onCancel}>取消</button>
@@ -59,8 +74,9 @@ export function CaptureInboxSection(props: Props) {
   const { connection, online, captureView, inboxCaptures, archivedCaptures, trashedCaptures, visibleCaptures, loadingCaptures, savingCaptureId, onViewChange, onRefresh, onLifecycleChange, onEdit, module = "overview", onOpenDestination } = props;
   const [query, setQuery] = useState("");
   const [limit, setLimit] = useState(20);
+  const [categoryFilter, setCategoryFilter] = useState<IdeaCategory | "all">("all");
   const [editingId, setEditingId] = useState<string | null>(null);
-  const matches = useMemo(() => visibleCaptures.filter((item) => captureMatches(item.record, query)), [visibleCaptures, query]);
+  const matches = useMemo(() => visibleCaptures.filter((item) => captureMatches(item.record, query) && (module !== "ideas" || categoryFilter === "all" || (item.record.data.idea_classification?.category ?? "unclassified") === categoryFilter)), [visibleCaptures, query, module, categoryFilter]);
   const titleId = module === "ideas" ? "ideas-title" : "recent-title";
   return (
     <section className={`recent-card capture-inbox ${styles.scope}`} aria-labelledby={titleId}>
@@ -70,12 +86,15 @@ export function CaptureInboxSection(props: Props) {
       </div>
       {module === "ideas" && props.ideaComposer ? <IdeaComposer {...props.ideaComposer} loading={loadingCaptures} disabled={editingId !== null} onSave={async () => {
         const saved = await props.ideaComposer!.onSave();
-        if (saved) { setQuery(""); setLimit(20); }
+        if (saved) { setQuery(""); setCategoryFilter("all"); setLimit(20); }
         return saved;
       }} /> : null}
       <div className="recent-actions capture-view-actions" aria-label={module === "ideas" ? "想法视图" : "随手记视图"}>
         {([["inbox", "待整理", inboxCaptures.length], ["archived", "已归档", archivedCaptures.length], ["trash", "回收站", trashedCaptures.length]] as const).map(([view, label, count]) => <button key={view} className={`view-button ${captureView === view ? "active" : ""}`} type="button" disabled={editingId !== null} aria-pressed={captureView === view} onClick={() => { onViewChange(view); setLimit(20); setEditingId(null); }}>{label} {count}</button>)}
       </div>
+      {module === "ideas" ? <div className="idea-category-filters" aria-label="按想法分类筛选">
+        {(["all", "work", "life", "unclassified"] as const).map((category) => <button key={category} type="button" className={`view-button ${categoryFilter === category ? "active" : ""}`} disabled={editingId !== null} aria-pressed={categoryFilter === category} onClick={() => { setCategoryFilter(category); setLimit(20); }}>{category === "all" ? "全部" : IDEA_CATEGORY_LABELS[category]} {visibleCaptures.filter((item) => category === "all" || (item.record.data.idea_classification?.category ?? "unclassified") === category).length}</button>)}
+      </div> : null}
       {savingCaptureId ? <p className="capture-hint" role="status">正在同步随手记…完成后会显示保存结果。</p> : null}
       <div className="capture-search-toolbar">
         <label><span className="visually-hidden">{module === "ideas" ? "搜索想法内容或日期" : "搜索随手记内容、日期或星期"}</span><input type="search" disabled={editingId !== null} value={query} placeholder="搜索内容或日期…" onChange={(event) => { setQuery(event.target.value); setLimit(20); }} /></label>
@@ -83,10 +102,10 @@ export function CaptureInboxSection(props: Props) {
       </div>
       {!connection ? <p className="empty-note">{module === "ideas" ? "连接后显示已同步的想法。" : "连接后显示已同步的随手记。"}</p>
         : loadingCaptures && visibleCaptures.length === 0 ? <p className="empty-note" role="status">{module === "ideas" ? "正在读取想法…" : "正在读取随手记…"}</p>
-          : matches.length === 0 ? <p className="empty-note">{query ? "没有匹配的记录，试试其他关键词。" : captureView === "trash" ? "回收站是空的。" : captureView === "archived" ? "还没有归档记录。" : module === "ideas" ? "还没有想法，在上方写下第一个想法吧。" : "还没有待整理记录。"}</p>
+          : matches.length === 0 ? <p className="empty-note">{query || (module === "ideas" && categoryFilter !== "all") ? "没有匹配的记录，试试其他分类或关键词。" : captureView === "trash" ? "回收站是空的。" : captureView === "archived" ? "还没有归档记录。" : module === "ideas" ? "还没有想法，在上方写下第一个想法吧。" : "还没有待整理记录。"}</p>
             : <ul className="recent-list">{matches.slice(0, limit).map((item) => <li key={item.record.id}>
               <div className="capture-record-content">
-                <div className="capture-record-meta"><time dateTime={item.record.deleted_at ?? item.record.created_at}>{formatCaptureTime(item.record.deleted_at ?? item.record.created_at)}</time><span>{item.record.data.routed_to ? `已转入${item.record.data.routed_to.label}` : module === "ideas" ? "想法" : ["todo", "deadline", "schedule", "journal"].includes(item.record.data.kind ?? "note") ? `待转入${CAPTURE_DESTINATIONS[item.record.data.kind!]}` : "待整理"}</span>{item.record.data.noted_date ? <span>{item.record.data.noted_date}{item.record.data.noted_time ? ` ${item.record.data.noted_time}` : ""}</span> : null}</div>
+                <div className="capture-record-meta"><time dateTime={item.record.deleted_at ?? item.record.created_at}>{formatCaptureTime(item.record.deleted_at ?? item.record.created_at)}</time><span>{item.record.data.routed_to ? `已转入${item.record.data.routed_to.label}` : module === "ideas" ? "想法" : ["todo", "deadline", "schedule", "journal"].includes(item.record.data.kind ?? "note") ? `待转入${CAPTURE_DESTINATIONS[item.record.data.kind!]}` : "待整理"}</span>{module === "ideas" ? <span className={`idea-category-badge ${item.record.data.idea_classification?.category ?? "unclassified"}`}>{item.record.data.idea_classification ? `${item.record.data.idea_classification.source === "automatic" ? "自动" : "手动"} · ` : ""}{IDEA_CATEGORY_LABELS[item.record.data.idea_classification?.category ?? "unclassified"]}</span> : null}{item.record.data.noted_date ? <span>{item.record.data.noted_date}{item.record.data.noted_time ? ` ${item.record.data.noted_time}` : ""}</span> : null}</div>
                 {editingId === item.record.id ? <CaptureEditor item={item} timezone={connection.timezone} saving={Boolean(savingCaptureId)} online={online} onSave={onEdit} onCancel={() => setEditingId(null)} /> : <p>{item.record.data.raw_text}</p>}
               </div>
               <div className="capture-row-actions">

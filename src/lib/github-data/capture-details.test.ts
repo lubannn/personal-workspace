@@ -61,7 +61,7 @@ describe("capture metadata compatibility and editing", () => {
     original.data.status = "archived";
     const extended = { ...original, data: { ...original.data, extension: { keep: true } } };
     const updated = updateCaptureDetails(extended, { ...fields, rawText: "  想法：明天尝试  ", kind: "idea" }, "2026-10-06T08:00:00Z");
-    expect(updated).toMatchObject({ id: original.id, created_at: original.created_at, version: 2, data: { raw_text: "想法：明天尝试", kind: "idea", status: "archived", noted_date: "2026-10-05", extension: { keep: true } } });
+    expect(updated).toMatchObject({ id: original.id, created_at: original.created_at, version: 2, data: { raw_text: "  想法：明天尝试  ", kind: "idea", status: "archived", noted_date: "2026-10-05", extension: { keep: true } } });
     expect(() => updateCaptureDetails(setWorkspaceRecordDeleted(original, now.toISOString()), fields)).toThrow("CAPTURE_IN_TRASH");
     expect(() => createCaptureData({ ...fields, date: null })).toThrow("INVALID_CAPTURE_DETAILS");
   });
@@ -81,5 +81,65 @@ describe("capture metadata compatibility and editing", () => {
     const plan = await createPortableRestorePlan(backup, { repository: { fullName: "test_owner/restore", private: true, visibility: "private", defaultBranch: "main" }, branch: { branch: "main", headCommitSha: "head", rootTreeSha: "tree" }, rootEntries: [] });
     expect(plan.ready).toBe(true);
     expect(plan.files.find((item) => item.path === recordPath("capture", capture.id))?.text).toBe(text);
+  });
+});
+
+describe("idea category edits", () => {
+  const ideaFields = { rawText: "  想法：改进客户会议\n保留完整的一段话。\n ", kind: "idea" as const, date: null, time: null, timezone: "Asia/Shanghai" };
+  const ideaRecord = () => createWorkspaceRecord({ entityType: "capture", id: "idea_edit", ownerId: "test_owner", timestamp: now.toISOString(), data: createCaptureData(ideaFields) });
+  it("keeps the exact whole raw text and rejects empty or oversized input", () => {
+    expect(createCaptureData(ideaFields)).toMatchObject({ raw_text: ideaFields.rawText, idea_classification: { category: "work", source: "automatic" } });
+    expect(() => createCaptureData({ ...ideaFields, rawText: " \n\t " })).toThrow("INVALID_CAPTURE_DETAILS");
+    expect(() => createCaptureData({ ...ideaFields, rawText: " ".repeat(10_000) + "a" })).toThrow("INVALID_CAPTURE_DETAILS");
+    expect(() => createCaptureData({ ...ideaFields, ideaCategory: "bad" as "auto" })).toThrow("INVALID_CAPTURE_DETAILS");
+    expect(createCaptureData({ ...ideaFields, kind: "note", rawText: "  ordinary note  " })).toMatchObject({ raw_text: "ordinary note" });
+    expect(createCaptureData({ ...ideaFields, kind: "note" })).not.toHaveProperty("idea_classification");
+  });
+  it("reclassifies edited automatic ideas and keeps unrelated metadata", () => {
+    const original = ideaRecord();
+    const updated = updateCaptureDetails(original, { ...ideaFields, rawText: "\n周末和家人旅行  " });
+    expect(updated.data).toMatchObject({ raw_text: "\n周末和家人旅行  ", idea_classification: { category: "life", source: "automatic", classifier_version: "local-rules-v1" } });
+    expect(original.data.idea_classification?.category).toBe("work");
+    expect(updated.id).toBe(original.id);
+    expect(updated.version).toBe(original.version + 1);
+  });
+  it("preserves manual choices on text edits until auto is explicitly selected", () => {
+    for (const ideaCategory of ["life", "unclassified"] as const) {
+      const manual = updateCaptureDetails(ideaRecord(), { ...ideaFields, ideaCategory });
+      const edited = updateCaptureDetails(manual, { ...ideaFields, rawText: "公司客户需要新的会议流程" });
+      expect(edited.data.idea_classification).toEqual({ category: ideaCategory, source: "manual", classifier_version: null });
+      expect(updateCaptureDetails(edited, { ...ideaFields, ideaCategory: "auto" }).data.idea_classification?.category).toBe("work");
+    }
+  });
+  it("removes classification when switching out of ideas without changing the original record", () => {
+    const original = ideaRecord();
+    const edited = updateCaptureDetails(original, { ...ideaFields, kind: "note" });
+    expect(edited.data).not.toHaveProperty("idea_classification");
+    expect(original.data).toHaveProperty("idea_classification");
+  });
+  it("only classifies a legacy idea when explicitly saved", () => {
+    const legacy = ideaRecord();
+    delete legacy.data.idea_classification;
+    expect(parseCaptureRecord(serializeRecord(legacy)).data).not.toHaveProperty("idea_classification");
+    expect(updateCaptureDetails(legacy, ideaFields).data.idea_classification?.category).toBe("work");
+    expect(legacy.data).not.toHaveProperty("idea_classification");
+  });
+  it("exports, inspects, migrates and restores classified and legacy ideas verbatim", async () => {
+    const automatic = ideaRecord();
+    const manual = { ...updateCaptureDetails(automatic, { ...ideaFields, ideaCategory: "life" }), id: "idea_manual" };
+    const legacy = { ...automatic, id: "idea_legacy", data: { raw_text: "  客户会议\n ", kind: "idea" as const, status: "inbox" as const } };
+    const records = [automatic, manual, legacy];
+    const file = (path: string, text: string) => ({ path, text, blobSha: "fixture-blob", sizeBytes: new TextEncoder().encode(text).length });
+    const captureFiles = records.map((item) => file(recordPath("capture", item.id), serializeRecord(item)));
+    const backup = await buildPortableWorkspaceExport({ repository: "test_owner/source", branch: "main", workspaceFile: file("workspace.json", JSON.stringify({ schema_version: 1, workspace_id: "test_workspace", owner_id: "test_owner", owner_login: "test_owner", locale: "zh-CN", timezone: "Asia/Shanghai" })), captureFiles });
+    expect((await inspectPortableWorkspaceExport(backup)).valid).toBe(true);
+    expect(await dryRunPortableWorkspaceMigrations(backup)).toMatchObject({ valid: true, counts: { migratable: 0, blocked: 0 } });
+    const plan = await createPortableRestorePlan(backup, { repository: { fullName: "test_owner/restore", private: true, visibility: "private", defaultBranch: "main" }, branch: { branch: "main", headCommitSha: "head", rootTreeSha: "tree" }, rootEntries: [] });
+    expect(plan.ready).toBe(true);
+    for (const item of captureFiles) {
+      const restored = plan.files.find((candidate) => candidate.path === item.path)?.text;
+      expect(restored).toBe(item.text);
+      expect(parseCaptureRecord(restored!).data).toEqual(parseCaptureRecord(item.text).data);
+    }
   });
 });

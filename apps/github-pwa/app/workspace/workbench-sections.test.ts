@@ -3,7 +3,7 @@ import { createElement, type ComponentProps } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { CalendarSection } from "./calendar-section";
-import { CaptureInboxSection } from "./capture-inbox-section";
+import { CaptureInboxSection, initialCaptureEditorFields } from "./capture-inbox-section";
 import { createWorkspaceRecord } from "../../../../src/lib/github-data/protocol";
 import { createCaptureData } from "../../../../src/lib/github-data/capture-details";
 import { createCalendarEventData, setCalendarEventCompleted } from "../../../../src/lib/github-data/calendar-events";
@@ -89,10 +89,14 @@ describe("workbench controls", () => {
     expect(html).not.toContain('class="row-more"');
   });
   it("provides a direct idea composer above the ideas list without a destination selector", () => {
-    const ideaComposer = { text: "把笔记做成可检索的卡片", connected: true, online: true, saving: false, storageFailed: false, onChange: () => {}, onSave: async () => true, onClear: () => {} };
+    const ideaComposer = { categoryChoice: "auto" as const, onCategoryChange: () => {}, text: "把笔记做成可检索的卡片", connected: true, online: true, saving: false, storageFailed: false, onChange: () => {}, onSave: async () => true, onClear: () => {} };
     const html = capture({ module: "ideas", ideaComposer, inboxCaptures: [], visibleCaptures: [] });
     expect(html).toContain('aria-label="新增想法"');
     expect(html).toContain("写下想法");
+    expect(html).toContain("想法分类");
+    expect(html).toContain("待分类：没有足够明确");
+    expect(html).toContain("不向外部 AI 发送正文");
+    expect(html).toContain('aria-label="按想法分类筛选"');
     expect(html).toMatch(/<button type="submit" class="primary-button">保存想法<\/button>/);
     expect(html).not.toContain("随手记保存位置");
     expect(html.indexOf('aria-label="新增想法"')).toBeLessThan(html.indexOf('aria-label="想法视图"'));
@@ -102,6 +106,25 @@ describe("workbench controls", () => {
     for (const patch of [{ text: " " }, { connected: false }, { online: false }, { saving: true }]) {
       expect(capture({ module: "ideas", ideaComposer: { ...ideaComposer, ...patch } })).toMatch(/<button type="submit" class="primary-button" disabled=""/);
     }
+  });
+  it("opens idea category corrections without inferring dates or changing manual choices", () => {
+    const record = createWorkspaceRecord({ entityType: "capture", id: "idea_edit", ownerId: "test_owner", timestamp: "2020-01-01T00:00:00Z", data: createCaptureData({ rawText: "明天 10 点给客户讨论方案", kind: "idea", date: null, time: null, timezone: "UTC", ideaCategory: "life" }) });
+    expect(initialCaptureEditorFields(record, "UTC")).toMatchObject({ kind: "idea", date: null, time: null, endTime: null, ideaCategory: "life", rawText: record.data.raw_text });
+    delete record.data.idea_classification;
+    expect(initialCaptureEditorFields(record, "UTC")).toMatchObject({ date: null, time: null, ideaCategory: "auto" });
+  });
+  it("displays persisted idea categories and keeps legacy ideas unclassified without writing", () => {
+    const makeIdea = (id: string, text: string) => ({ record: createWorkspaceRecord({ entityType: "capture", id, ownerId: "test_owner", data: createCaptureData({ rawText: text, kind: "idea", date: null, time: null, timezone: "UTC" }) }), path: `data/captures/${id}.json`, blobSha: "synthetic" });
+    const work = makeIdea("idea_work", "给客户准备产品方案");
+    const life = makeIdea("idea_life", "为家人准备旅行计划");
+    const legacy = makeIdea("idea_legacy", "公司旧想法");
+    delete legacy.record.data.idea_classification;
+    const html = capture({ module: "ideas", visibleCaptures: [work, life, legacy] });
+    expect(html).toContain("自动 · 工作");
+    expect(html).toContain("自动 · 生活");
+    expect(html).toContain('class="idea-category-badge unclassified">待分类</span>');
+    expect(legacy.record.data.idea_classification).toBeUndefined();
+    expect(capture()).not.toContain('aria-label="按想法分类筛选"');
   });
 
 });

@@ -1,3 +1,4 @@
+import { isIdeaClassification, type IdeaClassification } from "./idea-classification";
 import { parseRecord, type WorkspaceRecord } from "./protocol";
 import { CAPTURE_KINDS, isCaptureDate, isCaptureTime, isCaptureTimezone, type CaptureKind } from "./capture-details";
 
@@ -14,6 +15,7 @@ export type CaptureData = {
   raw_text: string;
   status: "inbox" | "archived";
   kind?: CaptureKind;
+  idea_classification?: IdeaClassification;
   noted_date?: string | null;
   noted_time?: string | null;
   timezone?: string;
@@ -51,6 +53,7 @@ export function parseCaptureRecord(value: string): CaptureRecord {
     || (record.data.noted_time !== undefined && record.data.noted_time !== null && !isCaptureTime(record.data.noted_time))
     || (record.data.noted_time != null && record.data.noted_date == null)
     || (record.data.timezone !== undefined && !isCaptureTimezone(record.data.timezone))
+    || (record.data.idea_classification !== undefined && (record.data.kind !== "idea" || !isIdeaClassification(record.data.idea_classification)))
     || (record.data.routed_to !== undefined && !isCaptureRoute(record.data.routed_to))
   ) throw new Error("INVALID_CAPTURE_RECORD");
   return record as CaptureRecord;

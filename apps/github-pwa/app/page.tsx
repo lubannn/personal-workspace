@@ -728,10 +728,10 @@ export default function GitHubWorkspacePage() {
   async function saveCapture(ideaText?: string) {
     const adapter = adapterRef.current;
     const directIdea = ideaText !== undefined;
-    const submittedDraft = directIdea ? { text: ideaText, kind: "idea" as const, date: null, time: null, endTime: null } : captureDraft;
+    const submittedDraft = directIdea ? { ...ideaDraft, text: ideaText, kind: "idea" as const, date: null, time: null, endTime: null } : captureDraft;
     const submissionRef = directIdea ? ideaSubmissionRef : captureSubmissionRef;
-    const text = submittedDraft.text.trim();
-    if (!adapter || !connection || !text || captureWriteRef.current || online === false) return false;
+    const text = directIdea ? submittedDraft.text : submittedDraft.text.trim();
+    if (!adapter || !connection || !text.trim() || captureWriteRef.current || online === false) return false;
     captureWriteRef.current = true;
     setSaving(true);
     setErrorMessage("");
@@ -744,7 +744,7 @@ export default function GitHubWorkspacePage() {
         const timestamp = new Date().toISOString();
         const suffix = `${timestamp.replaceAll(/\D/g, "").slice(0, 17)}_${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`;
         const today = localDateInTimezone(connection.timezone, new Date(timestamp));
-        const fields: CaptureFields = directIdea ? { rawText: text, kind: "idea", date: null, time: null, endTime: null, timezone: connection.timezone } : captureFields.kind === "journal" && captureDraft.date == null ? { ...captureFields, date: today } : captureFields;
+        const fields: CaptureFields = directIdea ? { rawText: text, kind: "idea", date: null, time: null, endTime: null, timezone: connection.timezone, ideaCategory: ideaDraft.ideaCategory ?? "auto" } : captureFields.kind === "journal" && captureDraft.date == null ? { ...captureFields, date: today } : captureFields;
         submissionRef.current = { fingerprint, submission: prepareCaptureSubmission(fields, { ownerId: connection.ownerId, suffix, timestamp, today }) };
       }
       const submission = submissionRef.current!.submission;
@@ -3064,7 +3064,7 @@ export default function GitHubWorkspacePage() {
 
 
       <WorkspaceTabPanel tab="ideas" activeTab={activeWorkspaceTab} mounted={workspaceTabReady && (activeWorkspaceTab === "ideas" || visitedWorkspaceTabs.has("ideas"))} key={connection ? `ideas:${connection.ownerId}:${connection.repository}` : "ideas:disconnected"}>
-        <CaptureInboxSection module="ideas" ideaComposer={{ text: ideaDraft.text, onChange: (text) => updateIdeaDraft({ text }), onSave: () => saveCapture(ideaDraft.text), onClear: () => clearIdeaDraft(),
+        <CaptureInboxSection module="ideas" ideaComposer={{ text: ideaDraft.text, categoryChoice: ideaDraft.ideaCategory ?? "auto", onCategoryChange: (ideaCategory) => updateIdeaDraft({ ideaCategory }), onChange: (text) => updateIdeaDraft({ text }), onSave: () => saveCapture(ideaDraft.text), onClear: () => clearIdeaDraft(),
           saving: saving || Boolean(savingCaptureId), connected: Boolean(connection), online, storageFailed: ideaStorageFailed }} connection={connection} online={online} captureView={captureView}
           inboxCaptures={captureModules.inbox.ideas}
           archivedCaptures={captureModules.archived.ideas}
