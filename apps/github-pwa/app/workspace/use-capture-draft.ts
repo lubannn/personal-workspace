@@ -3,7 +3,9 @@
 import { useCallback, useMemo, useSyncExternalStore } from "react";
 import { CAPTURE_KINDS, isCaptureDate, isCaptureTime, type CaptureKind } from "../../../../src/lib/github-data/capture-details";
 
-export type CaptureDraft = { text: string; kind: CaptureKind | "auto"; date: string | null; time: string | null; endTime: string | null };
+import type { IdeaCategoryChoice } from "../../../../src/lib/github-data/idea-classification";
+
+export type CaptureDraft = { text: string; kind: CaptureKind | "auto"; date: string | null; time: string | null; endTime: string | null; ideaCategory?: IdeaCategoryChoice };
 const EMPTY: CaptureDraft = { text: "", kind: "auto", date: null, time: null, endTime: null };
 const EVENT = "pw-pwa-capture-draft";
 const memory = new Map<string, string>();
@@ -17,7 +19,8 @@ export function parseCaptureDraft(value: string): CaptureDraft {
       || (item.date !== null && item.date !== "" && !isCaptureDate(item.date))
       || (item.time !== null && item.time !== "" && !isCaptureTime(item.time))) return EMPTY;
     if (item.endTime != null && item.endTime !== "" && !isCaptureTime(item.endTime)) return EMPTY;
-    return { text: item.text, kind: item.kind, date: item.date, time: item.time, endTime: item.endTime ?? null };
+    return { text: item.text, kind: item.kind, date: item.date, time: item.time, endTime: item.endTime ?? null,
+      ...(["auto", "work", "life", "unclassified"].includes(item.ideaCategory) ? { ideaCategory: item.ideaCategory } : {}) };
   } catch { return EMPTY; }
 }
 

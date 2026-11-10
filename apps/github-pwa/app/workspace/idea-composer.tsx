@@ -1,10 +1,14 @@
 "use client";
 
 import { useId } from "react";
+import { IdeaCategoryControl } from "./idea-category-control";
+import type { IdeaCategoryChoice } from "../../../../src/lib/github-data/idea-classification";
 import { captureBody } from "../../../../src/lib/github-data/capture-details";
 
 export type IdeaComposerProps = {
   text: string;
+  categoryChoice: IdeaCategoryChoice;
+  onCategoryChange: (choice: IdeaCategoryChoice) => void;
   connected: boolean;
   online: boolean | null;
   saving: boolean;
@@ -16,7 +20,7 @@ export type IdeaComposerProps = {
   onClear: () => void;
 };
 
-export function IdeaComposer({ text, connected, online, saving, storageFailed, disabled = false, loading = false, onChange, onSave, onClear }: IdeaComposerProps) {
+export function IdeaComposer({ text, categoryChoice, onCategoryChange, connected, online, saving, storageFailed, disabled = false, loading = false, onChange, onSave, onClear }: IdeaComposerProps) {
   const id = useId();
   const canSave = connected && online !== false && !saving && !disabled && !loading && text.length <= 10_000 && Boolean(captureBody(text));
   return <form className="idea-composer" aria-label="新增想法" onSubmit={async (event) => { event.preventDefault(); if (canSave) await onSave(); }}>
@@ -26,6 +30,7 @@ export function IdeaComposer({ text, connected, online, saving, storageFailed, d
         event.preventDefault(); if (canSave) event.currentTarget.form?.requestSubmit();
       }
     }} />
+    <IdeaCategoryControl text={text} choice={categoryChoice} onChange={onCategoryChange} disabled={saving || disabled} />
     <div className="idea-composer-footer"><p id={`${id}-hint`}>{disabled ? "请先完成或取消当前想法的编辑。" : !connected ? "连接后可保存，草稿暂存在此设备。" : online === false ? "当前离线，草稿已保留，联网后可保存。" : loading ? "正在读取想法，完成后可保存新想法。" : "直接保存到想法 · Enter 换行 · ⌘ / Ctrl+Enter 保存"}</p>
       <div><button type="button" className="view-button" disabled={saving || disabled || !text} onClick={onClear}>清空</button><button type="submit" className="primary-button" disabled={!canSave}>{saving ? "正在保存…" : "保存想法"}</button></div>
     </div>

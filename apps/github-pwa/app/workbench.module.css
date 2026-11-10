@@ -126,3 +126,13 @@
 @media (max-width: 600px) {
   .scope :global(.calendar-project-filter select), :global(.report-project-filter select), .scope :global(.calendar-project-link .text-button) { min-height: 44px; }
 }
+
+.scope :global(.idea-category-control) { display: grid; gap: 5px; padding: 9px 0; }
+.scope :global(.idea-category-control label) { display: flex; align-items: center; gap: 10px; color: var(--ink); font-size: 12px; font-weight: 600; }
+.scope :global(.idea-category-control select) { min-height: 32px; padding: 4px 26px 4px 9px; border: 1px solid var(--line); border-radius: 6px; background: white; color: var(--ink); font: inherit; }
+.scope :global(.idea-category-control p), .scope :global(.idea-category-control small) { margin: 0; font-size: 11px; line-height: 1.5; color: var(--soft); }
+.scope :global(.idea-category-filters) { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.scope :global(.idea-category-badge) { border-radius: 5px; padding: 2px 6px; background: #eeede8; color: #68665e; white-space: nowrap; }
+.scope :global(.idea-category-badge.work) { background: #e9eff9; color: #36547d; }
+.scope :global(.idea-category-badge.life) { background: #e9f1e5; color: #43613e; }
+@media (max-width: 720px) { .scope :global(.idea-category-control select) { font-size: 16px; } }
